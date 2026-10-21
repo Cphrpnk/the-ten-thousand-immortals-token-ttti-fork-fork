@@ -1,0 +1,22 @@
+{
+  "overview": "A token app for TTTI-T where users buy, hold, send and track a fixed-supply ICRC token, with its own built-in transaction index.",
+  "features": [
+    "Buy TTTI-T with ICP through a guided setup flow",
+    "Built-in wallet and Plug wallet support",
+    "Send, approve and transfer tokens",
+    "Full transaction history including older transactions",
+    "Token canister also serves as its own index for wallets like OISY",
+    "Amount fields accept both point and comma as decimal separator",
+    "Delivery address prefilled with the chosen wallet's address",
+    "Technical details with ledger and index canister IDs"
+  ],
+  "category": "crypto-token",
+  "tags": [
+    "cryptocurrency",
+    "icrc",
+    "token",
+    "wallet",
+    "internet-computer"
+  ],
+  "last_updated": "2026-10-21T03:24:14.000Z"
+}
