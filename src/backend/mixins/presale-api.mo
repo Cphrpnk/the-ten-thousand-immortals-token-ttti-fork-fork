@@ -8,6 +8,7 @@ import SaleLib "../lib/presale";
 import TreasuryLib "../lib/treasury";
 import IcrcLib "../lib/icrc";
 import OracleLib "../lib/oracle";
+import CanisterInfoLib "../lib/canister-info";
 
 // TTTI-T sale status, technical details, admin sales pause, the one-time
 // purchase acknowledgement, delivery addresses and the balance snapshot export.
@@ -19,6 +20,8 @@ mixin (
   accessControlState : AccessControl.AccessControlState,
   canisterPrincipal : Principal,
   acknowledgements : Sale.AcknowledgementStore,
+  canisterInfo : CanisterInfoLib.CanisterInfoStore,
+  tokenRates : OracleLib.TokenRateStore,
 ) {
   func requireSaleAdmin(caller : Principal) {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
@@ -29,11 +32,11 @@ mixin (
   // --- Sale status and technical details (public) ----------------------------
 
   public query func getSaleStatus() : async Sale.SaleStatus {
-    SaleLib.status(sale, treasury, ledger, oracle, canisterPrincipal);
+    SaleLib.status(sale, treasury, ledger, oracle, tokenRates, canisterPrincipal);
   };
 
   public query func getTechnicalDetails() : async Sale.TechnicalDetails {
-    SaleLib.technicalDetails(ledger, canisterPrincipal);
+    SaleLib.technicalDetails(ledger, canisterPrincipal, canisterInfo, treasury, oracle, tokenRates);
   };
 
   // --- Admin switch (admin-gated) --------------------------------------------

@@ -1,4 +1,5 @@
 import Common "common";
+import Pay "pay-token";
 
 module {
   // Treasury domain types: treasury ICP account, mode, conversion history,
@@ -6,20 +7,33 @@ module {
 
   public type Account = Common.Account;
   public type Timestamp = Common.Timestamp;
+  public type PayToken = Pay.PayToken;
+
+  // Receiving account per ck token (ICP uses TreasuryConfig.icpAccount).
+  // A purchase in a ck token is refused with #tokenNotConfigured while null.
+  public type TokenAccounts = {
+    ckbtc : ?Account;
+    ckusdc : ?Account;
+    ckusdt : ?Account;
+  };
+
+  // One pay token's receiving account (null = not configured).
+  public type TokenAccountInfo = {
+    token : PayToken;
+    account : ?Account;
+  };
+
+  public type TokenAccountResult = {
+    #Ok : TokenAccountInfo;
+    #Err : Text;
+  };
 
   // Admin-controlled configuration: the only setting is `icpAccount`, the
   // account that receives the creator's ICP (collected ICP is forwarded there
-  // automatically after each delivery). Price and 1% fee are code constants.
+  // automatically after each delivery). Price and the fee (1% for every pay token)
+  // are code constants; ck-token accounts are set with setPayTokenAccount.
   public type TreasuryConfig = {
     icpAccount : Account;
-  };
-
-  // Public treasury state. `icpBalance` is the ICP (e8s) held by the treasury
-  // account; `liveRate` is the live-price rate in TTTI-T base units per whole
-  // ICP (1% fee included), or null when no price.
-  public type TreasuryState = {
-    icpBalance : Nat;
-    liveRate : ?Nat;
   };
 
   public type ConversionStatus = {
@@ -37,21 +51,29 @@ module {
     #failed : Text; // forwarding failed; the buyer's credit stands
   };
 
-  // One ICP -> TTTI-T conversion record.
+  // One pay token -> TTTI-T conversion record.
   public type Conversion = {
     id : Nat;
-    depositor : Principal; // the buyer (ICP payer)
+    depositor : Principal; // the buyer (payer)
     recipient : Account; // delivery account credited with TTTI-T
-    icpAmount : Nat; // ICP e8s collected (only the cost of delivered TTTI-T)
+    payToken : PayToken; // token paid with (#icp for records before multi-token)
+    payAmount : Nat; // pay-token base units collected (only the cost of delivered TTTI-T)
+    feeBps : Nat; // sale fee applied, as recorded at purchase time (100 = 1% for new purchases)
+    icpAmount : Nat; // ICP e8s collected (= payAmount for #icp, 0 otherwise)
     tttiAmount : Nat; // TTTI-T base units (8 decimals)
     status : ConversionStatus;
     timestamp : Timestamp; // nanoseconds
-    priceUsdE8 : Nat; // ICP/USD price used, USD * 10^8 (0 on historical fallback records)
+    priceUsdE8 : Nat; // USD rate of the paid token at purchase time, USD * 10^8 (background audit data; 0 on historical fallback records)
     usedFallback : Bool; // historical records only; always false for new purchases
     minted : Nat; // TTTI-T freshly minted (filled first)
     fromCollector : Nat; // TTTI-T delivered from the fee account (only after the mint cap)
     forward : ForwardStatus;
     message : ?Text; // human-readable failure / refund note
+    // Exact purchase quantities (null on records created before they were kept).
+    feeAmount : ?Nat; // sale fee, pay-token base units (never refundable)
+    netAmount : ?Nat; // net pay-token base units converted, fee excluded (the refundable basis)
+    paymentBlock : ?Nat; // pay-token ledger block index of the payment collection
+    mintBlock : ?Nat; // TTTI-T ledger block index of the mint
   };
 
   // --- ICP ledger integration (ICRC-1 / ICRC-2) ------------------------------
@@ -128,5 +150,6 @@ module {
   // Public subset of the treasury configuration (no buyer data).
   public type PublicTreasuryInfo = {
     icpAccount : Account;
+    tokenAccounts : [TokenAccountInfo]; // #icp, #ckbtc, #ckusdc, #ckusdt in that order
   };
 };

@@ -1,25 +1,16 @@
 import { Coins, Sparkles, Wallet } from "lucide-react";
 import { motion } from "motion/react";
+import { useDict } from "../../i18n/core";
+import { HOW_TEXT } from "../../i18n/pages/landing";
 
 const steps = [
-  {
-    icon: Wallet,
-    title: "Pick a wallet",
-    text: "Use the built-in wallet in one tap, or bring your own.",
-  },
-  {
-    icon: Coins,
-    title: "Add ICP",
-    text: "Buy ICP by card, or transfer what you already hold.",
-  },
-  {
-    icon: Sparkles,
-    title: "Buy TTTI-T",
-    text: "One button. Your tokens land in your wallet.",
-  },
-];
+  { id: "wallet", icon: Wallet, title: "walletTitle", text: "walletText" },
+  { id: "icp", icon: Coins, title: "icpTitle", text: "icpText" },
+  { id: "buy", icon: Sparkles, title: "buyTitle", text: "buyText" },
+] as const;
 
 export function HowItWorks() {
+  const t = useDict(HOW_TEXT);
   return (
     <section
       id="how-it-works"
@@ -30,13 +21,13 @@ export function HowItWorks() {
       <div className="container mx-auto px-4">
         <div className="mx-auto max-w-2xl space-y-4 text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
-            Three steps
+            {t.label}
           </p>
           <h2
             id="how-title"
             className="text-imperial text-balance text-3xl leading-tight text-foreground md:text-5xl"
           >
-            How it works
+            {t.title}
           </h2>
         </div>
 
@@ -48,7 +39,7 @@ export function HowItWorks() {
           <ol className="relative grid gap-10 md:grid-cols-3 md:gap-8">
             {steps.map((step, index) => (
               <motion.li
-                key={step.title}
+                key={step.id}
                 initial={{ opacity: 0, y: 24 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-60px" }}
@@ -67,10 +58,10 @@ export function HowItWorks() {
                   </span>
                 </span>
                 <h3 className="mt-6 font-display text-xl text-foreground">
-                  {step.title}
+                  {t[step.title]}
                 </h3>
                 <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
-                  {step.text}
+                  {t[step.text]}
                 </p>
               </motion.li>
             ))}

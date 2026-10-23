@@ -18,8 +18,4 @@ module {
     #Array : [Value];
     #Map : [(Text, Value)];
   };
-
-  public type UserProfile = {
-    name : Text;
-  };
 };

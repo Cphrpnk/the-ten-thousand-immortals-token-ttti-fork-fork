@@ -6,11 +6,23 @@ import { AlertTriangle, CheckCircle2, Loader2, Send } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { createActor } from "../../backend";
-import type { Account, TokenDescriptor } from "../../backend";
+import type { Account } from "../../backend";
 import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import { usePlug } from "../../hooks/usePlug";
-import { usePrepareTransfer, useWalletBalance } from "../../hooks/useWallet";
+import { useWalletBalance } from "../../hooks/useWallet";
+import { pickDict, useDict } from "../../i18n/core";
+import { WALLET_EXPLORER_TEXT, WALLET_TEXT } from "../../i18n/pages/wallet";
+import {
+  type BlockLinkTarget,
+  blockLinkTarget,
+  tttiBlockTarget,
+} from "../../lib/explorer";
 import { formatUnits, parseUnits } from "../../lib/token";
+import {
+  type TokenDescriptor,
+  buildTransferArgs,
+} from "../../lib/tokenRegistry";
+import { ExplorerLink } from "../ExplorerLink";
 import { FlatTokenIcon } from "../FlatTokenIcon";
 import { Button } from "../ui/button";
 import {
@@ -29,7 +41,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { normalizeToken } from "./TokenBalanceCard";
+import { isTttiToken, normalizeToken } from "./TokenBalanceCard";
+
+/** Ledger block of the last successful send and its explorer target. */
+interface SentBlock {
+  index: bigint;
+  target: BlockLinkTarget | null;
+}
 
 interface SendPanelProps {
   tokens: Array<TokenDescriptor>;
@@ -37,29 +55,25 @@ interface SendPanelProps {
 }
 
 export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
+  const t = useDict(WALLET_TEXT);
   const tokens = rawTokens.map(normalizeToken);
   const [tokenId, setTokenId] = useState<string>("");
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const prepareTransfer = usePrepareTransfer();
+  const [sentBlock, setSentBlock] = useState<SentBlock | null>(null);
+  const tx = useDict(WALLET_EXPLORER_TEXT);
   const { principal: plugPrincipal, requestTransfer } = usePlug();
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const selected = tokens.find((t) => t.canisterId.toText() === tokenId);
+  const selected = tokens.find((tk) => tk.canisterId.toText() === tokenId);
   const disabled = !account || tokens.length === 0;
 
-  const { data: balanceResult } = useWalletBalance(
-    selected?.canisterId,
-    account,
-  );
-  const balance =
-    balanceResult && balanceResult.__kind__ === "Ok"
-      ? (balanceResult.Ok.balance ?? 0n)
-      : null;
+  const { data: balanceData } = useWalletBalance(selected?.canisterId, account);
+  const balance = balanceData ?? null;
 
   const invalidateBalances = () => {
     void queryClient.invalidateQueries({ queryKey: ["walletBalance"] });
@@ -71,13 +85,15 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
     event.preventDefault();
     setError(null);
     setSuccess(null);
+    setSentBlock(null);
+    const text = pickDict(WALLET_TEXT);
 
     if (!account) {
-      setError("Connect a wallet before sending.");
+      setError(text.errConnectWallet);
       return;
     }
     if (!selected) {
-      setError("Select a token to send.");
+      setError(text.errSelectToken);
       return;
     }
 
@@ -85,20 +101,24 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
     try {
       recipientPrincipal = Principal.fromText(recipient.trim());
     } catch {
-      setError("Enter a valid recipient principal.");
+      setError(text.errRecipient);
       return;
     }
 
     const baseAmount = parseUnits(amount, selected.decimals);
     if (baseAmount === null || baseAmount <= 0n) {
-      setError(`Enter a valid ${selected.symbol} amount.`);
+      setError(text.errAmount(selected.symbol));
       return;
     }
 
     const total = baseAmount + selected.fee;
     if (balance !== null && total > balance) {
       setError(
-        `Insufficient ${selected.symbol} balance. You have ${formatAmount(balance, selected.decimals)} ${selected.symbol} but need ${formatAmount(total, selected.decimals)} ${selected.symbol} including the fee.`,
+        text.errInsufficient(
+          selected.symbol,
+          formatAmount(balance, selected.decimals),
+          formatAmount(total, selected.decimals),
+        ),
       );
       return;
     }
@@ -111,26 +131,23 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
     const submit = async () => {
       setIsSubmitting(true);
       try {
-        // 1. Ask the non-custodial backend to validate and prepare the transfer.
-        const prepared = await prepareTransfer.mutateAsync({
-          canisterId: token.canisterId,
-          from: account,
-          to,
-          amount: baseAmount,
-          memo: null,
-        });
+        // Transfer arguments are built here; the fee comes from the
+        // ledger's icrc1_metadata (see useListTokens).
+        const args = buildTransferArgs(to, baseAmount, token.fee);
+        let blockIndex: bigint | null = null;
 
-        if (prepared.__kind__ === "Err") {
-          throw new Error(describeWalletError(prepared.Err));
-        }
-
-        // 2. Sign and submit with the connected wallet.
         if (plugPrincipal) {
-          await requestTransfer(token.canisterId, {
+          const plugResult = await requestTransfer(token.canisterId, {
             to: recipientPrincipal.toText(),
-            amount: baseAmount,
-            opts: { fee: token.fee },
+            amount: args.amount,
+            opts: { fee: args.fee },
           });
+          blockIndex =
+            typeof plugResult?.height === "number" &&
+            Number.isSafeInteger(plugResult.height) &&
+            plugResult.height >= 0
+              ? BigInt(plugResult.height)
+              : null;
         } else if (identity) {
           // The app's own actor always targets the TTTI canister, so for
           // Internet Identity we build a direct actor for the SELECTED token's
@@ -156,23 +173,35 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
             },
             { agent },
           );
-          const result = await ledgerActor.icrc1_transfer({
-            to,
-            amount: baseAmount,
-            fee: token.fee,
-          });
+          const result = await ledgerActor.icrc1_transfer(args);
           if (result.__kind__ === "Err") {
             throw new Error(describeTransferError(result.Err));
           }
+          blockIndex = result.Ok;
         } else {
-          throw new Error("Connect Internet Identity or Plug to send tokens.");
+          throw new Error(pickDict(WALLET_TEXT).sendConnectHint);
         }
 
         invalidateBalances();
-        setSuccess(
-          `Sent ${formatAmount(baseAmount, token.decimals)} ${token.symbol} to ${truncatePrincipal(recipientPrincipal.toText())}.`,
+        setSentBlock(
+          blockIndex === null
+            ? null
+            : {
+                index: blockIndex,
+                target: isTttiToken(token)
+                  ? tttiBlockTarget(blockIndex)
+                  : blockLinkTarget(token.canisterId.toText(), blockIndex),
+              },
         );
-        toast.success(`Sent ${token.symbol}`);
+        const done = pickDict(WALLET_TEXT);
+        setSuccess(
+          done.sentSuccess(
+            formatAmount(baseAmount, token.decimals),
+            token.symbol,
+            truncatePrincipal(recipientPrincipal.toText()),
+          ),
+        );
+        toast.success(done.toastSent(token.symbol));
       } finally {
         setIsSubmitting(false);
       }
@@ -185,7 +214,7 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
       const message =
         submitError instanceof Error
           ? submitError.message
-          : "The transfer could not be completed.";
+          : pickDict(WALLET_TEXT).errTransferFailed;
       setError(message);
       setRecipient(capturedRecipient);
       setAmount(capturedAmount);
@@ -201,23 +230,21 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg font-display">
           <Send className="h-4 w-4 text-primary" />
-          Send
+          {t.send}
         </CardTitle>
-        <CardDescription>
-          Send tokens from your connected wallet.
-        </CardDescription>
+        <CardDescription>{t.sendDescription}</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="send-token">Token</Label>
+            <Label htmlFor="send-token">{t.token}</Label>
             <Select value={tokenId} onValueChange={setTokenId}>
               <SelectTrigger
                 id="send-token"
                 className="w-full"
                 data-ocid="wallet.send_token_select"
               >
-                <SelectValue placeholder="Select a token" />
+                <SelectValue placeholder={t.selectToken} />
               </SelectTrigger>
               <SelectContent>
                 {tokens.map((token) => (
@@ -242,7 +269,7 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="send-recipient">Recipient principal</Label>
+            <Label htmlFor="send-recipient">{t.recipientPrincipal}</Label>
             <Input
               id="send-recipient"
               value={recipient}
@@ -256,7 +283,7 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="send-amount">Amount</Label>
+            <Label htmlFor="send-amount">{t.amount}</Label>
             <Input
               id="send-amount"
               value={amount}
@@ -271,10 +298,13 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
             />
             {selected && (
               <p className="text-xs text-muted-foreground tabular-nums">
-                Fee: {formatAmount(selected.fee, selected.decimals)}{" "}
+                {t.fee} {formatAmount(selected.fee, selected.decimals)}{" "}
                 {selected.symbol}
                 {balance !== null &&
-                  ` · Balance: ${formatAmount(balance, selected.decimals)} ${selected.symbol}`}
+                  t.balanceSuffix(
+                    formatAmount(balance, selected.decimals),
+                    selected.symbol,
+                  )}
               </p>
             )}
           </div>
@@ -290,13 +320,37 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
           )}
 
           {success && (
-            <p
+            <div
               className="flex items-start gap-2 rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-sm text-success"
               data-ocid="wallet.send_success_state"
             >
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              {success}
-            </p>
+              <div className="flex min-w-0 flex-col gap-1">
+                <p>{success}</p>
+                {sentBlock ? (
+                  <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    <span>{tx.recordedInBlock}</span>
+                    {sentBlock.target ? (
+                      <ExplorerLink
+                        target={sentBlock.target}
+                        label={
+                          sentBlock.target.kind === "history"
+                            ? tx.viewBlockInHistory
+                            : tx.viewOnIcpDashboard
+                        }
+                        data-ocid="wallet.send_block_link"
+                      >
+                        {sentBlock.index.toString()}
+                      </ExplorerLink>
+                    ) : (
+                      <span className="font-mono text-foreground">
+                        {sentBlock.index.toString()}
+                      </span>
+                    )}
+                  </p>
+                ) : null}
+              </div>
+            </div>
           )}
 
           <Button
@@ -310,13 +364,11 @@ export function SendPanel({ tokens: rawTokens, account }: SendPanelProps) {
             ) : (
               <Send className="h-4 w-4" />
             )}
-            {isSubmitting ? "Sending…" : "Send"}
+            {isSubmitting ? t.sending : t.send}
           </Button>
 
           {!account && (
-            <p className="text-xs text-muted-foreground">
-              Connect Internet Identity or Plug to send tokens.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.sendConnectHint}</p>
           )}
         </form>
       </CardContent>
@@ -333,52 +385,31 @@ function truncatePrincipal(principal: string): string {
   return `${principal.slice(0, 12)}…${principal.slice(-6)}`;
 }
 
-function describeWalletError(error: {
-  __kind__: string;
-  [key: string]: unknown;
-}): string {
-  switch (error.__kind__) {
-    case "InvalidAmount":
-      return "The amount is invalid for this ledger.";
-    case "InvalidPrincipal":
-      return "The recipient principal is invalid.";
-    case "LedgerUnavailable":
-      return "The token ledger is currently unavailable.";
-    case "TransferFailed":
-      return typeof error.TransferFailed === "string"
-        ? error.TransferFailed
-        : "The transfer could not be completed.";
-    case "UnknownToken":
-      return "This token is not supported by the wallet.";
-    default:
-      return "The transfer could not be completed.";
-  }
-}
-
 function describeTransferError(error: {
   __kind__: string;
   [key: string]: unknown;
 }): string {
+  const text = pickDict(WALLET_TEXT);
   switch (error.__kind__) {
     case "BadFee":
-      return "The ledger rejected the fee. Refresh and try again.";
+      return text.errBadFee;
     case "InsufficientFunds":
-      return "Insufficient balance for this transfer.";
+      return text.errInsufficientFunds;
     case "TooOld":
-      return "The transfer expired. Please try again.";
+      return text.errTooOld;
     case "CreatedInFuture":
-      return "The transfer timestamp is invalid. Please try again.";
+      return text.errCreatedInFuture;
     case "Duplicate":
-      return "This transfer was already submitted.";
+      return text.errDuplicate;
     case "TemporarilyUnavailable":
-      return "The ledger is temporarily unavailable. Try again shortly.";
+      return text.errTemporarilyUnavailable;
     case "GenericError":
       return typeof error.GenericError === "object" &&
         error.GenericError !== null &&
         "message" in error.GenericError
         ? String((error.GenericError as { message: unknown }).message)
-        : "The ledger rejected the transfer.";
+        : text.errGeneric;
     default:
-      return "The transfer could not be completed.";
+      return text.errTransferFailed;
   }
 }

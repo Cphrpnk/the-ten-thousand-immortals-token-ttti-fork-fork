@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { useGetSaleStatus } from "../../hooks/useQueries";
+import { useDict } from "../../i18n/core";
+import { HERO_TEXT } from "../../i18n/pages/landing";
 import { CrestLogo } from "../Footer";
 import { Skeleton } from "../ui/skeleton";
 
@@ -13,28 +15,28 @@ const ease = [0.22, 1, 0.36, 1] as const;
 const TRUST_BADGES = [
   {
     src: "/assets/badges/on-chain-100-white.svg",
-    alt: "100% on-chain, on ICP",
+    altKey: "onchainAlt",
     rounded: false,
     sizeClass: "h-16",
     opacityClass: "opacity-90",
   },
   {
     src: "/assets/badges/icrc1-token-standard.png",
-    alt: "ICRC-1 token standard badge",
+    altKey: "icrc1Alt",
     rounded: true,
     sizeClass: "h-8",
     opacityClass: "opacity-70",
   },
   {
     src: "/assets/badges/icrc2-token-standard.png",
-    alt: "ICRC-2 token standard badge",
+    altKey: "icrc2Alt",
     rounded: true,
     sizeClass: "h-8",
     opacityClass: "opacity-70",
   },
   {
     src: "/assets/badges/icrc3-token-standard.svg",
-    alt: "ICRC-3 token standard badge",
+    altKey: "icrc3Alt",
     rounded: true,
     sizeClass: "h-8",
     opacityClass: "opacity-70",
@@ -43,12 +45,13 @@ const TRUST_BADGES = [
 
 export function HeroSection({ id }: HeroSectionProps) {
   const { data: status, isLoading } = useGetSaleStatus();
+  const t = useDict(HERO_TEXT);
 
   const eyebrow = status?.complete
-    ? "Test allocation complete"
+    ? t.statusComplete
     : status?.salesPaused
-      ? "Test purchases paused"
-      : "TTTI-T is open";
+      ? t.statusPaused
+      : t.statusOpen;
   const eyebrowDot = status?.complete
     ? "bg-primary"
     : status?.salesPaused
@@ -86,7 +89,7 @@ export function HeroSection({ id }: HeroSectionProps) {
             className="absolute inset-[1%] rounded-full border border-gold opacity-40"
           />
           <CrestLogo
-            alt="The Ten Thousand Immortals emblem: a gold winged helmet above the TTTI wordmark"
+            alt={t.crestAlt}
             className="h-[84%] w-[84%] shadow-gold-lg"
           />
         </motion.div>
@@ -124,7 +127,8 @@ export function HeroSection({ id }: HeroSectionProps) {
             transition={{ duration: 0.7, ease, delay: 0.18 }}
             className="text-imperial text-balance text-[2.6rem] leading-[1.02] tracking-[0.06em] text-foreground sm:text-6xl lg:text-7xl xl:text-[5.25rem]"
           >
-            Ten Thousand <span className="text-gradient-gold">Immortals.</span>
+            {t.titleLead}
+            <span className="text-gradient-gold">{t.titleAccent}</span>
           </motion.h1>
 
           <motion.div
@@ -134,25 +138,21 @@ export function HeroSection({ id }: HeroSectionProps) {
             className="flex max-w-xl flex-col gap-3"
           >
             <p className="text-balance text-base font-medium leading-relaxed text-foreground md:text-lg">
-              Fast. Secure. Unbreakable in formation.
+              {t.tagline}
             </p>
             <p className="text-balance text-base leading-relaxed text-muted-foreground md:text-lg">
-              TTTI is exchange money in its purest form. It takes what the
-              Internet Computer does best: transfers in seconds, secured
-              on-chain, nearly free. It has all the qualities of ICP, plus a
-              fixed maximum supply of 10,000 units. And it never gets in the
-              way.
+              {t.description}
             </p>
             <p className="text-sm italic text-muted-foreground">
-              Start with{" "}
+              {t.startBefore}
               <Link
                 to="/white-paper"
                 className="text-primary underline-offset-4 transition-colors duration-200 hover:underline focus-visible:underline focus-visible:outline-none"
                 data-ocid="landing.hero.white_paper_link"
               >
-                the whitepaper
+                {t.startLink}
               </Link>
-              .
+              {t.startAfter}
             </p>
           </motion.div>
 
@@ -167,7 +167,7 @@ export function HeroSection({ id }: HeroSectionProps) {
               <img
                 key={badge.src}
                 src={badge.src}
-                alt={badge.alt}
+                alt={t[badge.altKey]}
                 className={`${badge.sizeClass} w-auto object-contain ${badge.opacityClass} transition-opacity duration-200 hover:opacity-100 ${badge.rounded ? "rounded" : ""}`}
                 loading="eager"
                 decoding="async"

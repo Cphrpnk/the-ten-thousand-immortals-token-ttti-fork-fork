@@ -7,8 +7,6 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
-import type { ExternalBlob } from "@caffeineai/object-storage";
-export type { ExternalBlob } from "@caffeineai/object-storage";
 export interface Account {
     owner: Principal;
     subaccount?: Subaccount;
@@ -92,13 +90,6 @@ export interface ArchiveInfo {
     canister_id: Principal;
     start: bigint;
 }
-export type BalanceResult = {
-    __kind__: "Ok";
-    Ok: TokenBalance;
-} | {
-    __kind__: "Err";
-    Err: WalletError;
-};
 export interface BalanceSnapshot {
     decimals: number;
     totalSupply: bigint;
@@ -110,12 +101,26 @@ export interface Block {
     block: Value__1;
 }
 export type BlockIndex = bigint;
-export type BurnResult = {
+export interface BtcDepositError {
+    code: BtcDepositErrorCode;
+    message: string;
+}
+export interface BtcDepositInfo {
+    depositMinSats: bigint;
+    suggestedPollSeconds: bigint;
+    checkFeeSats: bigint;
+    infoFetchedAt?: Timestamp;
+    minterCanisterId: Principal;
+    ckbtcLedgerId: Principal;
+    purchaseFeeBps: bigint;
+    minConfirmations: bigint;
+}
+export type BtcDepositResult = {
     __kind__: "Ok";
-    Ok: bigint;
+    Ok: DepositTracking;
 } | {
     __kind__: "Err";
-    Err: TransferError;
+    Err: BtcDepositError;
 };
 export interface Cell {
     value: Value__2;
@@ -125,16 +130,35 @@ export interface Conversion {
     id: bigint;
     status: ConversionStatus;
     depositor: Principal;
+    feeAmount?: bigint;
+    netAmount?: bigint;
+    feeBps: bigint;
     usedFallback: boolean;
     priceUsdE8: bigint;
     minted: bigint;
     recipient: Account;
+    paymentBlock?: bigint;
     message?: string;
     timestamp: Timestamp__1;
+    payAmount: bigint;
     tttiAmount: bigint;
+    mintBlock?: bigint;
+    payToken: PayToken;
     icpAmount: bigint;
     forward: ForwardStatus;
     fromCollector: bigint;
+}
+export interface CyclesStatus {
+    withdrawableExcessE8s: bigint;
+    withdrawalAllowed: boolean;
+    lastTopUp?: TopUpRecord;
+    reserveFloorE8s: bigint;
+    reserveAccount: Account;
+    reserveBalanceE8s: bigint;
+    withdrawals: Array<ReserveWithdrawal>;
+    withdrawalBlockedReason?: WithdrawalBlockedReason;
+    cyclesBalance: bigint;
+    topUpThreshold: bigint;
 }
 export interface DataCertificate {
     certificate: Uint8Array;
@@ -151,6 +175,60 @@ export type DeliveryAddressResult = {
     __kind__: "Err";
     Err: DeliveryAddressError;
 };
+export interface DepositEntry {
+    btcDetectedSats: bigint;
+    refundedSats: bigint;
+    ckbtcMintedSats: bigint;
+    errorMessage?: string;
+    detectedAt: Timestamp;
+    errorKind?: DepositErrorKind;
+    updatedAt: Timestamp;
+    stage: DepositStage;
+    ckbtcPendingSats: bigint;
+    index: bigint;
+    conversionId?: bigint;
+    tttiDelivered: bigint;
+    ckbtcMintBlockIndex?: bigint;
+    btcTxids: Array<string>;
+}
+export type DepositStage = {
+    __kind__: "refunded";
+    refunded: null;
+} | {
+    __kind__: "minted";
+    minted: null;
+} | {
+    __kind__: "error";
+    error: null;
+} | {
+    __kind__: "addressShown";
+    addressShown: null;
+} | {
+    __kind__: "delivered";
+    delivered: null;
+} | {
+    __kind__: "depositDetected";
+    depositDetected: null;
+} | {
+    __kind__: "pendingRate";
+    pendingRate: null;
+} | {
+    __kind__: "confirming";
+    confirming: {
+        required: bigint;
+        current: bigint;
+    };
+};
+export interface DepositTracking {
+    kind: DepositKind;
+    createdAt: Timestamp;
+    errorMessage?: string;
+    errorKind?: DepositErrorKind;
+    stage: DepositStage;
+    lastCheckedAt?: Timestamp;
+    btcAddress: string;
+    deposits: Array<DepositEntry>;
+}
 export type Error_ = {
     __kind__: "FrontendOriginsNotConfigured";
     FrontendOriginsNotConfigured: null;
@@ -261,12 +339,13 @@ export interface HttpRequestResult {
     headers: Array<HttpHeader>;
 }
 export interface IcpPrice {
-    status: OracleStatus;
+    lastSuccessAt?: Timestamp;
+    fetchedAt: Timestamp;
     source: PriceSource;
-    usdMicro: bigint;
-    updatedAt: Timestamp__1;
-    stale: boolean;
+    usable: boolean;
     usdE8: bigint;
+    lastError?: PriceError;
+    validUntil: Timestamp;
 }
 export interface IndexApprove {
     fee?: Tokens;
@@ -360,19 +439,31 @@ export type MetadataValue = {
     __kind__: "Text";
     Text: string;
 };
-export interface OriginalDocument {
-    blob: ExternalBlob;
-    mimeType: string;
-    filename: string;
+export interface MyBtcDeposits {
+    wallet?: DepositTracking;
+    purchase?: DepositTracking;
 }
-export interface PreparedTransfer {
-    to: Account;
-    fee: bigint;
-    from: Account;
-    memo?: Uint8Array;
-    createdAt: Timestamp__1;
-    ledger: Principal;
-    amount: bigint;
+export interface PayTokenStatus {
+    decimals: number;
+    token: PayToken;
+    buyerPriceUsd: bigint;
+    ledgerCanisterId: Principal;
+    minimumUsdE8: bigint;
+    feeBps: bigint;
+    priceUsdE8: bigint;
+    ledgerFee: bigint;
+    priceSource: PriceSource;
+    priceUsable: boolean;
+    fundsCycles: boolean;
+    priceValidUntil: Timestamp;
+    priceFetchedAt: Timestamp;
+    treasuryConfigured: boolean;
+    liveRate?: bigint;
+    symbol: string;
+}
+export interface PriceError {
+    at: Timestamp;
+    message: string;
 }
 export type PriceResult = {
     __kind__: "Ok";
@@ -382,6 +473,7 @@ export type PriceResult = {
     Err: string;
 };
 export interface PublicTreasuryInfo {
+    tokenAccounts: Array<TokenAccountInfo>;
     icpAccount: Account;
 }
 export interface PurchaseAcknowledgement {
@@ -394,6 +486,12 @@ export interface PurchaseError {
     conversion?: Conversion;
 }
 export type PurchaseErrorCode = {
+    __kind__: "insufficientBalance";
+    insufficientBalance: {
+        token: PayToken;
+        balance: bigint;
+    };
+} | {
     __kind__: "saleComplete";
     saleComplete: null;
 } | {
@@ -401,13 +499,21 @@ export type PurchaseErrorCode = {
     salesPaused: null;
 } | {
     __kind__: "priceUnavailable";
-    priceUnavailable: null;
-} | {
-    __kind__: "icpLedgerError";
-    icpLedgerError: null;
+    priceUnavailable: {
+        token: PayToken;
+    };
 } | {
     __kind__: "deliveryFailedRefunded";
     deliveryFailedRefunded: null;
+} | {
+    __kind__: "ledgerMismatch";
+    ledgerMismatch: {
+        token: PayToken;
+        expectedDecimals: number;
+        actualDecimals: number;
+        expectedFee: bigint;
+        actualFee: bigint;
+    };
 } | {
     __kind__: "belowMinimum";
     belowMinimum: {
@@ -421,29 +527,39 @@ export type PurchaseErrorCode = {
     __kind__: "deliveryFailedRefundFailed";
     deliveryFailedRefundFailed: null;
 } | {
+    __kind__: "tokenNotConfigured";
+    tokenNotConfigured: {
+        token: PayToken;
+    };
+} | {
     __kind__: "anonymousCaller";
     anonymousCaller: null;
 } | {
     __kind__: "aboveRemaining";
     aboveRemaining: {
-        maximumIcpE8s: bigint;
+        token: PayToken;
+        maximumPayAmount: bigint;
         maximumTtti: bigint;
         requestedTtti: bigint;
     };
 } | {
-    __kind__: "insufficientIcp";
-    insufficientIcp: {
-        balance: bigint;
+    __kind__: "ledgerError";
+    ledgerError: {
+        token: PayToken;
     };
 } | {
     __kind__: "invalidAmount";
     invalidAmount: null;
+} | {
+    __kind__: "purchaseInProgress";
+    purchaseInProgress: null;
 } | {
     __kind__: "acknowledgementRequired";
     acknowledgementRequired: null;
 } | {
     __kind__: "approvalMissing";
     approvalMissing: {
+        token: PayToken;
         allowance: bigint;
     };
 };
@@ -454,41 +570,40 @@ export type PurchaseResult = {
     __kind__: "Err";
     Err: PurchaseError;
 };
-export type Result = {
-    __kind__: "ok";
-    ok: SetupStatusView;
-} | {
-    __kind__: "err";
-    err: SetupError;
-};
-export type Result_1 = {
+export interface ReserveWithdrawal {
+    blockIndex: bigint;
+    timestamp: Timestamp;
+    amountE8s: bigint;
+}
+export interface Result {
+    hasMore: boolean;
+    rows: Array<Array<Cell>>;
+}
+export type Result__1 = {
     __kind__: "ok";
     ok: null;
 } | {
     __kind__: "err";
     err: Error_;
 };
-export interface Result__1 {
-    hasMore: boolean;
-    rows: Array<Array<Cell>>;
-}
 export interface SaleStatus {
-    priceUpdatedAt: Timestamp__1;
     buyerPriceUsd: bigint;
     minPurchase: bigint;
     tokenPriceUsd: bigint;
     salesPaused: boolean;
-    priceAgeSeconds?: bigint;
     priceUsdE8: bigint;
     sold: bigint;
     reserved: bigint;
     cyclesFeeBps: bigint;
-    maxPriceAgeSeconds: bigint;
+    payTokens: Array<PayTokenStatus>;
     totalSupply: bigint;
     priceSource: PriceSource;
     available: bigint;
     complete: boolean;
+    priceUsable: boolean;
     feeAccountBalance: bigint;
+    priceValidUntil: Timestamp;
+    priceFetchedAt: Timestamp;
     liveRate?: bigint;
     maxSupply: bigint;
     mintableRemaining: bigint;
@@ -500,10 +615,6 @@ export type SetFeeResult = {
     __kind__: "err";
     err: string;
 };
-export interface SetupStatusView {
-    status: SetupStatus;
-    updatedAt?: Timestamp;
-}
 export interface SnapshotEntry {
     deliveryAddress?: Account;
     balance: bigint;
@@ -526,45 +637,84 @@ export interface TechnicalDetails {
     minPurchase: bigint;
     tokenPriceUsd: bigint;
     excessPaymentHandling: string;
+    controllers?: Array<Principal>;
     ledgerCanisterId: Principal;
+    moduleHash?: string;
     standards: Array<string>;
     cyclesFeeBps: bigint;
+    payTokens: Array<PayTokenStatus>;
     totalSupply: bigint;
+    reserveFloorE8s: bigint;
     transferFee: bigint;
+    legacyBlockBoundary: bigint;
     tokenSymbol: string;
     roundingRule: string;
     feeAccountBalance: bigint;
+    reserveRule: string;
     tokenName: string;
     icpLedgerCanisterId: Principal;
     smallestUnit: bigint;
+    ckbtcMinterId: Principal;
     oracleSources: Array<string>;
     maxSupply: bigint;
     feeAccount: Account;
     deliveryOrder: string;
     maxRateAgeSeconds: bigint;
+    canisterInfoFetchedAt?: bigint;
     refreshPolicy: string;
+    cyclesReserveAccount: Account;
 }
 export type Timestamp = bigint;
 export type Timestamp__1 = bigint;
-export interface TokenBalance {
-    token: TokenDescriptor;
-    balance?: bigint;
+export interface TokenAccountInfo {
+    token: PayToken;
+    account?: Account;
 }
-export interface TokenDescriptor {
-    fee: bigint;
-    decimals: number;
-    name: string;
-    symbol: string;
-    canisterId: Principal;
-}
-export type TokenResult = {
+export type TokenAccountResult = {
     __kind__: "Ok";
-    Ok: TokenDescriptor;
+    Ok: TokenAccountInfo;
 } | {
     __kind__: "Err";
-    Err: WalletError;
+    Err: string;
+};
+export interface TokenPrice {
+    lastSuccessAt?: Timestamp;
+    token: PayToken;
+    fetchedAt: Timestamp;
+    source: PriceSource;
+    usable: boolean;
+    pair: string;
+    usdE8: bigint;
+    lastError?: PriceError;
+    validUntil: Timestamp;
+}
+export type TokenPriceResult = {
+    __kind__: "Ok";
+    Ok: TokenPrice;
+} | {
+    __kind__: "Err";
+    Err: string;
 };
 export type Tokens = bigint;
+export interface TopUpRecord {
+    status: TopUpStatus;
+    icpE8s: bigint;
+    blockIndex: bigint;
+    timestamp: Timestamp;
+    lastError?: string;
+}
+export type TopUpStatus = {
+    __kind__: "transferred";
+    transferred: null;
+} | {
+    __kind__: "notified";
+    notified: {
+        cycles: bigint;
+    };
+} | {
+    __kind__: "failed";
+    failed: string;
+};
 export interface TransactionWithId {
     id: BlockIndex;
     transaction: IndexTransaction;
@@ -676,13 +826,6 @@ export type TransferFromResult = {
 };
 export type TransferResult = {
     __kind__: "Ok";
-    Ok: PreparedTransfer;
-} | {
-    __kind__: "Err";
-    Err: WalletError;
-};
-export type TransferResult__1 = {
-    __kind__: "Ok";
     Ok: bigint;
 } | {
     __kind__: "Err";
@@ -707,9 +850,6 @@ export type TreasuryConfigResult = {
     __kind__: "Err";
     Err: string;
 };
-export interface UserProfile {
-    name: string;
-}
 export type Value__1 = {
     __kind__: "Int";
     Int: bigint;
@@ -748,24 +888,45 @@ export type Value__2 = {
     __kind__: "text";
     text: string;
 };
-export type WalletError = {
-    __kind__: "InvalidAmount";
-    InvalidAmount: null;
+export type WithdrawReserveResult = {
+    __kind__: "ok";
+    ok: bigint;
 } | {
-    __kind__: "InvalidPrincipal";
-    InvalidPrincipal: null;
+    __kind__: "busy";
+    busy: null;
 } | {
-    __kind__: "LedgerUnavailable";
-    LedgerUnavailable: Principal;
+    __kind__: "amountExceedsExcess";
+    amountExceedsExcess: {
+        withdrawableE8s: bigint;
+    };
 } | {
-    __kind__: "TransferFailed";
-    TransferFailed: string;
+    __kind__: "topUpPendingNotify";
+    topUpPendingNotify: null;
 } | {
-    __kind__: "UnknownToken";
-    UnknownToken: Principal;
+    __kind__: "cyclesBelowThreshold";
+    cyclesBelowThreshold: {
+        cyclesBalance: bigint;
+        topUpThreshold: bigint;
+    };
+} | {
+    __kind__: "noExcess";
+    noExcess: null;
+} | {
+    __kind__: "ledgerError";
+    ledgerError: string;
+} | {
+    __kind__: "treasuryNotConfigured";
+    treasuryNotConfigured: null;
 };
 export enum AcknowledgementError {
     anonymousCaller = "anonymousCaller"
+}
+export enum BtcDepositErrorCode {
+    noAddressYet = "noAddressYet",
+    minterUnavailable = "minterUnavailable",
+    anonymousCaller = "anonymousCaller",
+    purchaseInProgress = "purchaseInProgress",
+    acknowledgementRequired = "acknowledgementRequired"
 }
 export enum ConversionStatus {
     refundFailed = "refundFailed",
@@ -780,36 +941,42 @@ export enum DeliveryAddressErrorCode {
     anonymousPrincipal = "anonymousPrincipal",
     accountIdentifier = "accountIdentifier"
 }
+export enum DepositErrorKind {
+    refundFailed = "refundFailed",
+    unrecoverable = "unrecoverable",
+    other = "other",
+    minterUnavailable = "minterUnavailable",
+    tainted = "tainted",
+    valueTooSmall = "valueTooSmall"
+}
+export enum DepositKind {
+    wallet = "wallet",
+    purchase = "purchase"
+}
 export enum HolderKind {
     feeCollector = "feeCollector",
     holder = "holder"
 }
-export enum OracleStatus {
-    ok = "ok",
-    stale = "stale",
-    unavailable = "unavailable"
+export enum PayToken {
+    icp = "icp",
+    ckbtc = "ckbtc",
+    ckusdc = "ckusdc",
+    ckusdt = "ckusdt"
 }
 export enum PriceSource {
     none = "none",
     coinbase = "coinbase",
     coingecko = "coingecko"
 }
-export enum SetupError {
-    anonymousCaller = "anonymousCaller"
-}
-export enum SetupOutcome {
-    skipped = "skipped",
-    completed = "completed"
-}
-export enum SetupStatus {
-    notStarted = "notStarted",
-    skipped = "skipped",
-    completed = "completed"
-}
 export enum UserRole {
     admin = "admin",
     user = "user",
     guest = "guest"
+}
+export enum WithdrawalBlockedReason {
+    cyclesBelowThreshold = "cyclesBelowThreshold",
+    topUpRunning = "topUpRunning",
+    topUpAwaitingConfirmation = "topUpAwaitingConfirmation"
 }
 export interface backendInterface {
     acceptPurchaseAcknowledgements(): Promise<{
@@ -820,30 +987,33 @@ export interface backendInterface {
         err: AcknowledgementError;
     }>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
-    burn(from: Account, amount: bigint): Promise<BurnResult>;
+    checkBtcPurchaseDeposit(): Promise<BtcDepositResult>;
+    checkBtcWalletDeposit(): Promise<BtcDepositResult>;
     clearDeliveryAddress(): Promise<boolean>;
     convertDeposit(recipient: Account | null, icpAmount: bigint): Promise<PurchaseResult>;
-    execute(qJson: string): Promise<Result__1>;
+    convertDepositWith(token: PayToken, recipient: Account | null, payAmount: bigint, tttiTarget: bigint | null): Promise<PurchaseResult>;
+    execute(qJson: string): Promise<Result>;
     exportBalanceSnapshot(): Promise<BalanceSnapshot>;
     getApiDoc(): Promise<string>;
-    getBalance(canisterId: Principal, account: Account): Promise<BalanceResult>;
+    getBtcDepositInfo(): Promise<BtcDepositInfo>;
+    getBtcPurchaseAddress(): Promise<BtcDepositResult>;
+    getBtcWalletAddress(): Promise<BtcDepositResult>;
     getBurnAccount(): Promise<Account>;
-    getCallerIcpBalance(): Promise<bigint>;
-    getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getCanisterPrincipal(): Promise<Principal>;
     getConversions(): Promise<Array<Conversion>>;
+    getCyclesStatus(): Promise<CyclesStatus>;
     getDeliveryAddress(): Promise<Account | null>;
     getFeeCollector(): Promise<FeeCollectorInfo>;
     getIcpPrice(): Promise<IcpPrice>;
     getLegacyBlockInfo(): Promise<LegacyBlockInfo>;
+    getMyBtcDeposits(): Promise<MyBtcDeposits>;
+    getMyConversions(): Promise<Array<Conversion>>;
     getMyPurchaseAcknowledgement(): Promise<PurchaseAcknowledgement>;
-    getMySetupStatus(): Promise<SetupStatusView>;
-    getOriginalWhitePaper(): Promise<OriginalDocument | null>;
     getPublicTreasuryInfo(): Promise<PublicTreasuryInfo | null>;
     getSaleStatus(): Promise<SaleStatus>;
     getTechnicalDetails(): Promise<TechnicalDetails>;
-    getTokenMetadata(canisterId: Principal): Promise<TokenResult>;
+    getTokenPrices(): Promise<Array<TokenPrice>>;
     getTreasuryConfig(): Promise<TreasuryConfig | null>;
     get_account_transactions(args: GetAccountTransactionsArgs): Promise<GetTransactionsResult>;
     get_fee(): Promise<bigint>;
@@ -859,7 +1029,7 @@ export interface backendInterface {
     icrc1_supported_standards(): Promise<Array<SupportedStandard>>;
     icrc1_symbol(): Promise<string>;
     icrc1_total_supply(): Promise<bigint>;
-    icrc1_transfer(args: TransferArgs): Promise<TransferResult__1>;
+    icrc1_transfer(args: TransferArgs): Promise<TransferResult>;
     icrc2_allowance(args: AllowanceArgs): Promise<Allowance>;
     icrc2_approve(args: ApproveArgs): Promise<ApproveResult>;
     icrc2_transfer_from(args: TransferFromArgs): Promise<TransferFromResult>;
@@ -869,18 +1039,16 @@ export interface backendInterface {
     icrc3_supported_block_types(): Promise<Array<SupportedBlockType>>;
     isCallerAdmin(): Promise<boolean>;
     ledger_id(): Promise<Principal>;
-    listTokens(): Promise<Array<TokenDescriptor>>;
     list_subaccounts(args: ListSubaccountsArgs): Promise<Array<Subaccount>>;
-    prepareTransfer(canisterId: Principal, from: Account, to: Account, amount: bigint, memo: Uint8Array | null): Promise<TransferResult>;
-    publishOriginalWhitePaper(document_: OriginalDocument): Promise<void>;
     refreshIcpPrice(): Promise<PriceResult>;
-    saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    refreshTokenPrice(token: PayToken): Promise<TokenPriceResult>;
     schema(): Promise<string>;
     setDeliveryAddress(principalText: string): Promise<DeliveryAddressResult>;
-    setMySetupStatus(outcome: SetupOutcome): Promise<Result>;
+    setPayTokenAccount(token: PayToken, account: Account): Promise<TokenAccountResult>;
     setSalesPaused(paused: boolean): Promise<void>;
     setTreasuryConfig(config: TreasuryConfig): Promise<TreasuryConfigResult>;
     set_fee(newFee: bigint): Promise<SetFeeResult>;
     status(): Promise<IndexStatus>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
+    withdrawReserveExcess(amount: bigint): Promise<WithdrawReserveResult>;
 }

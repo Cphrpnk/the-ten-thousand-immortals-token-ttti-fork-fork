@@ -2,23 +2,45 @@ import { loadConfig } from "@caffeineai/core-infrastructure";
 import { Actor, HttpAgent, type Identity } from "@icp-sdk/core/agent";
 import type { IDL } from "@icp-sdk/core/candid";
 import type { Principal } from "@icp-sdk/core/principal";
+import { PayToken } from "../backend";
 import type { ApproveError } from "../backend";
-import { ICP_FEE_E8S, formatIcp } from "./token";
+import { MESSAGES_TEXT } from "../i18n/common/messages";
+import { pickDict } from "../i18n/core/dict";
+import {
+  ICP_FEE_E8S,
+  ICP_LEDGER_ID,
+  PAY_TOKENS,
+  type PayTokenDescriptor,
+  formatUnits,
+} from "./token";
 
-/** Mainnet ICP ledger. Purchases are approved here, never on TTTI-T. */
-export const ICP_LEDGER_CANISTER_ID = "ryjl3-tyaaa-aaaaa-aaaba-cai";
+/** Mainnet ICP ledger. Purchases are approved on the pay token's ledger. */
+export const ICP_LEDGER_CANISTER_ID = ICP_LEDGER_ID;
 
 /** Allowance to grant: the purchase plus the transfer_from fee. */
-export function approveAmount(purchaseE8s: bigint): bigint {
-  return purchaseE8s + ICP_FEE_E8S;
+export function approveAmount(
+  purchaseE8s: bigint,
+  ledgerFee: bigint = ICP_FEE_E8S,
+): bigint {
+  return purchaseE8s + ledgerFee;
 }
 
 /**
- * ICP balance needed for a purchase: the purchase, the transfer_from fee
+ * Balance needed for a purchase: the purchase, the transfer_from fee
  * covered by the allowance, and the fee charged by the approve itself.
  */
+export function requiredBalance(amount: bigint, ledgerFee: bigint): bigint {
+  return amount + 2n * ledgerFee;
+}
+
+/** ICP balance needed for an ICP purchase (purchase + 2 × 0.0001 ICP). */
 export function requiredIcpBalance(purchaseE8s: bigint): bigint {
-  return purchaseE8s + 2n * ICP_FEE_E8S;
+  return requiredBalance(purchaseE8s, ICP_FEE_E8S);
+}
+
+/** Balance needed for a purchase in the given pay token. */
+export function requiredTokenBalance(token: PayToken, amount: bigint): bigint {
+  return requiredBalance(amount, PAY_TOKENS[token].fee);
 }
 
 type Opt<T> = [] | [T];
@@ -52,7 +74,13 @@ export type RawApproveError =
 
 export type RawApproveResult = { Ok: bigint } | { Err: RawApproveError };
 
-/** Raw-candid actor surface for the ICRC-2 calls the app makes on ICP. */
+export type RawMetadataValue =
+  | { Nat: bigint }
+  | { Int: bigint }
+  | { Text: string }
+  | { Blob: Uint8Array };
+
+/** Raw-candid actor surface for the ICRC calls the app makes on ledgers. */
 export interface IcpLedgerActor {
   icrc2_approve: (args: RawApproveArgs) => Promise<RawApproveResult>;
   icrc2_allowance: (args: {
@@ -60,6 +88,8 @@ export interface IcpLedgerActor {
     spender: RawAccount;
   }) => Promise<{ allowance: bigint; expires_at: Opt<bigint> }>;
   icrc1_balance_of: (account: RawAccount) => Promise<bigint>;
+  icrc1_metadata: () => Promise<Array<[string, RawMetadataValue]>>;
+  icrc1_fee: () => Promise<bigint>;
 }
 
 /** Minimal ICRC-1/ICRC-2 interface; uses the injected IDL so Plug can use it. */
@@ -101,22 +131,49 @@ export const icpLedgerIdlFactory: IDL.InterfaceFactory = ({ IDL: I }) => {
       ["query"],
     ),
     icrc1_balance_of: I.Func([Account], [I.Nat], ["query"]),
+    icrc1_metadata: I.Func(
+      [],
+      [
+        I.Vec(
+          I.Tuple(
+            I.Text,
+            I.Variant({
+              Nat: I.Nat,
+              Int: I.Int,
+              Text: I.Text,
+              Blob: I.Vec(I.Nat8),
+            }),
+          ),
+        ),
+      ],
+      ["query"],
+    ),
+    icrc1_fee: I.Func([], [I.Nat], ["query"]),
   });
 };
 
-/** Build ICRC-2 approve args granting `spender` the purchase plus fee. */
+/** Lifetime of a purchase approval: 15 minutes in nanoseconds. */
+export const APPROVAL_TTL_NS = 15n * 60n * 1_000_000_000n;
+
+const ICP_DESCRIPTOR: PayTokenDescriptor = PAY_TOKENS[PayToken.icp];
+
+/**
+ * Build ICRC-2 approve args granting `spender` the purchase plus the
+ * ledger fee, expiring 15 minutes from now. Defaults to the ICP fee.
+ */
 export function buildApproveArgs(
   spender: Principal,
-  purchaseE8s: bigint,
+  amount: bigint,
+  ledgerFee: bigint = ICP_FEE_E8S,
 ): RawApproveArgs {
   return {
-    fee: [ICP_FEE_E8S],
+    fee: [ledgerFee],
     memo: [],
     from_subaccount: [],
     created_at_time: [],
-    amount: approveAmount(purchaseE8s),
+    amount: approveAmount(amount, ledgerFee),
     expected_allowance: [],
-    expires_at: [],
+    expires_at: [BigInt(Date.now()) * 1_000_000n + APPROVAL_TTL_NS],
     spender: { owner: spender, subaccount: [] },
   };
 }
@@ -158,69 +215,130 @@ function toTypedError(error: RawApproveError): ApproveError {
   };
 }
 
-/** Clear English message for every ICRC-2 ApproveError variant. */
-export function describeApproveError(error: ApproveError): string {
+/** Message in the active language for every ICRC-2 ApproveError variant, token-named. */
+export function describeApproveError(
+  error: ApproveError,
+  token: PayTokenDescriptor = ICP_DESCRIPTOR,
+): string {
+  const { symbol, decimals, fee } = token;
+  const t = pickDict(MESSAGES_TEXT);
+  const amount = (value: bigint) => `${formatUnits(value, decimals)} ${symbol}`;
   switch (error.__kind__) {
     case "InsufficientFunds":
-      return `Not enough ICP to approve this purchase. Your balance is ${formatIcp(error.InsufficientFunds.balance)} ICP; the approval fee is 0.0001 ICP.`;
+      return t.approveErrInsufficientFunds(
+        symbol,
+        amount(error.InsufficientFunds.balance),
+        amount(fee),
+      );
     case "BadFee":
-      return `The ICP ledger expects a fee of ${formatIcp(error.BadFee.expected_fee)} ICP. Please try again.`;
+      return t.approveErrBadFee(symbol, amount(error.BadFee.expected_fee));
     case "AllowanceChanged":
-      return `Your existing ICP allowance changed to ${formatIcp(error.AllowanceChanged.current_allowance)} ICP while approving. Please try again.`;
+      return t.approveErrAllowanceChanged(
+        symbol,
+        amount(error.AllowanceChanged.current_allowance),
+      );
     case "Expired":
     case "ExpiredFrom":
-      return "The approval expired before the ledger processed it. Please approve again.";
+      return t.approveErrExpired;
     case "TooOld":
-      return "The approval request is too old. Check your device clock and try again.";
+      return t.approveErrTooOld;
     case "CreatedInFuture":
-      return "The approval timestamp is ahead of the ledger clock. Check your device clock and try again.";
+      return t.approveErrCreatedInFuture;
     case "Duplicate":
-      return `This approval was already submitted (block ${error.Duplicate.duplicate_of.toString()}). You can continue with the purchase.`;
+      return t.approveErrDuplicate(error.Duplicate.duplicate_of.toString());
     case "TemporarilyUnavailable":
-      return "The ICP ledger is temporarily unavailable. Please try again in a moment.";
+      return t.approveErrUnavailable(symbol);
     case "GenericError":
-      return `The ICP ledger rejected the approval: ${error.GenericError.message}`;
+      return t.approveErrGeneric(symbol, error.GenericError.message);
   }
 }
 
-export function mapApproveResult(result: RawApproveResult): ApproveOutcome {
+export function mapApproveResult(
+  result: RawApproveResult,
+  token: PayTokenDescriptor = ICP_DESCRIPTOR,
+): ApproveOutcome {
   if ("Ok" in result) return { ok: true, blockIndex: result.Ok };
-  return { ok: false, message: describeApproveError(toTypedError(result.Err)) };
+  return {
+    ok: false,
+    message: describeApproveError(toTypedError(result.Err), token),
+  };
 }
 
-/** Turn an agent/wallet exception into a readable message. */
-export function describeCallFailure(error: unknown): string {
+/** Turn an agent/wallet exception into a readable, token-named message. */
+export function describeCallFailure(error: unknown, symbol = "ICP"): string {
+  const t = pickDict(MESSAGES_TEXT);
   const text = error instanceof Error ? error.message : String(error ?? "");
   if (/reject|denied|declin|cancel/i.test(text)) {
-    return "The approval was cancelled in your wallet.";
+    return t.approveCancelled;
   }
   if (/fetch|network|timeout|timed out/i.test(text)) {
-    return "Could not reach the ICP ledger. Check your connection and try again.";
+    return t.approveNetwork(symbol);
   }
-  return "The ICP approval could not be completed. Please try again.";
+  return t.approveFailed(symbol);
 }
 
-/** Approve with an Internet Identity by calling the ICP ledger directly. */
-export async function approveWithIdentity(
+/** Agent for direct ledger calls; anonymous when no identity is given. */
+export async function createLedgerAgent(
+  identity?: Identity,
+): Promise<HttpAgent> {
+  const config = await loadConfig();
+  const agent = new HttpAgent({ identity, host: config.backend_host });
+  if (config.backend_host?.includes("localhost")) {
+    await agent.fetchRootKey().catch(() => undefined);
+  }
+  return agent;
+}
+
+/** Raw ICRC actor for any ledger canister. */
+export async function createLedgerActor(
+  canisterId: string,
+  identity?: Identity,
+): Promise<IcpLedgerActor> {
+  const agent = await createLedgerAgent(identity);
+  return Actor.createActor<IcpLedgerActor>(icpLedgerIdlFactory, {
+    agent,
+    canisterId,
+  });
+}
+
+/**
+ * Approve `spender` on the pay token's own ledger for `amount` plus that
+ * ledger's fee, signed by an Internet Identity.
+ */
+export async function approveTokenWithIdentity(
+  identity: Identity,
+  spender: Principal,
+  token: PayToken,
+  amount: bigint,
+): Promise<ApproveOutcome> {
+  const descriptor = PAY_TOKENS[token];
+  try {
+    const ledger = await createLedgerActor(
+      descriptor.ledgerCanisterId,
+      identity,
+    );
+    const result = await ledger.icrc2_approve(
+      buildApproveArgs(spender, amount, descriptor.fee),
+    );
+    return mapApproveResult(result, descriptor);
+  } catch (error) {
+    return {
+      ok: false,
+      message: describeCallFailure(error, descriptor.symbol),
+    };
+  }
+}
+
+/** Approve with an Internet Identity on the ICP ledger. */
+export function approveWithIdentity(
   identity: Identity,
   spender: Principal,
   purchaseE8s: bigint,
 ): Promise<ApproveOutcome> {
-  try {
-    const config = await loadConfig();
-    const agent = new HttpAgent({ identity, host: config.backend_host });
-    if (config.backend_host?.includes("localhost")) {
-      await agent.fetchRootKey().catch(() => undefined);
-    }
-    const ledger = Actor.createActor<IcpLedgerActor>(icpLedgerIdlFactory, {
-      agent,
-      canisterId: ICP_LEDGER_CANISTER_ID,
-    });
-    const result = await ledger.icrc2_approve(
-      buildApproveArgs(spender, purchaseE8s),
-    );
-    return mapApproveResult(result);
-  } catch (error) {
-    return { ok: false, message: describeCallFailure(error) };
-  }
+  return approveTokenWithIdentity(
+    identity,
+    spender,
+    ICP_DESCRIPTOR.token,
+    purchaseE8s,
+  );
 }

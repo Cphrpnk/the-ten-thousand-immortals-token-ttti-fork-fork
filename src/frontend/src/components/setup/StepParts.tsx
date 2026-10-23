@@ -1,5 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { useDict } from "../../i18n/core";
+import { SETUP_TEXT } from "../../i18n/pages/setup";
 import { copyToClipboard } from "../../lib/onramper";
 import { truncateAccountText } from "../../lib/token";
 import { DialogTitle } from "../ui/dialog";
@@ -16,6 +18,7 @@ export const QUIET_BUTTON_CLASS =
 
 /** Segmented 3-step indicator with a mono counter. */
 export function StepIndicator({ step }: { step: number }) {
+  const t = useDict(SETUP_TEXT);
   return (
     <div
       className="flex flex-1 items-center gap-3"
@@ -33,7 +36,7 @@ export function StepIndicator({ step }: { step: number }) {
         ))}
       </div>
       <span className="font-mono text-xs tabular-nums text-muted-foreground">
-        <span className="sr-only">Step </span>
+        <span className="sr-only">{t.stepSr}</span>
         {step} / {STEP_COUNT}
       </span>
     </div>
@@ -58,6 +61,7 @@ export function AddressChip({
   ocid: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const t = useDict(SETUP_TEXT);
 
   useEffect(() => {
     if (!copied) return;
@@ -76,7 +80,7 @@ export function AddressChip({
         onClick={handleCopy}
         className="address-chip max-w-full text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         data-copied={copied}
-        aria-label="Copy wallet address"
+        aria-label={t.copyAddressAria}
         title={address}
         data-ocid={ocid}
       >
@@ -93,7 +97,7 @@ export function AddressChip({
             className="inline-block animate-copied-pop text-success motion-reduce:animate-none"
             data-ocid={`${ocid}.success_state`}
           >
-            Address copied
+            {t.addressCopied}
           </span>
         ) : null}
       </span>
@@ -103,6 +107,7 @@ export function AddressChip({
 
 /** Small pulsing line shown while the ICP balance is polled. */
 export function WaitingForIcp() {
+  const t = useDict(SETUP_TEXT);
   return (
     <p
       className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
@@ -112,7 +117,7 @@ export function WaitingForIcp() {
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 motion-reduce:animate-none" />
         <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
       </span>
-      Waiting for ICP
+      {t.waitingForIcp}
     </p>
   );
 }

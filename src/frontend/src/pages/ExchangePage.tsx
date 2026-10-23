@@ -1,24 +1,37 @@
-import { Principal } from "@icp-sdk/core/principal";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   AlertCircle,
   ArrowRight,
-  Check,
   CheckCircle2,
-  Copy,
+  Clock,
   Loader2,
   RefreshCw,
-  TrendingUp,
   Undo2,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import type { Conversion, PurchaseError, PurchaseResult } from "../backend";
-import { ConversionStatus, PriceSource } from "../backend";
+import { PayToken, PriceSource, type PurchaseResult } from "../backend";
+import { ExplorerLink } from "../components/ExplorerLink";
 import { FlatTokenIcon } from "../components/FlatTokenIcon";
+import { BtcPurchasePanel } from "../components/exchange/BtcPurchasePanel";
 import { DeliveryAddressCard } from "../components/exchange/DeliveryAddressCard";
 import { GetIcpFirstPanel } from "../components/exchange/GetIcpFirstPanel";
 import { MigrationNotice } from "../components/exchange/MigrationNotice";
+import {
+  type OrderMode,
+  OrderModeToggle,
+} from "../components/exchange/OrderModeToggle";
+import { PayTokenSelector } from "../components/exchange/PayTokenSelector";
 import { PresaleProgress } from "../components/exchange/PresaleProgress";
+import {
+  type TokenRate,
+  TokenRateCard,
+} from "../components/exchange/TokenRateCard";
+import { WalletPercentBar } from "../components/exchange/WalletPercentBar";
+import {
+  type Outcome,
+  outcomeFromResult,
+  safePurchaseMessage,
+} from "../components/exchange/purchaseOutcome";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -30,10 +43,9 @@ import {
 } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Separator } from "../components/ui/separator";
 import { Skeleton } from "../components/ui/skeleton";
 import { useBuyFunnel } from "../hooks/useBuyFunnel";
-import { useIcpApprove } from "../hooks/useIcpApprove";
+import { usePayTokenApprove } from "../hooks/useIcpApprove";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { usePlug } from "../hooks/usePlug";
 import {
@@ -42,49 +54,55 @@ import {
   usePlugPurchaseAcknowledgement,
 } from "../hooks/usePlugPurchase";
 import {
-  isSalePriceStale,
+  findPayTokenStatus,
+  formatTokenRateLine,
+  isDepositInProgress,
+  payTokenTreasuryAccount,
   useAcceptPurchaseAcknowledgements,
-  useConvertDeposit,
+  useConvertDepositWith,
   useGetDeliveryAddress,
   useGetMyPurchaseAcknowledgement,
   useGetSaleStatus,
+  useMyBtcDeposits,
   usePublicTreasuryInfo,
-  useWalletBalance,
+  useRefreshOnDepositProgress,
 } from "../hooks/useQueries";
-import { ICP_LEDGER_CANISTER_ID, requiredIcpBalance } from "../lib/icpLedger";
+import { usePayTokenBalance } from "../hooks/useWallet";
+import { SITE_TEXT } from "../i18n/common/site";
+import { useDict, useLanguage } from "../i18n/core/dict";
 import {
-  CYCLES_FEE_LABEL,
-  ICP_DECIMALS,
-  ICP_DIVISOR,
+  BUY_BTC_TEXT,
+  BUY_EXPLORER_TEXT,
+  BUY_PAGE_TEXT,
+} from "../i18n/pages/buy";
+import { requiredTokenBalance } from "../lib/icpLedger";
+import { mintBlockTarget, paymentBlockTarget } from "../lib/purchaseHistory";
+import {
   MIN_PURCHASE,
-  MIN_PURCHASE_LABEL,
-  TOKEN_PRICE_LABEL,
+  PAY_TOKENS,
+  TTTI_DECIMALS,
   TTTI_SYMBOL,
   encodeAccountText,
-  formatIcp,
+  feeLabelFor,
+  formatPayAmount,
   formatTtti,
   formatUsdE8,
-  icpForTtti,
-  parseIcp,
-  truncateAccountText,
-  tttiFromIcp,
+  minimumUsdLabel,
+  parseTtti,
+  parseUnits,
+  payForTtti,
+  tokenForWalletPercent,
+  tttiFromPay,
   tttiToUsdE8,
   unitsInputValue,
+  usePriceText,
 } from "../lib/token";
 import { cn } from "../lib/utils";
 
-const ICP_LEDGER = Principal.fromText(ICP_LEDGER_CANISTER_ID);
-const PRICE_REFUSED =
-  "Purchase refused: the ICP/USD rate could not be refreshed";
-const PRICE_REFUSED_MESSAGE = "No ICP was taken. Try again in a moment.";
-const NO_CACHED_RATE = "No ICP/USD rate cached yet";
-const ACK_REQUIRED = "Acknowledgements required";
-const DISPLAY_SYMBOL = "TTTI-T (Test)";
+const DISPLAY_SYMBOL = "TTTI-T";
 const BALANCE_POLL_MS = 5_000;
-const INSUFFICIENT_ICP = "Insufficient ICP (amount + 0.0001 fee)";
-const REFUNDED =
-  "Delivery failed — your ICP was refunded minus the 0.0001 ICP fee";
-const REFUND_FAILED = "Delivery failed and the automatic refund also failed";
+/** The backend never uses a rate beyond validUntil + 5 minutes. */
+const RATE_GRACE_MS = 5 * 60_000;
 
 /** Gold & Obsidian surface and action styles shared across this page. */
 const CARD_CLASS =
@@ -94,177 +112,38 @@ const GOLD_BUTTON =
 const OUTLINE_BUTTON =
   "rounded-lg border-gold bg-transparent text-foreground transition-smooth hover:border-gold-strong hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring";
 const AMOUNT_INPUT =
-  "h-14 border-gold bg-background/60 pr-16 font-mono text-xl tabular-nums transition-smooth focus-visible:border-gold-strong focus-visible:ring-2 focus-visible:ring-ring";
+  "h-14 border-gold bg-background/60 pr-20 font-mono text-xl tabular-nums transition-smooth focus-visible:border-gold-strong focus-visible:ring-2 focus-visible:ring-ring";
 
-/** Six mandatory acknowledgements, asked once at the account's first purchase. */
+/**
+ * Six mandatory acknowledgements, asked once at the account's first purchase.
+ * Their sentences live in BUY_PAGE_TEXT (i18n/pages/buy.ts).
+ */
 const ACKNOWLEDGEMENTS = [
-  {
-    id: "read-first",
-    text: 'I have read the "Read this first" section of the whitepaper.',
-  },
-  {
-    id: "no-rights",
-    text: "I understand that TTTI has no use, no intrinsic value and gives me no rights of any kind.",
-  },
-  {
-    id: "price-zero",
-    text: "I understand that its price can fall to zero and that nobody will support it or buy it back.",
-  },
-  {
-    id: "icp-creator",
-    text: "I understand that the ICP I pay goes to the creator, who may use it as he wishes.",
-  },
-  {
-    id: "no-profit",
-    text: "I am not relying on any promise of profit, from the creator or from anyone.",
-  },
-  {
-    id: "afford-loss",
-    text: "I am spending only what I can afford to lose entirely.",
-  },
+  { id: "read-first", textKey: "ackReadFirst" },
+  { id: "no-rights", textKey: "ackNoRights" },
+  { id: "price-zero", textKey: "ackPriceZero" },
+  { id: "icp-creator", textKey: "ackIcpCreator" },
+  { id: "no-profit", textKey: "ackNoProfit" },
+  { id: "afford-loss", textKey: "ackAffordLoss" },
 ] as const;
 type AcknowledgementId = (typeof ACKNOWLEDGEMENTS)[number]["id"];
 
-const SOURCE_LABELS: Record<PriceSource, string> = {
-  [PriceSource.coinbase]: "Coinbase",
-  [PriceSource.coingecko]: "CoinGecko",
-  [PriceSource.none]: "No live source",
-};
-
 type ActiveWallet = "plug" | "internetIdentity";
-type Notice = { title: string; message: string; refunded?: boolean };
 /** `useMax` is the input text that fills the remaining allocation. */
-type Validation = Notice & { useMax?: string };
-type Outcome =
-  | { kind: "success"; conversion: Conversion }
-  | ({ kind: "error" } & Notice);
-
-function timestampToDate(timestamp: bigint): Date | null {
-  if (timestamp <= 0n) return null;
-  const date = new Date(Number(timestamp / 1_000_000n));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function safePurchaseMessage(message: string | undefined): string {
-  if (!message || /burn/i.test(message)) {
-    return "The purchase could not be completed for this destination. Check the recipient and try again.";
-  }
-  return message;
-}
-
-function describePurchaseError(err: PurchaseError): Notice {
-  const ref = err.conversion
-    ? ` Reference: purchase #${err.conversion.id}.`
-    : "";
-  const code = err.code;
-  switch (code.__kind__) {
-    case "salesPaused":
-      return {
-        title: "Sales are paused",
-        message: safePurchaseMessage(err.message),
-      };
-    case "saleComplete":
-      return {
-        title: "Sale complete",
-        message: safePurchaseMessage(err.message),
-      };
-    case "belowMinimum":
-      return {
-        title: "Below the minimum purchase",
-        message: `The minimum is ${formatTtti(code.belowMinimum.minimumTtti)} ${DISPLAY_SYMBOL} (${MIN_PURCHASE_LABEL}); you requested ${formatTtti(code.belowMinimum.requestedTtti)} ${DISPLAY_SYMBOL}.`,
-      };
-    case "aboveRemaining":
-      return {
-        title: "Above the remaining amount",
-        message: `The maximum available is ${formatTtti(code.aboveRemaining.maximumTtti)} ${DISPLAY_SYMBOL} (${formatIcp(code.aboveRemaining.maximumIcpE8s)} ICP); you requested ${formatTtti(code.aboveRemaining.requestedTtti)} ${DISPLAY_SYMBOL}.`,
-      };
-    case "priceUnavailable":
-      return {
-        title: PRICE_REFUSED,
-        message: PRICE_REFUSED_MESSAGE,
-      };
-    case "acknowledgementRequired":
-      return {
-        title: ACK_REQUIRED,
-        message:
-          "This account has not accepted the six purchase acknowledgements. No ICP was taken.",
-      };
-    case "invalidAmount":
-      return {
-        title: "Invalid amount",
-        message: safePurchaseMessage(err.message),
-      };
-    case "insufficientIcp":
-      return {
-        title: INSUFFICIENT_ICP,
-        message: `${safePurchaseMessage(err.message)} Balance: ${formatIcp(code.insufficientIcp.balance)} ICP.`,
-      };
-    case "approvalMissing":
-      return {
-        title: "ICP approval missing",
-        message: `${safePurchaseMessage(err.message)} Current allowance: ${formatIcp(code.approvalMissing.allowance)} ICP.`,
-      };
-    case "deliveryFailedRefunded":
-      return {
-        title: REFUNDED,
-        message: safePurchaseMessage(err.message) + ref,
-        refunded: true,
-      };
-    case "deliveryFailedRefundFailed":
-      return {
-        title: REFUND_FAILED,
-        message: `${safePurchaseMessage(err.message)}${ref} Contact the team with this reference.`,
-      };
-    case "icpLedgerError":
-      return {
-        title: "ICP ledger error",
-        message: safePurchaseMessage(err.message),
-      };
-    case "anonymousCaller":
-      return {
-        title: "Sign in to buy",
-        message: safePurchaseMessage(err.message),
-      };
-    default:
-      return {
-        title: "Purchase not completed",
-        message: safePurchaseMessage(err.message),
-      };
-  }
-}
-
-function outcomeFromResult(result: PurchaseResult): Outcome {
-  if (result.__kind__ === "Err") {
-    return { kind: "error", ...describePurchaseError(result.Err) };
-  }
-  const c = result.Ok;
-  const ref = ` Reference: purchase #${c.id}.`;
-  if (c.status === ConversionStatus.completed) {
-    return { kind: "success", conversion: c };
-  }
-  if (c.status === ConversionStatus.refunded) {
-    return {
-      kind: "error",
-      title: REFUNDED,
-      message: safePurchaseMessage(c.message) + ref,
-      refunded: true,
-    };
-  }
-  if (c.status === ConversionStatus.refundFailed) {
-    return {
-      kind: "error",
-      title: REFUND_FAILED,
-      message: `${safePurchaseMessage(c.message)}${ref} Contact the team with this reference.`,
-    };
-  }
-  return {
-    kind: "error",
-    title: "Purchase failed",
-    message: safePurchaseMessage(c.message) + ref,
-  };
-}
+type Validation = { title: string; message: string; useMax?: string };
+/** What the last attempt produced; turned into text in the active language. */
+type OutcomeSource =
+  | { kind: "result"; result: PurchaseResult; token: PayToken }
+  | { kind: "approval"; token: PayToken; message: string }
+  | { kind: "thrown"; message: string | null };
 
 export function ExchangePage() {
+  const t = useDict(BUY_PAGE_TEXT);
+  const tx = useDict(BUY_EXPLORER_TEXT);
+  const tb = useDict(BUY_BTC_TEXT);
+  const { lang } = useLanguage();
+  const site = useDict(SITE_TEXT);
+  const priceStatement = usePriceText();
   const { identity } = useInternetIdentity();
   const { principal: plugPrincipal } = usePlug();
   const { openSetup } = useBuyFunnel();
@@ -280,17 +159,24 @@ export function ExchangePage() {
   const activePrincipal = plugPrincipal ?? iiPrincipal;
   const activePrincipalText = activePrincipal?.toText() ?? null;
 
+  const [token, setToken] = useState<PayToken>(PayToken.icp);
+  // BTC settles as ckBTC; the token value is set to ckBTC while BTC is chosen.
+  const [btcSelected, setBtcSelected] = useState(false);
+  const descriptor = PAY_TOKENS[token];
+  const symbol = descriptor.symbol;
+  const decimals = descriptor.decimals;
+
   const statusQuery = useGetSaleStatus();
   const status = statusQuery.data;
   const { data: publicTreasury } = usePublicTreasuryInfo();
-  const balanceQuery = useWalletBalance(
-    ICP_LEDGER,
+  const balanceQuery = usePayTokenBalance(
+    token,
     activePrincipal ? { owner: activePrincipal } : undefined,
   );
   const { refetch: refetchBalance } = balanceQuery;
   const iiAddress = useGetDeliveryAddress();
-  const approve = useIcpApprove();
-  const convert = useConvertDeposit();
+  const approve = usePayTokenApprove();
+  const convert = useConvertDepositWith();
   const plugBuy = usePlugPurchase();
   // Acknowledgements are read and recorded by the same principal that buys.
   const iiAckQuery = useGetMyPurchaseAcknowledgement(
@@ -306,20 +192,24 @@ export function ExchangePage() {
     Partial<Record<AcknowledgementId, boolean>>
   >({});
   const [amount, setAmount] = useState("");
+  const [tttiAmount, setTttiAmount] = useState("");
+  const [mode, setMode] = useState<OrderMode>("pay");
+  // A chosen wallet percentage drives the pay amount from the live balance.
+  const [percent, setPercent] = useState<number | null>(null);
   const [step, setStep] = useState<
     "idle" | "accepting" | "approving" | "buying"
   >("idle");
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [treasuryCopied, setTreasuryCopied] = useState(false);
+  const [outcomeSource, setOutcome] = useState<OutcomeSource | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const busy = step !== "idle";
 
+  // Re-evaluate rate expiry without waiting for the next status poll.
   useEffect(() => {
-    if (!treasuryCopied) return;
-    const timer = window.setTimeout(() => setTreasuryCopied(false), 1500);
-    return () => window.clearTimeout(timer);
-  }, [treasuryCopied]);
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  // Poll the ICP balance so the form appears as soon as ICP arrives.
+  // Poll the balance so the form appears as soon as funds arrive.
   useEffect(() => {
     if (!activePrincipalText || busy) return;
     const timer = window.setInterval(() => {
@@ -342,71 +232,172 @@ export function ExchangePage() {
     return () => window.clearTimeout(timer);
   }, [wallet, locationHash]);
 
-  const price = status?.priceUsdE8 ?? 0n;
-  const livePriceAvailable = price > 0n;
-  const updatedAt = status ? timestampToDate(status.priceUpdatedAt) : null;
-  const cachedRateOld = !!status && isSalePriceStale(status);
-  // Quotes use the cached rate; the backend refreshes it at purchase and
-  // refuses, taking no ICP, if it cannot.
+  const tokenAvailable = (t: PayToken) =>
+    t === PayToken.icp ||
+    findPayTokenStatus(status, t)?.treasuryConfigured === true;
+  const selectedAvailable = tokenAvailable(token);
+  // BTC deposits are tracked for the Internet Identity principal.
+  const btcAvailable =
+    wallet === "internetIdentity" && tokenAvailable(PayToken.ckbtc);
+  const btcActive = btcSelected && btcAvailable;
+
+  // ICP stays selected on arrival; a BTC purchase address with deposits is
+  // signalled by a status line (in progress or waiting) that opens its tracking.
+  const myBtcDeposits = useMyBtcDeposits();
+  const btcPurchaseTracking = myBtcDeposits.data?.purchase;
+  const btcPending = btcAvailable && isDepositInProgress(btcPurchaseTracking);
+  const btcWaiting =
+    btcAvailable &&
+    !btcPending &&
+    btcPurchaseTracking !== undefined &&
+    btcPurchaseTracking.deposits.length > 0;
+  useRefreshOnDepositProgress(btcPurchaseTracking);
+
+  const tokenStatus = findPayTokenStatus(status, token);
+  const rate: TokenRate | null = tokenStatus
+    ? {
+        usdE8: tokenStatus.priceUsdE8,
+        source: tokenStatus.priceSource,
+        fetchedAt: tokenStatus.priceFetchedAt,
+        validUntil: tokenStatus.priceValidUntil,
+        usable: tokenStatus.priceUsable,
+      }
+    : token === PayToken.icp && status
+      ? {
+          usdE8: status.priceUsdE8,
+          source: status.priceSource,
+          fetchedAt: status.priceFetchedAt,
+          validUntil: status.priceValidUntil,
+          usable: status.priceUsable,
+        }
+      : null;
+  const price = rate?.usdE8 ?? 0n;
+  const rateExpired =
+    !rate ||
+    rate.validUntil <= 0n ||
+    Number(rate.validUntil / 1_000_000n) + RATE_GRACE_MS < now;
+  // Quotes use the hourly rate, the same value the backend uses for the
+  // purchase; without a valid rate the purchase is refused and nothing is taken.
   const priceAvailable =
-    livePriceAvailable && status?.priceSource !== PriceSource.none;
-  const treasuryAccountText = publicTreasury
-    ? encodeAccountText(publicTreasury.icpAccount)
+    !!rate &&
+    rate.usable &&
+    price > 0n &&
+    rate.source !== PriceSource.none &&
+    !rateExpired;
+  const rateLine = priceAvailable ? formatTokenRateLine(token, rate) : "";
+  const feeBps = tokenStatus?.feeBps ?? descriptor.feeBps;
+  const feeLabel = feeLabelFor(feeBps);
+  const treasuryAccount = payTokenTreasuryAccount(publicTreasury, token);
+  const treasuryAccountText = treasuryAccount
+    ? encodeAccountText(treasuryAccount)
     : "";
-  const quote = (icpE8s: bigint) => tttiFromIcp(icpE8s, price);
-  const icpFor = (tttiBase: bigint, roundUp: boolean) => {
-    const cost = icpForTtti(tttiBase, price);
+
+  const quote = (pay: bigint) => tttiFromPay(pay, decimals, price, feeBps);
+  const payFor = (tttiBase: bigint, roundUp: boolean) => {
+    const cost = payForTtti(tttiBase, decimals, price, feeBps);
     if (roundUp || cost === 0n) return cost;
-    // icpForTtti rounds up; step back one e8 when that overshoots.
-    return tttiFromIcp(cost, price) > tttiBase ? cost - 1n : cost;
+    // payForTtti rounds up; step back one unit when that overshoots.
+    return quote(cost) > tttiBase ? cost - 1n : cost;
   };
   const minPurchase = status?.minPurchase ?? MIN_PURCHASE;
   const remaining = status?.available ?? 0n;
   const closed = !!status?.complete || !!status?.salesPaused;
-  const icpBalance =
-    balanceQuery.data?.__kind__ === "Ok"
-      ? balanceQuery.data.Ok.balance
-      : undefined;
+  const balance = balanceQuery.data;
 
-  const parsed = parseIcp(amount);
-  const hasAmount = parsed !== null && parsed > 0n;
-  const tttiOut = hasAmount && priceAvailable ? quote(parsed) : 0n;
-  const required = hasAmount ? requiredIcpBalance(parsed) : 0n;
-  const maxIcp = priceAvailable ? icpFor(remaining, false) : 0n;
+  const percentAmount =
+    mode === "pay" && percent !== null && balance !== undefined
+      ? tokenForWalletPercent(balance, token, percent)
+      : null;
+  const payText =
+    percentAmount !== null ? unitsInputValue(percentAmount, decimals) : amount;
+  const inputText = mode === "pay" ? payText : tttiAmount;
+  const inputUnits =
+    (mode === "pay" ? parseUnits(payText, decimals) : parseTtti(tttiAmount)) ??
+    0n;
+  const inputValid = inputUnits > 0n;
+  // TTTI-T orders send the amount needed (rounded up) for exactly that amount.
+  const payAmount: bigint | null =
+    mode === "pay"
+      ? inputUnits
+      : inputValid && priceAvailable
+        ? payFor(inputUnits, true)
+        : null;
+  const orderPay = payAmount ?? 0n;
+  const hasAmount = orderPay > 0n;
+  const tttiOut =
+    mode === "ttti"
+      ? inputUnits
+      : hasAmount && priceAvailable
+        ? quote(orderPay)
+        : 0n;
+  const required = hasAmount ? requiredTokenBalance(token, orderPay) : 0n;
+  const maxPay = priceAvailable ? payFor(remaining, false) : 0n;
 
   let validation: Validation | null = null;
-  if (amount.trim() !== "" && !hasAmount) {
+  let insufficient = false;
+  if (inputText.trim() !== "" && !inputValid && percentAmount !== 0n) {
     validation = {
-      title: "Invalid amount",
-      message: "Enter an ICP amount greater than 0 with up to 8 decimals.",
+      title: t.invalidAmountTitle,
+      message:
+        mode === "pay"
+          ? t.invalidAmountMessage(symbol, decimals)
+          : t.invalidAmountMessage(DISPLAY_SYMBOL, TTTI_DECIMALS),
     };
-  } else if (hasAmount && priceAvailable && tttiOut < minPurchase) {
+  } else if (
+    percentAmount === 0n ||
+    (hasAmount && priceAvailable && tttiOut < minPurchase)
+  ) {
     validation = {
-      title: "Below the minimum purchase",
-      message: `Minimum ${formatTtti(minPurchase)} ${DISPLAY_SYMBOL} (${MIN_PURCHASE_LABEL}), about ${formatIcp(icpFor(minPurchase, true))} ICP.`,
+      title: t.belowMinimumTitle,
+      message: t.belowMinimumMessage(
+        formatTtti(minPurchase),
+        DISPLAY_SYMBOL,
+        minimumUsdLabel(token),
+        symbol,
+        priceAvailable
+          ? formatPayAmount(payFor(minPurchase, true), token)
+          : null,
+      ),
     };
   } else if (hasAmount && priceAvailable && tttiOut > remaining) {
     validation = {
-      title: "Above the remaining amount",
-      message: `Only ${formatTtti(remaining)} ${DISPLAY_SYMBOL} remain (${formatIcp(maxIcp)} ICP).`,
+      title: t.aboveRemainingTitle,
+      message: t.aboveRemainingMessage(
+        formatTtti(remaining),
+        DISPLAY_SYMBOL,
+        formatPayAmount(maxPay, token),
+      ),
       useMax:
         remaining >= minPurchase
-          ? unitsInputValue(maxIcp, ICP_DECIMALS)
+          ? mode === "pay"
+            ? unitsInputValue(maxPay, decimals)
+            : unitsInputValue(remaining, TTTI_DECIMALS)
           : undefined,
     };
-  } else if (hasAmount && icpBalance !== undefined && icpBalance < required) {
+  } else if (hasAmount && balance !== undefined && balance < required) {
+    insufficient = true;
     validation = {
-      title: INSUFFICIENT_ICP,
-      message: `You need ${formatIcp(required)} ICP including fees.`,
+      title: t.insufficientTitle(
+        symbol,
+        formatPayAmount(descriptor.fee, token),
+      ),
+      message: t.insufficientMessage(formatPayAmount(required, token)),
     };
   }
 
-  const insufficientIcp = validation?.title === INSUFFICIENT_ICP;
-  const zeroBalance = icpBalance === 0n && !busy;
+  const showIcpPanel = insufficient && token === PayToken.icp;
+  const zeroIcp = token === PayToken.icp && balance === 0n && !busy;
   const walletAddress = activePrincipal
     ? encodeAccountText({ owner: activePrincipal })
     : "";
-  const canPurchase = !!wallet && !closed && hasAmount && !validation && !busy;
+  const canPurchase =
+    !!wallet &&
+    !closed &&
+    selectedAvailable &&
+    priceAvailable &&
+    hasAmount &&
+    !validation &&
+    !busy;
   // The acknowledgement status is read for the active wallet's principal.
   const ackKnown = !!wallet && ackQuery.data !== undefined;
   const needsAck = !!wallet && ackQuery.data?.accepted === false;
@@ -417,14 +408,61 @@ export function ExchangePage() {
     setOutcome(null);
   };
 
+  const handleTokenChange = (next: PayToken) => {
+    if (next === token && !btcSelected) return;
+    setBtcSelected(false);
+    setToken(next);
+    setPercent(null);
+    setAmount("");
+    resetAttempt();
+  };
+
+  const handleBtcSelect = () => {
+    if (btcSelected) return;
+    setBtcSelected(true);
+    setToken(PayToken.ckbtc);
+    setPercent(null);
+    setAmount("");
+    resetAttempt();
+  };
+
+  /** Switch mode, carrying the computed equivalent into the other field. */
+  const handleModeChange = (next: OrderMode) => {
+    if (next === mode) return;
+    if (next === "ttti") {
+      if (payAmount !== null && payAmount > 0n && priceAvailable) {
+        setTttiAmount(
+          tttiOut > 0n ? unitsInputValue(tttiOut, TTTI_DECIMALS) : "",
+        );
+      }
+      setAmount(payText);
+      setPercent(null);
+    } else if (payAmount !== null && payAmount > 0n) {
+      setAmount(unitsInputValue(payAmount, decimals));
+    }
+    setMode(next);
+    resetAttempt();
+  };
+
+  const handlePercent = (value: number) => {
+    setPercent(value);
+    setMode("pay");
+    resetAttempt();
+  };
+
   const handleBuy = async (event: FormEvent) => {
     event.preventDefault();
-    if (!wallet || !canSubmit || parsed === null || parsed <= 0n) return;
-    const icpAmount = parsed;
-    const captured = amount;
-    const restore = () => setAmount((cur) => (cur === "" ? captured : cur));
+    if (!wallet || !canSubmit || payAmount === null || payAmount <= 0n) return;
+    const purchaseToken = token;
+    const purchaseAmount = payAmount;
+    // TTTI-T mode: the backend delivers exactly this amount; pay mode sends null.
+    const tttiTarget: bigint | null = mode === "ttti" ? inputUnits : null;
+    const setDraft = mode === "pay" ? setAmount : setTttiAmount;
+    const captured = mode === "pay" ? payText : tttiAmount;
+    const restore = () => setDraft((cur) => (cur === "" ? captured : cur));
     setOutcome(null);
-    setAmount("");
+    setPercent(null);
+    setDraft("");
     try {
       if (needsAck) {
         setStep("accepting");
@@ -432,14 +470,15 @@ export function ExchangePage() {
       }
       setStep("approving");
       const approval = await approve.mutateAsync({
-        purchaseE8s: icpAmount,
-        balanceE8s: icpBalance,
+        token: purchaseToken,
+        amount: purchaseAmount,
+        balance,
         wallet,
       });
       if (!approval.ok) {
         setOutcome({
-          kind: "error",
-          title: "ICP approval failed",
+          kind: "approval",
+          token: purchaseToken,
           message: approval.message,
         });
         restore();
@@ -448,19 +487,25 @@ export function ExchangePage() {
       setStep("buying");
       const result =
         wallet === "plug"
-          ? await plugBuy.mutateAsync({ icpAmount })
-          : await convert.mutateAsync({ recipient: null, icpAmount });
-      const next = outcomeFromResult(result);
-      setOutcome(next);
-      if (next.kind !== "success") restore();
+          ? await plugBuy.mutateAsync({
+              token: purchaseToken,
+              payAmount: purchaseAmount,
+              tttiTarget,
+            })
+          : await convert.mutateAsync({
+              token: purchaseToken,
+              recipient: null,
+              payAmount: purchaseAmount,
+              tttiTarget,
+            });
+      setOutcome({ kind: "result", result, token: purchaseToken });
+      if (outcomeFromResult(result, purchaseToken).kind !== "success") {
+        restore();
+      }
     } catch (error) {
       setOutcome({
-        kind: "error",
-        title: "Purchase not completed",
-        message:
-          error instanceof Error && error.message
-            ? safePurchaseMessage(error.message)
-            : "The purchase could not be submitted. Please try again.",
+        kind: "thrown",
+        message: error instanceof Error && error.message ? error.message : null,
       });
       restore();
     } finally {
@@ -469,28 +514,44 @@ export function ExchangePage() {
     }
   };
 
-  const handleCopyTreasury = async () => {
-    if (!treasuryAccountText) return;
-    try {
-      await navigator.clipboard.writeText(treasuryAccountText);
-      setTreasuryCopied(true);
-    } catch {
-      setTreasuryCopied(false);
-    }
-  };
-
   const buyLabel =
     step === "accepting"
-      ? "Recording acknowledgements…"
+      ? t.recordingAcks
       : step === "approving"
-        ? "Approving ICP…"
+        ? t.approving(symbol)
         : step === "buying"
-          ? "Buying…"
+          ? t.buying
           : status?.complete
-            ? "Sale complete"
+            ? t.saleComplete
             : status?.salesPaused
-              ? "Sales are paused"
-              : "Buy";
+              ? t.salesPaused
+              : !selectedAvailable
+                ? t.tokenUnavailable(symbol)
+                : t.buyWith(symbol);
+
+  // Resolved on every render so a language switch updates the alert.
+  const outcome: Outcome | null = !outcomeSource
+    ? null
+    : outcomeSource.kind === "result"
+      ? outcomeFromResult(outcomeSource.result, outcomeSource.token, lang)
+      : outcomeSource.kind === "approval"
+        ? {
+            kind: "error",
+            title: t.approvalFailed(PAY_TOKENS[outcomeSource.token].symbol),
+            message: outcomeSource.message,
+          }
+        : {
+            kind: "error",
+            title: t.purchaseNotCompleted,
+            message:
+              outcomeSource.message !== null
+                ? safePurchaseMessage(outcomeSource.message, lang)
+                : t.purchaseNotSubmitted,
+          };
+  const successPayment =
+    outcome?.kind === "success" ? paymentBlockTarget(outcome.conversion) : null;
+  const successMint =
+    outcome?.kind === "success" ? mintBlockTarget(outcome.conversion) : null;
 
   const outcomeAlerts = (
     <>
@@ -518,14 +579,149 @@ export function ExchangePage() {
         >
           <CheckCircle2 className="h-4 w-4 text-primary" />
           <AlertTitle className="font-display text-base tabular-nums">
-            You received {formatTtti(outcome.conversion.tttiAmount)}{" "}
-            {DISPLAY_SYMBOL}
+            {t.received(
+              formatTtti(outcome.conversion.tttiAmount),
+              DISPLAY_SYMBOL,
+            )}
           </AlertTitle>
           <AlertDescription className="text-xs tabular-nums">
-            {formatIcp(outcome.conversion.icpAmount)} ICP · #
-            {outcome.conversion.id.toString()}
+            {formatPayAmount(
+              outcome.conversion.payAmount > 0n
+                ? outcome.conversion.payAmount
+                : outcome.conversion.icpAmount,
+              outcome.conversion.payToken,
+            )}{" "}
+            · #{outcome.conversion.id.toString()}
+          </AlertDescription>
+          {(successPayment || successMint) && (
+            <dl
+              className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs"
+              data-ocid="exchange.success.blocks.panel"
+            >
+              {successPayment &&
+                outcome.conversion.paymentBlock !== undefined && (
+                  <>
+                    <dt className="text-muted-foreground">{tx.paymentBlock}</dt>
+                    <dd className="min-w-0">
+                      <ExplorerLink
+                        target={successPayment}
+                        label={tx.viewOnIcpDashboard}
+                        data-ocid="exchange.success.payment_block.link"
+                      >
+                        {outcome.conversion.paymentBlock.toString()}
+                      </ExplorerLink>
+                    </dd>
+                  </>
+                )}
+              {successMint && outcome.conversion.mintBlock !== undefined && (
+                <>
+                  <dt className="text-muted-foreground">{tx.tttiMintBlock}</dt>
+                  <dd className="min-w-0">
+                    <ExplorerLink
+                      target={successMint}
+                      label={tx.viewBlockInHistory}
+                      data-ocid="exchange.success.mint_block.link"
+                    >
+                      {outcome.conversion.mintBlock.toString()}
+                    </ExplorerLink>
+                  </dd>
+                </>
+              )}
+            </dl>
+          )}
+        </Alert>
+      )}
+    </>
+  );
+
+  const unitSuffix = (text: string) => (
+    <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-mono text-sm font-semibold text-muted-foreground">
+      {text}
+    </span>
+  );
+
+  // Shared by the token form and the BTC panel: asked once, at the first purchase.
+  const acknowledgementBlock = (
+    <>
+      {!!wallet && ackQuery.isLoading && (
+        <Skeleton
+          className="h-24 w-full"
+          data-ocid="exchange.acknowledgements.loading_state"
+        />
+      )}
+
+      {!!wallet && ackQuery.isError && (
+        <Alert
+          variant="destructive"
+          data-ocid="exchange.acknowledgements.error_state"
+        >
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>{t.ackStatusUnavailable}</AlertTitle>
+          <AlertDescription>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={cn("mt-1", OUTLINE_BUTTON)}
+              onClick={() => void ackQuery.refetch()}
+              disabled={ackQuery.isFetching}
+              data-ocid="exchange.acknowledgements.retry_button"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t.retry}
+            </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {needsAck && (
+        <fieldset
+          className="space-y-1 rounded-lg border border-border bg-background/60 px-3 py-2"
+          data-ocid="exchange.acknowledgements.panel"
+        >
+          <legend className="px-1 text-xs text-muted-foreground">
+            {t.ackLegend}
+          </legend>
+          {ACKNOWLEDGEMENTS.map((item, index) => (
+            <label
+              key={item.id}
+              htmlFor={`exchange-ack-${item.id}`}
+              className="flex min-h-11 cursor-pointer items-start gap-3 py-1 text-sm"
+            >
+              <input
+                id={`exchange-ack-${item.id}`}
+                type="checkbox"
+                checked={!!checked[item.id]}
+                onChange={(event) => {
+                  const value = event.target.checked;
+                  setChecked((prev) => ({ ...prev, [item.id]: value }));
+                }}
+                disabled={busy || closed}
+                className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed"
+                data-ocid={`exchange.acknowledgement.checkbox.${index + 1}`}
+              />
+              <span className="min-w-0 text-muted-foreground">
+                {t[item.textKey]}
+              </span>
+            </label>
+          ))}
+          {site.conflictNotice && (
+            <p
+              className="px-1 text-xs text-muted-foreground"
+              data-ocid="exchange.acknowledgements.conflict_notice"
+            >
+              {site.conflictNotice}
+            </p>
+          )}
+          <Link
+            to="/white-paper"
+            hash="reading-notice"
+            className="inline-block px-1 pb-1 text-xs font-medium text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-ocid="exchange.white_paper.link"
+          >
+            {t.ackWhitePaperLink}
+          </Link>
+        </fieldset>
       )}
     </>
   );
@@ -540,274 +736,354 @@ export function ExchangePage() {
           onClick={openSetup}
           data-ocid="exchange.buy_ttti.primary_button"
         >
-          Buy TTTI-T
+          {t.buyTtti}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Button>
       </CardContent>
     </Card>
   ) : (
     <Card className={CARD_CLASS} data-ocid="exchange.form_card">
-      <CardHeader className="pb-4">
+      <CardHeader className="space-y-4 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="font-display text-xl">Buy</CardTitle>
+          <CardTitle className="font-display text-xl">{t.buyHeading}</CardTitle>
           <Badge
             variant="outline"
             className="rounded-full border-gold bg-primary/10 text-primary"
             data-ocid="exchange.wallet_badge"
           >
-            {wallet === "plug" ? "Plug" : "Built-in wallet"}
+            {wallet === "plug" ? t.walletPlug : t.walletBuiltIn}
           </Badge>
         </div>
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">Balance</span>
-          {balanceQuery.isLoading ? (
-            <Skeleton
-              className="h-5 w-28"
-              data-ocid="exchange.balance.loading_state"
-            />
-          ) : (
-            <span
-              className="inline-flex items-center gap-2 font-mono font-semibold tabular-nums text-foreground"
-              data-ocid="exchange.icp_balance"
-            >
-              {balanceQuery.isFetching && (
-                <Loader2
-                  className="h-3 w-3 animate-spin text-muted-foreground"
-                  aria-hidden="true"
-                />
-              )}
-              {icpBalance !== undefined
-                ? `${formatIcp(icpBalance)} ICP`
-                : "Unavailable"}
+        <PayTokenSelector
+          value={token}
+          onChange={handleTokenChange}
+          available={tokenAvailable}
+          disabled={busy}
+          btc={{
+            selected: btcActive,
+            onSelect: handleBtcSelect,
+            available: btcAvailable,
+          }}
+        />
+        {(btcPending || btcWaiting) && !btcActive && (
+          <p
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted-foreground"
+            aria-live="polite"
+            data-ocid="exchange.btc_pending.status"
+            data-state={btcPending ? "pending" : "waiting"}
+          >
+            {btcPending ? (
+              <Loader2
+                className="h-3 w-3 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            ) : (
+              <Clock className="h-3 w-3" aria-hidden="true" />
+            )}
+            <span>
+              {btcPending ? tb.pendingDepositStatus : tb.waitingDepositStatus}
             </span>
-          )}
-        </div>
+            <button
+              type="button"
+              onClick={handleBtcSelect}
+              disabled={busy}
+              className="font-medium text-primary underline-offset-4 transition-smooth hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              data-ocid="exchange.btc_pending.link"
+            >
+              {btcPending ? tb.pendingDepositLink : tb.waitingDepositLink}
+            </button>
+          </p>
+        )}
+        {!btcActive && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">
+              {t.balanceLabel(symbol)}
+            </span>
+            {balanceQuery.isLoading ? (
+              <Skeleton
+                className="h-5 w-28"
+                data-ocid="exchange.balance.loading_state"
+              />
+            ) : (
+              <span
+                className="inline-flex items-center gap-2 font-mono font-semibold tabular-nums text-foreground"
+                data-ocid="exchange.icp_balance"
+              >
+                {balanceQuery.isFetching && (
+                  <Loader2
+                    className="h-3 w-3 animate-spin text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                )}
+                {balance !== undefined
+                  ? formatPayAmount(balance, token)
+                  : t.unavailable}
+              </span>
+            )}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
-        {zeroBalance && !closed ? (
-          <>
-            <GetIcpFirstPanel address={walletAddress} balanceE8s={0n} />
-            {outcomeAlerts}
-          </>
+        {btcActive ? (
+          <BtcPurchasePanel
+            acknowledgements={acknowledgementBlock}
+            ackKnown={ackKnown}
+            needsAck={needsAck}
+            allChecked={allChecked}
+            onAccept={() => acceptAck.mutateAsync()}
+            closed={closed}
+            closedLabel={status?.complete ? t.saleComplete : t.salesPaused}
+          />
         ) : (
-          <form onSubmit={handleBuy} className="space-y-4" noValidate>
-            <div className="space-y-2">
-              <Label htmlFor="icp-amount" className="text-muted-foreground">
-                You pay
-              </Label>
-              <div className="relative">
-                <Input
-                  id="icp-amount"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => {
-                    setAmount(e.target.value);
-                    resetAttempt();
-                  }}
+          <>
+            {!selectedAvailable && !statusQuery.isLoading && (
+              <Alert data-ocid="exchange.token_unavailable_state">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>{t.tokenUnavailable(symbol)}</AlertTitle>
+                <AlertDescription>{t.noTreasury(symbol)}</AlertDescription>
+              </Alert>
+            )}
+            {zeroIcp && !closed ? (
+              <>
+                <GetIcpFirstPanel address={walletAddress} balanceE8s={0n} />
+                {outcomeAlerts}
+              </>
+            ) : (
+              <form onSubmit={handleBuy} className="space-y-4" noValidate>
+                <OrderModeToggle
+                  mode={mode}
+                  onChange={handleModeChange}
+                  tokenSymbol={symbol}
                   disabled={closed || busy}
-                  autoComplete="off"
-                  className={AMOUNT_INPUT}
-                  aria-invalid={!!validation}
-                  aria-describedby="icp-amount-preview"
-                  data-ocid="exchange.amount_input"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-mono text-sm font-semibold text-muted-foreground">
-                  ICP
-                </span>
-              </div>
-              <div
-                id="icp-amount-preview"
-                className="flex items-baseline justify-between gap-3 px-1 pt-1"
-                aria-live="polite"
-                data-ocid="exchange.preview_panel"
-              >
-                <span className="text-sm text-muted-foreground">
-                  You receive
-                </span>
-                <span className="min-w-0 text-right">
-                  <span
-                    className="inline-flex items-center gap-2 font-mono text-lg font-semibold tabular-nums text-primary"
-                    data-ocid="exchange.ttti_output"
-                  >
-                    <FlatTokenIcon className="h-5 w-5 shrink-0" alt="" />
-                    <span className="break-all">
-                      {priceAvailable ? formatTtti(tttiOut) : "—"} TTTI-T
-                    </span>
-                  </span>
-                  <span className="block text-xs tabular-nums text-muted-foreground">
-                    ≈ {formatUsdE8(tttiToUsdE8(tttiOut), 2)}
-                    {hasAmount && ` · ${formatIcp(required)} ICP with fees`}
-                  </span>
-                </span>
-              </div>
-            </div>
-
-            {!statusQuery.isLoading && !priceAvailable && (
-              <Alert data-ocid="exchange.price_unavailable_state">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>{NO_CACHED_RATE}</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>
-                    The rate is refreshed at purchase. If it cannot be
-                    refreshed, the purchase is refused and no ICP is taken.
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={cn("mt-1", OUTLINE_BUTTON)}
-                    onClick={() => void statusQuery.refetch()}
-                    disabled={statusQuery.isFetching}
-                    data-ocid="exchange.retry_button"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Retry
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {validation && !insufficientIcp && (
-              <Alert
-                variant="destructive"
-                data-ocid="exchange.validation_error"
-              >
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>{validation.title}</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>{validation.message}</p>
-                  {validation.useMax !== undefined && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className={OUTLINE_BUTTON}
-                      onClick={() => {
-                        const max = validation?.useMax;
-                        if (max !== undefined) {
-                          setAmount(max);
-                          resetAttempt();
-                        }
-                      }}
-                      data-ocid="exchange.use_max_button"
+                {mode === "pay" ? (
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="pay-amount"
+                      className="text-muted-foreground"
                     >
-                      Use maximum
-                    </Button>
-                  )}
-                </AlertDescription>
-              </Alert>
-            )}
+                      {t.youPayIn(symbol)}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="pay-amount"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={payText}
+                        onChange={(e) => {
+                          setPercent(null);
+                          setAmount(e.target.value);
+                          resetAttempt();
+                        }}
+                        disabled={closed || busy}
+                        autoComplete="off"
+                        className={AMOUNT_INPUT}
+                        aria-invalid={!!validation}
+                        aria-describedby="pay-amount-preview"
+                        data-ocid="exchange.amount_input"
+                      />
+                      {unitSuffix(symbol)}
+                    </div>
+                    <div
+                      id="pay-amount-preview"
+                      className="flex items-baseline justify-between gap-3 px-1 pt-1"
+                      aria-live="polite"
+                      data-ocid="exchange.preview_panel"
+                    >
+                      <span className="text-sm text-muted-foreground">
+                        {t.youReceive}
+                      </span>
+                      <span className="min-w-0 text-right">
+                        <span
+                          className="inline-flex items-center gap-2 font-mono text-lg font-semibold tabular-nums text-primary"
+                          data-ocid="exchange.ttti_output"
+                        >
+                          <FlatTokenIcon className="h-5 w-5 shrink-0" alt="" />
+                          <span className="break-all">
+                            {priceAvailable ? formatTtti(tttiOut) : "—"} TTTI-T
+                          </span>
+                        </span>
+                        <span className="block text-xs tabular-nums text-muted-foreground">
+                          ≈ {formatUsdE8(tttiToUsdE8(tttiOut), 2)}
+                          {hasAmount &&
+                            t.withFees(formatPayAmount(required, token))}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="ttti-amount"
+                      className="text-muted-foreground"
+                    >
+                      {t.youReceive}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="ttti-amount"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.0001"
+                        value={tttiAmount}
+                        onChange={(e) => {
+                          setTttiAmount(e.target.value);
+                          resetAttempt();
+                        }}
+                        disabled={closed || busy}
+                        autoComplete="off"
+                        className={cn(AMOUNT_INPUT, "pr-24")}
+                        aria-invalid={!!validation}
+                        aria-describedby="ttti-amount-preview"
+                        data-ocid="exchange.ttti_amount_input"
+                      />
+                      {unitSuffix(DISPLAY_SYMBOL)}
+                    </div>
+                    <div
+                      id="ttti-amount-preview"
+                      className="flex items-baseline justify-between gap-3 px-1 pt-1"
+                      aria-live="polite"
+                      data-ocid="exchange.required_icp.panel"
+                    >
+                      <span className="text-sm text-muted-foreground">
+                        {t.youPayIn(symbol)}
+                      </span>
+                      <span className="min-w-0 text-right">
+                        <span
+                          className="block break-all font-mono text-lg font-semibold tabular-nums text-primary"
+                          data-ocid="exchange.required_icp_output"
+                        >
+                          {hasAmount
+                            ? formatPayAmount(orderPay, token)
+                            : `— ${symbol}`}
+                        </span>
+                        <span
+                          className="block text-xs tabular-nums text-muted-foreground"
+                          data-ocid="exchange.total_debit"
+                        >
+                          {t.totalDebited}{" "}
+                          {hasAmount
+                            ? formatPayAmount(required, token)
+                            : `— ${symbol}`}
+                          {hasAmount &&
+                            ` · ≈ ${formatUsdE8(tttiToUsdE8(tttiOut), 2)}`}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                )}
 
-            {insufficientIcp && icpBalance !== undefined && (
-              <GetIcpFirstPanel
-                address={walletAddress}
-                balanceE8s={icpBalance}
-                requiredE8s={required}
-              />
-            )}
-
-            {outcomeAlerts}
-
-            {!!wallet && ackQuery.isLoading && (
-              <Skeleton
-                className="h-24 w-full"
-                data-ocid="exchange.acknowledgements.loading_state"
-              />
-            )}
-
-            {!!wallet && ackQuery.isError && (
-              <Alert
-                variant="destructive"
-                data-ocid="exchange.acknowledgements.error_state"
-              >
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Acknowledgement status unavailable</AlertTitle>
-                <AlertDescription>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={cn("mt-1", OUTLINE_BUTTON)}
-                    onClick={() => void ackQuery.refetch()}
-                    disabled={ackQuery.isFetching}
-                    data-ocid="exchange.acknowledgements.retry_button"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Retry
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {needsAck && (
-              <fieldset
-                className="space-y-1 rounded-lg border border-border bg-background/60 px-3 py-2"
-                data-ocid="exchange.acknowledgements.panel"
-              >
-                <legend className="px-1 text-xs text-muted-foreground">
-                  Required once, before the first purchase
-                </legend>
-                {ACKNOWLEDGEMENTS.map((item, index) => (
-                  <label
-                    key={item.id}
-                    htmlFor={`exchange-ack-${item.id}`}
-                    className="flex min-h-11 cursor-pointer items-start gap-3 py-1 text-sm"
-                  >
-                    <input
-                      id={`exchange-ack-${item.id}`}
-                      type="checkbox"
-                      checked={!!checked[item.id]}
-                      onChange={(event) => {
-                        const value = event.target.checked;
-                        setChecked((prev) => ({ ...prev, [item.id]: value }));
-                      }}
-                      disabled={busy || closed}
-                      className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed"
-                      data-ocid={`exchange.acknowledgement.checkbox.${index + 1}`}
-                    />
-                    <span className="min-w-0 text-muted-foreground">
-                      {item.text}
-                    </span>
-                  </label>
-                ))}
-                <Link
-                  to="/white-paper"
-                  hash="reading-notice"
-                  className="inline-block px-1 pb-1 text-xs font-medium text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  data-ocid="exchange.white_paper.link"
-                >
-                  Open the "Read this first" section
-                </Link>
-              </fieldset>
-            )}
-
-            {canPurchase && needsAck && !allChecked && (
-              <p
-                className="text-xs text-muted-foreground"
-                data-ocid="exchange.acknowledgements.hint"
-              >
-                Tick all six statements to enable Buy.
-              </p>
-            )}
-
-            <Button
-              type="submit"
-              className={cn(GOLD_BUTTON, "w-full")}
-              disabled={!canSubmit}
-              aria-busy={busy}
-              data-ocid="exchange.submit_button"
-            >
-              {busy && (
-                <Loader2
-                  className="h-4 w-4 animate-spin"
-                  data-ocid="exchange.loading_state"
+                <WalletPercentBar
+                  token={token}
+                  balance={balance}
+                  walletConnected={!!wallet}
+                  percent={mode === "pay" ? percent : null}
+                  currentAmount={orderPay}
+                  disabled={closed || busy}
+                  quote={(pay) => (priceAvailable ? quote(pay) : null)}
+                  onSelect={handlePercent}
                 />
-              )}
-              {buyLabel}
-            </Button>
-          </form>
+
+                {!statusQuery.isLoading &&
+                  selectedAvailable &&
+                  !priceAvailable && (
+                    <Alert data-ocid="exchange.price_unavailable_state">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>{t.noRateTitle(symbol)}</AlertTitle>
+                      <AlertDescription className="space-y-2">
+                        <p>{t.noRateBody(symbol)}</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className={cn("mt-1", OUTLINE_BUTTON)}
+                          onClick={() => void statusQuery.refetch()}
+                          disabled={statusQuery.isFetching}
+                          data-ocid="exchange.retry_button"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          {t.retry}
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                {validation && !showIcpPanel && (
+                  <Alert
+                    variant="destructive"
+                    data-ocid="exchange.validation_error"
+                  >
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>{validation.title}</AlertTitle>
+                    <AlertDescription className="space-y-2">
+                      <p>{validation.message}</p>
+                      {validation.useMax !== undefined && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className={OUTLINE_BUTTON}
+                          onClick={() => {
+                            const max = validation?.useMax;
+                            if (max !== undefined) {
+                              if (mode === "pay") {
+                                setPercent(null);
+                                setAmount(max);
+                              } else {
+                                setTttiAmount(max);
+                              }
+                              resetAttempt();
+                            }
+                          }}
+                          data-ocid="exchange.use_max_button"
+                        >
+                          {t.useMaximum}
+                        </Button>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {showIcpPanel && balance !== undefined && (
+                  <GetIcpFirstPanel
+                    address={walletAddress}
+                    balanceE8s={balance}
+                    requiredE8s={required}
+                  />
+                )}
+
+                {outcomeAlerts}
+
+                {acknowledgementBlock}
+
+                {canPurchase && needsAck && !allChecked && (
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-ocid="exchange.acknowledgements.hint"
+                  >
+                    {t.ackTickAll}
+                  </p>
+                )}
+
+                <Button
+                  type="submit"
+                  className={cn(GOLD_BUTTON, "w-full")}
+                  disabled={!canSubmit}
+                  aria-busy={busy}
+                  data-ocid="exchange.submit_button"
+                >
+                  {busy && (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      data-ocid="exchange.loading_state"
+                    />
+                  )}
+                  {buyLabel}
+                </Button>
+              </form>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -820,23 +1096,20 @@ export function ExchangePage() {
     >
       <header className="space-y-3">
         <h1 className="text-imperial text-gradient-gold text-3xl font-bold md:text-5xl">
-          Buy {DISPLAY_SYMBOL}
+          {t.title(DISPLAY_SYMBOL)}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          1 TTTI-T ={" "}
-          <span className="font-mono tabular-nums text-foreground">
-            {TOKEN_PRICE_LABEL}
-          </span>{" "}
-          + fixed {CYCLES_FEE_LABEL} fee · Minimum {MIN_PURCHASE_LABEL}
+        <p
+          className="max-w-3xl text-sm text-muted-foreground"
+          data-ocid="exchange.price_statement"
+        >
+          {priceStatement}
         </p>
-        <p className="text-xs text-muted-foreground">
-          Any ICP beyond what is delivered is refunded.
-        </p>
+        <p className="text-xs text-muted-foreground">{t.noExtraTaken}</p>
         <p
           className="text-xs text-muted-foreground"
           data-ocid="exchange.token_identity_note"
         >
-          Shown as {TTTI_SYMBOL} in wallets.
+          {t.shownAs(TTTI_SYMBOL)}
         </p>
         <div className="divider-gold max-w-xs" />
       </header>
@@ -859,108 +1132,19 @@ export function ExchangePage() {
 
         <aside className="flex min-w-0 flex-col gap-6 lg:col-span-2">
           <PresaleProgress status={status} isLoading={statusQuery.isLoading} />
-          <Card className={CARD_CLASS} data-ocid="exchange.price_card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-imperial flex items-center gap-2 text-sm">
-                <TrendingUp className="h-4 w-4 text-primary" />
-                ICP/USD
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {statusQuery.isLoading ? (
-                <Skeleton className="h-8 w-40" />
-              ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className="font-mono text-2xl font-bold tabular-nums text-primary"
-                    data-ocid="exchange.icp_price"
-                  >
-                    {livePriceAvailable ? formatUsdE8(price) : "—"}
-                  </span>
-                  {cachedRateOld && (
-                    <span
-                      className="text-xs text-muted-foreground"
-                      data-ocid="exchange.price_refresh_note"
-                    >
-                      Refreshed at purchase
-                    </span>
-                  )}
-                </div>
-              )}
-              <dl className="space-y-1.5">
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">1 ICP buys</dt>
-                  <dd className="font-mono tabular-nums">
-                    {priceAvailable
-                      ? `${formatTtti(quote(ICP_DIVISOR))} TTTI-T`
-                      : "—"}
-                  </dd>
-                </div>
-                <Separator className="bg-primary/20" />
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Source</dt>
-                  <dd data-ocid="exchange.price_source">
-                    {status ? SOURCE_LABELS[status.priceSource] : "—"}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Updated</dt>
-                  <dd className="text-right">
-                    {updatedAt
-                      ? updatedAt.toLocaleString("en-US", {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })
-                      : "Never"}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Fee (fixed)</dt>
-                  <dd
-                    className="font-mono tabular-nums"
-                    data-ocid="exchange.cycles_fee"
-                  >
-                    {CYCLES_FEE_LABEL}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="shrink-0 text-muted-foreground">Treasury</dt>
-                  <dd className="flex min-w-0 items-center justify-end gap-1">
-                    <span
-                      className="min-w-0 truncate font-mono text-xs"
-                      title={treasuryAccountText || undefined}
-                      data-ocid="exchange.treasury_account"
-                    >
-                      {treasuryAccountText
-                        ? truncateAccountText(treasuryAccountText)
-                        : "—"}
-                    </span>
-                    {treasuryAccountText && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 rounded-md text-muted-foreground transition-smooth hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => void handleCopyTreasury()}
-                        aria-label={
-                          treasuryCopied
-                            ? "Treasury ICP account copied"
-                            : "Copy treasury ICP account"
-                        }
-                        data-ocid="exchange.treasury_account_copy_button"
-                      >
-                        {treasuryCopied ? (
-                          <Check className="h-3.5 w-3.5 text-primary" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    )}
-                  </dd>
-                </div>
-              </dl>
-            </CardContent>
-          </Card>
+          <TokenRateCard
+            token={token}
+            rate={rate}
+            rateLine={rateLine}
+            priceAvailable={priceAvailable}
+            isLoading={statusQuery.isLoading}
+            oneTokenBuys={
+              priceAvailable ? quote(10n ** BigInt(decimals)) : null
+            }
+            feeLabel={feeLabel}
+            treasuryAccountText={treasuryAccountText}
+            className={CARD_CLASS}
+          />
         </aside>
       </div>
     </div>

@@ -6,17 +6,30 @@ import {
   History,
   Undo2,
 } from "lucide-react";
+import { Fragment } from "react";
 import type { Conversion } from "../../backend";
 import { ConversionStatus } from "../../backend";
 import { useConversions } from "../../hooks/useQueries";
+import type { BlockLinkTarget } from "../../lib/explorer";
+import {
+  formatBlockIndex,
+  formatFeeQuantity,
+  formatNetQuantity,
+  formatPaidQuantity,
+  formatPaidTokenPerTtti,
+  formatTttiPerPaidToken,
+  formatTttiReceived,
+  mintBlockTarget,
+  paymentBlockTarget,
+} from "../../lib/purchaseHistory";
 import {
   TTTI_SYMBOL,
   encodeAccountText,
-  formatIcp,
-  formatTtti,
+  formatBps,
   formatUsdE8,
   truncateAccountText,
 } from "../../lib/token";
+import { ExplorerLink } from "../ExplorerLink";
 import { Badge } from "../ui/badge";
 import {
   Card,
@@ -45,12 +58,75 @@ export function formatTimestamp(timestamp: bigint): string {
   });
 }
 
-/** Keep historical conversion rows intact while withholding ledger-internal wording. */
+/** Historical conversion rows keep their recorded message unchanged. */
 function safeConversionMessage(message: string | undefined): string {
-  if (!message) return "";
-  return /burn/i.test(message)
-    ? "Delivery could not be completed for this ledger destination."
-    : message;
+  return message ?? "";
+}
+
+const UNAVAILABLE = "Unavailable";
+const AUDIT_RATE_LABEL = "Rate at purchase (audit)";
+
+const DASHBOARD_LINK_LABEL = "View on the ICP Dashboard";
+const HISTORY_LINK_LABEL = "View block on the History page";
+
+interface PurchaseDetail {
+  label: string;
+  value: string;
+  /** Explorer target when the value is a linkable block index. */
+  target?: BlockLinkTarget | null;
+  linkLabel?: string;
+  /** data-ocid token of the link: "payment_block" or "mint_block". */
+  linkKey?: string;
+}
+
+/** Detail value, rendered as an explorer link when it has a target. */
+function DetailValue({
+  detail,
+  ocid,
+}: { detail: PurchaseDetail; ocid: string }) {
+  if (!detail.target || !detail.linkLabel) return <>{detail.value}</>;
+  return (
+    <ExplorerLink
+      target={detail.target}
+      label={detail.linkLabel}
+      className="text-xs"
+      data-ocid={ocid}
+    >
+      {detail.value}
+    </ExplorerLink>
+  );
+}
+
+/** Purchase details shared by the desktop detail row and the mobile list. */
+function purchaseDetails(c: Conversion): PurchaseDetail[] {
+  return [
+    {
+      label: "Net (refundable basis, fee excluded)",
+      value: formatNetQuantity(c, "en") ?? UNAVAILABLE,
+    },
+    {
+      label: `${TTTI_SYMBOL} per paid token`,
+      value: formatTttiPerPaidToken(c, "en") ?? UNAVAILABLE,
+    },
+    {
+      label: `Paid token per ${TTTI_SYMBOL}`,
+      value: formatPaidTokenPerTtti(c, "en") ?? UNAVAILABLE,
+    },
+    {
+      label: "Payment block",
+      value: formatBlockIndex(c.paymentBlock) ?? UNAVAILABLE,
+      target: paymentBlockTarget(c),
+      linkLabel: DASHBOARD_LINK_LABEL,
+      linkKey: "payment_block",
+    },
+    {
+      label: "Mint block",
+      value: formatBlockIndex(c.mintBlock) ?? UNAVAILABLE,
+      target: mintBlockTarget(c),
+      linkLabel: HISTORY_LINK_LABEL,
+      linkKey: "mint_block",
+    },
+  ];
 }
 
 function truncatePrincipal(principal: Principal): string {
@@ -111,9 +187,9 @@ function ConversionList({ conversions }: { conversions: Conversion[] }) {
               <TableHead className="w-16">ID</TableHead>
               <TableHead>Depositor</TableHead>
               <TableHead>Recipient</TableHead>
-              <TableHead className="text-right">ICP</TableHead>
+              <TableHead className="text-right">Paid</TableHead>
+              <TableHead className="text-right">Fee</TableHead>
               <TableHead className="text-right">{TTTI_SYMBOL}</TableHead>
-              <TableHead className="text-right">Price used</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Message</TableHead>
               <TableHead className="text-right">Time</TableHead>
@@ -121,49 +197,92 @@ function ConversionList({ conversions }: { conversions: Conversion[] }) {
           </TableHeader>
           <TableBody>
             {sorted.map((conversion, index) => (
-              <TableRow
-                key={conversion.id.toString()}
-                className="transition-smooth hover:bg-primary/5"
-                data-ocid={`admin.conversion_row.${index + 1}`}
-              >
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  #{conversion.id.toString()}
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {truncatePrincipal(conversion.depositor)}
-                </TableCell>
-                <TableCell
-                  className="font-mono text-xs"
-                  title={encodeAccountText(conversion.recipient)}
+              <Fragment key={conversion.id.toString()}>
+                <TableRow
+                  className="border-b-0 transition-smooth hover:bg-primary/5"
+                  data-ocid={`admin.conversion_row.${index + 1}`}
                 >
-                  {truncateAccountText(
-                    encodeAccountText(conversion.recipient),
-                    9,
-                    6,
-                  )}
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {formatIcp(conversion.icpAmount)}
-                </TableCell>
-                <TableCell className="text-right font-mono font-semibold tabular-nums text-primary">
-                  {formatTtti(conversion.tttiAmount)}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs tabular-nums whitespace-nowrap">
-                  {formatUsdE8(conversion.priceUsdE8)}
-                </TableCell>
-                <TableCell>
-                  <ConversionStatusBadge status={conversion.status} />
-                </TableCell>
-                <TableCell
-                  className="max-w-56 truncate text-xs text-muted-foreground"
-                  title={safeConversionMessage(conversion.message)}
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    #{conversion.id.toString()}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {truncatePrincipal(conversion.depositor)}
+                  </TableCell>
+                  <TableCell
+                    className="font-mono text-xs"
+                    title={encodeAccountText(conversion.recipient)}
+                  >
+                    {truncateAccountText(
+                      encodeAccountText(conversion.recipient),
+                      9,
+                      6,
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className="text-right font-mono tabular-nums whitespace-nowrap"
+                    data-ocid={`admin.conversion_paid.${index + 1}`}
+                  >
+                    {formatPaidQuantity(conversion, "en")}
+                  </TableCell>
+                  <TableCell
+                    className="text-right font-mono text-xs tabular-nums whitespace-nowrap"
+                    data-ocid={`admin.conversion_fee.${index + 1}`}
+                  >
+                    <div>
+                      {formatFeeQuantity(conversion, "en") ?? UNAVAILABLE}
+                    </div>
+                    <div className="text-muted-foreground">
+                      {formatBps(conversion.feeBps)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right font-mono font-semibold tabular-nums text-primary whitespace-nowrap">
+                    {formatTttiReceived(conversion, "en")}
+                  </TableCell>
+                  <TableCell>
+                    <ConversionStatusBadge status={conversion.status} />
+                  </TableCell>
+                  <TableCell
+                    className="max-w-56 truncate text-xs text-muted-foreground"
+                    title={safeConversionMessage(conversion.message)}
+                  >
+                    {safeConversionMessage(conversion.message) || "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                    {formatTimestamp(conversion.timestamp)}
+                  </TableCell>
+                </TableRow>
+                <TableRow
+                  className="hover:bg-transparent"
+                  data-ocid={`admin.conversion_details.${index + 1}`}
                 >
-                  {safeConversionMessage(conversion.message) || "—"}
-                </TableCell>
-                <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
-                  {formatTimestamp(conversion.timestamp)}
-                </TableCell>
-              </TableRow>
+                  <TableCell colSpan={9} className="pt-0 pb-3">
+                    <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                      {purchaseDetails(conversion).map((detail) => (
+                        <div key={detail.label} className="flex gap-1.5">
+                          <dt className="text-muted-foreground">
+                            {detail.label}
+                          </dt>
+                          <dd className="font-mono tabular-nums">
+                            <DetailValue
+                              detail={detail}
+                              ocid={`admin.conversion_${detail.linkKey}_link.${index + 1}`}
+                            />
+                          </dd>
+                        </div>
+                      ))}
+                      <div
+                        className="flex gap-1.5 text-muted-foreground/70"
+                        data-ocid={`admin.conversion_audit_rate.${index + 1}`}
+                      >
+                        <dt>{AUDIT_RATE_LABEL}</dt>
+                        <dd className="font-mono tabular-nums">
+                          {formatUsdE8(conversion.priceUsdE8)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </TableCell>
+                </TableRow>
+              </Fragment>
             ))}
           </TableBody>
         </Table>
@@ -190,16 +309,34 @@ function ConversionList({ conversions }: { conversions: Conversion[] }) {
                 {TTTI_SYMBOL} credited
               </span>
               <span className="font-mono font-semibold tabular-nums text-primary">
-                {formatTtti(conversion.tttiAmount)}
+                {formatTttiReceived(conversion, "en")}
               </span>
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-              <dt className="text-muted-foreground">ICP</dt>
+              <dt className="text-muted-foreground">Paid</dt>
               <dd className="font-mono text-right tabular-nums">
-                {formatIcp(conversion.icpAmount)}
+                {formatPaidQuantity(conversion, "en")}
               </dd>
-              <dt className="text-muted-foreground">Price used</dt>
+              <dt className="text-muted-foreground">Fee</dt>
               <dd className="font-mono text-right tabular-nums">
+                {formatFeeQuantity(conversion, "en") ?? UNAVAILABLE}{" "}
+                <span className="text-muted-foreground">
+                  ({formatBps(conversion.feeBps)})
+                </span>
+              </dd>
+              {purchaseDetails(conversion).map((detail) => (
+                <Fragment key={detail.label}>
+                  <dt className="text-muted-foreground">{detail.label}</dt>
+                  <dd className="font-mono text-right tabular-nums break-words">
+                    <DetailValue
+                      detail={detail}
+                      ocid={`admin.conversion_item_${detail.linkKey}_link.${index + 1}`}
+                    />
+                  </dd>
+                </Fragment>
+              ))}
+              <dt className="text-muted-foreground/70">{AUDIT_RATE_LABEL}</dt>
+              <dd className="font-mono text-right tabular-nums text-muted-foreground/70">
                 {formatUsdE8(conversion.priceUsdE8)}
               </dd>
               <dt className="text-muted-foreground">Depositor</dt>
@@ -236,11 +373,12 @@ export function ConversionsCard({ className }: { className: string }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 font-display text-lg">
           <History className="w-5 h-5 text-primary" />
-          ICP → {TTTI_SYMBOL} Conversions
+          {TTTI_SYMBOL} Conversions
         </CardTitle>
         <CardDescription>
-          Every purchase with its status and the ICP/USD price used, most recent
-          first. Read-only.
+          Every purchase with the token paid, the fee, the net refundable basis,
+          the {TTTI_SYMBOL} received, the ratios, the block indexes, the USD
+          price used and its status, most recent first. Read-only.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -269,7 +407,7 @@ export function ConversionsCard({ className }: { className: string }) {
                 No conversions yet
               </h3>
               <p className="max-w-sm text-sm text-muted-foreground">
-                ICP purchases converted into {TTTI_SYMBOL} are listed here.
+                Purchases converted into {TTTI_SYMBOL} are listed here.
               </p>
             </div>
           </div>

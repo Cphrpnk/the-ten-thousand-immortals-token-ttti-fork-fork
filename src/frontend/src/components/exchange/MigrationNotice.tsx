@@ -1,5 +1,7 @@
 import { ArrowDown, ExternalLink, Info } from "lucide-react";
 import { useState } from "react";
+import { useDict } from "../../i18n/core/dict";
+import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
 import { TTTI_SYMBOL } from "../../lib/token";
 import { Button } from "../ui/button";
 
@@ -11,20 +13,24 @@ const WALLETS = [
   { name: "OISY", url: "https://oisy.com" },
 ];
 
+/** Step ids and their BUY_PANELS_TEXT keys. */
 const STEPS = [
   {
-    title: "Create a wallet",
-    body: "Open Plug, NNS or OISY and create a wallet.",
+    id: "create",
+    title: "migrationStep1Title",
+    body: "migrationStep1Body",
   },
   {
-    title: "Copy the correct Principal ID",
-    body: "Copy the Principal ID — not the 64-character account ID.",
+    id: "copy",
+    title: "migrationStep2Title",
+    body: "migrationStep2Body",
   },
   {
-    title: "Paste it here",
-    body: "Paste it into the delivery address field below and save.",
+    id: "paste",
+    title: "migrationStep3Title",
+    body: "migrationStep3Body",
   },
-];
+] as const;
 
 function readHidden(): boolean {
   try {
@@ -36,6 +42,7 @@ function readHidden(): boolean {
 
 /** Shown to Internet Identity buyers who have not saved a delivery address. */
 export function MigrationNotice() {
+  const t = useDict(BUY_PANELS_TEXT);
   const [hidden, setHidden] = useState(readHidden);
 
   if (hidden) return null;
@@ -72,26 +79,25 @@ export function MigrationNotice() {
               id="migration-notice-title"
               className="font-display text-lg font-semibold"
             >
-              Your {TTTI_SYMBOL} will need to be migrated at launch
+              {t.migrationTitle(TTTI_SYMBOL)}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Add a wallet address to receive them automatically. You can still
-              buy now without one.
-            </p>
+            <p className="text-sm text-muted-foreground">{t.migrationBody}</p>
           </div>
 
           <ol className="grid gap-2 sm:grid-cols-3">
             {STEPS.map((step, index) => (
               <li
-                key={step.title}
+                key={step.id}
                 className="flex gap-2.5 rounded-lg border border-border bg-background/60 p-3"
               >
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gold-strong bg-gradient-primary font-mono text-xs font-bold tabular-nums text-primary-foreground">
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold">{step.title}</p>
-                  <p className="text-xs text-muted-foreground">{step.body}</p>
+                  <p className="text-sm font-semibold">{t[step.title]}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t[step.body]}
+                  </p>
                 </div>
               </li>
             ))}
@@ -110,7 +116,7 @@ export function MigrationNotice() {
                 >
                   {wallet.name}
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="sr-only">(opens in a new tab)</span>
+                  <span className="sr-only">{t.opensNewTab}</span>
                 </a>
               ))}
             </div>
@@ -123,7 +129,7 @@ export function MigrationNotice() {
                 data-ocid="migration.primary_button"
               >
                 <ArrowDown className="h-4 w-4" />
-                Add address
+                {t.migrationAdd}
               </Button>
               <Button
                 type="button"
@@ -133,7 +139,7 @@ export function MigrationNotice() {
                 onClick={handleLater}
                 data-ocid="migration.cancel_button"
               >
-                Later
+                {t.migrationLater}
               </Button>
             </div>
           </div>

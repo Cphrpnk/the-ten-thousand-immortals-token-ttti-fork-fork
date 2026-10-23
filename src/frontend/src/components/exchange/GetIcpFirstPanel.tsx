@@ -1,5 +1,7 @@
 import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useDict } from "../../i18n/core/dict";
+import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
 import {
   copyAddressAndOpenOnramper,
   copyToClipboard,
@@ -30,6 +32,7 @@ export function GetIcpFirstPanel({
   balanceE8s,
   requiredE8s,
 }: GetIcpFirstPanelProps) {
+  const t = useDict(BUY_PANELS_TEXT);
   const [copied, setCopied] = useState<CopyState>("idle");
   const shortfall =
     requiredE8s !== undefined && requiredE8s > balanceE8s
@@ -54,20 +57,20 @@ export function GetIcpFirstPanel({
 
   return (
     <section
-      aria-label="Add ICP"
+      aria-label={t.getIcpAria}
       className="flex flex-col items-center gap-4 rounded-xl border border-gold-strong bg-background/60 px-5 py-6 text-center"
       data-ocid="exchange.get_icp.panel"
     >
       <p className="text-sm text-muted-foreground">
         {shortfall !== null ? (
           <>
-            Add{" "}
+            {t.getIcpAdd}{" "}
             <span className="font-mono tabular-nums text-foreground">
               {formatIcp(shortfall)} ICP
             </span>
           </>
         ) : (
-          "Add ICP to buy"
+          t.getIcpAddToBuy
         )}
       </p>
 
@@ -75,10 +78,10 @@ export function GetIcpFirstPanel({
         type="button"
         onClick={handleBuyIcp}
         className="h-12 w-full max-w-xs gap-2 rounded-lg border border-gold-strong bg-gradient-primary text-base font-semibold tracking-wide text-primary-foreground shadow-gold transition-smooth hover:shadow-gold-lg hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99]"
-        aria-label="Buy ICP on Onramper (copies your address, opens in a new tab)"
+        aria-label={t.getIcpBuyAria}
         data-ocid="exchange.get_icp.primary_button"
       >
-        Buy ICP
+        {t.getIcpBuy}
         <ExternalLink className="h-4 w-4" aria-hidden="true" />
       </Button>
 
@@ -86,7 +89,7 @@ export function GetIcpFirstPanel({
         type="button"
         onClick={handleCopy}
         title={address}
-        aria-label="Copy wallet address"
+        aria-label={t.getIcpCopyAria}
         className="flex min-h-11 items-center gap-2 rounded-md border border-gold bg-card px-4 py-2 font-mono text-sm text-foreground transition-smooth hover:border-gold-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-ocid="exchange.get_icp.copy_button"
       >
@@ -104,7 +107,7 @@ export function GetIcpFirstPanel({
             className="text-primary"
             data-ocid="exchange.get_icp.copy_success_state"
           >
-            Address copied
+            {t.getIcpCopied}
           </span>
         )}
         {copied === "failed" && (
@@ -112,7 +115,7 @@ export function GetIcpFirstPanel({
             className="text-destructive"
             data-ocid="exchange.get_icp.copy_error_state"
           >
-            Copy failed — click the address
+            {t.getIcpCopyFailed}
           </span>
         )}
         {copied === "idle" && (
@@ -121,7 +124,7 @@ export function GetIcpFirstPanel({
             data-ocid="exchange.get_icp.loading_state"
           >
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-            Balance: {formatIcp(balanceE8s)} ICP
+            {t.getIcpBalance(formatIcp(balanceE8s))}
           </span>
         )}
       </p>

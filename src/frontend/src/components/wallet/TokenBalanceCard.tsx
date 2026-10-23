@@ -1,13 +1,16 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import type { Account, TokenDescriptor } from "../../backend";
+import type { Account } from "../../backend";
 import { useWalletBalance } from "../../hooks/useWallet";
+import { useDict } from "../../i18n/core";
+import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import {
   TOKEN_NAME,
   TTTI_DECIMALS,
   TTTI_SYMBOL,
   formatUnits,
 } from "../../lib/token";
+import type { TokenDescriptor } from "../../lib/tokenRegistry";
 import { FlatTokenIcon } from "../FlatTokenIcon";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -49,15 +52,16 @@ export function TokenBalanceCard({
   account,
   index,
 }: TokenBalanceCardProps) {
+  const t = useDict(WALLET_TEXT);
   const token = normalizeToken(rawToken);
-  const { data, isLoading, isError, refetch, isFetching } = useWalletBalance(
+  const { data, isError, failureCount, refetch, isFetching } = useWalletBalance(
     token.canisterId,
     account,
   );
 
-  const balance =
-    data && data.__kind__ === "Ok" ? (data.Ok.balance ?? 0n) : null;
-  const ledgerUnavailable = data?.__kind__ === "Err";
+  // Leave the placeholder as soon as one attempt fails, even while the
+  // query keeps retrying in the background.
+  const unavailable = isError || (data === undefined && failureCount > 0);
 
   return (
     <Card
@@ -81,7 +85,7 @@ export function TokenBalanceCard({
             className="h-7 w-7 text-muted-foreground transition-smooth hover:bg-primary/10 hover:text-primary"
             onClick={() => void refetch()}
             disabled={isFetching || !account}
-            aria-label={`Refresh ${token.symbol} balance`}
+            aria-label={t.refreshBalance(token.symbol)}
             data-ocid={`wallet.refresh_button.${index}`}
           >
             <RefreshCw
@@ -97,26 +101,48 @@ export function TokenBalanceCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <Skeleton className="h-8 w-32" />
-        ) : !account ? (
+        {!account ? (
           <p className="text-sm text-muted-foreground">
-            Connect a wallet to view this balance.
+            {t.connectToViewBalance}
           </p>
-        ) : isError || ledgerUnavailable ? (
-          <p
-            className="flex items-center gap-2 text-sm text-destructive"
+        ) : unavailable ? (
+          <div
+            className="flex flex-col items-start gap-2"
             data-ocid={`wallet.error_state.${index}`}
           >
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            Ledger unavailable
-          </p>
+            <p
+              className="flex items-center gap-2 text-sm text-destructive"
+              aria-live="polite"
+            >
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {t.balanceUnavailable}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-lg border-gold transition-smooth hover:border-gold-strong hover:bg-primary/10 hover:text-foreground"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              data-ocid={`wallet.retry_button.${index}`}
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+              />
+              {t.retry}
+            </Button>
+          </div>
+        ) : data === undefined ? (
+          <Skeleton
+            className="h-8 w-32"
+            data-ocid={`wallet.loading_state.${index}`}
+          />
         ) : (
           <p
             className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-2xl font-semibold tabular-nums break-all text-foreground"
             data-ocid={`wallet.balance.${index}`}
           >
-            {formatUnits(balance ?? 0n, token.decimals)}
+            {formatUnits(data, token.decimals)}
             <span className="text-base font-normal text-primary">
               {token.symbol}
             </span>

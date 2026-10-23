@@ -2,27 +2,23 @@ import {
   AlertCircle,
   Coins,
   Landmark,
-  Loader2,
   Lock,
   Percent,
-  RefreshCw,
   ShieldAlert,
   TrendingUp,
 } from "lucide-react";
-import { toast } from "sonner";
-import { OracleStatus, PriceSource } from "../backend";
-import {
-  ConversionsCard,
-  formatTimestamp,
-} from "../components/admin/ConversionsCard";
+import { PayToken } from "../backend";
+import { ConversionsCard } from "../components/admin/ConversionsCard";
+import { CyclesReserveCard } from "../components/admin/CyclesReserveCard";
 import { IcpAccountCard } from "../components/admin/IcpAccountCard";
 import { LaunchControls } from "../components/admin/LaunchControls";
+import { PayTokenAccountCard } from "../components/admin/PayTokenAccountCard";
 import { SnapshotExport } from "../components/admin/SnapshotExport";
+import { TokenRatesCard } from "../components/admin/TokenRatesCard";
 import { TransferFeeCard } from "../components/admin/TransferFeeCard";
-import { GOLD_CARD, SECONDARY_GOLD } from "../components/admin/styles";
+import { GOLD_CARD } from "../components/admin/styles";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
 import {
   Card,
   CardContent,
@@ -34,19 +30,17 @@ import { Skeleton } from "../components/ui/skeleton";
 import {
   useGetFee,
   useGetFeeCollector,
-  useGetIcpPrice,
   useGetMaxSupply,
   useIsCallerAdmin,
-  useRefreshIcpPrice,
   useTokenInfo,
 } from "../hooks/useQueries";
-import { TTTI_SYMBOL, formatTtti, formatUsdE8 } from "../lib/token";
+import { TTTI_SYMBOL, formatTtti } from "../lib/token";
 
-const PRICE_SOURCE_LABELS: Record<PriceSource, string> = {
-  [PriceSource.coinbase]: "Coinbase",
-  [PriceSource.coingecko]: "CoinGecko",
-  [PriceSource.none]: "No source",
-};
+const CK_PAY_TOKENS: ReadonlyArray<PayToken> = [
+  PayToken.ckbtc,
+  PayToken.ckusdc,
+  PayToken.ckusdt,
+];
 
 function toHex(bytes: Uint8Array | undefined): string {
   if (!bytes) return "";
@@ -76,7 +70,7 @@ function AdminOnlyNotice() {
           <AlertTitle>Access denied</AlertTitle>
           <AlertDescription>
             Sign in with an administrator identity to pause sales, refresh the
-            rate, set the test transfer fee, set the ICP receiving account, or
+            rates, set the test transfer fee, set the receiving accounts, or
             export the balance snapshot.
           </AlertDescription>
         </Alert>
@@ -92,12 +86,6 @@ export function AdminPage() {
   const { data: currentFee, isLoading: isFeeLoading } = useGetFee();
   const { data: feeCollector, isLoading: isCollectorLoading } =
     useGetFeeCollector();
-  const {
-    data: icpPrice,
-    isLoading: isPriceLoading,
-    isError: isPriceError,
-  } = useGetIcpPrice();
-  const refreshPrice = useRefreshIcpPrice();
 
   if (isAdminLoading) {
     return (
@@ -118,21 +106,6 @@ export function AdminPage() {
       </div>
     );
   }
-
-  const handleRefreshPrice = () => {
-    refreshPrice.mutate(undefined, {
-      onSuccess: (result) => {
-        if (result.__kind__ === "Ok") {
-          toast.success("ICP/USD rate refreshed");
-        } else {
-          toast.error(result.Err || "The rate refresh failed.");
-        }
-      },
-      onError: (error) => {
-        toast.error(error.message || "The rate refresh failed.");
-      },
-    });
-  };
 
   const totalSupply = tokenInfo?.totalSupply ?? 0n;
   const supplyCap = maxSupply ?? tokenInfo?.maxSupply ?? 0n;
@@ -159,8 +132,8 @@ export function AdminPage() {
           </Badge>
         </div>
         <p className="text-muted-foreground">
-          Pause sales, refresh the rate, set the test transfer fee and the ICP
-          receiving account, and export the balance snapshot.
+          Pause sales, refresh the rates, set the test transfer fee and the
+          receiving account of each pay token, and export the balance snapshot.
         </p>
       </header>
 
@@ -208,151 +181,97 @@ export function AdminPage() {
         </div>
       </section>
 
-      <Card className={GOLD_CARD} data-ocid="admin.fee_collector_card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 font-display text-lg">
-            <Landmark className="w-5 h-5 text-primary" />
-            Fee Account
-          </CardTitle>
-          <CardDescription>
-            Collected transfer fees accrue here.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <ol
-            className="space-y-1.5 border-l border-border pl-4 text-sm text-muted-foreground"
-            data-ocid="admin.delivery_order"
-          >
-            <li>1. New {TTTI_SYMBOL} tokens are minted first.</li>
-            <li>
-              2. Collected transfer fees are sold only after fresh minting
-              reaches the 10,000 {TTTI_SYMBOL} cap.
-            </li>
-          </ol>
-          <p
-            className="flex items-center gap-2 text-sm text-foreground"
-            data-ocid="admin.fee_account_locked"
-          >
-            <Lock
-              className="h-4 w-4 shrink-0 text-primary"
-              aria-hidden="true"
-            />
-            The fee account cannot be withdrawn by anyone, admin included.
-          </p>
-          {isCollectorLoading || !feeCollector ? (
-            <Skeleton
-              className="h-24 w-full"
-              data-ocid="admin.fee_collector_loading_state"
-            />
-          ) : (
-            <>
-              <SupplyRow
-                label="Balance"
-                value={`${formatTtti(feeCollector.balance)} ${TTTI_SYMBOL}`}
+      <div className="grid gap-10 lg:grid-cols-2">
+        <Card className={GOLD_CARD} data-ocid="admin.fee_collector_card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 font-display text-lg">
+              <Landmark className="w-5 h-5 text-primary" />
+              Fee Account
+            </CardTitle>
+            <CardDescription>
+              Collected transfer fees accrue here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ol
+              className="space-y-1.5 border-l border-border pl-4 text-sm text-muted-foreground"
+              data-ocid="admin.delivery_order"
+            >
+              <li>
+                1. New {TTTI_SYMBOL} tokens are minted first, up to the{" "}
+                {supplyCap > 0n ? `${formatTtti(supplyCap)} ` : ""}
+                {TTTI_SYMBOL} cap.
+              </li>
+              <li>
+                2. Once the cap is reached, collected transfer fees are
+                delivered from the fee account.
+              </li>
+            </ol>
+            <p
+              className="flex items-center gap-2 text-sm text-foreground"
+              data-ocid="admin.fee_account_locked"
+            >
+              <Lock
+                className="h-4 w-4 shrink-0 text-primary"
+                aria-hidden="true"
               />
-              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-                <dt className="text-muted-foreground">Owner</dt>
-                <dd
-                  className="font-mono break-all"
-                  data-ocid="admin.fee_collector_owner"
-                >
-                  {feeCollector.account.owner.toText()}
-                </dd>
-                <dt className="text-muted-foreground">Subaccount</dt>
-                <dd className="font-mono break-all">
-                  {toHex(feeCollector.account.subaccount) || "Default"}
-                </dd>
-              </dl>
-            </>
-          )}
-        </CardContent>
-      </Card>
+              The fee account cannot be withdrawn by anyone, admin included.
+            </p>
+            {isCollectorLoading || !feeCollector ? (
+              <Skeleton
+                className="h-24 w-full"
+                data-ocid="admin.fee_collector_loading_state"
+              />
+            ) : (
+              <>
+                <SupplyRow
+                  label="Balance"
+                  value={`${formatTtti(feeCollector.balance)} ${TTTI_SYMBOL}`}
+                />
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+                  <dt className="text-muted-foreground">Owner</dt>
+                  <dd
+                    className="font-mono break-all"
+                    data-ocid="admin.fee_collector_owner"
+                  >
+                    {feeCollector.account.owner.toText()}
+                  </dd>
+                  <dt className="text-muted-foreground">Subaccount</dt>
+                  <dd className="font-mono break-all">
+                    {toHex(feeCollector.account.subaccount) || "Default"}
+                  </dd>
+                </dl>
+              </>
+            )}
+          </CardContent>
+        </Card>
+        <CyclesReserveCard />
+      </div>
 
       <LaunchControls />
 
-      <Card className={GOLD_CARD} data-ocid="admin.oracle_card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 font-display text-lg">
-            <TrendingUp className="w-5 h-5 text-primary" />
-            ICP/USD Rate
-          </CardTitle>
-          <CardDescription>
-            Fetched from Coinbase with CoinGecko as backup. Purchases refresh it
-            themselves; this button refreshes it now.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isPriceLoading ? (
-            <Skeleton className="h-9 w-48" />
-          ) : isPriceError || !icpPrice ? (
-            <Alert variant="destructive" data-ocid="admin.oracle_error_state">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                The ICP/USD rate could not be loaded. Refresh it to try again.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <div className="flex flex-wrap items-center gap-4">
-              <p
-                className="text-2xl font-semibold tracking-tight font-mono tabular-nums text-primary"
-                data-ocid="admin.oracle_price"
-              >
-                {formatUsdE8(icpPrice.usdE8)}
-              </p>
-              <Badge variant="outline" data-ocid="admin.oracle_source">
-                {PRICE_SOURCE_LABELS[icpPrice.source]}
-              </Badge>
-              {icpPrice.stale ? (
-                <Badge variant="destructive" data-ocid="admin.oracle_stale">
-                  Stale
-                </Badge>
-              ) : (
-                <Badge
-                  variant={
-                    icpPrice.status === OracleStatus.unavailable
-                      ? "destructive"
-                      : "default"
-                  }
-                  data-ocid="admin.oracle_status"
-                >
-                  {icpPrice.status === OracleStatus.unavailable
-                    ? "Unavailable"
-                    : "Live"}
-                </Badge>
-              )}
-              <span className="text-xs text-muted-foreground">
-                Updated {formatTimestamp(icpPrice.updatedAt)}
-              </span>
-            </div>
-          )}
+      <TokenRatesCard />
 
-          <Button
-            type="button"
-            variant="secondary"
-            className={SECONDARY_GOLD}
-            onClick={handleRefreshPrice}
-            disabled={refreshPrice.isPending}
-            data-ocid="admin.oracle_refresh_button"
-          >
-            {refreshPrice.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Refreshing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4" />
-                Refresh rate
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+      <TransferFeeCard />
 
-      <div className="grid gap-10 lg:grid-cols-2">
-        <TransferFeeCard />
-        <IcpAccountCard />
-      </div>
+      <section
+        className="space-y-4"
+        data-ocid="admin.treasury_accounts_section"
+      >
+        <div className="space-y-1">
+          <h2 className="font-display text-xl">Receiving Accounts</h2>
+          <p className="text-sm text-muted-foreground">
+            One account per pay token. Purchases in a token stay closed until
+            its account is set.
+          </p>
+        </div>
+        <div className="grid gap-10 lg:grid-cols-2">
+          <IcpAccountCard />
+          {CK_PAY_TOKENS.map((token) => (
+            <PayTokenAccountCard key={token} token={token} />
+          ))}
+        </div>
+      </section>
 
       <SnapshotExport />
 

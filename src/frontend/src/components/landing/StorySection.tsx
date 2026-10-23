@@ -1,21 +1,10 @@
 import { motion } from "motion/react";
+import { useDict } from "../../i18n/core";
+import { STORY_TEXT } from "../../i18n/pages/landing";
 
-const paragraphs = [
-  "They were called the Immortals. Ten thousand, always ten thousand. Organized. Trained. Feared across an empire.",
-  "When one fell, another stepped into his place, and no one noticed the difference. They had no names, only a number to maintain.",
-  "They did not fight for anything. They fought because they were ordered to.",
-];
+const paragraphs = ["p1", "p2", "p3"] as const;
 
-const epilogue = [
-  "480 BC. Thermopylae.",
-  "Three hundred Spartans stood in a narrow pass against the largest army the world had ever seen.",
-  "The Immortals came with arrogance. Ten thousand, flawless, replaceable. For two days they threw themselves against the three hundred, and for two days they broke. Discipline was not enough. Skill was not enough. Numbers were not enough.",
-  "They took the pass only through a traitor's path. The three hundred did not retreat. They fell where they stood.",
-  "But the three hundred had not come to win a pass. They had come for something worth more than their lives: a freedom that was theirs, a cause they shared. And by dying for it, they made a scattered people believe in it.",
-  "A year later, those people stood together. At Salamis and at Plataea, the empire broke.",
-  "The Immortals were never defeated by a stronger army. They were defeated by three hundred who knew why they were fighting.",
-  "An army that serves can win a battle. Only people who share a cause can win a war.",
-];
+const epilogue = ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8"] as const;
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -24,6 +13,7 @@ const reveal = {
 };
 
 export function StorySection() {
+  const t = useDict(STORY_TEXT);
   return (
     <section
       id="story"
@@ -38,18 +28,18 @@ export function StorySection() {
           className="space-y-6"
         >
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
-            The legend
+            {t.label}
           </p>
           <h2
             id="story-title"
             className="text-imperial text-balance text-3xl leading-tight text-foreground md:text-5xl"
           >
-            The Ten Thousand Immortals
+            {t.title}
           </h2>
           <div className="divider-gold max-w-24" />
           <div className="space-y-5 text-base leading-relaxed text-muted-foreground md:text-lg">
-            {paragraphs.map((text) => (
-              <p key={text}>{text}</p>
+            {paragraphs.map((key) => (
+              <p key={key}>{t[key]}</p>
             ))}
           </div>
         </motion.div>
@@ -58,8 +48,8 @@ export function StorySection() {
           className="mt-14 space-y-3 border-t border-border pt-8 text-sm italic leading-relaxed text-muted-foreground"
           data-ocid="landing.story.epilogue"
         >
-          {epilogue.map((text) => (
-            <p key={text}>{text}</p>
+          {epilogue.map((key) => (
+            <p key={key}>{t[key]}</p>
           ))}
         </div>
       </div>

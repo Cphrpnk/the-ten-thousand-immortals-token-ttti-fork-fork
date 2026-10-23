@@ -10,6 +10,7 @@ import {
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { Account } from "../backend";
+import { ExplorerLink } from "../components/ExplorerLink";
 import { FlatTokenIcon } from "../components/FlatTokenIcon";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
@@ -40,6 +41,13 @@ import {
   useTokenInfo,
   useTttiIcrc2Approve,
 } from "../hooks/useQueries";
+import { pickDict, useDict } from "../i18n/core";
+import {
+  TRANSFER_EXPLORER_TEXT,
+  TRANSFER_TEXT,
+  type TransferText,
+} from "../i18n/pages/transfer";
+import { tttiBlockTarget } from "../lib/explorer";
 import {
   TTTI_DECIMALS,
   TTTI_SYMBOL,
@@ -70,13 +78,34 @@ function truncatePrincipal(principal: string): string {
   return `${principal.slice(0, 11)}…${principal.slice(-6)}`;
 }
 
+/**
+ * A form message resolved at render time, so a stored error or success
+ * message follows a language switch.
+ */
+type FormMessage = {
+  text: (t: TransferText) => string;
+  /** TTTI-T block index of a successful operation. */
+  block?: bigint;
+};
+
+function msg(text: (t: TransferText) => string, block?: bigint): FormMessage {
+  return { text, block };
+}
+
+function feeText(fee: bigint | undefined): string {
+  return fee === undefined ? "—" : formatUnits(fee, TTTI_DECIMALS, 0);
+}
+
+/** The contract's refusal for transfers to its own (minting) address. */
+const CONTRACT_ADDRESS_REFUSED = msg((t) => t.contractAddressRefused);
+
 function describeTransferError(error: {
   __kind__: string;
   [key: string]: unknown;
-}): string {
+}): FormMessage {
   switch (error.__kind__) {
     case "BadFee":
-      return "The transfer fee changed. Refresh and try again.";
+      return msg((t) => t.badFee);
     case "InsufficientFunds": {
       const detail = error.InsufficientFunds as
         | { balance?: bigint }
@@ -84,18 +113,8 @@ function describeTransferError(error: {
       const balance =
         detail?.balance !== undefined ? formatTtti(detail.balance) : null;
       return balance
-        ? `Insufficient funds. Your balance is ${balance} ${TTTI_SYMBOL}.`
-        : "Insufficient funds for this transfer.";
-    }
-    case "BadBurn": {
-      const detail = error.BadBurn as { min_burn_amount?: bigint } | undefined;
-      const min =
-        detail?.min_burn_amount !== undefined
-          ? formatTtti(detail.min_burn_amount)
-          : null;
-      return min
-        ? `The amount is below the required minimum of ${min} ${TTTI_SYMBOL}.`
-        : "The amount is below the required minimum.";
+        ? msg((t) => t.insufficientFundsBalance(balance, TTTI_SYMBOL))
+        : msg((t) => t.insufficientFunds);
     }
     case "InsufficientAllowance": {
       const detail = error.InsufficientAllowance as
@@ -104,28 +123,32 @@ function describeTransferError(error: {
       const allowance =
         detail?.allowance !== undefined ? formatTtti(detail.allowance) : null;
       return allowance
-        ? `The allowance is too low. Current allowance: ${allowance} ${TTTI_SYMBOL}.`
-        : "The allowance is too low for this transfer.";
+        ? msg((t) => t.insufficientAllowanceAmount(allowance, TTTI_SYMBOL))
+        : msg((t) => t.insufficientAllowance);
     }
     case "Duplicate":
-      return "This transaction was already processed.";
+      return msg((t) => t.duplicateTransfer);
     case "TemporarilyUnavailable":
-      return "The ledger is temporarily unavailable. Try again shortly.";
+      return msg((t) => t.temporarilyUnavailable);
     case "CreatedInFuture":
-      return "The ledger rejected this as created in the future. Try again.";
+      return msg((t) => t.createdInFuture);
     case "TooOld":
-      return "This transaction is too old to process. Try again.";
-    case "GenericError":
-      return "The ledger rejected this request. Check the destination and try again.";
+      return msg((t) => t.tooOldTransfer);
+    case "GenericError": {
+      const detail = error.GenericError as { error_code?: bigint } | undefined;
+      return detail?.error_code === 8n
+        ? CONTRACT_ADDRESS_REFUSED
+        : msg((t) => t.genericRejected);
+    }
     default:
-      return "The ledger rejected this request.";
+      return msg((t) => t.rejected);
   }
 }
 
 function describeApproveError(error: {
   __kind__: string;
   [key: string]: unknown;
-}): string {
+}): FormMessage {
   switch (error.__kind__) {
     case "AllowanceChanged": {
       const detail = error.AllowanceChanged as
@@ -136,31 +159,32 @@ function describeApproveError(error: {
           ? formatTtti(detail.current_allowance)
           : null;
       return current
-        ? `The allowance changed. Current allowance: ${current} ${TTTI_SYMBOL}.`
-        : "The allowance changed. Refresh and try again.";
+        ? msg((t) => t.allowanceChangedAmount(current, TTTI_SYMBOL))
+        : msg((t) => t.allowanceChanged);
     }
     case "Expired":
-      return "This approval expired before it was processed.";
+      return msg((t) => t.approveExpired);
     case "ExpiredFrom":
-      return "The approval window expired. Try again.";
+      return msg((t) => t.approveExpiredFrom);
     case "InsufficientFunds":
-      return "Insufficient funds to cover the approval fee.";
+      return msg((t) => t.approveInsufficientFunds);
     case "BadFee":
-      return "The approval fee changed. Refresh and try again.";
+      return msg((t) => t.approveBadFee);
     case "Duplicate":
-      return "This approval was already processed.";
+      return msg((t) => t.approveDuplicate);
     case "TemporarilyUnavailable":
-      return "The ledger is temporarily unavailable. Try again shortly.";
+      return msg((t) => t.temporarilyUnavailable);
     case "CreatedInFuture":
-      return "The ledger rejected this as created in the future. Try again.";
+      return msg((t) => t.createdInFuture);
     case "TooOld":
-      return "This approval is too old to process. Try again.";
+      return msg((t) => t.approveTooOld);
     default:
-      return "The ledger rejected this approval.";
+      return msg((t) => t.approveRejected);
   }
 }
 
 function SignedOutNotice() {
+  const t = useDict(TRANSFER_TEXT);
   return (
     <Card
       className="surface-open mx-auto w-full max-w-2xl rounded-none py-10"
@@ -169,18 +193,16 @@ function SignedOutNotice() {
       <CardHeader className="px-0">
         <CardTitle className="flex items-center gap-2 font-display text-lg">
           <Wallet className="w-5 h-5 text-primary" />
-          Sign in to manage your tokens
+          {t.signedOutTitle}
         </CardTitle>
-        <CardDescription>
-          Transfers and approvals are tied to your Internet Identity principal.
-          Sign in from the header to continue.
-        </CardDescription>
+        <CardDescription>{t.signedOutBody}</CardDescription>
       </CardHeader>
     </Card>
   );
 }
 
 function BalanceCard({ balance }: { balance: bigint | undefined }) {
+  const t = useDict(TRANSFER_TEXT);
   return (
     <Card
       className="surface-open rounded-none border-l-2 border-l-primary py-1"
@@ -189,7 +211,7 @@ function BalanceCard({ balance }: { balance: bigint | undefined }) {
       <CardHeader className="px-6 py-3">
         <CardDescription className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest">
           <Wallet className="w-4 h-4 text-primary" />
-          Your balance
+          {t.balanceLabel}
         </CardDescription>
         <CardTitle className="font-mono text-4xl font-semibold tracking-tight tabular-nums text-primary">
           {balance === undefined ? (
@@ -203,14 +225,33 @@ function BalanceCard({ balance }: { balance: bigint | undefined }) {
   );
 }
 
+/** "Recorded in block N" line with a link to the block on the History page. */
+function BlockRecord({ block, ocid }: { block: bigint; ocid: string }) {
+  const tx = useDict(TRANSFER_EXPLORER_TEXT);
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+      <span>{tx.recordedInBlock}</span>
+      <ExplorerLink
+        target={tttiBlockTarget(block)}
+        label={tx.viewBlockInHistory}
+        data-ocid={ocid}
+      >
+        {block.toString()}
+      </ExplorerLink>
+    </span>
+  );
+}
+
 function FormAlert({
   variant,
   message,
   ocid,
+  block,
 }: {
   variant: "error" | "success";
   message: string;
   ocid: string;
+  block?: bigint;
 }) {
   if (variant === "error") {
     return (
@@ -223,7 +264,12 @@ function FormAlert({
   return (
     <Alert className="border-primary/40 bg-primary/5" data-ocid={ocid}>
       <CheckCircle2 className="h-4 w-4 text-primary" />
-      <AlertDescription>{message}</AlertDescription>
+      <AlertDescription>
+        <span>{message}</span>
+        {block !== undefined && (
+          <BlockRecord block={block} ocid={`${ocid}.block_link`} />
+        )}
+      </AlertDescription>
     </Alert>
   );
 }
@@ -235,11 +281,12 @@ interface TransferFormProps {
 }
 
 function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
+  const t = useDict(TRANSFER_TEXT);
   const transfer = useIcrc1Transfer();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<FormMessage | null>(null);
+  const [success, setSuccess] = useState<FormMessage | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -248,26 +295,20 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
 
     const to = parsePrincipal(recipient);
     if (!to) {
-      setError("Enter a valid recipient principal ID.");
+      setError(msg((t) => t.invalidRecipient));
       return;
     }
     if (!reservedAccount) {
-      setError(
-        "Destination validation is unavailable. Please try again shortly.",
-      );
+      setError(msg((t) => t.destinationUnavailable));
       return;
     }
     if (to.toText() === reservedAccount.owner.toText()) {
-      setError(
-        "This address is reserved by the ledger. Tokens sent there cannot be recovered. Choose another recipient.",
-      );
+      setError(CONTRACT_ADDRESS_REFUSED);
       return;
     }
     const parsed = parseTtti(amount);
     if (parsed === null || parsed <= 0n) {
-      setError(
-        `Enter an amount greater than 0 with up to ${TTTI_DECIMALS} decimals.`,
-      );
+      setError(msg((t) => t.invalidAmount(TTTI_DECIMALS)));
       return;
     }
 
@@ -281,10 +322,12 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
       {
         onSuccess: (result) => {
           if (result.__kind__ === "Ok") {
+            const sent = formatTtti(parsed);
+            const toText = truncatePrincipal(to.toText());
             setSuccess(
-              `Sent ${formatTtti(parsed)} ${TTTI_SYMBOL} to ${truncatePrincipal(to.toText())}.`,
+              msg((t) => t.transferSent(sent, TTTI_SYMBOL, toText), result.Ok),
             );
-            toast.success("Transfer complete");
+            toast.success(pickDict(TRANSFER_TEXT).toastTransfer);
           } else {
             setError(describeTransferError(result.Err));
             setRecipient(capturedRecipient);
@@ -292,7 +335,7 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
           }
         },
         onError: () => {
-          setError("Transfer failed. Check the destination and try again.");
+          setError(msg((t) => t.transferFailed));
           setRecipient(capturedRecipient);
           setAmount(capturedAmount);
         },
@@ -305,19 +348,16 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
       <CardHeader className="px-0 pb-7">
         <CardTitle className="flex items-center gap-2 font-display text-lg">
           <ArrowRightLeft className="w-5 h-5 text-primary" />
-          Transfer {TTTI_SYMBOL}
+          {t.transferTitle(TTTI_SYMBOL)}
         </CardTitle>
         <CardDescription>
-          Send tokens from your principal to another account. The transfer fee
-          of {fee === undefined ? "—" : formatUnits(fee, TTTI_DECIMALS, 0)}{" "}
-          {TTTI_SYMBOL} is deducted from your balance and credited to the fee
-          collector.
+          {t.transferDescription(feeText(fee), TTTI_SYMBOL)}
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         <form onSubmit={handleSubmit} className="space-y-7">
           <div className="space-y-2">
-            <Label htmlFor="transfer-recipient">Recipient Principal</Label>
+            <Label htmlFor="transfer-recipient">{t.recipientLabel}</Label>
             <Input
               id="transfer-recipient"
               type="text"
@@ -332,7 +372,9 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="transfer-amount">Amount ({TTTI_SYMBOL})</Label>
+            <Label htmlFor="transfer-amount">
+              {t.amountLabel(TTTI_SYMBOL)}
+            </Label>
             <Input
               id="transfer-amount"
               type="text"
@@ -344,23 +386,27 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
               data-ocid="transfer.amount_input"
             />
             <p className="text-xs text-muted-foreground">
-              Up to {TTTI_DECIMALS} decimals. Fee:{" "}
-              {fee === undefined ? "—" : formatUnits(fee, TTTI_DECIMALS, 0)}{" "}
-              {TTTI_SYMBOL}. Sending from {truncatePrincipal(owner.toText())}.
+              {t.transferHint(
+                TTTI_DECIMALS,
+                feeText(fee),
+                TTTI_SYMBOL,
+                truncatePrincipal(owner.toText()),
+              )}
             </p>
           </div>
 
           {error && (
             <FormAlert
               variant="error"
-              message={error}
+              message={error.text(t)}
               ocid="transfer.transfer_error_state"
             />
           )}
           {success && (
             <FormAlert
               variant="success"
-              message={success}
+              message={success.text(t)}
+              block={success.block}
               ocid="transfer.transfer_success_state"
             />
           )}
@@ -374,12 +420,12 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
             {transfer.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Sending...
+                {t.sending}
               </>
             ) : (
               <>
                 <ArrowRightLeft className="w-4 h-4" />
-                Send Tokens
+                {t.sendTokens}
               </>
             )}
           </Button>
@@ -390,11 +436,12 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
 }
 
 function ApproveForm({ owner }: { owner: Principal }) {
+  const t = useDict(TRANSFER_TEXT);
   const approve = useTttiIcrc2Approve();
   const [spender, setSpender] = useState("");
   const [amount, setAmount] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<FormMessage | null>(null);
+  const [success, setSuccess] = useState<FormMessage | null>(null);
 
   const spenderPrincipal = useMemo(() => parsePrincipal(spender), [spender]);
 
@@ -416,14 +463,12 @@ function ApproveForm({ owner }: { owner: Principal }) {
 
     const to = parsePrincipal(spender);
     if (!to) {
-      setError("Enter a valid spender principal ID.");
+      setError(msg((t) => t.invalidSpender));
       return;
     }
     const parsed = parseTtti(amount);
     if (parsed === null || parsed <= 0n) {
-      setError(
-        `Enter an allowance greater than 0 with up to ${TTTI_DECIMALS} decimals.`,
-      );
+      setError(msg((t) => t.invalidAllowance(TTTI_DECIMALS)));
       return;
     }
 
@@ -437,10 +482,15 @@ function ApproveForm({ owner }: { owner: Principal }) {
       {
         onSuccess: (result) => {
           if (result.__kind__ === "Ok") {
+            const approvedAmount = formatTtti(parsed);
+            const spenderText = truncatePrincipal(to.toText());
             setSuccess(
-              `Approved ${formatTtti(parsed)} ${TTTI_SYMBOL} for ${truncatePrincipal(to.toText())}.`,
+              msg(
+                (t) => t.approved(approvedAmount, TTTI_SYMBOL, spenderText),
+                result.Ok,
+              ),
             );
-            toast.success("Allowance approved");
+            toast.success(pickDict(TRANSFER_TEXT).toastApproved);
           } else {
             setError(describeApproveError(result.Err));
             setSpender(capturedSpender);
@@ -448,7 +498,7 @@ function ApproveForm({ owner }: { owner: Principal }) {
           }
         },
         onError: (err) => {
-          setError(err.message || "Approval failed. Please try again.");
+          setError(msg((t) => err.message || t.approvalFailed));
           setSpender(capturedSpender);
           setAmount(capturedAmount);
         },
@@ -461,16 +511,14 @@ function ApproveForm({ owner }: { owner: Principal }) {
       <CardHeader className="px-0 pb-7">
         <CardTitle className="flex items-center gap-2 font-display text-lg">
           <ShieldCheck className="w-5 h-5 text-primary" />
-          Approve a Spender
+          {t.approveTitle}
         </CardTitle>
-        <CardDescription>
-          Allow another principal to transfer tokens on your behalf.
-        </CardDescription>
+        <CardDescription>{t.approveDescription}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-8 px-0">
         <form onSubmit={handleSubmit} className="space-y-7">
           <div className="space-y-2">
-            <Label htmlFor="approve-spender">Spender Principal</Label>
+            <Label htmlFor="approve-spender">{t.spenderLabel}</Label>
             <Input
               id="approve-spender"
               type="text"
@@ -485,7 +533,9 @@ function ApproveForm({ owner }: { owner: Principal }) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="approve-amount">Allowance ({TTTI_SYMBOL})</Label>
+            <Label htmlFor="approve-amount">
+              {t.allowanceLabel(TTTI_SYMBOL)}
+            </Label>
             <Input
               id="approve-amount"
               type="text"
@@ -497,22 +547,22 @@ function ApproveForm({ owner }: { owner: Principal }) {
               data-ocid="transfer.approve_amount_input"
             />
             <p className="text-xs text-muted-foreground">
-              Up to {TTTI_DECIMALS} decimals. Approving charges the{" "}
-              {TTTI_SYMBOL} transfer fee.
+              {t.approveHint(TTTI_DECIMALS, TTTI_SYMBOL)}
             </p>
           </div>
 
           {error && (
             <FormAlert
               variant="error"
-              message={error}
+              message={error.text(t)}
               ocid="transfer.approve_error_state"
             />
           )}
           {success && (
             <FormAlert
               variant="success"
-              message={success}
+              message={success.text(t)}
+              block={success.block}
               ocid="transfer.approve_success_state"
             />
           )}
@@ -526,12 +576,12 @@ function ApproveForm({ owner }: { owner: Principal }) {
             {approve.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Approving...
+                {t.approving}
               </>
             ) : (
               <>
                 <ShieldCheck className="w-4 h-4" />
-                Approve Allowance
+                {t.approveAllowance}
               </>
             )}
           </Button>
@@ -539,16 +589,17 @@ function ApproveForm({ owner }: { owner: Principal }) {
 
         <div className="rule-quiet pt-6" data-ocid="transfer.allowance_panel">
           <p className="text-sm text-muted-foreground">
-            Current allowance
             {spenderPrincipal
-              ? ` for ${truncatePrincipal(spenderPrincipal.toText())}`
-              : ""}
+              ? t.currentAllowanceFor(
+                  truncatePrincipal(spenderPrincipal.toText()),
+                )
+              : t.currentAllowance}
           </p>
           <p className="mt-1 text-lg font-semibold tracking-tight font-mono tabular-nums text-foreground">
             {!spenderPrincipal
-              ? "Enter a spender to view"
+              ? t.enterSpenderToView
               : isAllowanceLoading
-                ? "Loading…"
+                ? t.loading
                 : `${formatTtti(allowance?.allowance ?? 0n)} ${TTTI_SYMBOL}`}
           </p>
         </div>
@@ -560,12 +611,13 @@ function ApproveForm({ owner }: { owner: Principal }) {
 function TransferFromForm({
   reservedAccount,
 }: { reservedAccount: Account | undefined }) {
+  const t = useDict(TRANSFER_TEXT);
   const transferFrom = useIcrc2TransferFrom();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<FormMessage | null>(null);
+  const [success, setSuccess] = useState<FormMessage | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -574,31 +626,25 @@ function TransferFromForm({
 
     const fromPrincipal = parsePrincipal(from);
     if (!fromPrincipal) {
-      setError("Enter a valid 'from' principal ID.");
+      setError(msg((t) => t.invalidFrom));
       return;
     }
     const toPrincipal = parsePrincipal(to);
     if (!toPrincipal) {
-      setError("Enter a valid 'to' principal ID.");
+      setError(msg((t) => t.invalidTo));
       return;
     }
     if (!reservedAccount) {
-      setError(
-        "Destination validation is unavailable. Please try again shortly.",
-      );
+      setError(msg((t) => t.destinationUnavailable));
       return;
     }
     if (toPrincipal.toText() === reservedAccount.owner.toText()) {
-      setError(
-        "This address is reserved by the ledger. Tokens sent there cannot be recovered. Choose another recipient.",
-      );
+      setError(CONTRACT_ADDRESS_REFUSED);
       return;
     }
     const parsed = parseTtti(amount);
     if (parsed === null || parsed <= 0n) {
-      setError(
-        `Enter an amount greater than 0 with up to ${TTTI_DECIMALS} decimals.`,
-      );
+      setError(msg((t) => t.invalidAmount(TTTI_DECIMALS)));
       return;
     }
 
@@ -618,10 +664,16 @@ function TransferFromForm({
       {
         onSuccess: (result) => {
           if (result.__kind__ === "Ok") {
+            const moved = formatTtti(parsed);
+            const fromText = truncatePrincipal(fromPrincipal.toText());
+            const toText = truncatePrincipal(toPrincipal.toText());
             setSuccess(
-              `Transferred ${formatTtti(parsed)} ${TTTI_SYMBOL} from ${truncatePrincipal(fromPrincipal.toText())} to ${truncatePrincipal(toPrincipal.toText())}.`,
+              msg(
+                (t) => t.transferredFrom(moved, TTTI_SYMBOL, fromText, toText),
+                result.Ok,
+              ),
             );
-            toast.success("Transfer from complete");
+            toast.success(pickDict(TRANSFER_TEXT).toastTransferFrom);
           } else {
             setError(describeTransferError(result.Err));
             setFrom(capturedFrom);
@@ -630,7 +682,7 @@ function TransferFromForm({
           }
         },
         onError: () => {
-          setError("Transfer failed. Check the destination and try again.");
+          setError(msg((t) => t.transferFailed));
           setFrom(capturedFrom);
           setTo(capturedTo);
           setAmount(capturedAmount);
@@ -644,17 +696,14 @@ function TransferFromForm({
       <CardHeader className="px-0 pb-7">
         <CardTitle className="flex items-center gap-2 font-display text-lg">
           <ArrowRightLeft className="w-5 h-5 text-primary" />
-          Transfer From an Allowance
+          {t.transferFromTitle}
         </CardTitle>
-        <CardDescription>
-          Spend an allowance you were granted to move tokens from another
-          principal's account.
-        </CardDescription>
+        <CardDescription>{t.transferFromDescription}</CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         <form onSubmit={handleSubmit} className="space-y-7">
           <div className="space-y-2">
-            <Label htmlFor="transfer-from-source">From Principal</Label>
+            <Label htmlFor="transfer-from-source">{t.fromLabel}</Label>
             <Input
               id="transfer-from-source"
               type="text"
@@ -669,7 +718,7 @@ function TransferFromForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="transfer-from-destination">To Principal</Label>
+            <Label htmlFor="transfer-from-destination">{t.toLabel}</Label>
             <Input
               id="transfer-from-destination"
               type="text"
@@ -684,7 +733,9 @@ function TransferFromForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="transfer-from-amount">Amount ({TTTI_SYMBOL})</Label>
+            <Label htmlFor="transfer-from-amount">
+              {t.amountLabel(TTTI_SYMBOL)}
+            </Label>
             <Input
               id="transfer-from-amount"
               type="text"
@@ -700,14 +751,15 @@ function TransferFromForm({
           {error && (
             <FormAlert
               variant="error"
-              message={error}
+              message={error.text(t)}
               ocid="transfer.transfer_from_error_state"
             />
           )}
           {success && (
             <FormAlert
               variant="success"
-              message={success}
+              message={success.text(t)}
+              block={success.block}
               ocid="transfer.transfer_from_success_state"
             />
           )}
@@ -721,12 +773,12 @@ function TransferFromForm({
             {transferFrom.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Transferring...
+                {t.transferring}
               </>
             ) : (
               <>
                 <ArrowRightLeft className="w-4 h-4" />
-                Transfer From
+                {t.transferFromButton}
               </>
             )}
           </Button>
@@ -737,6 +789,7 @@ function TransferFromForm({
 }
 
 export function TransferPage() {
+  const t = useDict(TRANSFER_TEXT);
   const { identity } = useInternetIdentity();
   const owner = identity?.getPrincipal();
 
@@ -768,11 +821,10 @@ export function TransferPage() {
           </div>
           <div className="min-w-0">
             <h1 className="text-imperial text-gradient-gold text-2xl leading-tight md:text-3xl">
-              Manage Tokens
+              {t.pageTitle}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Transfer, approve and spend {tokenInfo?.symbol || TTTI_SYMBOL}{" "}
-              allowances.
+              {t.pageSubtitle(tokenInfo?.symbol || TTTI_SYMBOL)}
             </p>
           </div>
         </div>
@@ -790,8 +842,7 @@ export function TransferPage() {
             className="font-mono tabular-nums text-primary"
             data-ocid="transfer.fee_badge"
           >
-            Fee {fee === undefined ? "—" : formatUnits(fee, TTTI_DECIMALS, 0)}{" "}
-            {TTTI_SYMBOL}
+            {t.feeBadge(feeText(fee), TTTI_SYMBOL)}
           </Badge>
         </div>
       </header>
@@ -805,21 +856,21 @@ export function TransferPage() {
             className={TAB_TRIGGER}
             data-ocid="transfer.transfer.tab"
           >
-            Transfer
+            {t.tabTransfer}
           </TabsTrigger>
           <TabsTrigger
             value="approve"
             className={TAB_TRIGGER}
             data-ocid="transfer.approve.tab"
           >
-            Approve
+            {t.tabApprove}
           </TabsTrigger>
           <TabsTrigger
             value="transfer-from"
             className={TAB_TRIGGER}
             data-ocid="transfer.transfer_from.tab"
           >
-            Transfer From
+            {t.tabTransferFrom}
           </TabsTrigger>
         </TabsList>
 

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { SiInternetcomputer } from "react-icons/si";
 import { Button } from "../components/ui/button";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { useDict } from "../i18n/core";
+import { BUY_ICP_TEXT } from "../i18n/pages/buyIcp";
 import {
   ONRAMPER_BUY_URL,
   copyAddressAndOpenOnramper,
@@ -21,6 +23,7 @@ function shorten(address: string): string {
 }
 
 export function BuyIcpPage() {
+  const t = useDict(BUY_ICP_TEXT);
   const { identity } = useInternetIdentity();
   const isAuthenticated = !!identity && !identity.getPrincipal().isAnonymous();
   const address = isAuthenticated
@@ -53,12 +56,11 @@ export function BuyIcpPage() {
           <SiInternetcomputer className="h-6 w-6" />
         </span>
         <h1 className="text-imperial text-3xl leading-tight text-foreground md:text-4xl">
-          Get <span className="text-gradient-gold">ICP</span>
+          {t.titlePrefix}
+          <span className="text-gradient-gold">ICP</span>
         </h1>
         <p className="text-sm text-muted-foreground">
-          {address
-            ? "Pick ICP, then paste your address on Onramper."
-            : "Via Onramper."}
+          {address ? t.subtitleWithAddress : t.subtitleNoAddress}
         </p>
       </header>
 
@@ -67,10 +69,10 @@ export function BuyIcpPage() {
           type="button"
           onClick={handleBuy}
           className={ctaClass}
-          aria-label="Buy ICP on Onramper (opens in a new tab)"
+          aria-label={t.buyAria}
           data-ocid="buy_icp.onramper_primary_button"
         >
-          Buy ICP
+          {t.buyButton}
           <ExternalLink className="h-4 w-4" />
         </Button>
 
@@ -79,7 +81,7 @@ export function BuyIcpPage() {
             type="button"
             onClick={handleCopy}
             title={address}
-            aria-label="Copy wallet address"
+            aria-label={t.copyAria}
             className="flex min-h-11 items-center gap-2 rounded-md border border-gold bg-card px-4 py-2 font-mono text-sm text-foreground transition-smooth hover:border-gold-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             data-ocid="buy_icp.address_button"
           >
@@ -98,7 +100,7 @@ export function BuyIcpPage() {
               className="text-primary"
               data-ocid="buy_icp.copy_success_state"
             >
-              Address copied
+              {t.copySuccess}
             </span>
           )}
           {copied === "failed" && (
@@ -106,7 +108,7 @@ export function BuyIcpPage() {
               className="text-destructive"
               data-ocid="buy_icp.copy_error_state"
             >
-              Copy failed — click the address
+              {t.copyFailed}
             </span>
           )}
         </p>
@@ -118,7 +120,7 @@ export function BuyIcpPage() {
         data-ocid="buy_icp.back_link"
       >
         <ArrowLeft className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-0.5" />
-        Back to purchase
+        {t.backLink}
       </Link>
     </div>
   );

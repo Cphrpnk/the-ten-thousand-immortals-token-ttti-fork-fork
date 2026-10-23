@@ -1,32 +1,173 @@
-import Int "mo:core/Int";
 import Nat "mo:core/Nat";
 import Nat32 "mo:core/Nat32";
-import Nat64 "mo:core/Nat64";
 import Char "mo:core/Char";
 import Text "mo:core/Text";
+import Int "mo:core/Int";
 import Time "mo:core/Time";
+import Timer "mo:core/Timer";
+import Error "mo:core/Error";
 import OutCall "mo:caffeineai-http-outcalls/outcall";
 import Oracle "../types/oracle";
 
 module {
   public type IcpPrice = Oracle.IcpPrice;
-  public type OracleStatus = Oracle.OracleStatus;
   public type PriceResult = Oracle.PriceResult;
   public type PriceSource = Oracle.PriceSource;
+  public type PriceError = Oracle.PriceError;
+  public type Timestamp = Oracle.Timestamp;
+  public type TokenPrice = Oracle.TokenPrice;
+  public type TokenPriceResult = Oracle.TokenPriceResult;
+  public type PayToken = Oracle.PayToken;
 
-  // Stable oracle state: the last known ICP/USD price (USD * 10^8), its
-  // timestamp (ns, 0 = never) and the feed that produced it.
+  // Stable rate state. fetchedAt / validUntil are 0 while no rate exists.
   public type OracleStore = {
     var usdE8 : Nat;
-    var updatedAt : Nat64;
     var source : PriceSource;
+    var fetchedAt : Timestamp;
+    var validUntil : Timestamp;
+    var lastError : ?PriceError;
+    var lastSuccessAt : ?Timestamp;
+  };
+
+  // Stable rate state of the ck pay tokens (BTC-USD, USDC-USD, USDT-USD);
+  // the ICP-USD rate stays in the actor's `oracle` store.
+  public type TokenRateStore = {
+    ckbtc : OracleStore;
+    ckusdc : OracleStore;
+    ckusdt : OracleStore;
+  };
+
+  // --- Multi-token rates -----------------------------------------------------
+
+  // The rate pair of `token`: "ICP-USD", "BTC-USD", "USDC-USD", "USDT-USD".
+  func pairOf(token : PayToken) : Text {
+    switch (token) {
+      case (#icp) "ICP-USD";
+      case (#ckbtc) "BTC-USD";
+      case (#ckusdc) "USDC-USD";
+      case (#ckusdt) "USDT-USD";
+    };
+  };
+
+  // https://api.coinbase.com/v2/prices/<PAIR>-USD/spot for the token.
+  public func coinbaseUrl(token : PayToken) : Text {
+    "https://api.coinbase.com/v2/prices/" # pairOf(token) # "/spot";
+  };
+
+  // CoinGecko simple price for internet-computer | bitcoin | usd-coin | tether.
+  public func coingeckoUrl(token : PayToken) : Text {
+    let id = switch (token) {
+      case (#icp) "internet-computer";
+      case (#ckbtc) "bitcoin";
+      case (#ckusdc) "usd-coin";
+      case (#ckusdt) "tether";
+    };
+    "https://api.coingecko.com/api/v3/simple/price?ids=" # id # "&vs_currencies=usd";
+  };
+
+  // The store holding `token`'s rate (#icp -> oracle).
+  public func storeFor(oracle : OracleStore, rates : TokenRateStore, token : PayToken) : OracleStore {
+    switch (token) {
+      case (#icp) oracle;
+      case (#ckbtc) rates.ckbtc;
+      case (#ckusdc) rates.ckusdc;
+      case (#ckusdt) rates.ckusdt;
+    };
+  };
+
+  // Public view of one token's rate at `now`. Never performs an outcall.
+  public func getTokenPrice(store : OracleStore, token : PayToken, now : Timestamp) : TokenPrice {
+    {
+      token;
+      pair = pairOf(token);
+      usdE8 = store.usdE8;
+      source = store.source;
+      fetchedAt = store.fetchedAt;
+      validUntil = store.validUntil;
+      usable = isUsable(store, now);
+      lastError = store.lastError;
+      lastSuccessAt = store.lastSuccessAt;
+    };
+  };
+
+  // Every pay token's rate (#icp, #ckbtc, #ckusdc, #ckusdt in that order).
+  public func allPrices(oracle : OracleStore, rates : TokenRateStore, now : Timestamp) : [TokenPrice] {
+    [
+      getTokenPrice(oracle, #icp, now),
+      getTokenPrice(rates.ckbtc, #ckbtc, now),
+      getTokenPrice(rates.ckusdc, #ckusdc, now),
+      getTokenPrice(rates.ckusdt, #ckusdt, now),
+    ];
+  };
+
+  // Coinbase then CoinGecko for `token`; same storage and error rules as
+  // fetchAndStore. Never traps.
+  public func fetchAndStoreToken(store : OracleStore, token : PayToken, transform : OutCall.Transform) : async PriceResult {
+    let coinbaseError = switch (await fetchPrice(coinbaseUrl(token), transform)) {
+      case (#ok(usdE8)) { return #Ok(storeRate(store, usdE8, #coinbase)) };
+      case (#err(message)) {
+        store.lastError := ?{ message = "Coinbase: " # message; at = Time.now() };
+        message;
+      };
+    };
+    switch (await fetchPrice(coingeckoUrl(token), transform)) {
+      case (#ok(usdE8)) { #Ok(storeRate(store, usdE8, #coingecko)) };
+      case (#err(message)) {
+        let combined = "Coinbase: " # coinbaseError # "; CoinGecko: " # message;
+        store.lastError := ?{ message = combined; at = Time.now() };
+        #Err(combined);
+      };
+    };
+  };
+
+  // Admin refresh of one token: refused (no outcall) while its rate is valid.
+  public func adminRefreshToken(oracle : OracleStore, rates : TokenRateStore, token : PayToken, transform : OutCall.Transform) : async TokenPriceResult {
+    let store = storeFor(oracle, rates, token);
+    let now = Time.now();
+    if (store.fetchedAt > 0 and store.usdE8 > 0 and now <= store.validUntil) {
+      return #Err("Refresh refused: the current " # pairOf(token) # " rate is still valid until " # store.validUntil.toText() # " (nanoseconds since the Unix epoch); no fetch was made");
+    };
+    switch (await fetchAndStoreToken(store, token, transform)) {
+      case (#Ok(_)) { #Ok(getTokenPrice(store, token, Time.now())) };
+      case (#Err(message)) { #Err(message) };
+    };
+  };
+
+  // True when no rate exists or less than 5 minutes of validity remain.
+  func needsFetch(store : OracleStore, now : Timestamp) : Bool {
+    store.fetchedAt == 0 or store.usdE8 == 0 or now + RETRY_SECONDS * 1_000_000_000 > store.validUntil;
+  };
+
+  // Arms the ck-token rate timers (called from the actor body on every install
+  // and upgrade): immediate check, then every 5 minutes; fetches when a rate
+  // is absent or under 5 minutes of validity remain.
+  public func startTokenTimers<system>(rates : TokenRateStore, transform : OutCall.Transform) : () {
+    func tick() : async () {
+      for ((store, token) in [(rates.ckbtc, #ckbtc), (rates.ckusdc, #ckusdc), (rates.ckusdt, #ckusdt)].values()) {
+        if (needsFetch(store, Time.now())) {
+          ignore await fetchAndStoreToken(store, token, transform);
+        };
+      };
+    };
+    ignore Timer.setTimer<system>(#seconds(0), tick);
+    ignore Timer.recurringTimer<system>(#seconds(RETRY_SECONDS), tick);
   };
 
   // USD price scale: prices are stored as USD * 10^8.
   public let PRICE_SCALE : Nat = 100_000_000;
 
-  // A cached price older than this (5 minutes, in ns) is stale.
-  public let STALE_AFTER_NS : Nat = 300_000_000_000;
+  // A rate is valid for 1 hour after it was fetched (ns).
+  public let VALID_FOR_NS : Nat = 3_600_000_000_000;
+
+  // A rate is still usable up to 5 minutes after validUntil (ns).
+  public let GRACE_NS : Nat = 300_000_000_000;
+
+  // Maximum age at which a rate is used: VALID_FOR_NS + GRACE_NS (ns).
+  public let MAX_RATE_AGE_NS : Nat = 3_900_000_000_000;
+
+  // Timer period: hourly fetch; retry every 5 minutes when every source fails.
+  public let REFRESH_SECONDS : Nat = 3_600;
+  public let RETRY_SECONDS : Nat = 300;
 
   // Primary feed: Coinbase spot, JSON `{"data":{"amount":"N.NN",...}}` (string).
   public let COINBASE_URL = "https://api.coinbase.com/v2/prices/ICP-USD/spot";
@@ -34,72 +175,136 @@ module {
   // Backup feed: CoinGecko simple price, JSON `{"internet-computer":{"usd":N.NN}}`.
   public let COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price?ids=internet-computer&vs_currencies=usd";
 
-  // Response ceiling for the price outcalls (headers included); the bodies are
-  // well under 100 bytes.
+  // Response ceiling for the price outcalls (headers included).
   let MAX_RESPONSE_BYTES : Nat64 = 16_000;
 
-  // Returns the cached price with status/stale computed against Time.now().
+  // 0.001 USD in usdE8 units.
+  let ROUNDING_UNIT : Nat = 100_000;
+
+  // The stored rate as the public view (usable computed against `now`).
   // Never performs an outcall.
-  public func getPrice(store : OracleStore) : IcpPrice {
-    let stale = isStale(store);
-    let status : OracleStatus = if (store.updatedAt == 0) {
-      #unavailable;
-    } else if (stale) {
-      #stale;
-    } else {
-      #ok;
-    };
+  public func getPrice(store : OracleStore, now : Timestamp) : IcpPrice {
     {
       usdE8 = store.usdE8;
-      usdMicro = store.usdE8 / 100;
-      updatedAt = store.updatedAt;
-      status;
       source = store.source;
-      stale;
+      fetchedAt = store.fetchedAt;
+      validUntil = store.validUntil;
+      usable = isUsable(store, now);
+      lastError = store.lastError;
+      lastSuccessAt = store.lastSuccessAt;
     };
   };
 
-  // True when no price was ever fetched or the price is older than 5 minutes.
-  public func isStale(store : OracleStore) : Bool {
-    if (store.updatedAt == 0 or store.usdE8 == 0) {
-      return true;
-    };
-    let age : Int = Time.now() - store.updatedAt.toNat();
-    age > STALE_AFTER_NS;
+  // True when a rate exists and now <= validUntil + 5 minutes.
+  public func isUsable(store : OracleStore, now : Timestamp) : Bool {
+    store.usdE8 > 0 and store.fetchedAt > 0 and now <= store.validUntil + GRACE_NS;
   };
 
-  // Fetches Coinbase first, then CoinGecko on any failure; parses the decimal
-  // price into USD * 10^8 without Float; updates the store on success. On
-  // failure of both feeds the last known price is kept and #Err is returned.
-  // Every outcall wrapped in try/catch; no cycles attached; never traps.
-  public func refreshPrice(store : OracleStore, transform : OutCall.Transform) : async PriceResult {
-    switch (await fetchPrice(COINBASE_URL, "\"amount\":", transform)) {
-      case (?usdE8) {
-        save(store, usdE8, #coinbase);
-        return #Ok(getPrice(store));
+  // The stored usdE8 when usable at `now`, otherwise null. Used by purchases;
+  // never performs an outcall.
+  public func usableRate(store : OracleStore, now : Timestamp) : ?Nat {
+    if (isUsable(store, now)) ?store.usdE8 else null;
+  };
+
+  // Fetches Coinbase, then CoinGecko; on success stores { usdE8; source;
+  // fetchedAt = now; validUntil = now + 1 h } and lastSuccessAt; on failure
+  // records lastError (exact text, date) and keeps the stored rate. Timer
+  // context only (update). Never traps.
+  public func fetchAndStore(store : OracleStore, transform : OutCall.Transform) : async PriceResult {
+    let coinbaseError = switch (await fetchPrice(COINBASE_URL, transform)) {
+      case (#ok(usdE8)) { return #Ok(storeRate(store, usdE8, #coinbase)) };
+      case (#err(message)) {
+        store.lastError := ?{ message = "Coinbase: " # message; at = Time.now() };
+        message;
       };
-      case null {};
     };
-    switch (await fetchPrice(COINGECKO_URL, "\"usd\":", transform)) {
-      case (?usdE8) {
-        save(store, usdE8, #coingecko);
-        #Ok(getPrice(store));
-      };
-      case null {
-        #Err("Price unavailable — both price feeds (Coinbase, CoinGecko) failed; the last known price was kept");
+    switch (await fetchPrice(COINGECKO_URL, transform)) {
+      case (#ok(usdE8)) { #Ok(storeRate(store, usdE8, #coingecko)) };
+      case (#err(message)) {
+        let combined = "Coinbase: " # coinbaseError # "; CoinGecko: " # message;
+        store.lastError := ?{ message = combined; at = Time.now() };
+        #Err(combined);
       };
     };
   };
 
-  func save(store : OracleStore, usdE8 : Nat, source : PriceSource) {
+  func storeRate(store : OracleStore, usdE8 : Nat, source : PriceSource) : IcpPrice {
+    let now = Time.now();
     store.usdE8 := usdE8;
-    store.updatedAt := Time.now().toNat().toNat64();
     store.source := source;
+    store.fetchedAt := now;
+    store.validUntil := now + VALID_FOR_NS;
+    store.lastSuccessAt := ?now;
+    getPrice(store, now);
   };
 
-  // GETs `url` and parses the number following `marker`. null on any failure
-  // (rejected call, non-200 status, unparsable body, zero price).
-  func fetchPrice(url : Text, marker : Text, transform : OutCall.Transform) : async ?Nat {
+  // Admin refresh: refuses with #Err("... rate still valid until <time>")
+  // and no outcall while now <= validUntil; otherwise fetchAndStore.
+  public func adminRefresh(store : OracleStore, transform : OutCall.Transform) : async PriceResult {
+    let now = Time.now();
+    if (store.fetchedAt > 0 and store.usdE8 > 0 and now <= store.validUntil) {
+      return #Err("Refresh refused: the current ICP/USD rate is still valid until " # store.validUntil.toText() # " (nanoseconds since the Unix epoch); no fetch was made");
+    };
+    await fetchAndStore(store, transform);
+  };
+
+  // Arms the rate timer (called from the actor body, so on every install and
+  // upgrade): an immediate first check, then a check every 5 minutes. A check
+  // fetches when no rate exists or less than 5 minutes of validity remain, so
+  // a successful rate is refetched once an hour and a failed fetch is retried
+  // every 5 minutes.
+  public func startTimer<system>(store : OracleStore, transform : OutCall.Transform) : () {
+    func tick() : async () {
+      let now = Time.now();
+      if (store.fetchedAt == 0 or store.usdE8 == 0 or now + RETRY_SECONDS * 1_000_000_000 > store.validUntil) {
+        ignore await fetchAndStore(store, transform);
+      };
+    };
+    ignore Timer.setTimer<system>(#seconds(0), tick);
+    ignore Timer.recurringTimer<system>(#seconds(RETRY_SECONDS), tick);
+  };
+
+  // Transform helper for the actor's `transform` query: keeps only the price
+  // extracted from the body, rounded to 0.001 USD (no headers, no other JSON),
+  // so every replica gets an identical response.
+  public func transform(input : OutCall.TransformationInput) : OutCall.TransformationOutput {
+    let response = input.response;
+    let price : ?Nat = if (response.status != 200) null else switch (response.body.decodeUtf8()) {
+      case (?text) {
+        switch (priceAfter(text, "\"amount\":")) {
+          case (?p) ?p;
+          case null priceAfter(text, "\"usd\":");
+        };
+      };
+      case null null;
+    };
+    let body = switch (price) {
+      case (?p) formatE8Milli((p + ROUNDING_UNIT / 2) / ROUNDING_UNIT * ROUNDING_UNIT);
+      case null "";
+    };
+    { status = response.status; headers = []; body = body.encodeUtf8() };
+  };
+
+  // The number following `marker` in `text`, in usdE8 units.
+  func priceAfter(text : Text, marker : Text) : ?Nat {
+    let parts = text.split(#text marker);
+    ignore parts.next();
+    switch (parts.next()) {
+      case (?rest) parseDecimalE8(rest);
+      case null null;
+    };
+  };
+
+  // usdE8 (a multiple of 0.001 USD) as canonical "W.FFF" text.
+  func formatE8Milli(value : Nat) : Text {
+    let milli = (value % PRICE_SCALE) / ROUNDING_UNIT;
+    let pad = if (milli < 10) "00" else if (milli < 100) "0" else "";
+    (value / PRICE_SCALE).toText() # "." # pad # milli.toText();
+  };
+
+  // GETs `url`; the transform reduces the body to the canonical price text.
+  // #err carries the exact failure text.
+  func fetchPrice(url : Text, transform : OutCall.Transform) : async { #ok : Nat; #err : Text } {
     try {
       let response = await OutCall.httpRequest({
         url;
@@ -110,25 +315,17 @@ module {
         transform;
       });
       if (response.status != 200) {
-        return null;
+        return #err("HTTP status " # response.status.toText());
       };
-      let body = switch (response.body.decodeUtf8()) {
-        case (?text) { text };
-        case null { return null };
-      };
-      let parts = body.split(#text marker);
-      ignore parts.next();
-      switch (parts.next()) {
-        case (?rest) {
-          switch (parseDecimalE8(rest)) {
-            case (?price) { if (price == 0) null else ?price };
-            case null { null };
-          };
+      let body = response.body.decodeUtf8() ?? "";
+      switch (parseDecimalE8(body)) {
+        case (?price) {
+          if (price == 0) #err("price not found in the response body") else #ok(price);
         };
-        case null { null };
+        case null { #err("price not found in the response body") };
       };
-    } catch (_) {
-      null;
+    } catch (e) {
+      #err("outcall rejected: " # e.message());
     };
   };
 

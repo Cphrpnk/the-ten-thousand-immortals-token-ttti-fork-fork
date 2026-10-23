@@ -1,22 +1,12 @@
-import Common "../types/common";
-import Icrc "../types/icrc";
 import Token "../types/token";
 import IcrcLib "../lib/icrc";
 import AccessControl "mo:caffeineai-authorization/access-control";
 import Runtime "mo:core/Runtime";
 
-// Ledger management. There is no mint method: TTTI-T is created only by the
-// sale purchase pipeline, capped at the max supply.
-mixin (ledger : IcrcLib.Ledger, accessControlState : AccessControl.AccessControlState, canisterPrincipal : Principal) {
-  // Callers burn only from their own accounts (admins included). The fee
-  // account (owned by this canister) can never be burned.
-  public shared ({ caller }) func burn(from : Common.Account, amount : Nat) : async Icrc.BurnResult {
-    if (from.owner != caller) {
-      Runtime.trap("Unauthorized: only the account owner can burn its tokens");
-    };
-    IcrcLib.burn(ledger, canisterPrincipal, from, amount);
-  };
-
+// Ledger management. There is no mint and no burn method: TTTI-T is created
+// only by the sale purchase pipeline, capped at the max supply, and tokens
+// cannot be burned.
+mixin (ledger : IcrcLib.Ledger, accessControlState : AccessControl.AccessControlState) {
   // Admin-only TTTI-T beta control. Accepts get_fee_bounds().min ..= get_fee_bounds().max.
   public shared ({ caller }) func set_fee(newFee : Nat) : async Token.SetFeeResult {
     if (not AccessControl.isAdmin(accessControlState, caller)) {

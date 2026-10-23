@@ -3,6 +3,8 @@ import { ArrowRight, MapPin } from "lucide-react";
 import { usePlug } from "../../hooks/usePlug";
 import { usePlugDeliveryAddress } from "../../hooks/usePlugPurchase";
 import { useGetDeliveryAddress } from "../../hooks/useQueries";
+import { useDict } from "../../i18n/core";
+import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import { TTTI_SYMBOL } from "../../lib/token";
 
 interface DeliveryAddressReminderProps {
@@ -19,6 +21,7 @@ interface DeliveryAddressReminderProps {
 export function DeliveryAddressReminder({
   enabled,
 }: DeliveryAddressReminderProps) {
+  const t = useDict(WALLET_TEXT);
   const { principal: plugPrincipal } = usePlug();
   const isPlug = !!plugPrincipal;
   const iiQuery = useGetDeliveryAddress();
@@ -37,12 +40,9 @@ export function DeliveryAddressReminder({
           <MapPin className="h-4 w-4" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="font-display text-sm font-medium">
-            No delivery address saved
-          </p>
+          <p className="font-display text-sm font-medium">{t.deliveryTitle}</p>
           <p className="text-xs text-muted-foreground">
-            Optionally add the Principal ID that should receive your{" "}
-            {TTTI_SYMBOL} tokens later. You can change it any time.
+            {t.deliveryBody(TTTI_SYMBOL)}
           </p>
         </div>
       </div>
@@ -52,7 +52,7 @@ export function DeliveryAddressReminder({
         className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-gold px-3 py-2 text-sm font-medium text-primary transition-smooth hover:border-gold-strong hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:self-center"
         data-ocid="wallet.delivery_reminder.link"
       >
-        Add delivery address
+        {t.deliveryAdd}
         <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </Link>
     </aside>

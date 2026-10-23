@@ -1,3 +1,5 @@
+import { loadConfig } from "@caffeineai/core-infrastructure";
+import { useLocation } from "@tanstack/react-router";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -16,9 +18,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { DataCertificate, GetBlocksArgs } from "../backend";
+import { ExplorerLink } from "../components/ExplorerLink";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import {
@@ -37,11 +41,26 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
+import { useIsMobile } from "../hooks/use-mobile";
 import {
   useGetLegacyBlockInfo,
   useIcrc3GetBlocks,
   useIcrc3GetTipCertificate,
+  useTechnicalDetails,
 } from "../hooks/useQueries";
+import { EXPLORER_TEXT } from "../i18n/common/explorer";
+import { type Lang, getLang, toIntlLocale, useDict } from "../i18n/core";
+import {
+  HISTORY_EXPLORER_TEXT,
+  HISTORY_TEXT,
+  type HistoryText,
+} from "../i18n/pages/history";
+import {
+  blockAnchorId,
+  blockIndexFromHash,
+  icpDashboardCanisterUrl,
+  tttiBlockTarget,
+} from "../lib/explorer";
 import {
   type BlockKind,
   type DecodedBlock,
@@ -53,7 +72,7 @@ import {
   shortHex,
   toHex,
 } from "../lib/icrc3Blocks";
-import { TTTI_SYMBOL, formatUnits } from "../lib/token";
+import { TTTI_SYMBOL, formatInteger, formatUnits } from "../lib/token";
 
 /** Blocks shown per page (always below the 100-block per-call cap). */
 const PAGE_SIZE = 50n;
@@ -69,11 +88,14 @@ function formatAmount(amount: bigint | null | undefined, decimals: number) {
   return formatUnits(amount, decimals);
 }
 
-function formatTimestamp(timestamp: bigint | null | undefined): string {
+function formatTimestamp(
+  timestamp: bigint | null | undefined,
+  lang: Lang = getLang(),
+): string {
   if (timestamp === null || timestamp === undefined) return "—";
   const date = new Date(Number(timestamp / 1_000_000n));
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString(toIntlLocale(lang), {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -98,6 +120,7 @@ function TipPanel({
   isLoading: boolean;
   logLength: bigint | undefined;
 }) {
+  const t = useDict(HISTORY_TEXT);
   const isCertified = !!certificate && certificate.certificate.length > 0;
 
   const decoded = useMemo<
@@ -120,9 +143,7 @@ function TipPanel({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" />
-            <CardTitle className="font-display text-lg">
-              Tip certificate
-            </CardTitle>
+            <CardTitle className="font-display text-lg">{t.tipTitle}</CardTitle>
           </div>
           {!isLoading && (
             <Badge
@@ -134,14 +155,11 @@ function TipPanel({
               }
               data-ocid="history.tip_certificate_badge"
             >
-              {isCertified ? "Certified" : "No certificate"}
+              {isCertified ? t.tipCertified : t.tipNoCertificate}
             </Badge>
           )}
         </div>
-        <CardDescription>
-          Tip data returned by the ledger. It is shown for reference and is not
-          cryptographically verified in this browser.
-        </CardDescription>
+        <CardDescription>{t.tipDescription}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {isLoading ? (
@@ -154,14 +172,14 @@ function TipPanel({
             className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground"
             data-ocid="history.tip_empty_state"
           >
-            {logLength === 0n
-              ? "The block log is empty, so there is no tip to certify yet. A certificate appears after the first transaction."
-              : "The ledger did not return a tip certificate."}
+            {logLength === 0n ? t.tipEmptyLog : t.tipMissing}
           </div>
         ) : (
           <>
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-sm text-muted-foreground">Tip index</span>
+              <span className="text-sm text-muted-foreground">
+                {t.tipIndex}
+              </span>
               <span
                 className="font-mono text-lg font-semibold tabular-nums text-primary"
                 data-ocid="history.tip_index"
@@ -171,19 +189,19 @@ function TipPanel({
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-sm text-muted-foreground">
-                Certificate size
+                {t.tipCertificateSize}
               </span>
               <span
                 className="font-mono text-sm tabular-nums"
                 data-ocid="history.tip_certificate_size"
               >
-                {certificate.certificate.length.toLocaleString("en-US")} bytes
+                {t.tipBytes(formatInteger(certificate.certificate.length))}
               </span>
             </div>
             {decoded?.ok ? (
               <div className="space-y-1.5">
                 <span className="text-sm text-muted-foreground">
-                  Last block hash
+                  {t.tipLastBlockHash}
                 </span>
                 <p
                   className="select-all border-l border-gold bg-muted/30 px-4 py-3 font-mono text-xs leading-relaxed break-all"
@@ -197,9 +215,7 @@ function TipPanel({
                 className="space-y-1.5"
                 data-ocid="history.tip_decode_error_state"
               >
-                <p className="text-sm text-destructive">
-                  Unable to decode hash tree
-                </p>
+                <p className="text-sm text-destructive">{t.tipDecodeError}</p>
                 <pre
                   className="max-h-32 select-all overflow-auto border-l border-border bg-muted/30 px-4 py-3 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap"
                   data-ocid="history.tip_hash_tree"
@@ -210,9 +226,7 @@ function TipPanel({
                 </pre>
               </div>
             )}
-            <p className="text-xs text-muted-foreground">
-              Returned by the ledger.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.tipReturnedBy}</p>
           </>
         )}
       </CardContent>
@@ -222,60 +236,64 @@ function TipPanel({
 
 const KIND_META: Record<
   BlockKind,
-  { label: string; icon: typeof ArrowUpRight; className: string }
+  {
+    labelKey: keyof HistoryText & `kind${string}`;
+    icon: typeof ArrowUpRight;
+    className: string;
+  }
 > = {
   transfer: {
-    label: "Transfer",
+    labelKey: "kindTransfer",
     icon: ArrowUpRight,
     className: "bg-primary/10 text-primary border-gold",
   },
   transferFrom: {
-    label: "Transfer",
+    labelKey: "kindTransfer",
     icon: ArrowUpRight,
     className: "bg-primary/10 text-primary border-gold",
   },
   mint: {
-    label: "Mint",
+    labelKey: "kindMint",
     icon: Coins,
     className: "bg-success/10 text-success border-success/30",
   },
   burn: {
-    label: "Ledger adjustment",
+    labelKey: "kindBurn",
     icon: History,
     className: "bg-muted text-muted-foreground border-border",
   },
   approve: {
-    label: "Approval",
+    labelKey: "kindApprove",
     icon: ArrowDownLeft,
     className: "bg-accent/10 text-accent border-accent/30",
   },
   "legacy-unknown": {
-    label: "Block",
+    labelKey: "kindLegacyUnknown",
     icon: History,
     className: "bg-muted text-muted-foreground border-border",
   },
 };
 
 function KindBadge({ kind }: { kind: BlockKind }) {
+  const t = useDict(HISTORY_TEXT);
   const meta = KIND_META[kind];
   const Icon = meta.icon;
   return (
     <Badge
       variant="outline"
       className={`gap-1.5 font-medium ${meta.className}`}
-      title={
-        kind === "transferFrom" ? "Transfer by an approved spender" : undefined
-      }
+      title={kind === "transferFrom" ? t.transferFromTitle : undefined}
     >
       <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-      {meta.label}
+      {t[meta.labelKey]}
     </Badge>
   );
 }
 
 function FeeDetail({ entry }: { entry: DecodedBlock }) {
+  const t = useDict(HISTORY_TEXT);
   if (entry.kind === "burn") {
-    return <span className="text-muted-foreground">No fee</span>;
+    return <span className="text-muted-foreground">{t.noFee}</span>;
   }
   if (entry.fee === undefined || entry.fee === 0n) {
     return <span className="text-muted-foreground">—</span>;
@@ -288,11 +306,11 @@ function FeeDetail({ entry }: { entry: DecodedBlock }) {
       {entry.feeCollector && (
         <span
           className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
-          title={`Credited to fee collector ${entry.feeCollector}`}
+          title={t.feeCollectorTitle(entry.feeCollector)}
           data-ocid="history.fee_collector_credit"
         >
           <PiggyBank className="h-3 w-3" aria-hidden="true" />
-          to fee collector
+          {t.toFeeCollector}
         </span>
       )}
     </span>
@@ -321,40 +339,40 @@ interface DetailItem {
 }
 
 /** Optional ICRC-3 fields shown beneath a block. */
-function detailItems(entry: DecodedBlock): DetailItem[] {
+function detailItems(entry: DecodedBlock, t: HistoryText): DetailItem[] {
   const items: DetailItem[] = [];
   if (entry.kind === "transferFrom" && entry.spender) {
     items.push({
       key: "spender",
-      label: "Spender",
+      label: t.detailSpender,
       value: <AccountText account={entry.spender} />,
     });
   }
   if (entry.memo) {
     items.push({
       key: "memo",
-      label: "Memo",
+      label: t.detailMemo,
       value: <MemoValue memo={entry.memo} />,
     });
   }
   if (entry.createdAt !== undefined) {
     items.push({
       key: "created",
-      label: "Created",
+      label: t.detailCreated,
       value: formatTimestamp(entry.createdAt),
     });
   }
   if (entry.expiresAt !== undefined) {
     items.push({
       key: "expires",
-      label: "Expires",
+      label: t.detailExpires,
       value: formatTimestamp(entry.expiresAt),
     });
   }
   if (entry.expectedAllowance !== undefined) {
     items.push({
       key: "expected",
-      label: "Expected allowance",
+      label: t.detailExpectedAllowance,
       value: `${formatAmount(entry.expectedAllowance, entry.decimals)} ${TTTI_SYMBOL}`,
     });
   }
@@ -370,17 +388,27 @@ function BlockId({
   index: number;
   onJump: (id: bigint) => void;
 }) {
+  const t = useDict(HISTORY_TEXT);
+  const tx = useDict(HISTORY_EXPLORER_TEXT);
   return (
     <span className="inline-flex flex-col items-start gap-1">
       <span className="inline-flex items-center gap-1.5">
-        #{entry.id.toString()}
+        <ExplorerLink
+          target={tttiBlockTarget(entry.id)}
+          label={tx.blockLabel(entry.id.toString())}
+          className="text-inherit decoration-transparent hover:decoration-current"
+          hideIcon
+          data-ocid={`history.block_link.${index + 1}`}
+        >
+          #{entry.id.toString()}
+        </ExplorerLink>
         {entry.legacy && (
           <Badge
             variant="outline"
             className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
-            title={`Recorded before the upgrade with ${entry.decimals} decimals`}
+            title={t.legacyBadgeTitle(String(entry.decimals))}
           >
-            legacy
+            {t.legacyBadge}
           </Badge>
         )}
       </span>
@@ -389,8 +417,11 @@ function BlockId({
           type="button"
           onClick={() => onJump(entry.id - 1n)}
           className="inline-flex items-center gap-1 rounded text-[11px] text-muted-foreground transition-smooth hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title={`Parent hash ${entry.phash}`}
-          aria-label={`Parent hash ${shortHex(entry.phash)}, go to block ${(entry.id - 1n).toString()}`}
+          title={t.parentHashTitle(entry.phash)}
+          aria-label={t.parentHashAria(
+            shortHex(entry.phash),
+            (entry.id - 1n).toString(),
+          )}
           data-ocid={`history.phash_link.${index + 1}`}
         >
           <Link2 className="h-3 w-3" aria-hidden="true" />
@@ -402,22 +433,24 @@ function BlockId({
 }
 
 function FromValue({ entry }: { entry: DecodedBlock }) {
+  const t = useDict(HISTORY_TEXT);
   if (entry.kind === "mint") {
-    return <span className="text-muted-foreground">Minted</span>;
+    return <span className="text-muted-foreground">{t.minted}</span>;
   }
   return <AccountText account={entry.from} />;
 }
 
 function ToValue({ entry }: { entry: DecodedBlock }) {
+  const t = useDict(HISTORY_TEXT);
   if (entry.kind === "burn") {
-    return <span className="text-muted-foreground">Ledger</span>;
+    return <span className="text-muted-foreground">{t.ledger}</span>;
   }
   if (entry.kind === "approve") {
     return (
       <span className="inline-flex flex-col gap-0.5">
         <AccountText account={entry.spender ?? entry.to} />
         <span className="font-body text-[11px] text-muted-foreground">
-          spender
+          {t.spenderNote}
         </span>
       </span>
     );
@@ -429,16 +462,20 @@ interface EntryProps {
   entry: DecodedBlock;
   index: number;
   highlighted: boolean;
+  /** Carries the block anchor id (visible layout only, so ids stay unique). */
+  anchored: boolean;
   onJump: (id: bigint) => void;
 }
 
-function EntryRow({ entry, index, highlighted, onJump }: EntryProps) {
-  const details = detailItems(entry);
+function EntryRow({ entry, index, highlighted, anchored, onJump }: EntryProps) {
+  const t = useDict(HISTORY_TEXT);
+  const details = detailItems(entry, t);
   const rowTone = highlighted ? "bg-primary/10" : "";
   return (
     <>
       <TableRow
-        className={`transition-smooth hover:bg-primary/5 ${rowTone} ${details.length > 0 ? "border-b-0" : ""}`}
+        id={anchored ? blockAnchorId(entry.id) : undefined}
+        className={`scroll-mt-24 transition-smooth hover:bg-primary/5 ${rowTone} ${details.length > 0 ? "border-b-0" : ""}`}
         data-block-id={entry.id.toString()}
         data-ocid={`history.item.${index + 1}`}
       >
@@ -453,7 +490,7 @@ function EntryRow({ entry, index, highlighted, onJump }: EntryProps) {
             <FromValue entry={entry} />
             {entry.kind === "transferFrom" && entry.spender && (
               <span className="font-body text-[11px] text-muted-foreground">
-                via {truncateAccount(entry.spender)}
+                {t.via(truncateAccount(entry.spender))}
               </span>
             )}
           </span>
@@ -490,10 +527,18 @@ function EntryRow({ entry, index, highlighted, onJump }: EntryProps) {
   );
 }
 
-function EntryCard({ entry, index, highlighted, onJump }: EntryProps) {
+function EntryCard({
+  entry,
+  index,
+  highlighted,
+  anchored,
+  onJump,
+}: EntryProps) {
+  const t = useDict(HISTORY_TEXT);
   return (
     <Card
-      className={`${GOLD_CARD} ${highlighted ? "ring-2 ring-primary/50" : ""}`}
+      id={anchored ? blockAnchorId(entry.id) : undefined}
+      className={`scroll-mt-24 ${GOLD_CARD} ${highlighted ? "ring-2 ring-primary/50" : ""}`}
       data-block-id={entry.id.toString()}
       data-ocid={`history.item.${index + 1}`}
     >
@@ -506,7 +551,7 @@ function EntryCard({ entry, index, highlighted, onJump }: EntryProps) {
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-xs text-muted-foreground">
-            {entry.kind === "approve" ? "Allowance" : "Amount"}
+            {entry.kind === "approve" ? t.allowance : t.amount}
           </span>
           <span className="font-mono text-lg font-semibold tabular-nums text-primary">
             {entry.kind === "burn" && entry.amount !== null ? "−" : ""}
@@ -514,39 +559,39 @@ function EntryCard({ entry, index, highlighted, onJump }: EntryProps) {
           </span>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">From</dt>
+          <dt className="text-muted-foreground">{t.from}</dt>
           <dd className="font-mono text-right break-all">
-            {entry.kind === "mint" ? "Minted" : (entry.from ?? "—")}
+            {entry.kind === "mint" ? t.minted : (entry.from ?? "—")}
           </dd>
           <dt className="text-muted-foreground">
-            {entry.kind === "approve" ? "Spender" : "To"}
+            {entry.kind === "approve" ? t.spender : t.to}
           </dt>
           <dd className="font-mono text-right break-all">
             {entry.kind === "burn"
-              ? "Ledger"
+              ? t.ledger
               : entry.kind === "approve"
                 ? (entry.spender ?? entry.to ?? "—")
                 : (entry.to ?? "—")}
           </dd>
-          <dt className="text-muted-foreground">Fee</dt>
+          <dt className="text-muted-foreground">{t.fee}</dt>
           <dd className="text-right">
             <FeeDetail entry={entry} />
           </dd>
           {entry.feeCollector && (
             <>
-              <dt className="text-muted-foreground">Fee collector</dt>
+              <dt className="text-muted-foreground">{t.feeCollector}</dt>
               <dd className="font-mono text-right break-all">
                 {entry.feeCollector}
               </dd>
             </>
           )}
-          {detailItems(entry).map((item) => (
+          {detailItems(entry, t).map((item) => (
             <div key={item.key} className="contents">
               <dt className="text-muted-foreground">{item.label}</dt>
               <dd className="min-w-0 font-mono text-right">{item.value}</dd>
             </div>
           ))}
-          <dt className="text-muted-foreground">Time</dt>
+          <dt className="text-muted-foreground">{t.time}</dt>
           <dd className="text-right">{formatTimestamp(entry.ts)}</dd>
         </dl>
       </CardContent>
@@ -566,6 +611,7 @@ function LoadingState() {
 }
 
 function EmptyState() {
+  const t = useDict(HISTORY_TEXT);
   return (
     <div
       className="flex flex-col items-center justify-center gap-4 border-t border-border px-6 py-16 text-center"
@@ -575,12 +621,9 @@ function EmptyState() {
         <History className="h-7 w-7" aria-hidden="true" />
       </div>
       <div className="space-y-1">
-        <h2 className="font-display text-xl font-semibold">
-          No transactions yet
-        </h2>
+        <h2 className="font-display text-xl font-semibold">{t.emptyTitle}</h2>
         <p className="max-w-sm text-sm text-muted-foreground">
-          Recorded ledger activity will appear here as soon as the first block
-          is recorded.
+          {t.emptyDescription}
         </p>
       </div>
       <Button
@@ -589,7 +632,7 @@ function EmptyState() {
         className={OUTLINE_GOLD}
         data-ocid="history.primary_button"
       >
-        <a href="/">Back to token overview</a>
+        <a href="/">{t.emptyBack}</a>
       </Button>
     </div>
   );
@@ -608,33 +651,34 @@ function PaginationBar({
   disabled: boolean;
   onPage: (page: number) => void;
 }) {
+  const t = useDict(HISTORY_TEXT);
   const isNewest = page === 0;
   const isOldest = page >= totalPages - 1;
   const controls = [
     {
       id: "pagination_first",
-      label: "Latest blocks",
+      label: t.pageLatest,
       icon: ChevronsLeft,
       target: 0,
       off: isNewest,
     },
     {
       id: "pagination_prev",
-      label: "Newer blocks",
+      label: t.pageNewerBlocks,
       icon: ChevronLeft,
       target: page - 1,
       off: isNewest,
     },
     {
       id: "pagination_next",
-      label: "Older blocks",
+      label: t.pageOlderBlocks,
       icon: ChevronRight,
       target: page + 1,
       off: isOldest,
     },
     {
       id: "pagination_last",
-      label: "Oldest blocks",
+      label: t.pageOldest,
       icon: ChevronsRight,
       target: totalPages - 1,
       off: isOldest,
@@ -642,7 +686,7 @@ function PaginationBar({
   ];
   return (
     <nav
-      aria-label="Block history pages"
+      aria-label={t.paginationAria}
       className="flex flex-col items-center justify-between gap-3 sm:flex-row"
       data-ocid="history.pagination"
     >
@@ -650,7 +694,7 @@ function PaginationBar({
         className="text-xs text-muted-foreground tabular-nums"
         data-ocid="history.pagination_range"
       >
-        {rangeLabel} · Page {page + 1} of {totalPages}
+        {t.pageOf(rangeLabel, String(page + 1), String(totalPages))}
       </p>
       <div className="flex items-center gap-2">
         {controls.map((control) => {
@@ -674,7 +718,7 @@ function PaginationBar({
               <Icon className="h-4 w-4" aria-hidden="true" />
               {!compact && (
                 <span>
-                  {control.id === "pagination_prev" ? "Newer" : "Older"}
+                  {control.id === "pagination_prev" ? t.pageNewer : t.pageOlder}
                 </span>
               )}
             </Button>
@@ -686,6 +730,32 @@ function PaginationBar({
 }
 
 export function HistoryPage() {
+  const t = useDict(HISTORY_TEXT);
+  const tx = useDict(HISTORY_EXPLORER_TEXT);
+  const te = useDict(EXPLORER_TEXT);
+  const isMobile = useIsMobile();
+  const locationHash = useLocation({ select: (loc) => loc.hash });
+  const hashBlockId = useMemo(
+    () => blockIndexFromHash(locationHash),
+    [locationHash],
+  );
+
+  // TTTI-T ledger canister ID: technical details, else the frontend config.
+  const { data: technicalDetails } = useTechnicalDetails();
+  const [configCanisterId, setConfigCanisterId] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    loadConfig()
+      .then((config) => {
+        if (active) setConfigCanisterId(config.backend_canister_id);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const ledgerCanisterId =
+    technicalDetails?.ledgerCanisterId.toText() ?? configCanisterId;
   // Probe the log so we know its total length before paging from the tip.
   const probeArgs = useMemo<GetBlocksArgs[]>(
     () => [{ start: 0n, length: 1n }],
@@ -772,6 +842,15 @@ export function HistoryPage() {
     [logLength],
   );
 
+  // Open /history#block-<n>: load the page holding block n once per hash.
+  const handledHash = useRef<string | null>(null);
+  useEffect(() => {
+    if (hashBlockId === null || logLength === undefined) return;
+    if (handledHash.current === locationHash) return;
+    handledHash.current = locationHash;
+    jumpToBlock(hashBlockId);
+  }, [hashBlockId, locationHash, logLength, jumpToBlock]);
+
   useEffect(() => {
     if (focusId === null || !entries.some((entry) => entry.id === focusId)) {
       return;
@@ -793,8 +872,20 @@ export function HistoryPage() {
   const total = data?.log_length ?? logLength ?? 0n;
   const rangeArgs = pageArgs[0];
   const rangeLabel = rangeArgs
-    ? `Blocks #${(rangeArgs.start + rangeArgs.length - 1n).toString()}–#${rangeArgs.start.toString()} of ${total.toLocaleString("en-US")}`
-    : `0 of ${total.toLocaleString("en-US")} blocks`;
+    ? t.rangeBlocks(
+        (rangeArgs.start + rangeArgs.length - 1n).toString(),
+        rangeArgs.start.toString(),
+        formatInteger(total),
+      )
+    : t.rangeEmpty(formatInteger(total));
+
+  const linkedBlockOffPage =
+    hashBlockId !== null &&
+    logLength !== undefined &&
+    hashBlockId < logLength &&
+    !isListLoading &&
+    entries.length > 0 &&
+    !entries.some((entry) => entry.id === hashBlockId);
 
   return (
     <div
@@ -808,22 +899,32 @@ export function HistoryPage() {
           </div>
           <div>
             <h1 className="text-imperial text-gradient-gold text-2xl leading-tight md:text-3xl">
-              Transaction History
+              {t.title}
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Ledger activity in chronological order, newest first.
-            </p>
+            <p className="text-sm text-muted-foreground">{t.subtitle}</p>
           </div>
         </div>
-        {logLength !== undefined && (
-          <Badge
-            variant="outline"
-            className="border-gold bg-primary/10 font-mono text-primary tabular-nums"
-            data-ocid="history.total_count"
-          >
-            {total.toLocaleString("en-US")} blocks
-          </Badge>
-        )}
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          {logLength !== undefined && (
+            <Badge
+              variant="outline"
+              className="border-gold bg-primary/10 font-mono text-primary tabular-nums"
+              data-ocid="history.total_count"
+            >
+              {t.totalBlocks(formatInteger(total))}
+            </Badge>
+          )}
+          {ledgerCanisterId && (
+            <ExplorerLink
+              target={icpDashboardCanisterUrl(ledgerCanisterId)}
+              label={te.viewCanisterOnIcpDashboard}
+              className="text-xs text-muted-foreground"
+              data-ocid="history.canister_link"
+            >
+              {ledgerCanisterId}
+            </ExplorerLink>
+          )}
+        </div>
       </header>
 
       {isLoading ? (
@@ -835,11 +936,9 @@ export function HistoryPage() {
         >
           <CardHeader>
             <CardTitle className="font-display text-lg text-destructive">
-              Could not load the block log
+              {t.errorTitle}
             </CardTitle>
-            <CardDescription>
-              The ledger did not respond. Check your connection and try again.
-            </CardDescription>
+            <CardDescription>{t.errorDescription}</CardDescription>
           </CardHeader>
           <CardContent>
             <Button
@@ -849,7 +948,7 @@ export function HistoryPage() {
               onClick={() => void refetch()}
               data-ocid="history.retry_button"
             >
-              Retry
+              {t.retry}
             </Button>
           </CardContent>
         </Card>
@@ -865,6 +964,28 @@ export function HistoryPage() {
             <EmptyState />
           ) : (
             <>
+              {linkedBlockOffPage && hashBlockId !== null && (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 border-l border-gold bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+                  data-ocid="history.linked_block_panel"
+                >
+                  <span>
+                    {tx.linkedBlock} · {tx.blockLabel(hashBlockId.toString())} —{" "}
+                    {tx.linkedBlockNotOnPage}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={`rounded-lg ${OUTLINE_GOLD}`}
+                    onClick={() => jumpToBlock(hashBlockId)}
+                    data-ocid="history.show_linked_block_button"
+                  >
+                    {tx.showLinkedBlock}
+                  </Button>
+                </div>
+              )}
+
               {isListLoading ? (
                 <LoadingState />
               ) : (
@@ -878,15 +999,19 @@ export function HistoryPage() {
                       <Table>
                         <TableHeader className="sticky top-0 bg-card [&_th]:text-xs [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-muted-foreground">
                           <TableRow>
-                            <TableHead className="w-32">Block</TableHead>
-                            <TableHead className="w-32">Type</TableHead>
-                            <TableHead>From</TableHead>
-                            <TableHead>To</TableHead>
+                            <TableHead className="w-32">{t.colBlock}</TableHead>
+                            <TableHead className="w-32">{t.colType}</TableHead>
+                            <TableHead>{t.colFrom}</TableHead>
+                            <TableHead>{t.colTo}</TableHead>
                             <TableHead className="text-right">
-                              Amount ({TTTI_SYMBOL})
+                              {t.colAmount(TTTI_SYMBOL)}
                             </TableHead>
-                            <TableHead className="text-right">Fee</TableHead>
-                            <TableHead className="text-right">Time</TableHead>
+                            <TableHead className="text-right">
+                              {t.colFee}
+                            </TableHead>
+                            <TableHead className="text-right">
+                              {t.colTime}
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -896,6 +1021,7 @@ export function HistoryPage() {
                               entry={entry}
                               index={index}
                               highlighted={entry.id === highlightId}
+                              anchored={!isMobile}
                               onJump={jumpToBlock}
                             />
                           ))}
@@ -912,6 +1038,7 @@ export function HistoryPage() {
                         entry={entry}
                         index={index}
                         highlighted={entry.id === highlightId}
+                        anchored={isMobile}
                         onJump={jumpToBlock}
                       />
                     ))}
@@ -932,9 +1059,11 @@ export function HistoryPage() {
 
               {legacyInfo && legacyInfo.boundaryIndex > 0n && (
                 <p className="text-center text-xs text-muted-foreground">
-                  Blocks before #{legacyInfo.boundaryIndex.toString()} use{" "}
-                  {legacyInfo.legacyDecimals} decimals, later blocks{" "}
-                  {legacyInfo.currentDecimals}.
+                  {t.legacyNote(
+                    legacyInfo.boundaryIndex.toString(),
+                    String(legacyInfo.legacyDecimals),
+                    String(legacyInfo.currentDecimals),
+                  )}
                 </p>
               )}
             </>

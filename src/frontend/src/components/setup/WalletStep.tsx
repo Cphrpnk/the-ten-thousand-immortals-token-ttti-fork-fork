@@ -9,6 +9,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import { usePlug } from "../../hooks/usePlug";
+import { useDict } from "../../i18n/core";
+import { SETUP_TEXT } from "../../i18n/pages/setup";
 import { ChoiceTile } from "./ChoiceTile";
 import { StepQuestion } from "./StepParts";
 
@@ -26,11 +28,13 @@ const OTHER_WALLETS = [
   { id: "nfid", name: "NFID Wallet", href: "https://nfid.one" },
 ] as const;
 
-const TITLES: Record<WalletScreen, string> = {
-  pickNo: "Choose your wallet",
-  pickYes: "Connect your wallet",
-  createList: "Create a wallet",
-};
+const TITLE_KEY = {
+  pickNo: "titlePickNo",
+  pickYes: "titlePickYes",
+  createList: "titleCreateList",
+} as const satisfies Record<WalletScreen, string>;
+
+type FailKey = "signInFailed" | "connectFailed" | "plugNotInstalled";
 
 /** Step 2: pick or connect a wallet. Sign-in happens right here. */
 export function WalletStep({
@@ -41,9 +45,10 @@ export function WalletStep({
   const { identity, login, isLoggingIn, isLoginError, loginError } =
     useInternetIdentity();
   const plug = usePlug();
+  const t = useDict(SETUP_TEXT);
   const [pending, setPending] = useState<WalletKind | null>(null);
   const [failed, setFailed] = useState<WalletKind | null>(null);
-  const [failMessage, setFailMessage] = useState("");
+  const [failKey, setFailKey] = useState<FailKey>("signInFailed");
   const [plugOpened, setPlugOpened] = useState(false);
   const errorAtStart = useRef<Error | undefined>(undefined);
   const sawLoggingIn = useRef(false);
@@ -88,7 +93,7 @@ export function WalletStep({
       clearBuiltInTimeout();
       setPending(null);
       setFailed("builtIn");
-      setFailMessage("Sign-in didn't finish.");
+      setFailKey("signInFailed");
     }
   }, [
     pending,
@@ -126,7 +131,7 @@ export function WalletStep({
       timeoutRef.current = null;
       setPending((current) => (current === "builtIn" ? null : current));
       setFailed("builtIn");
-      setFailMessage("Sign-in didn't finish.");
+      setFailKey("signInFailed");
     }, 60_000);
     if (!isLoggingIn) login();
   }, [
@@ -152,9 +157,7 @@ export function WalletStep({
     } catch {
       setPending(null);
       setFailed("plug");
-      setFailMessage(
-        plug.isAvailable ? "Couldn't connect." : "Plug isn't installed here.",
-      );
+      setFailKey(plug.isAvailable ? "connectFailed" : "plugNotInstalled");
     }
   }, [plug, onConnected]);
 
@@ -166,10 +169,10 @@ export function WalletStep({
   const busy = pending !== null;
   const builtInTile = (
     <ChoiceTile
-      label="Use the built-in wallet"
+      label={t.useBuiltIn}
       icon={<Wallet />}
       tone="primary"
-      badge="Recommended"
+      badge={t.recommended}
       onClick={chooseBuiltIn}
       loading={pending === "builtIn"}
       disabled={busy}
@@ -190,13 +193,13 @@ export function WalletStep({
 
   return (
     <>
-      <StepQuestion>{TITLES[screen]}</StepQuestion>
+      <StepQuestion>{t[TITLE_KEY[screen]]}</StepQuestion>
       <div className="flex w-full flex-col gap-3">
         {screen === "pickNo" ? (
           <>
             {builtInTile}
             <ChoiceTile
-              label="Create a wallet"
+              label={t.createWallet}
               icon={<Plus />}
               onClick={onShowList}
               disabled={busy}
@@ -206,10 +209,7 @@ export function WalletStep({
         ) : null}
         {screen === "pickYes" ? (
           <>
-            {connectPlugTile(
-              "Connect my wallet",
-              "setup.wallet.connect_button",
-            )}
+            {connectPlugTile(t.connectMyWallet, "setup.wallet.connect_button")}
             {builtInTile}
           </>
         ) : null}
@@ -226,12 +226,12 @@ export function WalletStep({
             />
             {plugOpened || plug.isAvailable
               ? connectPlugTile(
-                  "Connect Plug",
+                  t.connectPlug,
                   "setup.wallet.plug_connect_button",
                 )
               : null}
             <p className="pt-3 text-left text-xs uppercase tracking-wider text-muted-foreground">
-              Other wallets
+              {t.otherWallets}
             </p>
             {OTHER_WALLETS.map((wallet, index) => (
               <ChoiceTile
@@ -253,7 +253,7 @@ export function WalletStep({
           role="alert"
           data-ocid="setup.wallet.error_state"
         >
-          <span>{failMessage}</span>
+          <span>{t[failKey]}</span>
           <button
             type="button"
             onClick={retry}
@@ -261,7 +261,7 @@ export function WalletStep({
             data-ocid="setup.wallet.retry_button"
           >
             <RotateCcw className="size-4" aria-hidden="true" />
-            Try again
+            {t.tryAgain}
           </button>
         </div>
       ) : null}

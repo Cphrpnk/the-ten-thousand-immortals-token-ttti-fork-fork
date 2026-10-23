@@ -1,8 +1,11 @@
 import { Check, Copy, Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { Account, TokenDescriptor } from "../../backend";
+import type { Account } from "../../backend";
+import { pickDict, useDict } from "../../i18n/core";
+import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import { encodeAccountText } from "../../lib/token";
+import type { TokenDescriptor } from "../../lib/tokenRegistry";
 import { FlatTokenIcon } from "../FlatTokenIcon";
 import { Button } from "../ui/button";
 import {
@@ -27,10 +30,11 @@ interface ReceivePanelProps {
 }
 
 export function ReceivePanel({ tokens, account }: ReceivePanelProps) {
+  const t = useDict(WALLET_TEXT);
   const [tokenId, setTokenId] = useState<string>("");
   const [copied, setCopied] = useState(false);
 
-  const selected = tokens.find((t) => t.canisterId.toText() === tokenId);
+  const selected = tokens.find((tk) => tk.canisterId.toText() === tokenId);
   const identifier = account ? encodeAccountText(account) : "";
 
   const handleCopy = async () => {
@@ -38,10 +42,10 @@ export function ReceivePanel({ tokens, account }: ReceivePanelProps) {
     try {
       await navigator.clipboard.writeText(identifier);
       setCopied(true);
-      toast.success("Account copied");
+      toast.success(pickDict(WALLET_TEXT).toastAccountCopied);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Unable to copy the account");
+      toast.error(pickDict(WALLET_TEXT).toastCopyFailed);
     }
   };
 
@@ -53,20 +57,20 @@ export function ReceivePanel({ tokens, account }: ReceivePanelProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg font-display">
           <Download className="h-4 w-4 text-primary" />
-          Receive
+          {t.receive}
         </CardTitle>
-        <CardDescription>Share your account to receive tokens.</CardDescription>
+        <CardDescription>{t.receiveDescription}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="receive-token">Token</Label>
+          <Label htmlFor="receive-token">{t.token}</Label>
           <Select value={tokenId} onValueChange={setTokenId}>
             <SelectTrigger
               id="receive-token"
               className="w-full"
               data-ocid="wallet.receive_token_select"
             >
-              <SelectValue placeholder="Select a token" />
+              <SelectValue placeholder={t.selectToken} />
             </SelectTrigger>
             <SelectContent>
               {tokens.map((token) => (
@@ -91,13 +95,13 @@ export function ReceivePanel({ tokens, account }: ReceivePanelProps) {
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label>Account</Label>
+          <Label>{t.account}</Label>
           <div
             className="rounded-lg border border-gold bg-muted p-3"
             data-ocid="wallet.receive_identifier"
           >
             <p className="break-all font-mono text-xs text-foreground">
-              {identifier || "Connect a wallet to view your account."}
+              {identifier || t.receiveConnectHint}
             </p>
           </div>
         </div>
@@ -115,12 +119,12 @@ export function ReceivePanel({ tokens, account }: ReceivePanelProps) {
           ) : (
             <Copy className="h-4 w-4" />
           )}
-          {copied ? "Copied" : "Copy account"}
+          {copied ? t.copied : t.copyAccount}
         </Button>
 
         {selected && (
           <p className="text-xs text-muted-foreground">
-            Receiving {selected.symbol} to this account.
+            {t.receivingTo(selected.symbol)}
           </p>
         )}
       </CardContent>

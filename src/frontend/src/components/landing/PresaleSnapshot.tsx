@@ -1,11 +1,14 @@
 import { CheckCircle2, PauseCircle, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useGetIcpPrice, useGetSaleStatus } from "../../hooks/useQueries";
+import { useLanguage } from "../../i18n/core";
 import {
   TOKEN_PRICE_USD,
   TTTI_DIVISOR,
   TTTI_SYMBOL,
+  formatDecimal,
   formatIcp,
+  formatInteger,
   formatTtti,
   formatUsdE8,
   icpForTtti,
@@ -96,6 +99,7 @@ export function PresaleSnapshot() {
 function SnapshotBody() {
   const { data: status, isLoading, isError, refetch } = useGetSaleStatus();
   const { data: icpPrice } = useGetIcpPrice();
+  useLanguage();
   const usdE8 = icpPrice && icpPrice.usdE8 > 0n ? icpPrice.usdE8 : null;
 
   if (isLoading) {
@@ -125,8 +129,8 @@ function SnapshotBody() {
             Live presale figures are unavailable right now
           </p>
           <p className="text-sm text-muted-foreground">
-            The reference price stays fixed at{" "}
-            {TOKEN_PRICE_USD.toLocaleString("en-US")} USD per {TTTI_SYMBOL}.
+            The reference price stays fixed at {formatInteger(TOKEN_PRICE_USD)}{" "}
+            USD per {TTTI_SYMBOL}.
           </p>
         </div>
         <Button
@@ -183,7 +187,7 @@ function SnapshotBody() {
       <div className="grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label={`Price per ${TTTI_SYMBOL}`}
-          value={TOKEN_PRICE_USD.toLocaleString("en-US")}
+          value={formatInteger(TOKEN_PRICE_USD)}
           unit="USD"
           note={
             priceIcp
@@ -202,11 +206,12 @@ function SnapshotBody() {
             <Progress
               value={Math.min(percent, 100)}
               className="h-1 bg-muted [&>[data-slot=progress-indicator]]:bg-primary"
-              aria-label={`Presale ${percent.toFixed(2)}% sold`}
+              aria-label={`Presale ${formatDecimal(percent, 2, 2)}% sold`}
               data-ocid="landing.snapshot.progress"
             />
             <p className="text-xs tabular-nums text-muted-foreground">
-              {percent.toFixed(2)}% of {formatTtti(allocation)} {TTTI_SYMBOL}
+              {formatDecimal(percent, 2, 2)}% of {formatTtti(allocation)}{" "}
+              {TTTI_SYMBOL}
             </p>
           </div>
         </Stat>
@@ -219,7 +224,9 @@ function SnapshotBody() {
         />
         <Stat
           label="Minimum purchase"
-          value={formatUsdE8(tttiToUsdE8(minPurchase), 2).replace("$", "")}
+          value={formatUsdE8(tttiToUsdE8(minPurchase), 2)
+            .replace("$", "")
+            .trim()}
           unit="USD"
           note={
             minIcp

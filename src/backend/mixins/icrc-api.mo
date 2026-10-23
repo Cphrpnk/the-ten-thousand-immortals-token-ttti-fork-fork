@@ -38,7 +38,7 @@ mixin (ledger : IcrcLib.Ledger, canisterPrincipal : Principal) {
     IcrcLib.supportedStandards();
   };
 
-  // The ICRC-1 minting account (= burn account): canister, null subaccount.
+  // The ICRC-1 minting account: canister, null subaccount (transfers to it are refused).
   public query func icrc1_minting_account() : async ?Common.Account {
     IcrcLib.mintingAccount(canisterPrincipal);
   };
@@ -94,7 +94,8 @@ mixin (ledger : IcrcLib.Ledger, canisterPrincipal : Principal) {
     IcrcLib.feeCollectorInfo(ledger, canisterPrincipal);
   };
 
-  // The burn account (ICRC-1 minting account). Public.
+  // The ICRC-1 minting account (canister, null subaccount); transfers to it
+  // are refused. Public.
   public query func getBurnAccount() : async Common.Account {
     IcrcLib.burnAccount(canisterPrincipal);
   };

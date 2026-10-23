@@ -170,9 +170,4 @@ module {
     #Ok : Nat;
     #Err : TransferError;
   };
-
-  public type BurnResult = {
-    #Ok : Nat;
-    #Err : TransferError;
-  };
 };

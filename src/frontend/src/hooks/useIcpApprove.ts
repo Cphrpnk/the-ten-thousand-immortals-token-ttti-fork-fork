@@ -1,17 +1,31 @@
-import type { Principal } from "@icp-sdk/core/principal";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { PayToken } from "../backend";
+import { MESSAGES_TEXT } from "../i18n/common/messages";
+import { pickDict } from "../i18n/core/dict";
 import {
   type ApproveOutcome,
-  approveWithIdentity,
-  requiredIcpBalance,
+  approveTokenWithIdentity,
+  requiredBalance,
 } from "../lib/icpLedger";
-import { formatIcp } from "../lib/token";
+import { PAY_TOKENS, formatUnits } from "../lib/token";
 import { useInternetIdentity } from "./useInternetIdentity";
 import { usePlug } from "./usePlug";
 import { useGetCanisterPrincipal } from "./useQueries";
 
 export type ApproveWallet = "internetIdentity" | "plug";
 
+/** Token-generic approval: `amount` in the pay token's base units. */
+export interface PayTokenApproveParams {
+  token: PayToken;
+  /** Purchase amount (the allowance adds that ledger's fee). */
+  amount: bigint;
+  /** Caller's balance of the token; when given, checked against amount + 2 fees. */
+  balance?: bigint;
+  /** Force a wallet; defaults to Internet Identity when signed in, else Plug. */
+  wallet?: ApproveWallet;
+}
+
+/** Legacy ICP-only approval parameters. */
 export interface IcpApproveParams {
   /** Purchase amount in ICP e8s (the allowance adds the 0.0001 ICP fee). */
   purchaseE8s: bigint;
@@ -21,14 +35,27 @@ export interface IcpApproveParams {
   wallet?: ApproveWallet;
 }
 
+export type ApproveParams = PayTokenApproveParams | IcpApproveParams;
+
+function normalize(params: ApproveParams): PayTokenApproveParams {
+  if ("token" in params) return params;
+  return {
+    token: PayToken.icp,
+    amount: params.purchaseE8s,
+    balance: params.balanceE8s,
+    wallet: params.wallet,
+  };
+}
+
 /**
  * Approve the sale canister (getCanisterPrincipal) as ICRC-2 spender on the
- * ICP ledger. Resolves with an ApproveOutcome and never rejects, so callers
+ * chosen pay token's ledger, for the amount plus that ledger's fee, expiring
+ * in 15 minutes. Resolves with an ApproveOutcome and never rejects, so callers
  * render `outcome.message` on failure.
  */
 export function useIcpApprove() {
   const { identity } = useInternetIdentity();
-  const { principal: plugPrincipal, approveIcp } = usePlug();
+  const { principal: plugPrincipal, approveToken } = usePlug();
   const { data: spender } = useGetCanisterPrincipal();
   const queryClient = useQueryClient();
 
@@ -39,45 +66,51 @@ export function useIcpApprove() {
       ? "plug"
       : null;
 
-  const mutation = useMutation<ApproveOutcome, Error, IcpApproveParams>({
-    mutationFn: async ({ purchaseE8s, balanceE8s, wallet }) => {
-      if (purchaseE8s <= 0n) {
-        return { ok: false, message: "Enter an ICP amount greater than zero." };
+  const mutation = useMutation<ApproveOutcome, Error, ApproveParams>({
+    mutationFn: async (params) => {
+      const { token, amount, balance, wallet } = normalize(params);
+      const { symbol, decimals, fee } = PAY_TOKENS[token];
+      const t = pickDict(MESSAGES_TEXT);
+      const units = (value: bigint) =>
+        `${formatUnits(value, decimals)} ${symbol}`;
+      if (amount <= 0n) {
+        return { ok: false, message: t.approveAmountZero(symbol) };
       }
       if (!spender) {
-        return {
-          ok: false,
-          message: "The token canister is still loading. Try again shortly.",
-        };
+        return { ok: false, message: t.approveSpenderLoading };
       }
-      const required = requiredIcpBalance(purchaseE8s);
-      if (balanceE8s !== undefined && balanceE8s < required) {
+      const required = requiredBalance(amount, fee);
+      if (balance !== undefined && balance < required) {
         return {
           ok: false,
-          message: `Insufficient ICP. You need ${formatIcp(required)} ICP (purchase plus 2 × 0.0001 ICP fees) but have ${formatIcp(balanceE8s)} ICP.`,
+          message: t.approveInsufficient(
+            symbol,
+            units(required),
+            units(fee),
+            units(balance),
+          ),
         };
       }
       const chosen = wallet ?? defaultWallet;
       if (chosen === "plug") {
         if (!plugPrincipal) {
-          return { ok: false, message: "Connect Plug to approve ICP." };
+          return { ok: false, message: t.approveConnectPlug(symbol) };
         }
-        return approveIcp(spender, purchaseE8s);
+        return approveToken(spender, token, amount);
       }
       if (chosen === "internetIdentity" && identity && hasIdentity) {
-        return approveWithIdentity(identity, spender, purchaseE8s);
+        return approveTokenWithIdentity(identity, spender, token, amount);
       }
-      return {
-        ok: false,
-        message: "Connect Internet Identity or Plug to approve ICP.",
-      };
+      return { ok: false, message: t.approveConnectWallet(symbol) };
     },
     onSuccess: (outcome) => {
       if (!outcome.ok) return;
-      void queryClient.invalidateQueries({ queryKey: ["callerIcpBalance"] });
       void queryClient.invalidateQueries({ queryKey: ["walletBalance"] });
     },
   });
 
   return { ...mutation, spender, defaultWallet };
 }
+
+/** Token-generic name for the same approval hook. */
+export const usePayTokenApprove = useIcpApprove;

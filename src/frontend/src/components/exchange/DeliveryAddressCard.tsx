@@ -1,6 +1,7 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import { CheckCircle2, Loader2, MapPin, RefreshCw, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import type { DeliveryAddressErrorCode } from "../../backend";
 import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import {
   usePlugClearDeliveryAddress,
@@ -12,9 +13,11 @@ import {
   useGetDeliveryAddress,
   useSetDeliveryAddress,
 } from "../../hooks/useQueries";
+import { useDict, useLanguage } from "../../i18n/core/dict";
+import { BUY_DELIVERY_TEXT } from "../../i18n/pages/buy";
 import {
-  DELIVERY_ADDRESS_MESSAGES,
   TTTI_SYMBOL,
+  deliveryAddressMessages,
   validateDeliveryAddress,
 } from "../../lib/token";
 import { Badge } from "../ui/badge";
@@ -30,6 +33,12 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
 
+/** Error to show; turned into text in the active language at render. */
+type AddressError =
+  | { kind: "code"; code: DeliveryAddressErrorCode; fallback: string }
+  | { kind: "saveFailed"; message: string }
+  | { kind: "removeFailed"; message: string };
+
 interface DeliveryAddressCardProps {
   /** Wallet that signs the calls; Plug users save as the Plug principal. */
   wallet: "plug" | "internetIdentity";
@@ -40,6 +49,8 @@ export function DeliveryAddressCard({
   wallet,
   plugPrincipal,
 }: DeliveryAddressCardProps) {
+  const t = useDict(BUY_DELIVERY_TEXT);
+  const { lang } = useLanguage();
   const isPlug = wallet === "plug";
   const iiQuery = useGetDeliveryAddress();
   const plugQuery = usePlugDeliveryAddress(isPlug);
@@ -61,8 +72,8 @@ export function DeliveryAddressCard({
   const walletText = isPlug ? plugText : iiText;
 
   const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [errorSource, setError] = useState<AddressError | null>(null);
+  const [noticeKind, setNotice] = useState<"saved" | "removed" | null>(null);
   const initialized = useRef(false);
   const autoSaved = useRef(false);
 
@@ -96,21 +107,26 @@ export function DeliveryAddressCard({
     setNotice(null);
     const validation = validateDeliveryAddress(draft);
     if (!validation.ok) {
-      setError(validation.message);
+      setError({
+        kind: "code",
+        code: validation.code,
+        fallback: validation.message,
+      });
       return;
     }
     save.mutate(validation.principal.toText(), {
       onSuccess: (result) => {
         if (result.__kind__ === "Ok") {
-          setNotice("Delivery address saved.");
+          setNotice("saved");
         } else {
-          setError(
-            DELIVERY_ADDRESS_MESSAGES[result.Err.code] ?? result.Err.message,
-          );
+          setError({
+            kind: "code",
+            code: result.Err.code,
+            fallback: result.Err.message,
+          });
         }
       },
-      onError: (err) =>
-        setError(err.message || "Saving the address failed. Try again."),
+      onError: (err) => setError({ kind: "saveFailed", message: err.message }),
     });
   };
 
@@ -119,13 +135,26 @@ export function DeliveryAddressCard({
     setNotice(null);
     if (draft.trim() === savedText) setDraft("");
     clear.mutate(undefined, {
-      onSuccess: () => setNotice("Delivery address removed."),
+      onSuccess: () => setNotice("removed"),
       onError: (err) =>
-        setError(err.message || "Removing the address failed. Try again."),
+        setError({ kind: "removeFailed", message: err.message }),
     });
   };
 
   const busy = save.isPending || clear.isPending;
+  const error = !errorSource
+    ? null
+    : errorSource.kind === "code"
+      ? (deliveryAddressMessages(lang)[errorSource.code] ??
+        errorSource.fallback)
+      : errorSource.message ||
+        (errorSource.kind === "saveFailed" ? t.saveFailed : t.removeFailed);
+  const notice =
+    noticeKind === "saved"
+      ? t.saved
+      : noticeKind === "removed"
+        ? t.removed
+        : null;
 
   return (
     <Card
@@ -137,33 +166,33 @@ export function DeliveryAddressCard({
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="flex items-center gap-2 font-display text-lg">
             <MapPin className="h-4 w-4 text-primary" />
-            Delivery wallet address
+            {t.title}
           </CardTitle>
           <Badge
             variant="outline"
             className="rounded-full border-border text-muted-foreground"
           >
-            Optional
+            {t.optional}
           </Badge>
           <Badge
             variant="outline"
             className="rounded-full border-gold bg-primary/10 text-primary"
           >
-            Recommended
+            {t.recommended}
           </Badge>
         </div>
         <CardDescription>
           {isPlug
-            ? `Auto-filled with your connected Plug principal. Your ${TTTI_SYMBOL} is credited here.`
+            ? t.descPlug(TTTI_SYMBOL)
             : iiText
-              ? `Auto-filled with your principal. Your ${TTTI_SYMBOL} is credited here.`
-              : `Not required to buy. Add the Principal ID of a wallet you control so your ${TTTI_SYMBOL} reaches it automatically at launch.`}
+              ? t.descIi(TTTI_SYMBOL)
+              : t.descNone(TTTI_SYMBOL)}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form onSubmit={handleSave} className="space-y-3" noValidate>
           <div className="space-y-1.5">
-            <Label htmlFor="delivery-address-input">Principal ID</Label>
+            <Label htmlFor="delivery-address-input">{t.principalId}</Label>
             <Input
               id="delivery-address-input"
               value={draft}
@@ -172,7 +201,7 @@ export function DeliveryAddressCard({
                 setError(null);
                 setNotice(null);
               }}
-              placeholder="e.g. abcde-fghij-…-cai"
+              placeholder={t.placeholder}
               autoComplete="off"
               spellCheck={false}
               className="border-gold bg-background/60 font-mono text-sm transition-smooth focus-visible:border-gold-strong focus-visible:ring-2 focus-visible:ring-ring"
@@ -208,7 +237,7 @@ export function DeliveryAddressCard({
               data-ocid="delivery.save_button"
             >
               {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save address
+              {t.save}
             </Button>
             <Button
               type="button"
@@ -223,7 +252,7 @@ export function DeliveryAddressCard({
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}
-              Clear
+              {t.clear}
             </Button>
           </div>
         </form>
@@ -233,7 +262,7 @@ export function DeliveryAddressCard({
           data-ocid="delivery.saved"
         >
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Saved address
+            {t.savedAddress}
           </p>
           {query.isLoading ? (
             <Skeleton className="mt-1 h-5 w-48" />
@@ -242,9 +271,7 @@ export function DeliveryAddressCard({
               className="mt-1 flex flex-wrap items-center gap-2"
               data-ocid="delivery.load_error_state"
             >
-              <p className="text-sm text-destructive">
-                Couldn't load your saved address. You can still enter one above.
-              </p>
+              <p className="text-sm text-destructive">{t.loadFailed}</p>
               <Button
                 type="button"
                 size="sm"
@@ -259,15 +286,13 @@ export function DeliveryAddressCard({
                 ) : (
                   <RefreshCw className="h-3.5 w-3.5" />
                 )}
-                Retry
+                {t.retry}
               </Button>
             </div>
           ) : savedText ? (
             <p className="break-all font-mono text-sm">{savedText}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              None saved — purchases are credited to the principal you buy with.
-            </p>
+            <p className="text-sm text-muted-foreground">{t.noneSaved}</p>
           )}
         </div>
       </CardContent>

@@ -30,6 +30,8 @@ A ceremonial three-step setup where each screen asks one question with big answe
 - Display: Fraunces — the single question per screen, `text-3xl md:text-4xl`, balanced.
 - Body: Satoshi — tile labels `text-lg font-medium`, sub-labels `text-sm text-muted-foreground` (one short line max).
 - Mono: JetBrains Mono — step counter `1 / 3`, shortened address, amounts.
+- Script companions (fallbacks only, Latin unchanged): Hangul → Noto Serif KR (display) / Noto Sans KR (body); Gurmukhi → Noto Serif Gurmukhi / Noto Sans Gurmukhi. Loaded via Google Fonts `@import` (unicode-range slices, only needed glyphs fetched), appended after Fraunces/Satoshi in `--font-display` / `--font-body`, then system fallbacks (AppleMyungjo, Batang, Apple SD Gothic Neo, Malgun Gothic, Mukta Mahee, Raavi).
+- `:lang(ko)`: `word-break: keep-all`, no heading tracking. `:lang(pa-Guru)`: body line-height 1.7, no heading tracking. zh-Hans stays on system CJK fallback.
 
 ## Elevation & Depth
 

@@ -2,31 +2,47 @@ import { Principal } from "@icp-sdk/core/principal";
 import type {
   Account,
   Block,
+  BtcDepositResult,
   Conversion,
+  DepositEntry,
+  DepositTracking,
   GetBlocksArgs,
-  OriginalDocument,
+  IcpPrice,
+  PayTokenStatus,
   PurchaseAcknowledgement,
   PurchaseResult,
-  SetupStatusView,
+  ReserveWithdrawal,
+  TokenPrice,
+  TopUpRecord,
   TreasuryConfig,
   Value__1,
   backendInterface,
 } from "../backend";
 import {
+  BtcDepositErrorCode,
   ConversionStatus,
+  DepositErrorKind,
+  DepositKind,
   HolderKind,
-  OracleStatus,
+  PayToken,
   PriceSource,
-  SetupOutcome,
-  SetupStatus,
   UserRole,
 } from "../backend";
 import {
+  BTC_DEFAULT_CHECK_FEE_SATS,
+  BTC_DEFAULT_DEPOSIT_MIN_SATS,
+  BTC_DEFAULT_MIN_CONFIRMATIONS,
   BUYER_PRICE_USD,
+  CKBTC_MINTER_CANISTER_ID,
+  CK_FEE_BPS,
   CYCLES_FEE_BPS,
+  CYCLES_FEE_TEXT,
   ICP_DIVISOR,
   LEGACY_TTTI_DECIMALS,
   MIN_PURCHASE,
+  PAY_TOKENS,
+  PAY_TOKEN_ORDER,
+  RESERVE_FLOOR_E8S,
   TOKEN_NAME,
   TOKEN_PRICE_USD,
   TTTI_DECIMALS,
@@ -34,30 +50,34 @@ import {
   TTTI_SYMBOL,
   icpForTtti,
   tttiFromIcp,
+  tttiFromToken,
   validateDeliveryAddress,
 } from "../lib/token";
 
 const FEE = 100n;
 const FEE_BOUNDS = { min: 0n, max: 10_000n };
-const MAX_SUPPLY = 10_000n * TTTI_DIVISOR;
+const MAX_SUPPLY = TTTI_DIVISOR;
 const ICP_LEDGER_FEE = 10_000n;
 
 // Mock oracle price: ICP = $12.50 (usdE8 = USD * 10^8).
 const MOCK_USD_E8 = 1_250_000_000n;
-const MOCK_USD_MICRO = MOCK_USD_E8 / 100n;
 /** TTTI-T base units per whole ICP at the mock price, fee included. */
 const MOCK_LIVE_RATE = tttiFromIcp(ICP_DIVISOR, MOCK_USD_E8);
-const MAX_PRICE_AGE_SECONDS = 300n;
+/** validUntil + 5-minute grace, as in the backend. */
+const MAX_RATE_AGE_SECONDS = 3_900n;
+const HOURLY_RATE_TEXT =
+  "The ICP/USD rate is set once an hour from Coinbase, or from CoinGecko if Coinbase is unavailable, and applies to every purchase in that hour. If no valid rate exists, the purchase is refused and no ICP is taken.";
 
 const nowNs = () => BigInt(Date.now()) * 1_000_000n;
+const HOUR_NS = 3_600n * 1_000_000_000n;
+/** Start of the current hour, in nanoseconds. */
+const hourStartNs = () => (nowNs() / HOUR_NS) * HOUR_NS;
 const principalFrom = (seed: number) =>
   Principal.fromUint8Array(
     new Uint8Array(Array.from({ length: 29 }, (_, i) => (seed * 31 + i) & 0xff)),
   );
 
 const ICP_CANISTER = Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai");
-const CKBTC_CANISTER = Principal.fromText("mxzaz-hqaaa-aaaar-qaada-cai");
-const CKUSDC_CANISTER = Principal.fromText("xevnm-gaaaa-aaaar-qafnq-cai");
 const TTTI_CANISTER = Principal.fromUint8Array(
   new Uint8Array([0, 0, 0, 0, 0, 0x30, 0x00, 0x12, 0x01, 0x01]),
 );
@@ -71,8 +91,30 @@ const FEE_COLLECTOR: Account = {
   owner: TTTI_CANISTER,
   subaccount: new TextEncoder().encode("FEE-COLLECTOR-TTTI-T-00000000001"),
 };
-/** Burn / minting account: canister principal with a null subaccount. */
-const BURN_ACCOUNT: Account = { owner: TTTI_CANISTER };
+/** Minting account: canister principal with a null subaccount. */
+const MINTING_ACCOUNT: Account = { owner: TTTI_CANISTER };
+/** Transfers to the minting account are refused without any debit. */
+const isMintingAccount = (account: Account) =>
+  account.owner.toText() === TTTI_CANISTER.toText() &&
+  (!account.subaccount || account.subaccount.every((byte) => byte === 0));
+const MINTING_REFUSAL = {
+  __kind__: "GenericError" as const,
+  GenericError: {
+    error_code: 8n,
+    message: "Tokens cannot be burned; transfers to the contract address are refused.",
+  },
+};
+const MOCK_CONTROLLERS = [principalFrom(9)];
+const MOCK_MODULE_HASH =
+  "3f1c9a7e52b04d8e6a1f0c2b7d9e4a5f8c3b1e0d6a2f9c7b4e8d1a0f5c3b2e9a";
+/** Canister principal + 'CYCLES-RESERVE-TTTI-T-0000000001' (32 bytes), on the ICP ledger. */
+const CYCLES_RESERVE_ACCOUNT: Account = {
+  owner: TTTI_CANISTER,
+  subaccount: new TextEncoder().encode("CYCLES-RESERVE-TTTI-T-0000000001"),
+};
+const TOP_UP_THRESHOLD = 3_000_000_000_000n;
+/** The backend publishes the same rule text as CYCLES_FEE_TEXT. */
+const RESERVE_RULE = CYCLES_FEE_TEXT;
 const TREASURY_ACCOUNT: Account = {
   owner: HOLDER_3,
   subaccount: new Uint8Array(Array.from({ length: 32 }, (_, i) => (i === 31 ? 7 : 0))),
@@ -87,32 +129,229 @@ const STANDARDS = [
 
 // Mutable mock state so switches, purchases and the delivery address persist.
 const state = {
-  originalWhitePaper: null as OriginalDocument | null,
   salesPaused: false,
   sold: 1_250_000n,
   fee: FEE,
   feeCollectorBalance: 300n,
   deliveryAddress: null as Account | null,
   conversions: [] as Array<Conversion>,
-  setupStatus: { status: SetupStatus.notStarted } as SetupStatusView,
+  /** Last mock ledger block index used by makeConversion. */
+  nextBlock: 1_200n,
   acknowledgement: { accepted: false } as PurchaseAcknowledgement,
   treasuryConfig: {
     icpAccount: TREASURY_ACCOUNT,
   } as TreasuryConfig,
+  cyclesBalance: 4_820_000_000_000n,
+  reserveBalanceE8s: 345_670_000n,
+  lastTopUp: {
+    timestamp: nowNs() - 3n * 24n * HOUR_NS,
+    icpE8s: 50_000_000n,
+    blockIndex: 18_204_311n,
+    status: { __kind__: "notified", notified: { cycles: 1_910_000_000_000n } },
+  } as TopUpRecord,
+  withdrawals: [] as Array<ReserveWithdrawal>,
+  btcPurchase: undefined as DepositTracking | undefined,
+  btcWallet: undefined as DepositTracking | undefined,
 };
 
-const tokens = () => [
-  { canisterId: ICP_CANISTER, name: "Internet Computer", symbol: "ICP", decimals: 8, fee: ICP_LEDGER_FEE },
-  { canisterId: TTTI_CANISTER, name: TOKEN_NAME, symbol: TTTI_SYMBOL, decimals: TTTI_DECIMALS, fee: state.fee },
-  { canisterId: CKBTC_CANISTER, name: "ckBTC", symbol: "ckBTC", decimals: 8, fee: 10n },
-  { canisterId: CKUSDC_CANISTER, name: "ckUSDC", symbol: "ckUSDC", decimals: 6, fee: 10_000n },
-];
+// --- Bitcoin deposits: each check advances the tracking one stage. ---------
 
-const SAMPLE_BALANCES: Record<string, bigint> = {
-  [ICP_CANISTER.toText()]: 250_000_000n,
-  [TTTI_CANISTER.toText()]: 250_000n,
-  [CKBTC_CANISTER.toText()]: 1_500_000n,
-  [CKUSDC_CANISTER.toText()]: 125_000_000n,
+const CKBTC_MINTER = Principal.fromText(CKBTC_MINTER_CANISTER_ID);
+const MOCK_BTC_DEPOSIT_SATS = 50_000n;
+const MOCK_REFUND_HELD_SATS = 1_200n;
+const MOCK_BTC_ADDRESSES: Record<DepositKind, string> = {
+  [DepositKind.purchase]: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+  [DepositKind.wallet]: "bc1q9h7garjz4l6dnf0kwz0rmd8gk2lwzkxv5f4u3e",
+};
+
+function newTracking(kind: DepositKind): DepositTracking {
+  return {
+    kind,
+    btcAddress: MOCK_BTC_ADDRESSES[kind],
+    stage: { __kind__: "addressShown", addressShown: null },
+    deposits: [],
+    createdAt: nowNs(),
+    lastCheckedAt: undefined,
+    errorKind: undefined,
+    errorMessage: undefined,
+  };
+}
+
+function newEntry(index: number): DepositEntry {
+  return {
+    index: BigInt(index),
+    stage: { __kind__: "depositDetected", depositDetected: null },
+    btcDetectedSats: MOCK_BTC_DEPOSIT_SATS,
+    ckbtcMintedSats: 0n,
+    ckbtcPendingSats: MOCK_BTC_DEPOSIT_SATS - BTC_DEFAULT_CHECK_FEE_SATS,
+    tttiDelivered: 0n,
+    refundedSats: 0n,
+    conversionId: undefined,
+    btcTxids: [
+      `${index.toString(16).padStart(2, "0")}c4f1a9e07b3d52c8e6f19a0b7d4c3e2f1a5b8c9d0e7f6a3b2c1d4e5f6a7b8c9d`,
+    ],
+    ckbtcMintBlockIndex: undefined,
+    detectedAt: nowNs(),
+    updatedAt: nowNs(),
+    errorKind: undefined,
+    errorMessage: undefined,
+  };
+}
+
+/** A wallet entry fully minted earlier, for the two-deposit wallet mock. */
+function mintedWalletEntry(index: number, ageNs: bigint): DepositEntry {
+  const minted = MOCK_BTC_DEPOSIT_SATS - BTC_DEFAULT_CHECK_FEE_SATS;
+  return {
+    ...newEntry(index),
+    stage: { __kind__: "minted", minted: null },
+    ckbtcMintedSats: minted,
+    ckbtcPendingSats: 0n,
+    ckbtcMintBlockIndex: 2_741_093n + BigInt(index),
+    detectedAt: nowNs() - ageNs,
+    updatedAt: nowNs() - ageNs,
+  };
+}
+
+function closedEntry(kind: DepositKind, entry: DepositEntry): boolean {
+  switch (entry.stage.__kind__) {
+    case "delivered":
+    case "refunded":
+      return true;
+    case "minted":
+      return kind === DepositKind.wallet;
+    case "error":
+      return entry.errorKind === DepositErrorKind.unrecoverable;
+    default:
+      return false;
+  }
+}
+
+function advanceEntry(kind: DepositKind, entry: DepositEntry): DepositEntry {
+  const next = { ...entry, updatedAt: nowNs() };
+  const required = BTC_DEFAULT_MIN_CONFIRMATIONS;
+  const minted = MOCK_BTC_DEPOSIT_SATS - BTC_DEFAULT_CHECK_FEE_SATS;
+  switch (entry.stage.__kind__) {
+    case "depositDetected":
+      return { ...next, stage: { __kind__: "confirming", confirming: { current: 2n, required } } };
+    case "confirming": {
+      const current = entry.stage.confirming.current + 2n;
+      if (current < required) {
+        return { ...next, stage: { __kind__: "confirming", confirming: { current, required } } };
+      }
+      state.nextBlock += 1n;
+      return {
+        ...next,
+        stage: { __kind__: "minted", minted: null },
+        ckbtcMintedSats: minted,
+        ckbtcPendingSats: kind === DepositKind.purchase ? minted : 0n,
+        ckbtcMintBlockIndex: 2_741_000n + state.nextBlock,
+      };
+    }
+    case "minted":
+    case "pendingRate":
+      if (kind === DepositKind.wallet) return next;
+      // Odd purchase deposits deliver but fail to refund a small excess.
+      if (entry.index % 2n === 1n) {
+        return {
+          ...next,
+          stage: { __kind__: "delivered", delivered: null },
+          ckbtcPendingSats: MOCK_REFUND_HELD_SATS,
+          tttiDelivered: tttiFromToken(
+            minted - MOCK_REFUND_HELD_SATS,
+            PayToken.ckbtc,
+            MOCK_PAY_USD_E8[PayToken.ckbtc],
+          ),
+          conversionId: BigInt(state.conversions.length + 1),
+          errorKind: DepositErrorKind.refundFailed,
+          errorMessage: "ckBTC ledger transfer failed: TemporarilyUnavailable",
+        };
+      }
+      return {
+        ...next,
+        stage: { __kind__: "delivered", delivered: null },
+        ckbtcPendingSats: 0n,
+        tttiDelivered: tttiFromToken(minted, PayToken.ckbtc, MOCK_PAY_USD_E8[PayToken.ckbtc]),
+        conversionId: BigInt(state.conversions.length + 1),
+      };
+    default:
+      return next;
+  }
+}
+
+/** Checks with every deposit final before the mock sees a new transfer. */
+const MOCK_IDLE_CHECKS_PER_TRANSFER = 3;
+const mockIdleChecks: Record<DepositKind, number> = {
+  [DepositKind.purchase]: 0,
+  [DepositKind.wallet]: 0,
+};
+
+/**
+ * Each check advances every open deposit one stage; once all are final, a new
+ * transfer appears after a few idle checks.
+ */
+function advanceTracking(tracking: DepositTracking): DepositTracking {
+  const open = tracking.deposits.some((entry) => !closedEntry(tracking.kind, entry));
+  let deposits = tracking.deposits.map((entry) =>
+    closedEntry(tracking.kind, entry) ? entry : advanceEntry(tracking.kind, entry),
+  );
+  if (!open) {
+    mockIdleChecks[tracking.kind] += 1;
+    if (
+      tracking.deposits.length === 0 ||
+      mockIdleChecks[tracking.kind] >= MOCK_IDLE_CHECKS_PER_TRANSFER
+    ) {
+      mockIdleChecks[tracking.kind] = 0;
+      deposits = [newEntry(tracking.deposits.length), ...deposits];
+    }
+  }
+  return {
+    ...tracking,
+    stage: deposits[0]?.stage ?? tracking.stage,
+    deposits,
+    lastCheckedAt: nowNs(),
+    errorKind: deposits[0]?.errorKind,
+    errorMessage: deposits[0]?.errorMessage,
+  };
+}
+
+// Wallet address used twice before (one unrecoverable, one minted), with a
+// third deposit confirming.
+{
+  const wallet = newTracking(DepositKind.wallet);
+  const current: DepositEntry = {
+    ...newEntry(2),
+    stage: {
+      __kind__: "confirming",
+      confirming: { current: 2n, required: BTC_DEFAULT_MIN_CONFIRMATIONS },
+    },
+  };
+  const unrecoverable: DepositEntry = {
+    ...newEntry(0),
+    stage: { __kind__: "error", error: null },
+    ckbtcPendingSats: 0n,
+    detectedAt: nowNs() - 4n * 24n * HOUR_NS,
+    updatedAt: nowNs() - 4n * 24n * HOUR_NS,
+    errorKind: DepositErrorKind.unrecoverable,
+    errorMessage: "The minter cannot mint ckBTC for this UTXO.",
+  };
+  state.btcWallet = {
+    ...wallet,
+    createdAt: nowNs() - 5n * 24n * HOUR_NS,
+    lastCheckedAt: nowNs() - 60_000_000_000n,
+    stage: current.stage,
+    deposits: [current, mintedWalletEntry(1, 2n * 24n * HOUR_NS), unrecoverable],
+  };
+}
+
+const noBtcAddress = (): BtcDepositResult => ({
+  __kind__: "Err",
+  Err: { code: BtcDepositErrorCode.noAddressYet, message: "No Bitcoin address yet." },
+});
+
+/** Reserve minus the floor minus the ICP ledger fee, never negative. */
+const withdrawableExcess = () => {
+  const excess = state.reserveBalanceE8s - RESERVE_FLOOR_E8S - ICP_LEDGER_FEE;
+  return excess > 0n ? excess : 0n;
 };
 
 /** Live conversion at the buyer price (1% cycles fee included), floored. */
@@ -123,24 +362,40 @@ function liveTtti(icpAmount: bigint): bigint {
 /** Fresh minting plus the collected fee account, as in getSaleStatus. */
 const mockTotalSupply = () => state.sold + state.feeCollectorBalance;
 
+/** What can still be minted: max(0, cap - totalSupply). */
+const mintableRemaining = () => {
+  const supply = mockTotalSupply();
+  return MAX_SUPPLY > supply ? MAX_SUPPLY - supply : 0n;
+};
+
 function saleAvailable(): bigint {
-  const totalSupply = mockTotalSupply();
-  const mintable = MAX_SUPPLY > totalSupply ? MAX_SUPPLY - totalSupply : 0n;
-  return mintable + state.feeCollectorBalance;
+  return mintableRemaining() + state.feeCollectorBalance;
 }
 
 function makeConversion(icpAmount: bigint, recipient: Account): Conversion {
   const tttiAmount = liveTtti(icpAmount);
-  const fromCollector =
-    state.feeCollectorBalance < tttiAmount ? state.feeCollectorBalance : tttiAmount;
+  // Fresh minting first; fee-account tokens only once minting reaches the cap.
+  const mintable = mintableRemaining();
+  const minted = tttiAmount < mintable ? tttiAmount : mintable;
+  const feeBps = PAY_TOKENS[PayToken.icp].feeBps;
+  // payAmount includes the fee: fee = payAmount * feeBps / (10_000 + feeBps).
+  const feeAmount = (icpAmount * feeBps) / (10_000n + feeBps);
+  state.nextBlock += 2n;
   return {
     id: BigInt(state.conversions.length + 1),
     status: ConversionStatus.completed,
     depositor: CALLER,
+    feeBps,
+    feeAmount,
+    netAmount: icpAmount - feeAmount,
+    paymentBlock: state.nextBlock - 1n,
+    mintBlock: state.nextBlock,
+    payToken: PayToken.icp,
+    payAmount: icpAmount,
     usedFallback: false,
     priceUsdE8: MOCK_USD_E8,
-    minted: tttiAmount - fromCollector,
-    fromCollector,
+    minted,
+    fromCollector: tttiAmount - minted,
     recipient,
     timestamp: nowNs(),
     tttiAmount,
@@ -149,7 +404,23 @@ function makeConversion(icpAmount: bigint, recipient: Account): Conversion {
   };
 }
 
-state.conversions.push(makeConversion(ICP_DIVISOR, CALLER_ACCOUNT));
+// Legacy ICP purchase recorded before fee, net and block fields existed.
+{
+  const {
+    feeAmount: _fee,
+    netAmount: _net,
+    paymentBlock: _payment,
+    mintBlock: _mint,
+    ...legacy
+  } = makeConversion(ICP_DIVISOR / 4n, CALLER_ACCOUNT);
+  state.conversions.push({
+    ...legacy,
+    payAmount: 0n,
+    timestamp: nowNs() - 30n * 24n * HOUR_NS,
+  });
+}
+// Purchase with fee, net amount and ledger blocks recorded.
+state.conversions.unshift(makeConversion(ICP_DIVISOR, CALLER_ACCOUNT));
 // One purchase whose ICP forward to the treasury failed (retryable by admins).
 state.conversions.unshift({
   ...makeConversion(ICP_DIVISOR / 2n, { owner: HOLDER_2 }),
@@ -196,7 +467,8 @@ function mockPurchase(recipient: Account | null, icpAmount: bigint): PurchaseRes
       {
         __kind__: "aboveRemaining",
         aboveRemaining: {
-          maximumIcpE8s: icpForTtti(remaining, MOCK_USD_E8),
+          token: PayToken.icp,
+          maximumPayAmount: icpForTtti(remaining, MOCK_USD_E8),
           maximumTtti: remaining,
           requestedTtti: requested,
         },
@@ -211,17 +483,22 @@ function mockPurchase(recipient: Account | null, icpAmount: bigint): PurchaseRes
   return { __kind__: "Ok", Ok: conversion };
 }
 
-/** Seconds since the mock oracle rate was stored. */
-const MOCK_PRICE_AGE_SECONDS = 42n;
-
-const mockPrice = () => ({
-  status: OracleStatus.ok,
-  source: PriceSource.coinbase,
-  usdMicro: MOCK_USD_MICRO,
-  usdE8: MOCK_USD_E8,
-  updatedAt: nowNs(),
-  stale: false,
-});
+/** Hourly rate fetched at the start of the current hour, valid one hour. */
+const mockPrice = (): IcpPrice => {
+  const fetchedAt = hourStartNs();
+  return {
+    usdE8: MOCK_USD_E8,
+    source: PriceSource.coinbase,
+    fetchedAt,
+    validUntil: fetchedAt + HOUR_NS,
+    usable: true,
+    lastSuccessAt: fetchedAt,
+    lastError: {
+      message: "coinbase: HTTP 503 Service Unavailable",
+      at: fetchedAt - 2n * HOUR_NS,
+    },
+  };
+};
 
 // ---------------------------------------------------------------------------
 // ICRC-3 block log: legacy ':' Text blocks below the boundary (4 decimals),
@@ -468,18 +745,54 @@ function buildMockHashTree(tipIndex: bigint, tipHash: Uint8Array): Uint8Array {
   ]);
 }
 
-const findToken = (canisterId: Principal) => {
-  const list = tokens();
-  return list.find((t) => t.canisterId.toText() === canisterId.toText()) ?? list[0];
+/** Mock USD price per whole pay token (usdE8). */
+const MOCK_PAY_USD_E8: Record<PayToken, bigint> = {
+  [PayToken.icp]: MOCK_USD_E8,
+  [PayToken.ckbtc]: 6_500_000_000_000n,
+  [PayToken.ckusdc]: 100_000_000n,
+  [PayToken.ckusdt]: 100_000_000n,
 };
 
+function mockTokenPrice(token: PayToken): TokenPrice {
+  const price = mockPrice();
+  return {
+    token,
+    pair: `${PAY_TOKENS[token].symbol}/USD`,
+    usdE8: MOCK_PAY_USD_E8[token],
+    source: price.source,
+    fetchedAt: price.fetchedAt,
+    validUntil: price.validUntil,
+    usable: price.usable,
+    lastSuccessAt: price.lastSuccessAt,
+  };
+}
+
+function mockPayTokens(): Array<PayTokenStatus> {
+  const price = mockPrice();
+  return PAY_TOKEN_ORDER.map((token) => {
+    const descriptor = PAY_TOKENS[token];
+    return {
+      token,
+      symbol: descriptor.symbol,
+      decimals: descriptor.decimals,
+      ledgerCanisterId: Principal.fromText(descriptor.ledgerCanisterId),
+      ledgerFee: descriptor.fee,
+      feeBps: descriptor.feeBps,
+      fundsCycles: descriptor.fundsCycles,
+      buyerPriceUsd: (BigInt(TOKEN_PRICE_USD) * (10_000n + descriptor.feeBps)) / 10_000n,
+      minimumUsdE8: BigInt(Math.round(descriptor.minimumUsd * 100)) * 1_000_000n,
+      priceUsdE8: MOCK_PAY_USD_E8[token],
+      priceSource: price.source,
+      priceUsable: price.usable,
+      priceFetchedAt: price.fetchedAt,
+      priceValidUntil: price.validUntil,
+      treasuryConfigured: true,
+      liveRate: token === PayToken.icp ? MOCK_LIVE_RATE : undefined,
+    };
+  });
+}
+
 export const mockBackend: backendInterface = {
-  _immutableObjectStorageBlobsAreLive: async (hashes) => hashes.map(() => false),
-  _immutableObjectStorageBlobsToDelete: async () => [],
-  _immutableObjectStorageConfirmBlobDeletion: async () => undefined,
-  _immutableObjectStorageCreateCertificate: async (blobHash) => ({ method: "GET", blob_hash: blobHash }),
-  _immutableObjectStorageRefillCashier: async () => ({ success: true, topped_up_amount: 0n }),
-  _immutableObjectStorageUpdateGatewayPrincipals: async () => undefined,
   _initialize_access_control: async () => undefined,
   _internet_identity_sign_in_finish: async () => ({ __kind__: "ok", ok: null }),
   _internet_identity_sign_in_start: async () => new Uint8Array(),
@@ -490,16 +803,65 @@ export const mockBackend: backendInterface = {
     return { __kind__: "ok", ok: state.acknowledgement };
   },
   assignCallerUserRole: async () => undefined,
-  burn: async (from) =>
-    from.owner.toText() === CALLER.toText()
-      ? { __kind__: "Ok", Ok: 9n }
-      : { __kind__: "Err", Err: { __kind__: "GenericError", GenericError: { message: "Only your own account can be burned from", error_code: 1n } } },
+  getBtcDepositInfo: async () => ({
+    minterCanisterId: CKBTC_MINTER,
+    ckbtcLedgerId: Principal.fromText(PAY_TOKENS[PayToken.ckbtc].ledgerCanisterId),
+    minConfirmations: BTC_DEFAULT_MIN_CONFIRMATIONS,
+    depositMinSats: BTC_DEFAULT_DEPOSIT_MIN_SATS,
+    checkFeeSats: BTC_DEFAULT_CHECK_FEE_SATS,
+    purchaseFeeBps: CK_FEE_BPS,
+    suggestedPollSeconds: 30n,
+    infoFetchedAt: hourStartNs(),
+  }),
+  getMyBtcDeposits: async () => ({ purchase: state.btcPurchase, wallet: state.btcWallet }),
+  getBtcPurchaseAddress: async () => {
+    if (!state.acknowledgement.accepted) {
+      return {
+        __kind__: "Err",
+        Err: {
+          code: BtcDepositErrorCode.acknowledgementRequired,
+          message: "Accept the purchase acknowledgements before your first purchase.",
+        },
+      };
+    }
+    state.btcPurchase ??= newTracking(DepositKind.purchase);
+    return { __kind__: "Ok", Ok: state.btcPurchase };
+  },
+  checkBtcPurchaseDeposit: async () => {
+    if (!state.btcPurchase) return noBtcAddress();
+    state.btcPurchase = advanceTracking(state.btcPurchase);
+    return { __kind__: "Ok", Ok: state.btcPurchase };
+  },
+  getBtcWalletAddress: async () => {
+    state.btcWallet ??= newTracking(DepositKind.wallet);
+    return { __kind__: "Ok", Ok: state.btcWallet };
+  },
+  checkBtcWalletDeposit: async () => {
+    if (!state.btcWallet) return noBtcAddress();
+    state.btcWallet = advanceTracking(state.btcWallet);
+    return { __kind__: "Ok", Ok: state.btcWallet };
+  },
   clearDeliveryAddress: async () => {
     const had = state.deliveryAddress !== null;
     state.deliveryAddress = null;
     return had;
   },
   convertDeposit: async (recipient, icpAmount) => mockPurchase(recipient, icpAmount),
+  convertDepositWith: async (token, recipient, payAmount, _tttiTarget) =>
+    token === PayToken.icp
+      ? mockPurchase(recipient, payAmount)
+      : purchaseError(
+          { __kind__: "tokenNotConfigured", tokenNotConfigured: { token } },
+          `${PAY_TOKENS[token].symbol} purchases are not available in the mock backend.`,
+        ),
+  getTokenPrices: async () => PAY_TOKEN_ORDER.map((token) => mockTokenPrice(token)),
+  refreshTokenPrice: async (token) => {
+    const price = mockTokenPrice(token);
+    return price.usable
+      ? { __kind__: "Err", Err: "The current rate is still valid; refresh is allowed only when the rate is expired or absent." }
+      : { __kind__: "Ok", Ok: price };
+  },
+  setPayTokenAccount: async (token, account) => ({ __kind__: "Ok", Ok: { token, account } }),
   execute: async () => ({ hasMore: false, rows: [] }),
   exportBalanceSnapshot: async () => ({
     exportedAt: nowNs(),
@@ -513,16 +875,14 @@ export const mockBackend: backendInterface = {
     ],
   }),
   getApiDoc: async () => JSON.stringify({ methods: [] }),
-  getBalance: async (canisterId) => ({
-    __kind__: "Ok",
-    Ok: { token: findToken(canisterId), balance: SAMPLE_BALANCES[canisterId.toText()] ?? 0n },
-  }),
-  getBurnAccount: async () => BURN_ACCOUNT,
-  getCallerIcpBalance: async () => 250_000_000n,
-  getCallerUserProfile: async () => ({ name: "Aiko Tanaka" }),
+  getBurnAccount: async () => MINTING_ACCOUNT,
   getCallerUserRole: async () => UserRole.admin,
   getCanisterPrincipal: async () => TTTI_CANISTER,
   getConversions: async () => state.conversions,
+  getMyConversions: async () =>
+    state.conversions.filter(
+      (c) => c.depositor.toText() === CALLER.toText() || c.recipient.owner.toText() === CALLER.toText(),
+    ),
   getDeliveryAddress: async () => state.deliveryAddress,
   getFeeCollector: async () => ({ account: FEE_COLLECTOR, balance: state.feeCollectorBalance }),
   getIcpPrice: async () => mockPrice(),
@@ -532,23 +892,14 @@ export const mockBackend: backendInterface = {
     currentDecimals: TTTI_DECIMALS,
   }),
   getMyPurchaseAcknowledgement: async () => state.acknowledgement,
-  getMySetupStatus: async () => state.setupStatus,
-  setMySetupStatus: async (outcome) => {
-    state.setupStatus = {
-      status: outcome === SetupOutcome.completed ? SetupStatus.completed : SetupStatus.skipped,
-      updatedAt: nowNs(),
-    };
-    return { __kind__: "ok", ok: state.setupStatus };
-  },
-  getOriginalWhitePaper: async () => state.originalWhitePaper,
   getSaleStatus: async () => {
     const totalSupply = mockTotalSupply();
-    const mintableRemaining = MAX_SUPPLY > totalSupply ? MAX_SUPPLY - totalSupply : 0n;
     const available = saleAvailable();
+    const price = mockPrice();
     return {
       maxSupply: MAX_SUPPLY,
       totalSupply,
-      mintableRemaining,
+      mintableRemaining: mintableRemaining(),
       feeAccountBalance: state.feeCollectorBalance,
       sold: state.sold,
       reserved: 0n,
@@ -559,12 +910,13 @@ export const mockBackend: backendInterface = {
       cyclesFeeBps: CYCLES_FEE_BPS,
       buyerPriceUsd: BigInt(BUYER_PRICE_USD),
       salesPaused: state.salesPaused,
-      priceUsdE8: MOCK_USD_E8,
-      priceUpdatedAt: nowNs(),
-      priceSource: PriceSource.coinbase,
-      priceAgeSeconds: MOCK_PRICE_AGE_SECONDS,
-      maxPriceAgeSeconds: MAX_PRICE_AGE_SECONDS,
+      priceUsdE8: price.usdE8,
+      priceSource: price.source,
+      priceFetchedAt: price.fetchedAt,
+      priceValidUntil: price.validUntil,
+      priceUsable: price.usable,
       liveRate: MOCK_LIVE_RATE,
+      payTokens: mockPayTokens(),
     };
   },
   getTechnicalDetails: async () => ({
@@ -574,9 +926,10 @@ export const mockBackend: backendInterface = {
     decimals: TTTI_DECIMALS,
     standards: STANDARDS.map((standard) => standard.name),
     icpLedgerCanisterId: ICP_CANISTER,
-    oracleSources: ["Coinbase ICP-USD spot price", "CoinGecko ICP/USD (backup)"],
-    refreshPolicy: "Refreshed on demand at purchase when older than 5 minutes",
-    maxRateAgeSeconds: MAX_PRICE_AGE_SECONDS,
+    ckbtcMinterId: CKBTC_MINTER,
+    oracleSources: [HOURLY_RATE_TEXT],
+    refreshPolicy: HOURLY_RATE_TEXT,
+    maxRateAgeSeconds: MAX_RATE_AGE_SECONDS,
     tokenPriceUsd: BigInt(TOKEN_PRICE_USD),
     cyclesFeeBps: CYCLES_FEE_BPS,
     buyerPriceUsd: BigInt(BUYER_PRICE_USD),
@@ -590,11 +943,45 @@ export const mockBackend: backendInterface = {
     totalSupply: mockTotalSupply(),
     feeAccount: FEE_COLLECTOR,
     feeAccountBalance: state.feeCollectorBalance,
+    cyclesReserveAccount: CYCLES_RESERVE_ACCOUNT,
+    reserveFloorE8s: RESERVE_FLOOR_E8S,
+    reserveRule: RESERVE_RULE,
+    controllers: MOCK_CONTROLLERS,
+    moduleHash: MOCK_MODULE_HASH,
+    canisterInfoFetchedAt: hourStartNs(),
+    legacyBlockBoundary: LEGACY_BOUNDARY,
+    payTokens: mockPayTokens(),
   }),
+  getCyclesStatus: async () => ({
+    cyclesBalance: state.cyclesBalance,
+    topUpThreshold: TOP_UP_THRESHOLD,
+    reserveAccount: CYCLES_RESERVE_ACCOUNT,
+    reserveBalanceE8s: state.reserveBalanceE8s,
+    reserveFloorE8s: RESERVE_FLOOR_E8S,
+    withdrawableExcessE8s: withdrawableExcess(),
+    withdrawalAllowed: true,
+    withdrawalBlockedReason: undefined,
+    lastTopUp: state.lastTopUp,
+    withdrawals: state.withdrawals,
+  }),
+  withdrawReserveExcess: async (amount) => {
+    const withdrawableE8s = withdrawableExcess();
+    if (withdrawableE8s === 0n) return { __kind__: "noExcess", noExcess: null };
+    if (amount === 0n || amount > withdrawableE8s) {
+      return { __kind__: "amountExceedsExcess", amountExceedsExcess: { withdrawableE8s } };
+    }
+    const blockIndex = 18_300_000n + BigInt(state.withdrawals.length);
+    state.reserveBalanceE8s -= amount + ICP_LEDGER_FEE;
+    state.withdrawals = [...state.withdrawals, { timestamp: nowNs(), amountE8s: amount, blockIndex }];
+    return { __kind__: "ok", ok: blockIndex };
+  },
   getPublicTreasuryInfo: async () => ({
     icpAccount: state.treasuryConfig.icpAccount,
+    tokenAccounts: PAY_TOKEN_ORDER.map((token) => ({
+      token,
+      account: state.treasuryConfig.icpAccount,
+    })),
   }),
-  getTokenMetadata: async (canisterId) => ({ __kind__: "Ok", Ok: findToken(canisterId) }),
   getTreasuryConfig: async () => state.treasuryConfig,
   get_account_transactions: async () => ({
     __kind__: "Ok",
@@ -613,16 +1000,23 @@ export const mockBackend: backendInterface = {
     ["icrc1:decimals", { __kind__: "Nat", Nat: BigInt(TTTI_DECIMALS) }],
     ["icrc1:fee", { __kind__: "Nat", Nat: state.fee }],
     ["icrc1:max_memo_length", { __kind__: "Nat", Nat: 32n }],
+    ["icrc1:max_supply", { __kind__: "Nat", Nat: MAX_SUPPLY }],
   ],
-  icrc1_minting_account: async () => BURN_ACCOUNT,
+  icrc1_minting_account: async () => MINTING_ACCOUNT,
   icrc1_name: async () => TOKEN_NAME,
   icrc1_supported_standards: async () => STANDARDS,
   icrc1_symbol: async () => TTTI_SYMBOL,
   icrc1_total_supply: async () => mockTotalSupply(),
-  icrc1_transfer: async () => ({ __kind__: "Ok", Ok: 9n }),
+  icrc1_transfer: async (args) =>
+    isMintingAccount(args.to)
+      ? { __kind__: "Err", Err: MINTING_REFUSAL }
+      : { __kind__: "Ok", Ok: 9n },
   icrc2_allowance: async () => ({ allowance: 0n }),
   icrc2_approve: async () => ({ __kind__: "Ok", Ok: 9n }),
-  icrc2_transfer_from: async () => ({ __kind__: "Ok", Ok: 9n }),
+  icrc2_transfer_from: async (args) =>
+    isMintingAccount(args.to)
+      ? { __kind__: "Err", Err: MINTING_REFUSAL }
+      : { __kind__: "Ok", Ok: 9n },
   icrc3_get_archives: async () => [],
   icrc3_get_blocks: async (ranges) => mockGetBlocks(ranges),
   icrc3_get_tip_certificate: async () => {
@@ -640,17 +1034,17 @@ export const mockBackend: backendInterface = {
   ],
   isCallerAdmin: async () => true,
   ledger_id: async () => TTTI_CANISTER,
-  listTokens: async () => tokens(),
   list_subaccounts: async () => [],
-  prepareTransfer: async (canisterId, from, to, amount, memo) => ({
-    __kind__: "Ok",
-    Ok: { ledger: canisterId, from, to, amount, fee: findToken(canisterId).fee, memo: memo ?? undefined, createdAt: nowNs() },
-  }),
-  publishOriginalWhitePaper: async (document) => {
-    state.originalWhitePaper = document;
+  refreshIcpPrice: async () => {
+    const price = mockPrice();
+    if (price.usable) {
+      return {
+        __kind__: "Err",
+        Err: "The current ICP/USD rate is still valid; refresh is allowed only when the rate is expired or absent.",
+      };
+    }
+    return { __kind__: "Ok", Ok: price };
   },
-  refreshIcpPrice: async () => ({ __kind__: "Ok", Ok: mockPrice() }),
-  saveCallerUserProfile: async () => undefined,
   schema: async () => JSON.stringify({ tables: [] }),
   setDeliveryAddress: async (principalText) => {
     const result = validateDeliveryAddress(principalText);

@@ -6,7 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { AcknowledgementError, Backend } from "../backend";
+import { AcknowledgementError, Backend, PayToken } from "../backend";
 import type {
   Account,
   DeliveryAddressResult,
@@ -14,8 +14,14 @@ import type {
   PurchaseResult,
 } from "../backend";
 import { type _SERVICE, idlFactory } from "../declarations/backend.did";
-import { ICP_LEDGER_CANISTER_ID } from "../lib/icpLedger";
-import { ensurePlugSession, getPlugSessionVersion, usePlug } from "./usePlug";
+import { MESSAGES_TEXT } from "../i18n/common/messages";
+import { pickDict } from "../i18n/core/dict";
+import {
+  ensurePlugSession,
+  getPlugSessionVersion,
+  plugWhitelist,
+  usePlug,
+} from "./usePlug";
 
 const unsupportedBlob = async (): Promise<never> => {
   throw new Error("File transfer is not available through the Plug actor.");
@@ -33,14 +39,12 @@ let cachedBackend: { version: number; backend: Backend } | null = null;
 async function createPlugBackend(): Promise<Backend> {
   const plug = typeof window !== "undefined" ? window.ic?.plug : undefined;
   if (!plug) {
-    throw new Error(
-      "Plug wallet extension not detected. Install Plug to continue.",
-    );
+    throw new Error(pickDict(MESSAGES_TEXT).plugNotDetected);
   }
   const config = await loadConfig();
   await ensurePlugSession(
     plug,
-    [config.backend_canister_id, ICP_LEDGER_CANISTER_ID],
+    plugWhitelist(config.backend_canister_id),
     config.backend_host,
   );
   const version = getPlugSessionVersion();
@@ -59,13 +63,14 @@ async function createPlugBackend(): Promise<Backend> {
 function invalidateAfterPurchase(queryClient: QueryClient) {
   for (const key of [
     "saleStatus",
+    "technicalDetails",
     "conversions",
     "treasuryState",
     "walletBalance",
-    "callerIcpBalance",
     "icrc1BalanceOf",
     "tokenInfo",
     "icpPrice",
+    "tokenPrices",
     "deliveryAddress",
     "exactQuote",
   ]) {
@@ -74,18 +79,42 @@ function invalidateAfterPurchase(queryClient: QueryClient) {
 }
 
 export interface PlugPurchaseParams {
-  icpAmount: bigint;
+  /** Pay token; defaults to ICP. */
+  token?: PayToken;
+  /** Amount in the pay token's base units. */
+  payAmount?: bigint;
+  /** Legacy ICP amount in e8s, used when payAmount is absent. */
+  icpAmount?: bigint;
+  /** Delivery account; null credits the saved address or the caller. */
+  recipient?: Account | null;
+  /** Exact TTTI-T base units to deliver (TTTI-T mode); null or absent in amount-paid mode. */
+  tttiTarget?: bigint | null;
 }
 
 /** Purchase TTTI-T as the Plug principal (the same one that approved). */
 export function usePlugPurchase() {
   const queryClient = useQueryClient();
   return useMutation<PurchaseResult, Error, PlugPurchaseParams>({
-    mutationFn: async ({ icpAmount }) => {
+    mutationFn: async ({
+      token,
+      payAmount,
+      icpAmount,
+      recipient,
+      tttiTarget,
+    }) => {
+      const amount = payAmount ?? icpAmount;
+      if (amount === undefined) {
+        throw new Error(pickDict(MESSAGES_TEXT).enterAmount);
+      }
       const backend = await createPlugBackend();
       // null recipient: the backend credits the saved delivery address,
       // otherwise the caller's own principal.
-      return backend.convertDeposit(null, icpAmount);
+      return backend.convertDepositWith(
+        token ?? PayToken.icp,
+        recipient ?? null,
+        amount,
+        tttiTarget ?? null,
+      );
     },
     onSuccess: () => {
       invalidateAfterPurchase(queryClient);
@@ -117,8 +146,8 @@ export function usePlugAcceptPurchaseAcknowledgements() {
       if (result.__kind__ === "err") {
         throw new Error(
           result.err === AcknowledgementError.anonymousCaller
-            ? "Connect Plug before accepting the purchase acknowledgements"
-            : "Could not record the acknowledgements",
+            ? pickDict(MESSAGES_TEXT).ackConnectPlugFirst
+            : pickDict(MESSAGES_TEXT).ackNotRecorded,
         );
       }
       return result.ok;

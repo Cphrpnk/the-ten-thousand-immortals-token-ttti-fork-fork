@@ -1,5 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useDict } from "../../i18n/core";
+import {
+  CAP_TEXT,
+  FAQ_TEXT,
+  TECH_BACKEND_TEXT,
+} from "../../i18n/pages/landing";
+import { useCyclesFeeText, usePriceText } from "../../lib/token";
+import { useBtcPaymentText } from "../btcPaymentText";
 import {
   Accordion,
   AccordionContent,
@@ -10,71 +18,96 @@ import {
 const linkClass =
   "font-medium text-primary underline decoration-primary/40 underline-offset-4 transition-smooth hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm";
 
-const faqs: { id: string; question: string; answer: ReactNode }[] = [
-  {
-    id: "what",
-    question: "What is TTTI-T?",
-    answer: (
-      <>
-        TTTI-T is the test release of TTTI, an exchange currency on the Internet
-        Computer. The ledger uses 8 decimals, and this test release contains one
-        token. The price is 10,000 USD per token plus a fixed 1% running-cost
-        fee, paid in ICP. Purchases start from 1.01 USD. There is no promise of
-        returns of any kind.
-      </>
-    ),
-  },
-  {
-    id: "icp",
-    question: "How do I get ICP?",
-    answer: (
-      <>
-        TTTI-T is bought with ICP. If you do not hold any yet, visit{" "}
-        <Link
-          to="/buy-icp"
-          className={linkClass}
-          data-ocid="landing.faq.buy_icp_link"
-        >
-          Get ICP first
-        </Link>{" "}
-        for trusted ways to buy ICP and send it to your wallet, then come back
-        to complete your purchase.
-      </>
-    ),
-  },
-  {
-    id: "wallets",
-    question: "Which wallets are supported?",
-    answer: (
-      <>
-        You can sign in with Internet Identity or with the Plug wallet. Both
-        keep you in control: the app reads your balances and you sign every
-        transfer yourself.
-      </>
-    ),
-  },
-  {
-    id: "where",
-    question: "Where do my purchased tokens appear?",
-    answer: (
-      <>
-        Your TTTI-T purchase is delivered to the account you signed in with. It
-        appears under TTTI-T on the{" "}
-        <Link
-          to="/wallet"
-          className={linkClass}
-          data-ocid="landing.faq.wallet_link"
-        >
-          Wallet page
-        </Link>
-        . If you prefer, you can add an optional delivery address (a Principal
-        ID) before buying — it is never required.
-      </>
-    ),
-  },
-];
+function useFaqs(): { id: string; question: string; answer: ReactNode }[] {
+  const t = useDict(FAQ_TEXT);
+  const cap = useDict(CAP_TEXT);
+  const rateText = useDict(TECH_BACKEND_TEXT).refreshPolicy;
+  const priceText = usePriceText();
+  const cyclesFeeText = useCyclesFeeText();
+  const btc = useBtcPaymentText();
+  return [
+    {
+      id: "what",
+      question: t.whatQ,
+      answer: (
+        <>
+          {t.whatA} {priceText} {cyclesFeeText} {t.noReturns}
+        </>
+      ),
+    },
+    {
+      id: "icp",
+      question: t.icpQ,
+      answer: (
+        <>
+          {t.icpBefore}
+          <Link
+            to="/buy-icp"
+            className={linkClass}
+            data-ocid="landing.faq.buy_icp_link"
+          >
+            {t.icpLink}
+          </Link>
+          {t.icpAfter}
+        </>
+      ),
+    },
+    {
+      id: "btc",
+      question: t.btcQ,
+      answer: (
+        <>
+          {btc.payment} {btc.walletConversion}
+        </>
+      ),
+    },
+    {
+      id: "rate",
+      question: t.rateQ,
+      answer: <>{rateText}</>,
+    },
+    {
+      id: "wallets",
+      question: t.walletsQ,
+      answer: <>{t.walletsA}</>,
+    },
+    {
+      id: "where",
+      question: t.whereQ,
+      answer: (
+        <>
+          {t.whereBefore}
+          <Link
+            to="/wallet"
+            className={linkClass}
+            data-ocid="landing.faq.wallet_link"
+          >
+            {t.whereLink}
+          </Link>
+          {t.whereAfter}
+        </>
+      ),
+    },
+    {
+      id: "supply",
+      question: t.supplyQ,
+      answer: (
+        <>
+          {t.supplyIntro} {cap.ttti} {cap.tttiT}
+        </>
+      ),
+    },
+    {
+      id: "privacy",
+      question: t.privacyQ,
+      answer: <>{t.privacyA}</>,
+    },
+  ];
+}
 
 export function FaqSection() {
+  const t = useDict(FAQ_TEXT);
+  const faqs = useFaqs();
   return (
     <section
       id="faq"
@@ -85,17 +118,15 @@ export function FaqSection() {
       <div className="container mx-auto grid gap-12 px-4 lg:grid-cols-[0.7fr_1.3fr] lg:gap-20">
         <div className="space-y-5">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
-            Questions
+            {t.label}
           </p>
           <h2
             id="faq-title"
             className="text-imperial text-balance text-3xl leading-tight text-foreground md:text-5xl"
           >
-            Before you buy
+            {t.title}
           </h2>
-          <p className="text-base text-muted-foreground">
-            Clear answers on the token, the wallets and how a purchase works.
-          </p>
+          <p className="text-base text-muted-foreground">{t.intro}</p>
         </div>
         <Accordion
           type="single"

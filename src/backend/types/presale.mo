@@ -3,21 +3,45 @@ import Principal "mo:core/Principal";
 import Common "common";
 import Oracle "oracle";
 import Treasury "treasury";
+import Pay "pay-token";
 
 module {
   public type Account = Common.Account;
   public type Timestamp = Common.Timestamp;
   public type Conversion = Treasury.Conversion;
+  public type PayToken = Pay.PayToken;
+
+  // --- Per pay token figures (SaleStatus and TechnicalDetails) ---------------
+
+  public type PayTokenStatus = {
+    token : PayToken;
+    symbol : Text; // "ICP", "ckBTC", "ckUSDC", "ckUSDT"
+    ledgerCanisterId : Principal;
+    decimals : Nat8; // expected ledger decimals (checked at purchase)
+    ledgerFee : Nat; // expected ledger transfer fee, token base units
+    feeBps : Nat; // 100 (1%) for every pay token
+    minimumUsdE8 : Nat; // minimum purchase, fee included: 1.01 USD * 10^8
+    buyerPriceUsd : Nat; // 10_100 USD per whole TTTI-T for every pay token
+    fundsCycles : Bool; // true only for ICP
+    treasuryConfigured : Bool; // receiving account set
+    priceUsdE8 : Nat; // USD per whole token * 10^8, 0 = no rate
+    priceSource : Oracle.PriceSource;
+    priceFetchedAt : Oracle.Timestamp;
+    priceValidUntil : Oracle.Timestamp;
+    priceUsable : Bool;
+    liveRate : ?Nat; // TTTI-T base units per whole token, fee included
+  };
 
   // --- Sale status -----------------------------------------------------------
 
   // All TTTI-T amounts are base units (8 decimals, 1 TTTI-T = 100_000_000).
-  // `mintableRemaining` = maxSupply - totalSupply (fresh minting left).
+  // `mintableRemaining` = max(0, maxSupply - totalSupply) (fresh minting left;
+  // tokens cannot be burned, so total supply never decreases).
   // `available` = mintableRemaining + feeAccountBalance - reserved: what can
   // still be sold (fee-account tokens are sold only after the mint cap).
   // `complete` = available == 0 and nothing is reserved.
   public type SaleStatus = {
-    maxSupply : Nat; // 1_000_000_000_000 (10 000 TTTI-T)
+    maxSupply : Nat; // 100_000_000 (1 TTTI-T)
     totalSupply : Nat;
     mintableRemaining : Nat;
     feeAccountBalance : Nat;
@@ -27,17 +51,17 @@ module {
     complete : Bool;
     minPurchase : Nat; // 10_000 (0.0001 TTTI-T)
     tokenPriceUsd : Nat; // 10_000 USD per whole TTTI-T (base price)
-    cyclesFeeBps : Nat; // 100 = fixed 1% fee for canister running costs
-    buyerPriceUsd : Nat; // 10_100 USD per whole TTTI-T (base price + fee)
+    cyclesFeeBps : Nat; // 100 = fixed 1% fee on ICP purchases, share kept for cycles
+    buyerPriceUsd : Nat; // 10_100 USD per whole TTTI-T (base price + 1% fee)
     salesPaused : Bool;
-    priceUsdE8 : Nat; // ICP/USD * 10^8
-    priceUpdatedAt : Timestamp; // nanoseconds, 0 = never
+    // The stored hourly ICP/USD rate, exactly the one convertDeposit applies.
+    priceUsdE8 : Nat; // ICP/USD * 10^8, 0 = no rate
     priceSource : Oracle.PriceSource;
-    // Seconds since the cached ICP/USD rate was fetched; null = never fetched.
-    // Display only: Buy stays available, each purchase refreshes the rate.
-    priceAgeSeconds : ?Nat;
-    maxPriceAgeSeconds : Nat; // 300
-    liveRate : ?Nat; // TTTI-T base units per whole ICP at the cached price, fee included
+    priceFetchedAt : Oracle.Timestamp; // nanoseconds (Int), 0 = never
+    priceValidUntil : Oracle.Timestamp; // fetchedAt + 1 h, nanoseconds (Int), 0 = never
+    priceUsable : Bool; // rate exists and now <= validUntil + 5 minutes
+    liveRate : ?Nat; // TTTI-T base units per whole ICP at the stored rate, fee included
+    payTokens : [PayTokenStatus]; // #icp, #ckbtc, #ckusdc, #ckusdt
   };
 
   // --- One-time purchase acknowledgement -------------------------------------
@@ -66,11 +90,11 @@ module {
     decimals : Nat8; // 8
     standards : [Text]; // ICRC-1, ICRC-2, ICRC-3, ICRC-10
     icpLedgerCanisterId : Principal; // ryjl3-tyaaa-aaaaa-aaaba-cai
-    oracleSources : [Text]; // Coinbase ICP-USD spot, CoinGecko backup
-    refreshPolicy : Text; // on demand at purchase
+    oracleSources : [Text]; // Coinbase spot, CoinGecko backup (ICP, BTC, USDC, USDT)
+    refreshPolicy : Text; // hourly rate, valid for one hour
     maxRateAgeSeconds : Nat; // 300
     tokenPriceUsd : Nat; // 10_000
-    cyclesFeeBps : Nat; // 100
+    cyclesFeeBps : Nat; // 100 (ICP purchases)
     buyerPriceUsd : Nat; // 10_100
     minPurchase : Nat; // 10_000 base units
     smallestUnit : Nat; // 1 base unit = 0.00000001 TTTI-T
@@ -82,24 +106,43 @@ module {
     totalSupply : Nat;
     feeAccount : Account;
     feeAccountBalance : Nat;
+    cyclesReserveAccount : Account; // this canister + CYCLES_RESERVE subaccount
+    reserveFloorE8s : Nat; // 200_000_000 (2 ICP) always kept for cycles
+    reserveRule : Text;
+    // From the management canister's canister_info (cached; null until read).
+    controllers : ?[Principal];
+    moduleHash : ?Text; // lowercase hex SHA-256 of the installed Wasm
+    canisterInfoFetchedAt : ?Int; // nanoseconds, last successful read
+    // Blocks with index < legacyBlockBoundary come from earlier test versions (4 decimals).
+    legacyBlockBoundary : Nat;
+    payTokens : [PayTokenStatus]; // #icp, #ckbtc, #ckusdc, #ckusdt
+    // ckBTC minter used for native BTC deposits (BTC -> ckBTC [-> TTTI-T]).
+    ckbtcMinterId : Principal;
   };
 
   // --- Purchase pipeline -----------------------------------------------------
 
   public type PurchaseErrorCode = {
     #anonymousCaller;
+    // The caller already has a purchase in flight (any token); refused
+    // immediately, with no external call.
+    #purchaseInProgress;
     #acknowledgementRequired; // the six purchase acknowledgements are not accepted yet
-    #notConfigured;
+    #notConfigured; // ICP treasury account not set
+    #tokenNotConfigured : { token : PayToken }; // receiving account of this ck token not set
+    // icrc1_decimals / icrc1_fee of the ledger differ from the expected values.
+    #ledgerMismatch : { token : PayToken; expectedDecimals : Nat8; actualDecimals : Nat8; expectedFee : Nat; actualFee : Nat };
     #salesPaused; // "Sales are paused"
     #saleComplete; // "TTTI-T sale complete: no TTTI-T left to sell"
     #invalidAmount;
     #belowMinimum : { minimumTtti : Nat; requestedTtti : Nat };
-    #aboveRemaining : { maximumTtti : Nat; maximumIcpE8s : Nat; requestedTtti : Nat };
-    // The ICP/USD rate could not be refreshed at purchase time; no ICP taken.
-    #priceUnavailable;
-    #approvalMissing : { allowance : Nat };
-    #insufficientIcp : { balance : Nat };
-    #icpLedgerError; // any other ICP ledger error or rejected call
+    // maximumPayAmount in the token's base units.
+    #aboveRemaining : { token : PayToken; maximumTtti : Nat; maximumPayAmount : Nat; requestedTtti : Nat };
+    // No stored USD rate for the token, or past validUntil + 5 minutes; nothing taken.
+    #priceUnavailable : { token : PayToken };
+    #approvalMissing : { token : PayToken; allowance : Nat };
+    #insufficientBalance : { token : PayToken; balance : Nat };
+    #ledgerError : { token : PayToken }; // any other ledger error or rejected call
     #deliveryFailedRefunded;
     #deliveryFailedRefundFailed;
   };

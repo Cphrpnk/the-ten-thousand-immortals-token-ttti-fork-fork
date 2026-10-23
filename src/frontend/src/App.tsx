@@ -15,6 +15,7 @@ import { WhitePaperRoute } from "./components/WhitePaperRoute";
 import { Toaster } from "./components/ui/sonner";
 import { BuyFunnelProvider } from "./hooks/useBuyFunnel";
 import { PlugProvider } from "./hooks/usePlug";
+import { LanguageProvider } from "./i18n/core";
 import { AdminPage } from "./pages/AdminPage";
 import { BuyIcpPage } from "./pages/BuyIcpPage";
 import { ExchangePage } from "./pages/ExchangePage";
@@ -126,13 +127,15 @@ const router = createRouter({ routeTree });
 
 export default function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-      <QueryClientProvider client={queryClient}>
-        <PlugProvider>
-          <RouterProvider router={router} />
-          <Toaster />
-        </PlugProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <LanguageProvider router={router}>
+      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+        <QueryClientProvider client={queryClient}>
+          <PlugProvider>
+            <RouterProvider router={router} />
+            <Toaster />
+          </PlugProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </LanguageProvider>
   );
 }

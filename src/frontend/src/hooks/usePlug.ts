@@ -10,15 +10,26 @@ import {
   useMemo,
   useState,
 } from "react";
+import { PayToken } from "../backend";
+import { MESSAGES_TEXT } from "../i18n/common/messages";
+import { pickDict } from "../i18n/core/dict";
 import {
   type ApproveOutcome,
-  ICP_LEDGER_CANISTER_ID,
   type IcpLedgerActor,
   buildApproveArgs,
   describeCallFailure,
   icpLedgerIdlFactory,
   mapApproveResult,
 } from "../lib/icpLedger";
+import { PAY_TOKENS, PAY_TOKEN_LEDGER_IDS } from "../lib/token";
+
+/**
+ * Canisters a Plug session must whitelist: the backend plus the ICP, ckBTC,
+ * ckUSDC and ckUSDT ledgers.
+ */
+export function plugWhitelist(backendCanisterId: string): string[] {
+  return [backendCanisterId, ...PAY_TOKEN_LEDGER_IDS];
+}
 
 /** Arguments accepted by Plug's `requestTransfer`. */
 export interface PlugTransferArgs {
@@ -131,6 +142,15 @@ export interface PlugContextValue {
     spender: Principal,
     purchaseE8s: bigint,
   ) => Promise<ApproveOutcome>;
+  /**
+   * Approve `spender` on the pay token's ledger for `amount` plus that
+   * ledger's fee, signed by Plug. Never throws; failures are returned.
+   */
+  approveToken: (
+    spender: Principal,
+    token: PayToken,
+    amount: bigint,
+  ) => Promise<ApproveOutcome>;
 }
 
 const PlugContext = createContext<PlugContextValue | undefined>(undefined);
@@ -169,14 +189,12 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
   const connect = useCallback(async () => {
     const plug = getPlug();
     if (!plug) {
-      throw new Error(
-        "Plug wallet extension not detected. Install Plug to continue.",
-      );
+      throw new Error(pickDict(MESSAGES_TEXT).plugNotDetected);
     }
     setIsConnecting(true);
     try {
       const config = await loadConfig();
-      const whitelist = [config.backend_canister_id, ICP_LEDGER_CANISTER_ID];
+      const whitelist = plugWhitelist(config.backend_canister_id);
       await plug.requestConnect({
         whitelist,
         host: config.backend_host,
@@ -209,9 +227,7 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
     async (canisterId: Principal, args: PlugTransferArgs) => {
       const plug = getPlug();
       if (!plug) {
-        throw new Error(
-          "Plug wallet extension not detected. Install Plug to continue.",
-        );
+        throw new Error(pickDict(MESSAGES_TEXT).plugNotDetected);
       }
       const config = await loadConfig();
       // Plug's requestTransfer does not take a canister id: it transfers on the
@@ -229,41 +245,51 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const approveIcp = useCallback(
+  const approveToken = useCallback(
     async (
       spender: Principal,
-      purchaseE8s: bigint,
+      token: PayToken,
+      amount: bigint,
     ): Promise<ApproveOutcome> => {
+      const descriptor = PAY_TOKENS[token];
       const plug = getPlug();
       if (!plug) {
         return {
           ok: false,
-          message:
-            "Plug wallet extension not detected. Install Plug to continue.",
+          message: pickDict(MESSAGES_TEXT).plugNotDetected,
         };
       }
       try {
         const config = await loadConfig();
-        // The approval is signed on the ICP ledger; whitelist the backend too
-        // so the purchase call that follows reuses this session.
+        // The approval is signed on the pay token's ledger; the whitelist also
+        // covers the backend so the purchase call that follows reuses it.
         await ensurePlugSession(
           plug,
-          [config.backend_canister_id, ICP_LEDGER_CANISTER_ID],
+          plugWhitelist(config.backend_canister_id),
           config.backend_host,
         );
         const ledger = await plug.createActor<IcpLedgerActor>({
-          canisterId: ICP_LEDGER_CANISTER_ID,
+          canisterId: descriptor.ledgerCanisterId,
           interfaceFactory: icpLedgerIdlFactory,
         });
         const result = await ledger.icrc2_approve(
-          buildApproveArgs(spender, purchaseE8s),
+          buildApproveArgs(spender, amount, descriptor.fee),
         );
-        return mapApproveResult(result);
+        return mapApproveResult(result, descriptor);
       } catch (error) {
-        return { ok: false, message: describeCallFailure(error) };
+        return {
+          ok: false,
+          message: describeCallFailure(error, descriptor.symbol),
+        };
       }
     },
     [],
+  );
+
+  const approveIcp = useCallback(
+    (spender: Principal, purchaseE8s: bigint): Promise<ApproveOutcome> =>
+      approveToken(spender, PayToken.icp, purchaseE8s),
+    [approveToken],
   );
 
   const value = useMemo<PlugContextValue>(
@@ -275,6 +301,7 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
       disconnect,
       requestTransfer,
       approveIcp,
+      approveToken,
     }),
     [
       principal,
@@ -284,6 +311,7 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
       disconnect,
       requestTransfer,
       approveIcp,
+      approveToken,
     ],
   );
 

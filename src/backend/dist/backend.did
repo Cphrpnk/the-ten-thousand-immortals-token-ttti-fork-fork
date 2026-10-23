@@ -1,23 +1,22 @@
-type _ImmutableObjectStorageRefillResult = 
- record {
-   success: opt bool;
-   topped_up_amount: opt nat;
- };
-type _ImmutableObjectStorageRefillInformation = record {
-                                                  proposed_top_up_amount:
-                                                   opt nat;};
-type _ImmutableObjectStorageCreateCertificateResult = 
- record {
-   blob_hash: text;
-   method: text;
- };
-type WalletError = 
+type WithdrawalBlockedReason = 
  variant {
-   InvalidAmount;
-   InvalidPrincipal;
-   LedgerUnavailable: principal;
-   TransferFailed: text;
-   UnknownToken: principal;
+   cyclesBelowThreshold;
+   topUpAwaitingConfirmation;
+   topUpRunning;
+ };
+type WithdrawReserveResult = 
+ variant {
+   amountExceedsExcess: record {withdrawableE8s: nat;};
+   busy;
+   cyclesBelowThreshold: record {
+                           cyclesBalance: nat;
+                           topUpThreshold: nat;
+                         };
+   ledgerError: text;
+   noExcess;
+   ok: nat;
+   topUpPendingNotify;
+   treasuryNotConfigured;
  };
 type Value__2 = 
  variant {
@@ -46,7 +45,6 @@ type UserRole =
    guest;
    user;
  };
-type UserProfile = record {name: text;};
 type TreasuryConfigResult = 
  variant {
    Err: text;
@@ -64,15 +62,10 @@ type TransformationInput =
    context: blob;
    response: HttpRequestResult;
  };
-type TransferResult__1 = 
+type TransferResult = 
  variant {
    Err: TransferError;
    Ok: nat;
- };
-type TransferResult = 
- variant {
-   Err: WalletError;
-   Ok: PreparedTransfer;
  };
 type TransferFromResult = 
  variant {
@@ -132,31 +125,58 @@ type TransactionWithId =
    id: BlockIndex;
    transaction: IndexTransaction;
  };
-type Tokens = nat;
-type TokenResult = 
+type TopUpStatus = 
  variant {
-   Err: WalletError;
-   Ok: TokenDescriptor;
+   failed: text;
+   notified: record {cycles: nat;};
+   transferred;
  };
-type TokenDescriptor = 
+type TopUpRecord = 
  record {
-   canisterId: principal;
-   decimals: nat8;
-   fee: nat;
-   name: text;
-   symbol: text;
+   blockIndex: nat;
+   icpE8s: nat;
+   lastError: opt text;
+   status: TopUpStatus;
+   timestamp: Timestamp;
  };
-type TokenBalance = 
+type Tokens = nat;
+type TokenPriceResult = 
+ variant {
+   Err: text;
+   Ok: TokenPrice;
+ };
+type TokenPrice = 
  record {
-   balance: opt nat;
-   token: TokenDescriptor;
+   fetchedAt: Timestamp;
+   lastError: opt PriceError;
+   lastSuccessAt: opt Timestamp;
+   pair: text;
+   source: PriceSource;
+   token: PayToken;
+   usable: bool;
+   usdE8: nat;
+   validUntil: Timestamp;
+ };
+type TokenAccountResult = 
+ variant {
+   Err: text;
+   Ok: TokenAccountInfo;
+ };
+type TokenAccountInfo = 
+ record {
+   account: opt Account;
+   token: PayToken;
  };
 type Timestamp__1 = nat64;
 type Timestamp = int;
 type TechnicalDetails = 
  record {
    buyerPriceUsd: nat;
+   canisterInfoFetchedAt: opt int;
+   ckbtcMinterId: principal;
+   controllers: opt vec principal;
    cyclesFeeBps: nat;
+   cyclesReserveAccount: Account;
    decimals: nat8;
    deliveryOrder: text;
    excessPaymentHandling: text;
@@ -164,11 +184,16 @@ type TechnicalDetails =
    feeAccountBalance: nat;
    icpLedgerCanisterId: principal;
    ledgerCanisterId: principal;
+   legacyBlockBoundary: nat;
    maxRateAgeSeconds: nat;
    maxSupply: nat;
    minPurchase: nat;
+   moduleHash: opt text;
    oracleSources: vec text;
+   payTokens: vec PayTokenStatus;
    refreshPolicy: text;
+   reserveFloorE8s: nat;
+   reserveRule: text;
    roundingRule: text;
    smallestUnit: nat;
    standards: vec text;
@@ -197,23 +222,6 @@ type SnapshotEntry =
    kind: HolderKind;
    needsMigration: bool;
  };
-type SetupStatusView = 
- record {
-   status: SetupStatus;
-   updatedAt: opt Timestamp;
- };
-type SetupStatus = 
- variant {
-   completed;
-   notStarted;
-   skipped;
- };
-type SetupOutcome = 
- variant {
-   completed;
-   skipped;
- };
-type SetupError = variant {anonymousCaller;};
 type SetFeeResult = 
  variant {
    err: text;
@@ -227,14 +235,15 @@ type SaleStatus =
    cyclesFeeBps: nat;
    feeAccountBalance: nat;
    liveRate: opt nat;
-   maxPriceAgeSeconds: nat;
    maxSupply: nat;
    minPurchase: nat;
    mintableRemaining: nat;
-   priceAgeSeconds: opt nat;
+   payTokens: vec PayTokenStatus;
+   priceFetchedAt: Timestamp;
    priceSource: PriceSource;
-   priceUpdatedAt: Timestamp__1;
+   priceUsable: bool;
    priceUsdE8: nat;
+   priceValidUntil: Timestamp;
    "reserved": nat;
    salesPaused: bool;
    sold: nat;
@@ -242,19 +251,20 @@ type SaleStatus =
    totalSupply: nat;
  };
 type Result__1 = 
- record {
-   hasMore: bool;
-   rows: vec vec Cell;
- };
-type Result_1 = 
  variant {
    err: Error;
    ok;
  };
 type Result = 
- variant {
-   err: SetupError;
-   ok: SetupStatusView;
+ record {
+   hasMore: bool;
+   rows: vec vec Cell;
+ };
+type ReserveWithdrawal = 
+ record {
+   amountE8s: nat;
+   blockIndex: nat;
+   timestamp: Timestamp;
  };
 type PurchaseResult = 
  variant {
@@ -265,26 +275,43 @@ type PurchaseErrorCode =
  variant {
    aboveRemaining:
     record {
-      maximumIcpE8s: nat;
+      maximumPayAmount: nat;
       maximumTtti: nat;
       requestedTtti: nat;
+      token: PayToken;
     };
    acknowledgementRequired;
    anonymousCaller;
-   approvalMissing: record {allowance: nat;};
+   approvalMissing: record {
+                      allowance: nat;
+                      token: PayToken;
+                    };
    belowMinimum: record {
                    minimumTtti: nat;
                    requestedTtti: nat;
                  };
    deliveryFailedRefundFailed;
    deliveryFailedRefunded;
-   icpLedgerError;
-   insufficientIcp: record {balance: nat;};
+   insufficientBalance: record {
+                          balance: nat;
+                          token: PayToken;
+                        };
    invalidAmount;
+   ledgerError: record {token: PayToken;};
+   ledgerMismatch:
+    record {
+      actualDecimals: nat8;
+      actualFee: nat;
+      expectedDecimals: nat8;
+      expectedFee: nat;
+      token: PayToken;
+    };
    notConfigured;
-   priceUnavailable;
+   priceUnavailable: record {token: PayToken;};
+   purchaseInProgress;
    saleComplete;
    salesPaused;
+   tokenNotConfigured: record {token: PayToken;};
  };
 type PurchaseError = 
  record {
@@ -297,7 +324,11 @@ type PurchaseAcknowledgement =
    accepted: bool;
    acceptedAt: opt AcknowledgedAt;
  };
-type PublicTreasuryInfo = record {icpAccount: Account;};
+type PublicTreasuryInfo = 
+ record {
+   icpAccount: Account;
+   tokenAccounts: vec TokenAccountInfo;
+ };
 type PriceSource = 
  variant {
    coinbase;
@@ -309,27 +340,41 @@ type PriceResult =
    Err: text;
    Ok: IcpPrice;
  };
-type PreparedTransfer = 
+type PriceError = 
  record {
-   amount: nat;
-   createdAt: Timestamp__1;
-   fee: nat;
-   from: Account;
-   ledger: principal;
-   memo: opt blob;
-   to: Account;
+   at: Timestamp;
+   message: text;
  };
-type OriginalDocument = 
+type PayTokenStatus = 
  record {
-   "blob": ExternalBlob;
-   filename: text;
-   mimeType: text;
+   buyerPriceUsd: nat;
+   decimals: nat8;
+   feeBps: nat;
+   fundsCycles: bool;
+   ledgerCanisterId: principal;
+   ledgerFee: nat;
+   liveRate: opt nat;
+   minimumUsdE8: nat;
+   priceFetchedAt: Timestamp;
+   priceSource: PriceSource;
+   priceUsable: bool;
+   priceUsdE8: nat;
+   priceValidUntil: Timestamp;
+   symbol: text;
+   token: PayToken;
+   treasuryConfigured: bool;
  };
-type OracleStatus = 
+type PayToken = 
  variant {
-   ok;
-   stale;
-   unavailable;
+   ckbtc;
+   ckusdc;
+   ckusdt;
+   icp;
+ };
+type MyBtcDeposits = 
+ record {
+   purchase: opt DepositTracking;
+   wallet: opt DepositTracking;
  };
 type MetadataValue = 
  variant {
@@ -427,12 +472,13 @@ type IndexApprove =
  };
 type IcpPrice = 
  record {
+   fetchedAt: Timestamp;
+   lastError: opt PriceError;
+   lastSuccessAt: opt Timestamp;
    source: PriceSource;
-   stale: bool;
-   status: OracleStatus;
-   updatedAt: Timestamp__1;
+   usable: bool;
    usdE8: nat;
-   usdMicro: nat;
+   validUntil: Timestamp;
  };
 type HttpRequestResult = 
  record {
@@ -502,7 +548,6 @@ type FeeBounds =
    max: nat;
    min: nat;
  };
-type ExternalBlob = blob;
 type Error = 
  variant {
    AmbiguousAttribute: record {
@@ -524,6 +569,62 @@ type Error =
    Stale: record {ageNs: nat;};
    UnknownNonce;
    UntrustedSsoSource: record {domain: text;};
+ };
+type DepositTracking = 
+ record {
+   btcAddress: text;
+   createdAt: Timestamp;
+   deposits: vec DepositEntry;
+   errorKind: opt DepositErrorKind;
+   errorMessage: opt text;
+   kind: DepositKind;
+   lastCheckedAt: opt Timestamp;
+   stage: DepositStage;
+ };
+type DepositStage = 
+ variant {
+   addressShown;
+   confirming: record {
+                 current: nat;
+                 required: nat;
+               };
+   delivered;
+   depositDetected;
+   error;
+   minted;
+   pendingRate;
+   refunded;
+ };
+type DepositKind = 
+ variant {
+   purchase;
+   wallet;
+ };
+type DepositErrorKind = 
+ variant {
+   minterUnavailable;
+   other;
+   refundFailed;
+   tainted;
+   unrecoverable;
+   valueTooSmall;
+ };
+type DepositEntry = 
+ record {
+   btcDetectedSats: nat;
+   btcTxids: vec text;
+   ckbtcMintBlockIndex: opt nat;
+   ckbtcMintedSats: nat;
+   ckbtcPendingSats: nat;
+   conversionId: opt nat;
+   detectedAt: Timestamp;
+   errorKind: opt DepositErrorKind;
+   errorMessage: opt text;
+   index: nat;
+   refundedSats: nat;
+   stage: DepositStage;
+   tttiDelivered: nat;
+   updatedAt: Timestamp;
  };
 type DeliveryAddressResult = 
  variant {
@@ -548,6 +649,19 @@ type DataCertificate =
    certificate: blob;
    hash_tree: blob;
  };
+type CyclesStatus = 
+ record {
+   cyclesBalance: nat;
+   lastTopUp: opt TopUpRecord;
+   reserveAccount: Account;
+   reserveBalanceE8s: nat;
+   reserveFloorE8s: nat;
+   topUpThreshold: nat;
+   withdrawableExcessE8s: nat;
+   withdrawalAllowed: bool;
+   withdrawalBlockedReason: opt WithdrawalBlockedReason;
+   withdrawals: vec ReserveWithdrawal;
+ };
 type ConversionStatus = 
  variant {
    completed;
@@ -558,12 +672,19 @@ type ConversionStatus =
 type Conversion = 
  record {
    depositor: principal;
+   feeAmount: opt nat;
+   feeBps: nat;
    forward: ForwardStatus;
    fromCollector: nat;
    icpAmount: nat;
    id: nat;
    message: opt text;
+   mintBlock: opt nat;
    minted: nat;
+   netAmount: opt nat;
+   payAmount: nat;
+   payToken: PayToken;
+   paymentBlock: opt nat;
    priceUsdE8: nat;
    recipient: Account;
    status: ConversionStatus;
@@ -576,10 +697,34 @@ type Cell =
    name: text;
    value: Value__2;
  };
-type BurnResult = 
+type BtcDepositResult = 
  variant {
-   Err: TransferError;
-   Ok: nat;
+   Err: BtcDepositError;
+   Ok: DepositTracking;
+ };
+type BtcDepositInfo = 
+ record {
+   checkFeeSats: nat;
+   ckbtcLedgerId: principal;
+   depositMinSats: nat;
+   infoFetchedAt: opt Timestamp;
+   minConfirmations: nat;
+   minterCanisterId: principal;
+   purchaseFeeBps: nat;
+   suggestedPollSeconds: nat;
+ };
+type BtcDepositErrorCode = 
+ variant {
+   acknowledgementRequired;
+   anonymousCaller;
+   minterUnavailable;
+   noAddressYet;
+   purchaseInProgress;
+ };
+type BtcDepositError = 
+ record {
+   code: BtcDepositErrorCode;
+   message: text;
  };
 type BlockIndex = nat;
 type Block = 
@@ -593,11 +738,6 @@ type BalanceSnapshot =
    exportedAt: Timestamp__1;
    holders: vec SnapshotEntry;
    totalSupply: nat;
- };
-type BalanceResult = 
- variant {
-   Err: WalletError;
-   Ok: TokenBalance;
  };
 type ArchiveInfo = 
  record {
@@ -655,17 +795,8 @@ type Account =
    subaccount: opt Subaccount;
  };
 service : {
-  _immutableObjectStorageBlobsAreLive: (hashes: vec blob) -> (vec bool) query;
-  _immutableObjectStorageBlobsToDelete: () -> (vec blob) query;
-  _immutableObjectStorageConfirmBlobDeletion: (blobs: vec blob) -> ();
-  _immutableObjectStorageCreateCertificate: (blobHash: text) ->
-   (_ImmutableObjectStorageCreateCertificateResult);
-  _immutableObjectStorageRefillCashier: (refillInformation:
-   opt _ImmutableObjectStorageRefillInformation) ->
-   (_ImmutableObjectStorageRefillResult);
-  _immutableObjectStorageUpdateGatewayPrincipals: () -> ();
   _initialize_access_control: () -> ();
-  _internet_identity_sign_in_finish: () -> (Result_1);
+  _internet_identity_sign_in_finish: () -> (Result__1);
   _internet_identity_sign_in_start: () -> (blob);
   acceptPurchaseAcknowledgements: () ->
    (variant {
@@ -673,31 +804,35 @@ service : {
       ok: PurchaseAcknowledgement;
     });
   assignCallerUserRole: (user: principal, role: UserRole) -> ();
-  burn: (from: Account, amount: nat) -> (BurnResult);
+  checkBtcPurchaseDeposit: () -> (BtcDepositResult);
+  checkBtcWalletDeposit: () -> (BtcDepositResult);
   clearDeliveryAddress: () -> (bool);
   convertDeposit: (recipient: opt Account, icpAmount: nat) ->
    (PurchaseResult);
-  execute: (qJson: text) -> (Result__1) query;
+  convertDepositWith: (token: PayToken, recipient: opt Account, payAmount:
+   nat, tttiTarget: opt nat) -> (PurchaseResult);
+  execute: (qJson: text) -> (Result) query;
   exportBalanceSnapshot: () -> (BalanceSnapshot) query;
   getApiDoc: () -> (text) query;
-  getBalance: (canisterId: principal, account: Account) -> (BalanceResult);
+  getBtcDepositInfo: () -> (BtcDepositInfo) query;
+  getBtcPurchaseAddress: () -> (BtcDepositResult);
+  getBtcWalletAddress: () -> (BtcDepositResult);
   getBurnAccount: () -> (Account) query;
-  getCallerIcpBalance: () -> (nat);
-  getCallerUserProfile: () -> (opt UserProfile) query;
   getCallerUserRole: () -> (UserRole) query;
   getCanisterPrincipal: () -> (principal) query;
   getConversions: () -> (vec Conversion) query;
+  getCyclesStatus: () -> (CyclesStatus) query;
   getDeliveryAddress: () -> (opt Account) query;
   getFeeCollector: () -> (FeeCollectorInfo) query;
   getIcpPrice: () -> (IcpPrice) query;
   getLegacyBlockInfo: () -> (LegacyBlockInfo) query;
+  getMyBtcDeposits: () -> (MyBtcDeposits) query;
+  getMyConversions: () -> (vec Conversion) query;
   getMyPurchaseAcknowledgement: () -> (PurchaseAcknowledgement) query;
-  getMySetupStatus: () -> (SetupStatusView) query;
-  getOriginalWhitePaper: () -> (opt OriginalDocument) query;
   getPublicTreasuryInfo: () -> (opt PublicTreasuryInfo) query;
   getSaleStatus: () -> (SaleStatus) query;
   getTechnicalDetails: () -> (TechnicalDetails) query;
-  getTokenMetadata: (canisterId: principal) -> (TokenResult);
+  getTokenPrices: () -> (vec TokenPrice) query;
   getTreasuryConfig: () -> (opt TreasuryConfig) query;
   get_account_transactions: (args: GetAccountTransactionsArgs) ->
    (GetTransactionsResult) query;
@@ -717,7 +852,7 @@ service : {
   icrc1_supported_standards: () -> (vec SupportedStandard) query;
   icrc1_symbol: () -> (text) query;
   icrc1_total_supply: () -> (nat) query;
-  icrc1_transfer: (args: TransferArgs) -> (TransferResult__1);
+  icrc1_transfer: (args: TransferArgs) -> (TransferResult);
   icrc2_allowance: (args: AllowanceArgs) -> (Allowance) query;
   icrc2_approve: (args: ApproveArgs) -> (ApproveResult);
   icrc2_transfer_from: (args: TransferFromArgs) -> (TransferFromResult);
@@ -727,19 +862,17 @@ service : {
   icrc3_supported_block_types: () -> (vec SupportedBlockType) query;
   isCallerAdmin: () -> (bool) query;
   ledger_id: () -> (principal) query;
-  listTokens: () -> (vec TokenDescriptor);
   list_subaccounts: (args: ListSubaccountsArgs) -> (vec Subaccount) query;
-  prepareTransfer: (canisterId: principal, from: Account, to: Account,
-   amount: nat, memo: opt blob) -> (TransferResult);
-  publishOriginalWhitePaper: (document: OriginalDocument) -> ();
   refreshIcpPrice: () -> (PriceResult);
-  saveCallerUserProfile: (profile: UserProfile) -> ();
+  refreshTokenPrice: (token: PayToken) -> (TokenPriceResult);
   schema: () -> (text) query;
   setDeliveryAddress: (principalText: text) -> (DeliveryAddressResult);
-  setMySetupStatus: (outcome: SetupOutcome) -> (Result);
+  setPayTokenAccount: (token: PayToken, account: Account) ->
+   (TokenAccountResult);
   setSalesPaused: (paused: bool) -> ();
   setTreasuryConfig: (config: TreasuryConfig) -> (TreasuryConfigResult);
   set_fee: (newFee: nat) -> (SetFeeResult);
   status: () -> (IndexStatus) query;
   transform: (input: TransformationInput) -> (TransformationOutput) query;
+  withdrawReserveExcess: (amount: nat) -> (WithdrawReserveResult);
 }

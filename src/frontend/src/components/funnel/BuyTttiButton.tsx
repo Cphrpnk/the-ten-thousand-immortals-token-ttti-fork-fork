@@ -1,5 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import { useBuyFunnel } from "../../hooks/useBuyFunnel";
+import { useDict } from "../../i18n/core";
+import { SETUP_TEXT } from "../../i18n/pages/setup";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 
@@ -17,9 +19,6 @@ export interface BuyTttiButtonProps {
   /** Extra side effect run before the funnel starts (e.g. close a menu). */
   onClick?: () => void;
 }
-
-/** The one entry-point label, identical on every surface. */
-export const BUY_TTTI_LABEL = "Buy TTTI-T";
 
 const variantClass: Record<BuyTttiButtonVariant, string> = {
   primary:
@@ -43,6 +42,7 @@ export function BuyTttiButton({
   onClick,
 }: BuyTttiButtonProps) {
   const { startBuy } = useBuyFunnel();
+  const t = useDict(SETUP_TEXT);
 
   return (
     <Button
@@ -59,7 +59,7 @@ export function BuyTttiButton({
       )}
       data-ocid={ocid}
     >
-      <span>{BUY_TTTI_LABEL}</span>
+      <span>{t.buyTtti}</span>
       {showIcon && (
         <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" />
       )}

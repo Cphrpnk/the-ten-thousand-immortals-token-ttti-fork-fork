@@ -1,10 +1,12 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import {
+  AlertTriangle,
   Check,
   Copy,
   Loader2,
   LogIn,
   LogOut,
+  RefreshCw,
   Wallet as WalletIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -21,13 +23,17 @@ import {
 } from "../components/ui/card";
 import { Separator } from "../components/ui/separator";
 import { Skeleton } from "../components/ui/skeleton";
+import { BtcToCkbtcPanel } from "../components/wallet/BtcToCkbtcPanel";
 import { DeliveryAddressReminder } from "../components/wallet/DeliveryAddressReminder";
+import { PurchaseHistorySection } from "../components/wallet/PurchaseHistorySection";
 import { ReceivePanel } from "../components/wallet/ReceivePanel";
 import { SendPanel } from "../components/wallet/SendPanel";
 import { TokenBalanceCard } from "../components/wallet/TokenBalanceCard";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { usePlug } from "../hooks/usePlug";
 import { useListTokens } from "../hooks/useWallet";
+import { pickDict, useDict } from "../i18n/core";
+import { WALLET_TEXT } from "../i18n/pages/wallet";
 import { encodeAccountText } from "../lib/token";
 
 const PRIMARY_GOLD =
@@ -41,6 +47,7 @@ function truncatePrincipal(principal: string): string {
 }
 
 export function WalletPage() {
+  const t = useDict(WALLET_TEXT);
   const { identity, login, clear, loginStatus } = useInternetIdentity();
   const {
     principal: plugPrincipal,
@@ -62,7 +69,16 @@ export function WalletPage() {
     : undefined;
   const accountText = account ? encodeAccountText(account) : "";
 
-  const { data: tokens, isLoading: tokensLoading } = useListTokens();
+  const {
+    data: tokens,
+    isLoading: tokensLoading,
+    isError: tokensError,
+    failureCount: tokensFailureCount,
+    isFetching: tokensFetching,
+    refetch: refetchTokens,
+  } = useListTokens();
+  const tokensUnavailable =
+    tokensError || (tokens === undefined && tokensFailureCount > 0);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -70,33 +86,35 @@ export function WalletPage() {
     try {
       await navigator.clipboard.writeText(accountText);
       setCopied(true);
-      toast.success("Account copied to clipboard");
+      toast.success(pickDict(WALLET_TEXT).toastAccountCopiedClipboard);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Unable to copy the account");
+      toast.error(pickDict(WALLET_TEXT).toastCopyFailed);
     }
   };
 
   const handleConnectPlug = async () => {
     try {
       await connectPlug();
-      toast.success("Plug wallet connected");
+      toast.success(pickDict(WALLET_TEXT).toastPlugConnected);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Unable to connect Plug",
+        error instanceof Error
+          ? error.message
+          : pickDict(WALLET_TEXT).toastPlugConnectFailed,
       );
     }
   };
 
   const handleDisconnectPlug = async () => {
     await disconnectPlug();
-    toast.success("Plug wallet disconnected");
+    toast.success(pickDict(WALLET_TEXT).toastPlugDisconnected);
   };
 
   const handleAuth = async () => {
     if (iiPrincipal) {
       await clear();
-      toast.success("Signed out of Internet Identity");
+      toast.success(pickDict(WALLET_TEXT).toastIiSignedOut);
     } else {
       await login();
     }
@@ -106,11 +124,9 @@ export function WalletPage() {
     <div className="flex flex-col gap-8 md:gap-12" data-ocid="wallet.page">
       <div className="flex flex-col gap-2">
         <h1 className="text-imperial text-gradient-gold text-3xl leading-tight md:text-5xl">
-          Wallet
+          {t.title}
         </h1>
-        <p className="text-muted-foreground">
-          Connect your wallet, review balances and send or receive tokens.
-        </p>
+        <p className="text-muted-foreground">{t.intro}</p>
       </div>
 
       <DeliveryAddressReminder enabled={!!activePrincipal} />
@@ -119,26 +135,24 @@ export function WalletPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 font-display text-lg">
             <WalletIcon className="h-5 w-5 text-primary" />
-            Active Identity
+            {t.activeIdentity}
           </CardTitle>
           <CardDescription>
-            {activeSource
-              ? `Connected with ${activeSource}`
-              : "No wallet connected yet"}
+            {activeSource ? t.connectedWith(activeSource) : t.noWalletYet}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Account
+                {t.account}
               </p>
               <p
                 className="truncate font-mono text-sm"
                 title={accountText || undefined}
                 data-ocid="wallet.principal"
               >
-                {accountText ? truncatePrincipal(accountText) : "Not connected"}
+                {accountText ? truncatePrincipal(accountText) : t.notConnected}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -164,7 +178,7 @@ export function WalletPage() {
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
-                  Copy
+                  {t.copy}
                 </Button>
               )}
             </div>
@@ -188,7 +202,7 @@ export function WalletPage() {
               ) : (
                 <LogIn className="h-4 w-4" />
               )}
-              {iiPrincipal ? "Sign out of II" : "Connect Internet Identity"}
+              {iiPrincipal ? t.signOutIi : t.connectIi}
             </Button>
 
             <Button
@@ -208,15 +222,12 @@ export function WalletPage() {
               ) : (
                 <LogIn className="h-4 w-4" />
               )}
-              {plugPrincipal ? "Disconnect Plug" : "Connect Plug"}
+              {plugPrincipal ? t.disconnectPlug : t.connectPlug}
             </Button>
           </div>
 
           {!plugAvailable && (
-            <p className="text-xs text-muted-foreground">
-              Plug extension not detected. Install Plug to connect a browser
-              wallet.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.plugNotDetected}</p>
           )}
         </CardContent>
       </Card>
@@ -224,7 +235,7 @@ export function WalletPage() {
       <section className="flex flex-col gap-4 md:gap-6">
         <div className="flex items-center justify-between">
           <h2 className="text-imperial text-xl text-foreground md:text-2xl">
-            Balances
+            {t.balances}
           </h2>
           {activePrincipal && (
             <span className="max-w-[50%] truncate font-mono text-xs text-muted-foreground">
@@ -233,9 +244,38 @@ export function WalletPage() {
           )}
         </div>
 
-        {tokensLoading ? (
-          <div className="grid gap-4 md:gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }, (_, i) => `wallet-skeleton-${i}`).map(
+        {tokensUnavailable ? (
+          <Card
+            className="rounded-lg border-dashed border-gold bg-card"
+            data-ocid="wallet.tokens_error_state"
+          >
+            <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+              <p
+                className="flex items-center gap-2 text-sm text-destructive"
+                aria-live="polite"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {t.tokensUnavailable}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={OUTLINE_GOLD}
+                onClick={() => void refetchTokens()}
+                disabled={tokensFetching}
+                data-ocid="wallet.tokens_retry_button"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${tokensFetching ? "animate-spin" : ""}`}
+                />
+                {t.retry}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : tokensLoading ? (
+          <div className="grid gap-4 md:gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 5 }, (_, i) => `wallet-skeleton-${i}`).map(
               (id) => (
                 <Skeleton key={id} className="h-36 w-full rounded-lg" />
               ),
@@ -247,11 +287,11 @@ export function WalletPage() {
             data-ocid="wallet.empty_state"
           >
             <CardContent className="py-10 text-center text-muted-foreground">
-              No tokens are available for this wallet yet.
+              {t.noTokens}
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {tokens.map((token, index) => (
               <TokenBalanceCard
                 key={token.canisterId.toText()}
@@ -268,6 +308,10 @@ export function WalletPage() {
         <SendPanel tokens={tokens ?? []} account={account} />
         <ReceivePanel tokens={tokens ?? []} account={account} />
       </section>
+
+      {iiPrincipal && <BtcToCkbtcPanel otherWalletActive={!!plugPrincipal} />}
+
+      {iiPrincipal && <PurchaseHistorySection />}
     </div>
   );
 }

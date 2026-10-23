@@ -18,7 +18,10 @@ import { useBuyFunnel } from "../hooks/useBuyFunnel";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { usePlug } from "../hooks/usePlug";
 import { useIsCallerAdmin } from "../hooks/useQueries";
+import { LAYOUT_TEXT } from "../i18n/common/layout";
+import { useDict } from "../i18n/core";
 import { FlatTokenIcon } from "./FlatTokenIcon";
+import { LanguagePicker } from "./LanguagePicker";
 import { BuyTttiButton } from "./funnel/BuyTttiButton";
 import { Button } from "./ui/button";
 import {
@@ -30,38 +33,55 @@ import {
   SheetTrigger,
 } from "./ui/sheet";
 
+type LayoutText = (typeof LAYOUT_TEXT)["en"];
+
+type LayoutLabelKey = {
+  [K in keyof LayoutText]: LayoutText[K] extends string ? K : never;
+}[keyof LayoutText];
+
 interface NavItem {
   to: string;
-  label: string;
+  labelKey: LayoutLabelKey;
   icon: React.ComponentType<{ className?: string }>;
   ocid: string;
   exact?: boolean;
 }
 
 const BASE_NAV: Array<NavItem> = [
-  { to: "/", label: "Home", icon: Home, ocid: "header.home_link", exact: true },
+  {
+    to: "/",
+    labelKey: "navHome",
+    icon: Home,
+    ocid: "header.home_link",
+    exact: true,
+  },
   {
     to: "/white-paper",
-    label: "White Paper",
+    labelKey: "navWhitePaper",
     icon: BookOpen,
     ocid: "header.white_paper_link",
   },
   {
     to: "/buy-icp",
-    label: "Get ICP",
+    labelKey: "navGetIcp",
     icon: Coins,
     ocid: "header.buy_icp_link",
   },
-  { to: "/wallet", label: "Wallet", icon: Wallet, ocid: "header.wallet_link" },
+  {
+    to: "/wallet",
+    labelKey: "navWallet",
+    icon: Wallet,
+    ocid: "header.wallet_link",
+  },
   {
     to: "/transfer",
-    label: "Transfer",
+    labelKey: "navTransfer",
     icon: ArrowRightLeft,
     ocid: "header.transfer_link",
   },
   {
     to: "/history",
-    label: "History",
+    labelKey: "navHistory",
     icon: History,
     ocid: "header.history_link",
   },
@@ -69,7 +89,7 @@ const BASE_NAV: Array<NavItem> = [
 
 const ADMIN_NAV: NavItem = {
   to: "/admin",
-  label: "Admin",
+  labelKey: "navAdmin",
   icon: ShieldCheck,
   ocid: "header.admin_link",
 };
@@ -90,6 +110,7 @@ export function Header() {
   const queryClient = useQueryClient();
   const { openSetup } = useBuyFunnel();
   const [menuOpen, setMenuOpen] = useState(false);
+  const t = useDict(LAYOUT_TEXT);
 
   const isAuthenticated = !!identity || !!plugPrincipal;
   const isLoggingIn = loginStatus === "logging-in";
@@ -119,10 +140,10 @@ export function Header() {
   };
 
   const authLabel = isLoggingIn
-    ? "Signing in…"
+    ? t.signingIn
     : isAuthenticated
-      ? "Sign out"
-      : "Sign in";
+      ? t.signOut
+      : t.signIn;
   const AuthIcon = isAuthenticated ? LogOut : LogIn;
 
   return (
@@ -130,12 +151,12 @@ export function Header() {
       <div className="container mx-auto flex h-[4.5rem] items-center justify-between gap-4 px-4 md:h-20">
         <Link
           to="/"
-          className="group flex min-w-0 items-center gap-3 rounded-md transition-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group flex shrink-0 items-center gap-3 rounded-md transition-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-ocid="header.link"
         >
           <FlatTokenIcon
-            alt="The Ten Thousand Immortals token"
-            className="h-10 w-10 transition-transform duration-300 group-hover:scale-105 md:h-11 md:w-11"
+            alt={t.tokenAlt}
+            className="h-10 w-10 shrink-0 transition-transform duration-300 group-hover:scale-105 md:h-11 md:w-11"
           />
           <span className="min-w-0">
             <span className="text-imperial block truncate text-lg leading-none text-gradient-gold 2xl:hidden">
@@ -149,7 +170,7 @@ export function Header() {
 
         <nav
           className="hidden items-center gap-1 xl:flex"
-          aria-label="Main navigation"
+          aria-label={t.mainNav}
         >
           {navItems.map((item) => (
             <Link
@@ -159,12 +180,13 @@ export function Header() {
               className={desktopLinkClass}
               data-ocid={item.ocid}
             >
-              {item.label}
+              {t[item.labelKey]}
             </Link>
           ))}
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">
+          <LanguagePicker className="hidden xl:flex" ocid="header.language" />
           <Button
             type="button"
             onClick={openSetup}
@@ -174,7 +196,7 @@ export function Header() {
             data-ocid="header.setup_wallet_button"
           >
             <WalletCards className="h-4 w-4" />
-            <span>Set up wallet</span>
+            <span>{t.setupWallet}</span>
           </Button>
           <Button
             type="button"
@@ -195,7 +217,7 @@ export function Header() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Open navigation menu"
+                aria-label={t.openMenu}
                 className="h-11 w-11 text-foreground transition-smooth hover:bg-secondary hover:text-primary xl:hidden"
                 data-ocid="header.menu_button"
               >
@@ -217,7 +239,7 @@ export function Header() {
               </SheetHeader>
               <nav
                 className="flex flex-col gap-1 px-4 pt-5"
-                aria-label="Mobile navigation"
+                aria-label={t.mobileNav}
               >
                 {navItems.map((item) => (
                   <SheetClose asChild key={item.to}>
@@ -228,7 +250,7 @@ export function Header() {
                       data-ocid={`mobile_${item.ocid}`}
                     >
                       <item.icon className="h-4 w-4" />
-                      {item.label}
+                      {t[item.labelKey]}
                     </Link>
                   </SheetClose>
                 ))}
@@ -242,10 +264,15 @@ export function Header() {
                   data-ocid="header.mobile_setup_wallet_button"
                 >
                   <WalletCards className="h-4 w-4" />
-                  Set up wallet
+                  {t.setupWallet}
                 </button>
               </nav>
               <div className="mt-auto flex flex-col gap-3 border-t border-border p-4">
+                <LanguagePicker
+                  className="self-start"
+                  buttonClassName="h-11 min-w-11 px-3"
+                  ocid="header.mobile_language"
+                />
                 <BuyTttiButton
                   className="w-full"
                   showIcon

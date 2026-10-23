@@ -1,7 +1,10 @@
 import { CheckCircle2, PauseCircle, Target } from "lucide-react";
 import type { SaleStatus } from "../../backend";
+import { useDict } from "../../i18n/core/dict";
+import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
 import {
   TTTI_SYMBOL,
+  formatDecimal,
   formatTtti,
   formatUsdE8,
   tttiToUsdE8,
@@ -21,6 +24,7 @@ const CARD_CLASS =
   "rounded-xl border border-gold bg-gradient-surface shadow-elevated transition-smooth";
 
 export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
+  const t = useDict(BUY_PANELS_TEXT);
   if (isLoading || !status) {
     return (
       <Card className={CARD_CLASS} data-ocid="presale.loading_state">
@@ -36,19 +40,21 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
   }
 
   const {
-    maxSupply: allocation,
-    sold,
-    available: remaining,
+    maxSupply,
+    totalSupply,
+    mintableRemaining: remaining,
     reserved,
     complete,
     salesPaused,
   } = status;
   const percent =
-    allocation > 0n ? Number((sold * 10_000n) / allocation) / 100 : 0;
+    maxSupply > 0n ? Number((totalSupply * 10_000n) / maxSupply) / 100 : 0;
+  // Dictionaries append "%" themselves; format only the number per language.
+  const percentLabel = formatDecimal(percent, 2, 2);
   const stats = [
-    { label: "Allocation", value: allocation },
-    { label: "Sold", value: sold },
-    { label: "Remaining", value: remaining },
+    { id: "max", label: t.maxSupply, value: maxSupply },
+    { id: "total", label: t.totalSupply, value: totalSupply },
+    { id: "remaining", label: t.remaining, value: remaining },
   ];
 
   return (
@@ -60,14 +66,14 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-imperial flex items-center gap-2 text-sm">
             <Target className="h-4 w-4 text-primary" />
-            Sale progress
+            {t.totalSupply}
           </CardTitle>
           {complete ? (
             <Badge
               className="rounded-full border-gold-strong bg-gradient-primary text-primary-foreground"
               data-ocid="presale.complete_badge"
             >
-              Complete
+              {t.complete}
             </Badge>
           ) : salesPaused ? (
             <Badge
@@ -75,7 +81,7 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
               className="rounded-full"
               data-ocid="presale.paused_badge"
             >
-              Paused
+              {t.paused}
             </Badge>
           ) : (
             <Badge
@@ -87,7 +93,7 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
                 aria-hidden="true"
                 className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse"
               />
-              Live
+              {t.live}
             </Badge>
           )}
         </div>
@@ -102,11 +108,10 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
             <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
             <div>
               <p className="text-imperial text-gradient-gold text-lg font-bold">
-                Sale complete
+                {t.maxReached}
               </p>
               <p className="text-sm text-muted-foreground">
-                The full {formatTtti(allocation)} {TTTI_SYMBOL} allocation has
-                been sold. Purchases are closed.
+                {t.maxReachedBody(formatTtti(maxSupply), TTTI_SYMBOL)}
               </p>
             </div>
           </div>
@@ -119,10 +124,8 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
           >
             <PauseCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
             <div>
-              <p className="font-semibold">Sales are paused</p>
-              <p className="text-sm text-muted-foreground">
-                Purchases are temporarily disabled. Please check back soon.
-              </p>
+              <p className="font-semibold">{t.salesPaused}</p>
+              <p className="text-sm text-muted-foreground">{t.pausedBody}</p>
             </div>
           </div>
         )}
@@ -130,16 +133,16 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span className="font-mono tabular-nums text-primary">
-              {percent.toFixed(2)}% sold
+              {t.totalSupplyPercent(percentLabel)}
             </span>
             <span className="font-mono tabular-nums">
-              {formatTtti(sold)} / {formatTtti(allocation)} {TTTI_SYMBOL}
+              {formatTtti(totalSupply)} / {formatTtti(maxSupply)} {TTTI_SYMBOL}
             </span>
           </div>
           <Progress
             value={Math.min(percent, 100)}
             className="h-2.5 border border-gold bg-background/60 [&>div]:bg-gradient-primary"
-            aria-label={`Sale ${percent.toFixed(2)}% sold`}
+            aria-label={t.progressAria(percentLabel)}
             data-ocid="presale.progress"
           />
         </div>
@@ -147,7 +150,7 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
         <dl className="grid grid-cols-3 gap-2">
           {stats.map((stat) => (
             <div
-              key={stat.label}
+              key={stat.id}
               className="min-w-0 rounded-lg border border-border bg-background/60 p-2.5 transition-smooth hover:border-gold"
             >
               <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -164,8 +167,7 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
         </dl>
         {reserved > 0n && (
           <p className="text-xs text-muted-foreground">
-            {formatTtti(reserved)} {TTTI_SYMBOL} is reserved by purchases in
-            progress.
+            {t.reserved(formatTtti(reserved), TTTI_SYMBOL)}
           </p>
         )}
       </CardContent>

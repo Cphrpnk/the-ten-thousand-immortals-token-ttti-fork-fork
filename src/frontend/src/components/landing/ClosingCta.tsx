@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
+import { useDict } from "../../i18n/core";
+import { CLOSING_TEXT } from "../../i18n/pages/landing";
 import { CrestLogo } from "../Footer";
 import { BuyTttiButton } from "../funnel/BuyTttiButton";
 
@@ -8,6 +10,7 @@ interface ClosingCtaProps {
 }
 
 export function ClosingCta({ id }: ClosingCtaProps) {
+  const t = useDict(CLOSING_TEXT);
   return (
     <section
       id={id}
@@ -38,18 +41,19 @@ export function ClosingCta({ id }: ClosingCtaProps) {
           id="closing-title"
           className="text-imperial text-balance text-3xl leading-tight text-foreground md:text-6xl"
         >
-          The formation <span className="text-gradient-gold">is ready.</span>
+          {t.titleLead}
+          <span className="text-gradient-gold">{t.titleAccent}</span>
         </h2>
         <p className="max-w-xl text-balance text-base leading-relaxed text-muted-foreground md:text-lg">
-          Read the{" "}
+          {t.readBefore}
           <Link
             to="/white-paper"
             className="text-primary underline-offset-4 transition-colors hover:underline focus-visible:underline"
             data-ocid="landing.closing.whitepaper_link"
           >
-            whitepaper
+            {t.readLink}
           </Link>
-          . Tick the six boxes. Spend only what you can afford to lose entirely.
+          {t.readAfter}
         </p>
         <BuyTttiButton
           size="lg"

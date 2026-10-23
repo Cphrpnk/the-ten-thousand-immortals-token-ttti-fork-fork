@@ -17,11 +17,49 @@
 - Do not name the creator
 - State facts only; no promotional or value-suggesting wording
 - Transfer fee adjustable only in the test (TTTI-T) version, not in the real version
-- Message conveyed: no TTTI held prior to launch and no TTTI pre-allocated
 - Six purchase acknowledgements are asked only once, at the account's first purchase
-- Backend limited to the core contract; no admin power to mint, freeze or move ICP or collected fees
 - Present TTTI as a perfect instrument without denigrating it; no profit, scarcity-as-value or price-rise promises
 - Amounts accept both '.' and ',' as the decimal separator
+- Ne toucher à aucun solde ni bloc existant
+- Backend limited to the contract's essentials
+- Withdrawals of reserve excess go only to the configured treasury account
+- The 2 ICP floor always stays available for cycles
+- The TTTI-T transfer-fee collector account stays non-withdrawable; only the ICP cycles reserve excess above the floor can be moved, and only to the treasury
+- Ne supprimer rien d'autre que ce qui est explicitement listé
+- Ne modifier aucun solde ni bloc existant
+- Phrases du site et du whitepaper reprises mot pour mot telles que fournies
+- TTTI is the future version (10,000 max); TTTI-T is the live test (1 token max); ledger values are shown as TTTI-T
+- Tokens cannot be burned; transfers to the contract address are refused
+- Buy page offers both ICP-amount and TTTI-T-amount orders, plus a wallet percentage bar snapping at 10, 25, 50, 75, 90 and 100%
+- State facts only; no promotional wording
+- Plan presented before building when the user asks for it
+- 1 % de frais partout
+- Envoyer les frais en ckBTC en premier pour garder un maximum d'ICP pour les cycles
+- Envoi direct des ck à la trésorerie pour l'instant
+- Retrait de l'excédent ICP bloqué jusqu'à ce que les cycles soient couverts
+- Répondre en français
+- Textes factuels, non promotionnels et minimaux
+- English is authoritative; translations state 'In case of conflict, the English version prevails.'
+- Legal text translated precisely; narrative, Thermopylae passage and hero line translated naturally
+- Technical values (canister IDs, rates, fees) unchanged in every language
+- Keep the existing look unchanged when adding languages
+- Languages identified by BCP 47 tags with one language-to-locale mapping for dates and numbers
+- Site languages: English (authoritative), French, Spanish, Simplified Chinese (zh-Hans), Portuguese (Brazil, pt-BR), Korean (ko), Punjabi in Gurmukhi (pa-Guru)
+- Fonts for new languages close in style to the current ones
+- Numbers and dates shown in each language's local format
+- Historique d'achats visible par l'utilisateur et par l'admin seulement
+- L'historique met en avant les quantités et le ratio payé/reçu, pas la valeur en USD
+- Les frais ne sont jamais remboursables ; seul le montant net échangé sert de base
+- Liens vers l'Explorer officiel de l'ICP quand il prend en charge le ledger
+- Lien de suivi en direct dès que la transaction existe, pour BTC comme pour les autres jetons
+- ICP est le moyen d'achat présélectionné à l'arrivée sur la page d'achat
+- Chaque adresse BTC reste stable par parcours et son suivi survit à la navigation
+- All site text in the 7 language dictionaries
+- All site text in the 7 language dictionaries; English authoritative
+- No visual design change
+- Corrected white paper describes only what the app actually does; factual, minimal
+- Never claim ckBTC-first fee routing in the white paper while the app does not do it
+- The token's name is The Ten Thousand Immortals; TTTI is the ticker (TTTI-T for the test version)
 
 ## Accepted Requirements
 
@@ -44,17 +82,11 @@
 - Creator disclosures as stated, creator unnamed; creator does not list TTTI on any other exchange
 - Footer without 'not an investment, a security'; keep no returns, final purchases, afford to lose
 - Only two Buy TTTI-T buttons (header and end of page); no sticky bottom bar
-- Technical details filled with real deployed values and reported back; 'Not yet published' accepted for this beta
 - Remove the adjustable seller margin; small fixed fee to pay for the canister's own cycles, with an estimate of the needed margin
 - No fallback rate; refuse purchase when the rate is stale
 - No one, admin included, can mint tokens outside the buy-to-mint logic
 - Collected TTTI transfer fees are reissued only at the end, after fresh minting reaches the cap
-- Convey: no TTTI held prior to launch and no TTTI pre-allocated
-- Excess ICP is refunded
 - Admin cannot freeze transfers; transfer fee change only in the test version
-- Fixed 1% cycles fee confirmed by the user
-- Price 10,000 USD per TTTI plus fixed 1% fee, minimum 1.01 USD
-- Buy not blocked by inactivity; rate refreshed at purchase, refusal with no ICP taken if not refreshable
 - Six exact-sentence checkboxes required only once, at the first purchase
 - Only two Buy TTTI-T buttons (header and end of page); no sticky bar; Buy not in menus
 - Admin: remove mint, fallback-rate and presale controls; fixed order; fee account not withdrawable; transfer fee adjustable in beta only
@@ -64,6 +96,101 @@
 - Technical details show the index canister ID
 - Number inputs accept '.' and ',' as the decimal separator
 - Choosing the internal wallet automatically prefills the delivery address with the user's principal
+- TOKEN_MAX_SUPPLY = 1 TTTI-T, reflété dans max_supply, getSaleStatus, getTechnicalDetails et getApiDoc
+- Un seul achat convertDeposit en cours par principal ; refus immédiat avec un nouveau code d'erreur sans appel externe ; verrou libéré sur toutes les sorties
+- icrc2_approve ICP avec expires_at = maintenant + 15 minutes
+- Suppression de getTokenMetadata, getBalance, listTokens, prepareTransfer et getCallerIcpBalance ; le frontend lit les ledgers directement et construit les arguments de transfert
+- Aucun solde ni bloc existant modifié
+- ICP/USD rate set once an hour by a canister timer; no price call during a purchase
+- Coinbase first, then CoinGecko; transform keeps only the price rounded to 0.001 USD
+- Stored rate { usdE8; source; fetchedAt; validUntil = fetchedAt + 1 h }
+- Retry every 5 minutes if all sources fail; a rate is never used beyond validUntil + 5 minutes
+- Timer re-armed on every install and upgrade
+- convertDeposit uses the stored rate only; absent or expired rate → #priceUnavailable before any operation, no ICP taken; no fallback rate, no margin
+- refreshIcpPrice admin-only and allowed only when the rate is expired or absent
+- Admin shows the rate source in force, the last fetch error (exact text and date) and the last success date
+- Buy page: 'Rate for this hour: 1 ICP = X USD (source) · valid until HH:MM'; 'Refreshed at purchase' removed
+- refreshPolicy, oracleSources, corrected whitepaper and FAQ carry the hourly-rate text
+- RESERVE_FLOOR_E8S = 2 ICP always kept for cycles; the excess above it is withdrawable
+- 6-hour timer that tops up the canister's cycles via the CMC (transfer with TPUP memo, block_index saved before notify_top_up, notify retried without a second transfer) when under 3 T cycles
+- The top-up may use reserve funds below the floor
+- Admin-only withdrawReserveExcess, capped at reserve − floor − ICP fee, to the treasury account only, refused without a ledger call if over the cap; shared lock with the top-up; each withdrawal logged
+- Public getCyclesStatus query with cycles, threshold, reserve, floor, excess, last top-up and withdrawal history
+- Timers re-armed on every install and upgrade
+- Admin card showing the reserve, the withdrawable excess and a withdraw button
+- Given fee text; whitepaper and Technical details carry the exact rule and the reserve subaccount
+- Suppression des profils (getCallerUserProfile, saveCallerUserProfile, profileState, ProfileSetup.tsx, hooks)
+- Suppression de getMySetupStatus, setMySetupStatus et setupStatuses ; « flow déjà vu » gardé dans localStorage (try/catch)
+- Suppression de getOriginalWhitePaper, publishOriginalWhitePaper, documentState et MixinObjectStorage ; lien direct vers /assets/ttti-white-paper-original.docx ; @caffeineai/object-storage retiré
+- Suppression de mixins/oql-api.mo
+- Suppression du code mort : access-control-api.mo, shims @deprecated, priceMovedMessage, TreasuryState, mocks obsolètes
+- Suppression des deux captures d'écran Screenshot_20251015
+- Migration qui jette l'état supprimé sans toucher au ledger, aux conversions, aux adresses de livraison, aux accusés d'achat, au taux stocké ni à la réserve de cycles
+- getApiDoc mis à jour avec l'interface finale
+- Total supply et soldes identiques avant et après
+- Suppression de l'endpoint burn et de IcrcLib.burn
+- Transferts icrc1/icrc2 vers le compte de mint refusés par un GenericError dédié, sans débit
+- mintableRemaining = max(0, TOKEN_MAX_SUPPLY − totalSupply) ; totalMinted supprimé par migration
+- Décodage des anciens blocs 1burn gardé (icrc3_supported_block_types, index, History)
+- Toute UI et tout message liés au burn retirés du frontend
+- TOKEN_MAX_SUPPLY reste à 100_000_000 (1 TTTI-T)
+- Distinction TTTI (futur, 10 000 au maximum) / TTTI-T (test, 1 au maximum) ; valeurs du ledger présentées en TTTI-T
+- FAQ, Test release, whitepaper corrigé et barre de progression (total supply sur 1 TTTI-T) concordants
+- Nouvelle phrase sur le plafond et le non-burn, pour TTTI et TTTI-T
+- « Tokens cannot be burned. Transfers to the contract's own address are refused. »
+- Contrôleurs et module hash lus via canister_info (timer quotidien et après chaque mise à jour, cache), exposés dans getTechnicalDetails et affichés dans Technical details
+- Phrase sur l'upgrade par les contrôleurs ajoutée au whitepaper corrigé
+- Whitepaper original archivé avec l'avertissement
+- Textes de l'historique du ledger remplacés, avec N = legacyBlockBoundary lu du canister
+- « TTTI-T (Test) » → « TTTI-T » partout
+- Texte sur la vie privée dans le whitepaper corrigé et la FAQ
+- Total supply et soldes identiques avant et après le déploiement
+- Ordre d'achat par nombre de TTTI-T à recevoir, avec calcul de l'ICP requis
+- Barre de 1 % à 100 % de l'ICP du wallet, aimantée à 10, 25, 50, 75, 90 et 100 %
+- Achat de TTTI-T avec ckBTC, sur le même principe que l'achat en ICP
+- Achat de TTTI-T avec ckUSDC et ckUSDT (les deux stablecoins sur ICP), sur le même principe que l'achat en ICP
+- Whitepaper et textes du site ajustés à la réalité des jetons de paiement et des frais
+- Frais de 1 % partout (ICP, ckBTC, ckUSDC, ckUSDT)
+- La part des frais ICP non convertie en cycles reste un solde ICP transférable
+- Envoyer les frais en ckBTC en premier pour garder un maximum d'ICP pour les cycles
+- Envoi direct des ck à la trésorerie pour l'instant
+- Retrait de l'excédent ICP bloqué jusqu'à ce que les cycles soient couverts
+- Achat BTC → ckBTC → TTTI-T avec adresse Bitcoin par acheteur et QR code
+- Conversion BTC → ckBTC seule dans le portefeuille, ckBTC dans le wallet de l'utilisateur
+- Widget de suivi de la progression pour les deux parcours
+- English and French versions of the site (Phase 1)
+- Header language picker; browser language auto-detected; choice remembered
+- English authoritative; each translation states 'In case of conflict, the English version prevails.'
+- All site text in translation files so later languages are mostly translation work
+- Legal text (six acknowledgements, creator disclosures, no-promise-of-returns wording, footer) translated precisely without changing meaning
+- Narrative, Thermopylae easter egg and hero line translated naturally, not word-for-word
+- Whitepaper 'Read this first' section translated; rest stays in English
+- Technical values (canister IDs, rates, fees) unchanged in every language
+- No visual design change
+- Remaining buy-page approval error messages shown in the selected language
+- Spanish and Simplified Chinese versions of the site (Phase 2) with the same rules as Phase 1
+- Align with i18n standards (BCP 47 tags, html lang, central locale mapping for dates)
+- Portuguese (Brazil), Korean and Punjabi (Gurmukhi) versions of the site (Phase 3) with the same rules as Phases 1 and 2
+- Fonts for the new languages close in style to the current ones
+- 'Plug not detected' message on the wallet page shown in the selected language
+- Numbers shown in each language's local format (e.g. 1 234,56 in French)
+- Historique personnel des achats dans le wallet de l'utilisateur : ce qui a été échangé contre quoi
+- Les mêmes données d'achat visibles côté admin
+- Pour chaque achat, les quantités exactes (payée, frais, net, TTTI-T reçus) et le ratio payé/reçu, enregistrés pour un futur remboursement
+- Pas de valeur USD affichée ; la comparaison en USD se fera au moment du remboursement
+- Conseil sur la pertinence d'un historique public
+- Montant net échangé (sans les frais) enregistré et affiché clairement comme seule base remboursable
+- Liens depuis les numéros de transaction vers l'Explorer officiel de l'ICP
+- Lien pour consulter la transaction en temps réel, pour BTC comme pour tous les autres
+- Garder la même adresse BTC → ckBTC stable jusqu'à ce qu'elle soit dépensée
+- Ne pas perdre le suivi du dépôt BTC en naviguant
+- Arriver sur la page d'achat avec l'option ICP déjà sélectionnée et chargée
+- After a finished BTC deposit, the widget returns to waiting for a new transfer on the same address
+- Clear explanation for users of how the BTC address works and that each new transfer restarts the process
+- Fix deposits shown as confirmed while the wallet balance does not change
+- A button to return to the waiting state manually after a successful transaction
+- Several BTC transfers sent back-to-back are each converted as their confirmations arrive
+- Corriger le white paper (édition corrigée) pour qu'il corresponde au fonctionnement actuel de l'app
 
 ## Verified Commands
 
@@ -73,28 +200,28 @@
 
 ## Learnings
 
-- Backend renames: getPresaleStatus -> getSaleStatus, PresaleStatus -> SaleStatus, #presaleComplete -> #saleComplete; new getTechnicalDetails; removed mint, setTransfersFrozen, setFallbackEnabled, marginBps and fallback rate (migration 20261020_000000).
-- Fixed 1% cycles fee constant CYCLES_FEE_BPS=100 in lib/treasury.mo and lib/token.ts; buyer price 10,100 USD per TTTI-T; purchases mint first up to the cap, then deliver fee-account tokens; only delivered cost is pulled.
-- /buy renders ExchangePage and /exchange redirects there; the first startBuy per browser opens /white-paper and sets localStorage ttti.whitePaperSeen (lib/whitePaperGate.ts).
-- Page-level copy rewrites (landing story/facts/disclosures/technical details, buy page six checkboxes, whitepaper current edition, admin controls) were planned but not finished in the TTTI-T revision build; consumers of removed hooks may only have minimal compile fixes.
-- Backend endpoints acceptPurchaseAcknowledgements and getMyPurchaseAcknowledgement store a one-time per-principal acknowledgement (migration 20261021_000000); convertDeposit is the only purchase endpoint and refuses #acknowledgementRequired until accepted.
-- ExchangePage picks II hooks (useGetMyPurchaseAcknowledgement, useAcceptPurchaseAcknowledgements in useQueries.ts) or Plug hooks (usePlugPurchaseAcknowledgement, usePlugAcceptPurchaseAcknowledgements in usePlugPurchase.ts) by active wallet; handleBuy runs accept (if needed), approve, convertDeposit with the same principal.
-- SaleStatus has no priceStale (priceAgeSeconds display only); backend refreshes the rate on every purchase via OracleLib.refreshPrice and refuses with #priceUnavailable before taking ICP.
-- Removed endpoints: getTreasuryState, getFailedForwards, retryTreasuryForward, getOnRampLinks, setOnRampLinks, handleDeposit, quoteExactTtti, buyExactTtti, getAdminSwitches, getUserProfile; failed ICP forwards retry automatically after purchases. TreasuryConfig is { icpAccount }.
-- Admin page uses components/admin cards: LaunchControls, TransferFeeCard, IcpAccountCard, SnapshotExport, ConversionsCard. Buy TTTI-T buttons render only in Header.tsx (desktop and mobile) and ClosingCta.tsx; MobileBuyBar removed.
-- useQueries.ts still exports @deprecated shims for removed endpoints and mixins/access-control-api.mo is unwired; both are unused and can be deleted later.
-- Mock backend must match generated names exactly: access control is _initialize_access_control.
-- Narrative rewrite applied: Hero 'It does nothing. Except move.'; StorySection has three legend paragraphs plus small italic Thermopylae epilogue (data-ocid landing.story.epilogue); TokenDetailsSection holds 'What TTTI is' and a FACTS list; PresaleSection holds the TTTI-T test-release terms and Creator disclosures; ClosingCta h2 'Ten thousand units. One function.'
-- LandingPage order: Hero(top), Story, Divider, TokenDetails, Presale, HowItWorks, Faq, Divider, ClosingCta(join).
-- TokenInfo Technical details uses useTechnicalDetails; controllers, source code and build hash show 'Not yet published'; conversion row says 'No conversion function exists yet'.
-- WhitePaperPage original edition is the `original` template string (kept untouched, still says 'not a presale'); current edition is the JSX under edition === 'corrected' and still describes admin mint, freeze and fallback-rate controls that the backend removed.
-- FaqSection 'How do I get ICP?' answer still says 'TTTI-T (Test)'.
-- Hero h1 is now '10,000 Immortals.' (Immortals in gold span); subline starts with 'Fast. Secure. Unbreakable in formation.' then a paragraph stating TTTI has all the qualities of ICP plus a fixed maximum supply of 10,000 units; eyebrow says 'TTTI-T is open'.
-- TokenDetailsSection 'What TTTI is' paragraphs: 'Organized. Reliable. Interchangeable by design...', 'TTTI does one thing, and does it without fail: it moves value.', 'An instrument is only as good as the hand that holds it.'
-- ClosingCta h2 now reads 'The formation is ready.' with 'is ready.' in the gold span.
-- WhitePaperPage corrected edition now matches the backend: no admin mint, no freeze, no fallback rate or margin, mint first then fee tokens, 1.01 USD minimum; original edition untouched. FaqSection no longer says 'TTTI-T (Test)'.
-- Admin-only backend calls: setSalesPaused, setTreasuryConfig, set_fee (bounded), exportBalanceSnapshot; the fee account cannot be burned.
-- Hero h1 in components/landing/HeroSection.tsx now reads 'Ten Thousand Immortals.' (words, Immortals in gold span); the subline still says 'fixed maximum supply of 10,000 units'.
-- Backend now exposes ICRC index-ng (get_account_transactions, ledger_id, status, list_subaccounts) via lib/index.mo, types/index.mo (Index-prefixed types) and mixins/index-api.mo, derived on the fly from ledger.blocks; legacy 4-decimal amounts are scaled to 8 decimals; 'legacy:index:amount' blocks have no accounts and appear in no account history.
-- When backend bindings gain methods, the frontend check must also own src/frontend/src/mocks/backend.ts or the TS2739 typecheck fix is refused.
-- lib/token.ts parseUnits accepts ',' as the decimal separator (converted to '.' when no '.' is present); DeliveryAddressCard prefills and auto-saves the Plug or non-anonymous Internet Identity principal; TokenInfo shows an 'Index canister' row equal to the ledger ID.
+- DepositTracking has btcTxids : [Text] (display-order hex, outpoint bytes reversed) and ckbtcMintBlockIndex : ?Nat; migration 20261030_000000 sets []/null on old records; getBtcDepositInfo returns only minter config.
+- Applied migration files are read-only; a stored-shape change needs a new migration file with a later timestamp.
+- Explorer links: lib/explorer.ts (icpDashboardTxUrl, icpDashboardCanisterUrl, tttiBlockTarget, blockAnchorId, blockIndexFromHash, mempoolTxUrl, mempoolAddressUrl) and components/ExplorerLink.tsx; lib/purchaseHistory.ts paymentBlockTarget and mintBlockTarget.
+- Explorer labels live in separate defineDicts WALLET_/HISTORY_/TECH_/TRANSFER_/BUY_EXPLORER_TEXT at the end of each page dictionary, plus EXPLORER_TEXT in i18n/common.
+- TTTI-T block links open /history#block-<n>; HistoryPage anchors only the visible layout so ids stay unique.
+- Mock DepositTracking in mocks/backend.ts must set every new generated field.
+- Visual QA: Technical details on / is a closed toggle; click it before checking canister links. Mock block 5 is a good /history highlight target.
+- DepositTracking holds deposits : [DepositEntry] newest first (migration 20261031_000000 turns old cumulative content into entry 0); per-deposit amounts, txids, mint block and conversionId live on DepositEntry; tracking.stage mirrors the newest entry.
+- retryPending polls purchase and wallet trackings at every stage, skips those checked under 5 min ago, max 25 minter calls per tick.
+- Frontend helpers in hooks/useQueries.ts: latestDeposit, earlierDeposits, isDepositInProgress, isDepositEntryTerminal; BtcDepositAddressCard takes a kind prop for the flow label.
+- ExchangePage always opens on ICP; a pending BTC purchase deposit shows a status line that calls handleBtcSelect.
+- OQL entity btcDepositTracking is admin-only.
+- Each BTC UTXO maps to its own DepositEntry by txid; DepositErrorKind has #unrecoverable (final) and #refundFailed (delivered entry, refund retried); migration 20261101_000000 widens records unchanged; purchases convert each entry's own amount, oldest first.
+- Frontend useDepositView(tracking) in hooks/useQueries.ts returns focus/finished/waiting/returnToWaiting; BtcDepositProgress needs a view prop; isDepositTerminal means every entry is final.
+- Backend DepositEntry.errorMessage is English free text; the frontend translates the lead sentence and appends the raw text.
+- Legacy entry errorKind #other is not final in isDepositEntryTerminal although the API doc treats it like #unrecoverable.
+- Visual QA preview has no mock sign-in; BTC widgets on /wallet and /buy need a signed-in identity. /exchange redirects to /buy.
+- Motoko record update in an if-branch needs parentheses: if (c) ({ r with f = v }) else r.
+- White paper section 06 renders FAQ_TEXT.en.privacyA, so the FAQ privacy answer and the white paper share one privacy text.
+- White paper shows minConfirmations from useBtcDepositInfo; the shared btcPayment sentence in i18n/common/fees.ts still carries 'about 6' as a fallback.
+- Backend refreshPolicy omits the 5-minute limit and retry; the white paper adds both sentences after it.
+- The TTTI-T icrc1:logo is the TOKEN_LOGO data URI constant in src/backend/lib/icrc.mo (256px PNG, 64-colour palette, about 18 KB), 7th entry of metadata(ledger); getApiDoc's metadata list was left unchanged.
+- No PIL or ImageMagick in the workspace; node sharp in app/node_modules resizes images.
+- The favicon is platform-managed (Settings > App icon in Caffeine); do not add favicon files to app code.
+- Token name is TOKEN_NAME = "The Ten Thousand Immortals" in src/backend/lib/icrc.mo and src/frontend/src/lib/token.ts; the ticker TOKEN_SYMBOL / TTTI_SYMBOL stays "TTTI-T". getApiDoc line about icrc1_name was not updated.

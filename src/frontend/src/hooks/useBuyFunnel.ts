@@ -10,12 +10,13 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { SetupOutcome, SetupStatus } from "../backend";
 import { SetupFlow } from "../components/funnel/SetupFlow";
+import { MESSAGES_TEXT } from "../i18n/common/messages";
+import { pickDict } from "../i18n/core/dict";
 import { hasSeenWhitePaper, markWhitePaperSeen } from "../lib/whitePaperGate";
 import { useInternetIdentity } from "./useInternetIdentity";
 import { usePlug } from "./usePlug";
-import { useSetupStatus } from "./useSetupStatus";
+import { SetupOutcome, SetupStatus, useSetupStatus } from "./useSetupStatus";
 
 export { SetupOutcome, hasSeenWhitePaper, markWhitePaperSeen };
 
@@ -55,8 +56,15 @@ export function BuyFunnelProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { identity } = useInternetIdentity();
   const { principal: plugPrincipal } = usePlug();
-  const { principalText, status, isLoading, saveOutcome, isSaving } =
-    useSetupStatus();
+  const {
+    principalText,
+    status,
+    isLoading,
+    hasSeen,
+    markSeen,
+    saveOutcome,
+    isSaving,
+  } = useSetupStatus();
   const [open, setOpen] = useState(false);
   // Bumped on every fresh open so SetupFlow remounts at step 1.
   const [session, setSession] = useState(0);
@@ -73,16 +81,18 @@ export function BuyFunnelProvider({ children }: { children: React.ReactNode }) {
     setOpen(false);
   }, []);
 
-  // First sign-in: show the setup flow once per principal while notStarted.
+  // First sign-in: show the setup flow once per principal, then record it as
+  // seen in this browser so it does not open by itself again (even on reload).
   // If the flow is already open (the sign-in happened inside it), keep its step.
   useEffect(() => {
     if (!principalText || isLoading) return;
     if (prompted.current.has(principalText)) return;
     prompted.current.add(principalText);
-    if (status !== SetupStatus.notStarted) return;
+    if (hasSeen || status !== SetupStatus.notStarted) return;
+    markSeen();
     if (!open) setSession((s) => s + 1);
     setOpen(true);
-  }, [principalText, isLoading, status, open]);
+  }, [principalText, isLoading, hasSeen, status, open, markSeen]);
 
   const startBuy = useCallback(() => {
     if (!hasSeenWhitePaper()) {
@@ -106,7 +116,9 @@ export function BuyFunnelProvider({ children }: { children: React.ReactNode }) {
         await saveOutcome(outcome);
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Could not save your setup",
+          error instanceof Error
+            ? error.message
+            : pickDict(MESSAGES_TEXT).setupNotSaved,
         );
       }
       setOpen(false);

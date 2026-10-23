@@ -9,6 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import { usePlug } from "../../hooks/usePlug";
 import { useWalletBalance } from "../../hooks/useWallet";
+import { useDict } from "../../i18n/core";
+import { SETUP_TEXT } from "../../i18n/pages/setup";
 import { ICP_LEDGER_CANISTER_ID } from "../../lib/icpLedger";
 import { copyAddressAndOpenOnramper } from "../../lib/onramper";
 import { encodeAccountText } from "../../lib/token";
@@ -47,6 +49,7 @@ export function IcpStep({
   finishing,
 }: IcpStepProps) {
   const { identity } = useInternetIdentity();
+  const t = useDict(SETUP_TEXT);
   const { principal: plugPrincipal } = usePlug();
   const owner =
     wallet === "plug"
@@ -61,9 +64,7 @@ export function IcpStep({
   );
   const { refetch } = balanceQuery;
   const hasOwner = !!owner;
-  const result = balanceQuery.data;
-  const balance =
-    result?.__kind__ === "Ok" ? (result.Ok.balance ?? 0n) : undefined;
+  const balance = balanceQuery.data;
   const hasIcp = balance !== undefined && balance > 0n;
   const [buyState, setBuyState] = useState<BuyState>("idle");
   const finished = useRef(false);
@@ -97,7 +98,7 @@ export function IcpStep({
       data-ocid="setup.icp.continue_button"
     >
       {finishing ? <Loader2 className="size-4 animate-spin" /> : null}
-      Continue
+      {t.continue}
     </button>
   );
 
@@ -105,14 +106,14 @@ export function IcpStep({
     if ((balanceQuery.isLoading && hasOwner) || hasIcp) {
       return (
         <>
-          <StepQuestion>Do you have ICP?</StepQuestion>
+          <StepQuestion>{t.hasIcpQuestion}</StepQuestion>
           <div
             className="flex min-h-[11.5rem] items-center justify-center"
             data-ocid="setup.icp.check_loading_state"
           >
             <Loader2
               className="size-6 animate-spin text-primary"
-              aria-label="Checking your wallet"
+              aria-label={t.checkingWallet}
             />
           </div>
         </>
@@ -120,16 +121,16 @@ export function IcpStep({
     }
     return (
       <>
-        <StepQuestion>Do you have ICP?</StepQuestion>
+        <StepQuestion>{t.hasIcpQuestion}</StepQuestion>
         <div className="flex w-full flex-col gap-3">
           <ChoiceTile
-            label="Yes"
+            label={t.yes}
             icon={<ArrowDownToLine />}
             onClick={() => onAnswer("sendIcp")}
             ocid="setup.icp.yes_button"
           />
           <ChoiceTile
-            label="No"
+            label={t.no}
             icon={<CreditCard />}
             onClick={() => onAnswer("buyIcp")}
             ocid="setup.icp.no_button"
@@ -142,11 +143,9 @@ export function IcpStep({
   if (screen === "sendIcp") {
     return (
       <>
-        <StepQuestion>Send ICP here</StepQuestion>
+        <StepQuestion>{t.sendIcpTitle}</StepQuestion>
         <AddressChip address={address} ocid="setup.icp.address_chip" />
-        <p className="text-center text-muted-foreground">
-          Send ICP to this address from your other wallet.
-        </p>
+        <p className="text-center text-muted-foreground">{t.sendIcpHelp}</p>
         <WaitingForIcp />
         {continueButton}
       </>
@@ -155,7 +154,7 @@ export function IcpStep({
 
   return (
     <>
-      <StepQuestion>Buy ICP</StepQuestion>
+      <StepQuestion>{t.buyIcpTitle}</StepQuestion>
       <button
         type="button"
         onClick={handleBuy}
@@ -163,7 +162,7 @@ export function IcpStep({
         className={GOLD_BUTTON_CLASS}
         data-ocid="setup.icp.buy_button"
       >
-        Buy ICP here
+        {t.buyIcpHere}
         <ExternalLink aria-hidden="true" />
       </button>
       <div
@@ -175,13 +174,13 @@ export function IcpStep({
             className="animate-copied-pop text-center text-success motion-reduce:animate-none"
             data-ocid="setup.icp.copied_success_state"
           >
-            Address copied — pick ICP and paste it in Onramper
+            {t.copiedPasteOnramper}
           </p>
         ) : null}
         {buyState === "copyFailed" ? (
           <>
             <p className="text-center text-muted-foreground">
-              Copy your address, then paste it in Onramper
+              {t.copyThenPaste}
             </p>
             <AddressChip address={address} ocid="setup.icp.address_chip" />
           </>

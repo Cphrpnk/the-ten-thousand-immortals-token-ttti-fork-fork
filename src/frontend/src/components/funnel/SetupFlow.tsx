@@ -1,7 +1,9 @@
 import { ArrowLeft, Check, Minus } from "lucide-react";
 import { useCallback, useState } from "react";
-import { SetupOutcome } from "../../backend";
 import { useBuyFunnel } from "../../hooks/useBuyFunnel";
+import { SetupOutcome } from "../../hooks/useSetupStatus";
+import { useDict } from "../../i18n/core";
+import { SETUP_TEXT } from "../../i18n/pages/setup";
 import { cn } from "../../lib/utils";
 import { CrestLogo } from "../Footer";
 import { ChoiceTile } from "../setup/ChoiceTile";
@@ -37,6 +39,7 @@ const STEP_OF: Record<Screen, number> = {
  */
 export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
   const { finishSetup, isFinishingSetup } = useBuyFunnel();
+  const t = useDict(SETUP_TEXT);
   const [history, setHistory] = useState<Screen[]>(["hasWallet"]);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [wallet, setWallet] = useState<WalletKind | null>(null);
@@ -79,7 +82,7 @@ export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
         data-ocid="setup_flow.dialog"
       >
         <DialogDescription className="sr-only">
-          Three quick steps before your first purchase.
+          {t.flowDescription}
         </DialogDescription>
         <div className="flex flex-col items-center gap-7">
           <CrestLogo className="h-11 w-11" />
@@ -88,7 +91,7 @@ export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
               type="button"
               onClick={goBack}
               disabled={!canGoBack}
-              aria-label="Back"
+              aria-label={t.back}
               className={cn(
                 "-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-smooth hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 !canGoBack && "invisible",
@@ -110,16 +113,16 @@ export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
           >
             {screen === "hasWallet" ? (
               <>
-                <StepQuestion>Do you have an ICP wallet?</StepQuestion>
+                <StepQuestion>{t.hasWalletQuestion}</StepQuestion>
                 <div className="flex w-full flex-col gap-3">
                   <ChoiceTile
-                    label="Yes"
+                    label={t.yes}
                     icon={<Check />}
                     onClick={() => go("pickYes")}
                     ocid="setup.has_wallet.yes_button"
                   />
                   <ChoiceTile
-                    label="No"
+                    label={t.no}
                     icon={<Minus />}
                     onClick={() => go("pickNo")}
                     ocid="setup.has_wallet.no_button"
@@ -156,7 +159,7 @@ export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
             className="min-h-11 rounded-lg px-4 text-sm text-muted-foreground underline-offset-4 transition-smooth hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             data-ocid="setup_flow.skip_button"
           >
-            Skip
+            {t.skip}
           </button>
         </div>
       </DialogContent>
