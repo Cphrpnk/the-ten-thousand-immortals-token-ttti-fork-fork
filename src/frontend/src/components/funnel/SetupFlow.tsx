@@ -1,6 +1,7 @@
 import { ArrowLeft, Check, Minus } from "lucide-react";
 import { useCallback, useState } from "react";
-import { useBuyFunnel } from "../../hooks/useBuyFunnel";
+import { type SetupExit, useBuyFunnel } from "../../hooks/useBuyFunnel";
+import type { SetupWalletKind } from "../../hooks/useConnectedWallet";
 import { SetupOutcome } from "../../hooks/useSetupStatus";
 import { useDict } from "../../i18n/core";
 import { SETUP_TEXT } from "../../i18n/pages/setup";
@@ -9,11 +10,7 @@ import { CrestLogo } from "../Footer";
 import { ChoiceTile } from "../setup/ChoiceTile";
 import { type IcpScreen, IcpStep } from "../setup/IcpStep";
 import { StepIndicator, StepQuestion } from "../setup/StepParts";
-import {
-  type WalletKind,
-  type WalletScreen,
-  WalletStep,
-} from "../setup/WalletStep";
+import { type WalletScreen, WalletStep } from "../setup/WalletStep";
 import { Dialog, DialogContent, DialogDescription } from "../ui/dialog";
 
 export interface SetupFlowProps {
@@ -27,10 +24,10 @@ const STEP_OF: Record<Screen, number> = {
   hasWallet: 1,
   pickNo: 2,
   pickYes: 2,
+  chooseWallet: 2,
   createList: 2,
-  hasIcp: 3,
-  sendIcp: 3,
-  buyIcp: 3,
+  hasPayToken: 3,
+  pickToken: 3,
 };
 
 /**
@@ -42,7 +39,7 @@ export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
   const t = useDict(SETUP_TEXT);
   const [history, setHistory] = useState<Screen[]>(["hasWallet"]);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
-  const [wallet, setWallet] = useState<WalletKind | null>(null);
+  const [wallet, setWallet] = useState<SetupWalletKind | null>(null);
   const screen = history[history.length - 1];
   const step = STEP_OF[screen];
   const canGoBack = history.length > 1;
@@ -60,16 +57,19 @@ export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
   };
 
   const handleConnected = useCallback(
-    (kind: WalletKind) => {
+    (kind: SetupWalletKind) => {
       setWallet(kind);
-      go("hasIcp");
+      go("hasPayToken");
     },
     [go],
   );
 
-  const complete = useCallback(() => {
-    void finishSetup(SetupOutcome.completed);
-  }, [finishSetup]);
+  const complete = useCallback(
+    (exit?: SetupExit) => {
+      void finishSetup(SetupOutcome.completed, undefined, exit);
+    },
+    [finishSetup],
+  );
 
   const skip = () => {
     void finishSetup(SetupOutcome.skipped);
@@ -132,20 +132,21 @@ export function SetupFlow({ open, onOpenChange }: SetupFlowProps) {
             ) : null}
             {screen === "pickNo" ||
             screen === "pickYes" ||
+            screen === "chooseWallet" ||
             screen === "createList" ? (
               <WalletStep
                 screen={screen}
                 onShowList={() => go("createList")}
+                onChooseWallet={() => go("chooseWallet")}
+                onBack={goBack}
                 onConnected={handleConnected}
               />
             ) : null}
-            {screen === "hasIcp" ||
-            screen === "sendIcp" ||
-            screen === "buyIcp" ? (
+            {screen === "hasPayToken" || screen === "pickToken" ? (
               <IcpStep
                 screen={screen}
                 wallet={wallet}
-                onAnswer={go}
+                onPickYes={() => go("pickToken")}
                 onComplete={complete}
                 finishing={isFinishingSetup}
               />

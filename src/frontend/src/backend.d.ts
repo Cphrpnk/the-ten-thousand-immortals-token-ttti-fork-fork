@@ -12,9 +12,27 @@ export interface Account {
     subaccount?: Subaccount;
 }
 export type AcknowledgedAt = bigint;
+export type AddressBookError = {
+    __kind__: "invalidInput";
+    invalidInput: InvalidReason;
+} | {
+    __kind__: "anonymous";
+    anonymous: null;
+} | {
+    __kind__: "notFound";
+    notFound: null;
+} | {
+    __kind__: "duplicateNickname";
+    duplicateNickname: null;
+} | {
+    __kind__: "limitReached";
+    limitReached: {
+        max: bigint;
+    };
+};
 export interface Allowance {
     allowance: bigint;
-    expires_at?: Timestamp__1;
+    expires_at?: Timestamp__2;
 }
 export interface AllowanceArgs {
     account: Account;
@@ -24,10 +42,10 @@ export interface ApproveArgs {
     fee?: bigint;
     memo?: Uint8Array;
     from_subaccount?: Subaccount;
-    created_at_time?: Timestamp__1;
+    created_at_time?: Timestamp__2;
     amount: bigint;
     expected_allowance?: bigint;
-    expires_at?: Timestamp__1;
+    expires_at?: Timestamp__2;
     spender: Account;
 }
 export type ApproveError = {
@@ -47,7 +65,7 @@ export type ApproveError = {
 } | {
     __kind__: "ExpiredFrom";
     ExpiredFrom: {
-        ledger_time: Timestamp__1;
+        ledger_time: Timestamp__2;
     };
 } | {
     __kind__: "BadFee";
@@ -62,7 +80,7 @@ export type ApproveError = {
 } | {
     __kind__: "CreatedInFuture";
     CreatedInFuture: {
-        ledger_time: Timestamp__1;
+        ledger_time: Timestamp__2;
     };
 } | {
     __kind__: "TooOld";
@@ -70,7 +88,7 @@ export type ApproveError = {
 } | {
     __kind__: "Expired";
     Expired: {
-        ledger_time: Timestamp__1;
+        ledger_time: Timestamp__2;
     };
 } | {
     __kind__: "InsufficientFunds";
@@ -90,10 +108,23 @@ export interface ArchiveInfo {
     canister_id: Principal;
     start: bigint;
 }
+export type AttemptOutcome = {
+    __kind__: "pending";
+    pending: null;
+} | {
+    __kind__: "unknown";
+    unknown: null;
+} | {
+    __kind__: "failed";
+    failed: string;
+} | {
+    __kind__: "succeeded";
+    succeeded: bigint;
+};
 export interface BalanceSnapshot {
     decimals: number;
     totalSupply: bigint;
-    exportedAt: Timestamp__1;
+    exportedAt: Timestamp__2;
     holders: Array<SnapshotEntry>;
 }
 export interface Block {
@@ -101,6 +132,11 @@ export interface Block {
     block: Value__1;
 }
 export type BlockIndex = bigint;
+export interface BtcCostToRefund {
+    amount: bigint;
+    refundedBlock?: bigint;
+    conversionId?: bigint;
+}
 export interface BtcDepositError {
     code: BtcDepositErrorCode;
     message: string;
@@ -122,9 +158,208 @@ export type BtcDepositResult = {
     __kind__: "Err";
     Err: BtcDepositError;
 };
+export interface BtcRefund {
+    attempt: TransferAttempt;
+    purpose: BtcRefundPurpose;
+}
+export interface BtcUsdRate {
+    fetchedAt: Timestamp;
+    source: PriceSource;
+    usdE8: bigint;
+    validUntil: Timestamp;
+}
+export interface Buyback {
+    id: BuybackId;
+    status: BuybackStatus;
+    buybackFee: bigint;
+    buyerAccount: Account;
+    tttiEscrowFee: bigint;
+    payoutAttempts: Array<BuybackPayoutAttempt>;
+    tokenReturned: PayToken;
+    massTotalNet: bigint;
+    massRemainingTtti: bigint;
+    rule: BuybackRule;
+    cancelBlock?: bigint;
+    returnedRateUsdE8: bigint;
+    thirdPartyFees: bigint;
+    payoutBlock?: bigint;
+    baseAmountReturned: bigint;
+    originalRateUsdE8: bigint;
+    originalToken: PayToken;
+    pullBlock?: bigint;
+    originalNetAmount: bigint;
+    percent: bigint;
+    releaseBlock?: bigint;
+    message?: string;
+    legacy: boolean;
+    tttiTransferFee: bigint;
+    timestamp: Timestamp;
+    massRemainingNet: bigint;
+    baseAmount: bigint;
+    tttiAmount: bigint;
+    buyer: Principal;
+    purchaseId?: PurchaseId;
+    amountReturned: bigint;
+    massTotalTtti: bigint;
+}
+export type BuybackError = {
+    __kind__: "payoutFailed";
+    payoutFailed: string;
+} | {
+    __kind__: "notCancellable";
+    notCancellable: null;
+} | {
+    __kind__: "callFailed";
+    callFailed: string;
+} | {
+    __kind__: "notLegacy";
+    notLegacy: null;
+} | {
+    __kind__: "adminBalanceInsufficient";
+    adminBalanceInsufficient: {
+        token: PayToken;
+        balance: bigint;
+        required: bigint;
+    };
+} | {
+    __kind__: "salesPaused";
+    salesPaused: null;
+} | {
+    __kind__: "attemptArrived";
+    attemptArrived: null;
+} | {
+    __kind__: "notAuthorized";
+    notAuthorized: null;
+} | {
+    __kind__: "invalidPercent";
+    invalidPercent: null;
+} | {
+    __kind__: "adminAllowanceInsufficient";
+    adminAllowanceInsufficient: {
+        token: PayToken;
+        required: bigint;
+        allowance: bigint;
+    };
+} | {
+    __kind__: "adminAccountNotSet";
+    adminAccountNotSet: null;
+} | {
+    __kind__: "notBuyer";
+    notBuyer: null;
+} | {
+    __kind__: "pullFailed";
+    pullFailed: string;
+} | {
+    __kind__: "amountTooSmall";
+    amountTooSmall: null;
+} | {
+    __kind__: "releaseFailed";
+    releaseFailed: string;
+} | {
+    __kind__: "anonymous";
+    anonymous: null;
+} | {
+    __kind__: "rateUnavailable";
+    rateUnavailable: PayToken;
+} | {
+    __kind__: "receiveTokenMismatch";
+    receiveTokenMismatch: null;
+} | {
+    __kind__: "buybackInProgress";
+    buybackInProgress: null;
+} | {
+    __kind__: "cancelFailed";
+    cancelFailed: string;
+} | {
+    __kind__: "adminAllowanceExpired";
+    adminAllowanceExpired: {
+        token: PayToken;
+    };
+} | {
+    __kind__: "notRetryable";
+    notRetryable: null;
+} | {
+    __kind__: "attemptUnknown";
+    attemptUnknown: null;
+} | {
+    __kind__: "massBuybackInProgress";
+    massBuybackInProgress: null;
+} | {
+    __kind__: "nothingRemaining";
+    nothingRemaining: null;
+} | {
+    __kind__: "buyerAllowanceInsufficient";
+    buyerAllowanceInsufficient: {
+        required: bigint;
+        allowance: bigint;
+    };
+} | {
+    __kind__: "buybackNotFound";
+    buybackNotFound: null;
+};
+export interface BuybackFunding {
+    token: PayToken;
+    expiresAt?: bigint;
+    balance: bigint;
+    error?: string;
+    allowance: bigint;
+}
+export type BuybackId = bigint;
+export interface BuybackMass {
+    token: PayToken;
+    boughtBackTtti: bigint;
+    remainingTtti: bigint;
+    totalTtti: bigint;
+    totalNet: bigint;
+    purchaseCount: bigint;
+    buyer: Principal;
+    remainingNet: bigint;
+    boughtBackNet: bigint;
+    inProgress: boolean;
+}
+export interface BuybackPayoutAttempt {
+    attempt: TransferAttempt;
+    from: Account;
+}
+export interface BuybackQuote {
+    buybackFee: bigint;
+    tttiEscrowFee: bigint;
+    tttiAllowanceRequired: bigint;
+    tokenReturned: PayToken;
+    massTotalNet: bigint;
+    massRemainingTtti: bigint;
+    rule: BuybackRule;
+    returnedRateUsdE8: bigint;
+    thirdPartyFees: bigint;
+    baseAmountReturned: bigint;
+    originalRateUsdE8: bigint;
+    originalToken: PayToken;
+    originalNetAmount: bigint;
+    percent: bigint;
+    tttiTransferFee: bigint;
+    massRemainingNet: bigint;
+    baseAmount: bigint;
+    tttiAmount: bigint;
+    amountReturned: bigint;
+    massTotalTtti: bigint;
+}
 export interface Cell {
     value: Value__2;
     name: string;
+}
+export interface Contact {
+    id: ContactId;
+    principal: Principal;
+    nickname: string;
+    memo?: Uint8Array;
+    createdAt: bigint;
+    updatedAt: bigint;
+}
+export type ContactId = bigint;
+export interface ContactInput {
+    principal: Principal;
+    nickname: string;
+    memo?: Uint8Array;
 }
 export interface Conversion {
     id: bigint;
@@ -139,7 +374,7 @@ export interface Conversion {
     recipient: Account;
     paymentBlock?: bigint;
     message?: string;
-    timestamp: Timestamp__1;
+    timestamp: Timestamp__2;
     payAmount: bigint;
     tttiAmount: bigint;
     mintBlock?: bigint;
@@ -179,6 +414,7 @@ export interface DepositEntry {
     btcDetectedSats: bigint;
     refundedSats: bigint;
     ckbtcMintedSats: bigint;
+    costToRefund?: BtcCostToRefund;
     errorMessage?: string;
     detectedAt: Timestamp;
     errorKind?: DepositErrorKind;
@@ -186,6 +422,7 @@ export interface DepositEntry {
     stage: DepositStage;
     ckbtcPendingSats: bigint;
     index: bigint;
+    btcRefund?: BtcRefund;
     conversionId?: bigint;
     tttiDelivered: bigint;
     ckbtcMintBlockIndex?: bigint;
@@ -287,6 +524,9 @@ export type ForwardStatus = {
 } | {
     __kind__: "pending";
     pending: null;
+} | {
+    __kind__: "needsReview";
+    needsReview: null;
 } | {
     __kind__: "notRequired";
     notRequired: null;
@@ -417,6 +657,23 @@ export interface IndexTransfer {
     amount: Tokens;
     spender?: Account;
 }
+export type InvalidReason = {
+    __kind__: "nicknameTooLong";
+    nicknameTooLong: {
+        maxChars: bigint;
+    };
+} | {
+    __kind__: "principalNotAllowed";
+    principalNotAllowed: null;
+} | {
+    __kind__: "memoTooLong";
+    memoTooLong: {
+        maxBytes: bigint;
+    };
+} | {
+    __kind__: "nicknameEmpty";
+    nicknameEmpty: null;
+};
 export interface LegacyBlockInfo {
     boundaryIndex: bigint;
     currentDecimals: number;
@@ -563,6 +820,7 @@ export type PurchaseErrorCode = {
         allowance: bigint;
     };
 };
+export type PurchaseId = bigint;
 export type PurchaseResult = {
     __kind__: "Ok";
     Ok: Conversion;
@@ -570,21 +828,98 @@ export type PurchaseResult = {
     __kind__: "Err";
     Err: PurchaseError;
 };
+export interface PurchaseTrace {
+    n: bigint;
+    token: PayToken;
+    memo: Uint8Array;
+    reserved: bigint;
+    buyer: Principal;
+    created_at_time: bigint;
+    amount: bigint;
+}
 export interface ReserveWithdrawal {
     blockIndex: bigint;
     timestamp: Timestamp;
     amountE8s: bigint;
 }
-export interface Result {
-    hasMore: boolean;
-    rows: Array<Array<Cell>>;
+export interface ReservedReconciliation {
+    by: Principal;
+    reconciledAt: bigint;
+    previousReserved: bigint;
 }
-export type Result__1 = {
+export type Result = {
+    __kind__: "ok";
+    ok: Contact;
+} | {
+    __kind__: "err";
+    err: AddressBookError;
+};
+export type Result_1 = {
+    __kind__: "ok";
+    ok: Buyback;
+} | {
+    __kind__: "err";
+    err: BuybackError;
+};
+export type Result_2 = {
+    __kind__: "ok";
+    ok: ReservedReconciliation;
+} | {
+    __kind__: "err";
+    err: ReconcileError;
+};
+export type Result_3 = {
+    __kind__: "ok";
+    ok: BuybackQuote;
+} | {
+    __kind__: "err";
+    err: BuybackError;
+};
+export type Result_4 = {
+    __kind__: "ok";
+    ok: Array<Contact>;
+} | {
+    __kind__: "err";
+    err: AddressBookError;
+};
+export type Result_5 = {
+    __kind__: "ok";
+    ok: Array<Buyback>;
+} | {
+    __kind__: "err";
+    err: BuybackError;
+};
+export type Result_6 = {
+    __kind__: "ok";
+    ok: Array<BuybackMass>;
+} | {
+    __kind__: "err";
+    err: BuybackError;
+};
+export type Result_7 = {
+    __kind__: "ok";
+    ok: null;
+} | {
+    __kind__: "err";
+    err: AddressBookError;
+};
+export type Result_8 = {
     __kind__: "ok";
     ok: null;
 } | {
     __kind__: "err";
     err: Error_;
+};
+export interface Result__1 {
+    hasMore: boolean;
+    rows: Array<Array<Cell>>;
+}
+export type ReviewResult = {
+    __kind__: "ok";
+    ok: null;
+} | {
+    __kind__: "err";
+    err: ReviewError;
 };
 export interface SaleStatus {
     buyerPriceUsd: bigint;
@@ -665,7 +1000,7 @@ export interface TechnicalDetails {
     cyclesReserveAccount: Account;
 }
 export type Timestamp = bigint;
-export type Timestamp__1 = bigint;
+export type Timestamp__2 = bigint;
 export interface TokenAccountInfo {
     token: PayToken;
     account?: Account;
@@ -696,6 +1031,31 @@ export type TokenPriceResult = {
     Err: string;
 };
 export type Tokens = bigint;
+export interface TopUpAttempt {
+    request: TopUpTransferRequest;
+    memo: Uint8Array;
+    createdAt: Timestamp;
+    sends: bigint;
+    blockIndex?: bigint;
+    needsReview: boolean;
+    lastError?: string;
+    created_at_time: bigint;
+    amount: bigint;
+    outcome: TopUpOutcome;
+}
+export type TopUpOutcome = {
+    __kind__: "pending";
+    pending: null;
+} | {
+    __kind__: "unknown";
+    unknown: null;
+} | {
+    __kind__: "failed";
+    failed: string;
+} | {
+    __kind__: "succeeded";
+    succeeded: bigint;
+};
 export interface TopUpRecord {
     status: TopUpStatus;
     icpE8s: bigint;
@@ -715,6 +1075,12 @@ export type TopUpStatus = {
     __kind__: "failed";
     failed: string;
 };
+export interface TopUpTransferRequest {
+    to: Account;
+    fee: bigint;
+    from_subaccount?: Uint8Array;
+    amount: bigint;
+}
 export interface TransactionWithId {
     id: BlockIndex;
     transaction: IndexTransaction;
@@ -724,8 +1090,18 @@ export interface TransferArgs {
     fee?: bigint;
     memo?: Uint8Array;
     from_subaccount?: Subaccount;
-    created_at_time?: Timestamp__1;
+    created_at_time?: Timestamp__2;
     amount: bigint;
+}
+export interface TransferAttempt {
+    n: bigint;
+    attempt: bigint;
+    request: TransferRequest;
+    memo: Uint8Array;
+    sends: bigint;
+    lastError?: string;
+    created_at_time: bigint;
+    outcome: AttemptOutcome;
 }
 export type TransferError = {
     __kind__: "GenericError";
@@ -754,7 +1130,7 @@ export type TransferError = {
 } | {
     __kind__: "CreatedInFuture";
     CreatedInFuture: {
-        ledger_time: Timestamp__1;
+        ledger_time: Timestamp__2;
     };
 } | {
     __kind__: "TooOld";
@@ -771,7 +1147,7 @@ export interface TransferFromArgs {
     spender_subaccount?: Subaccount;
     from: Account;
     memo?: Uint8Array;
-    created_at_time?: Timestamp__1;
+    created_at_time?: Timestamp__2;
     amount: bigint;
 }
 export type TransferFromError = {
@@ -806,7 +1182,7 @@ export type TransferFromError = {
 } | {
     __kind__: "CreatedInFuture";
     CreatedInFuture: {
-        ledger_time: Timestamp__1;
+        ledger_time: Timestamp__2;
     };
 } | {
     __kind__: "TooOld";
@@ -824,6 +1200,13 @@ export type TransferFromResult = {
     __kind__: "Err";
     Err: TransferFromError;
 };
+export interface TransferRequest {
+    to: Account;
+    fee?: bigint;
+    token: PayToken;
+    from_subaccount?: Uint8Array;
+    amount: bigint;
+}
 export type TransferResult = {
     __kind__: "Ok";
     Ok: bigint;
@@ -831,6 +1214,26 @@ export type TransferResult = {
     __kind__: "Err";
     Err: TransferError;
 };
+export interface TransferReview {
+    fee?: bigint;
+    destination?: Account;
+    token: PayToken;
+    createdAtTimeNs?: bigint;
+    memoHex?: string;
+    kind: TransferKind;
+    memoText?: string;
+    sends: bigint;
+    depositIndex?: bigint;
+    block?: bigint;
+    buyer?: Principal;
+    lastError?: string;
+    purchaseId: bigint;
+    amount: bigint;
+    outcome?: AttemptOutcome;
+    refundPurpose?: BtcRefundPurpose;
+    collect?: CollectState;
+    conversionId?: bigint;
+}
 export interface TransformationInput {
     context: Uint8Array;
     response: HttpRequestResult;
@@ -850,6 +1253,20 @@ export type TreasuryConfigResult = {
     __kind__: "Err";
     Err: string;
 };
+export interface UpgradeReadiness {
+    reserveLockBusy: boolean;
+    purchasesInFlightCount: bigint;
+    salesPaused: boolean;
+    openTraceCount: bigint;
+    reserved: bigint;
+    purchasesInFlight: Array<Principal>;
+    btcLockHeld: boolean;
+    buybacksInFlight: Array<string>;
+    openTraces: Array<PurchaseTrace>;
+    buybacksInFlightCount: bigint;
+    pendingTopUp?: TopUpAttempt;
+    lastReconciliation?: ReservedReconciliation;
+}
 export type Value__1 = {
     __kind__: "Int";
     Int: bigint;
@@ -928,8 +1345,28 @@ export enum BtcDepositErrorCode {
     purchaseInProgress = "purchaseInProgress",
     acknowledgementRequired = "acknowledgementRequired"
 }
+export enum BtcRefundPurpose {
+    deliveryFailedExcess = "deliveryFailedExcess",
+    excess = "excess",
+    fullRefund = "fullRefund"
+}
+export enum BuybackRule {
+    originalNet = "originalNet",
+    dayRate = "dayRate"
+}
+export enum BuybackStatus {
+    payoutFailed = "payoutFailed",
+    cancelled = "cancelled",
+    completed = "completed",
+    inProgress = "inProgress"
+}
+export enum CollectState {
+    confirmed = "confirmed",
+    unknown = "unknown"
+}
 export enum ConversionStatus {
     refundFailed = "refundFailed",
+    refundReview = "refundReview",
     completed = "completed",
     refunded = "refunded",
     failed = "failed"
@@ -968,6 +1405,28 @@ export enum PriceSource {
     coinbase = "coinbase",
     coingecko = "coingecko"
 }
+export enum ReconcileError {
+    notPaused = "notPaused",
+    openTraces = "openTraces",
+    purchaseInFlight = "purchaseInFlight",
+    notAdmin = "notAdmin"
+}
+export enum ReviewError {
+    notFound = "notFound",
+    notAdmin = "notAdmin",
+    notApplicable = "notApplicable",
+    notUnderReview = "notUnderReview"
+}
+export enum TransferKind {
+    BB = "BB",
+    BC = "BC",
+    BM = "BM",
+    BR = "BR",
+    FW = "FW",
+    PC = "PC",
+    RF = "RF",
+    SH = "SH"
+}
 export enum UserRole {
     admin = "admin",
     user = "user",
@@ -986,19 +1445,28 @@ export interface backendInterface {
         __kind__: "err";
         err: AcknowledgementError;
     }>;
+    addContact(input: ContactInput): Promise<Result>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    cancelBuyback(id: BuybackId): Promise<Result_1>;
     checkBtcPurchaseDeposit(): Promise<BtcDepositResult>;
     checkBtcWalletDeposit(): Promise<BtcDepositResult>;
+    checkBtcWalletDepositFor(owner: Principal): Promise<BtcDepositResult>;
     clearDeliveryAddress(): Promise<boolean>;
     convertDeposit(recipient: Account | null, icpAmount: bigint): Promise<PurchaseResult>;
     convertDepositWith(token: PayToken, recipient: Account | null, payAmount: bigint, tttiTarget: bigint | null): Promise<PurchaseResult>;
-    execute(qJson: string): Promise<Result>;
+    deleteContact(id: ContactId): Promise<Result_7>;
+    execute(qJson: string): Promise<Result__1>;
     exportBalanceSnapshot(): Promise<BalanceSnapshot>;
     getApiDoc(): Promise<string>;
     getBtcDepositInfo(): Promise<BtcDepositInfo>;
     getBtcPurchaseAddress(): Promise<BtcDepositResult>;
+    getBtcUsdRate(): Promise<BtcUsdRate | null>;
     getBtcWalletAddress(): Promise<BtcDepositResult>;
+    getBtcWalletAddressFor(owner: Principal): Promise<BtcDepositResult>;
+    getBtcWalletDepositsFor(owner: Principal): Promise<DepositTracking | null>;
     getBurnAccount(): Promise<Account>;
+    getBuybackAdminAccount(): Promise<Account | null>;
+    getBuybackFunding(): Promise<Array<BuybackFunding>>;
     getCallerUserRole(): Promise<UserRole>;
     getCanisterPrincipal(): Promise<Principal>;
     getConversions(): Promise<Array<Conversion>>;
@@ -1015,6 +1483,7 @@ export interface backendInterface {
     getTechnicalDetails(): Promise<TechnicalDetails>;
     getTokenPrices(): Promise<Array<TokenPrice>>;
     getTreasuryConfig(): Promise<TreasuryConfig | null>;
+    getUpgradeReadiness(): Promise<UpgradeReadiness>;
     get_account_transactions(args: GetAccountTransactionsArgs): Promise<GetTransactionsResult>;
     get_fee(): Promise<bigint>;
     get_fee_bounds(): Promise<FeeBounds>;
@@ -1039,10 +1508,25 @@ export interface backendInterface {
     icrc3_supported_block_types(): Promise<Array<SupportedBlockType>>;
     isCallerAdmin(): Promise<boolean>;
     ledger_id(): Promise<Principal>;
+    listAllBuybackMasses(): Promise<Array<BuybackMass>>;
+    listAllBuybacks(): Promise<Array<Buyback>>;
+    listMyBuybackMasses(): Promise<Result_6>;
+    listMyBuybacks(): Promise<Result_5>;
+    listMyContacts(): Promise<Result_4>;
+    listTransfersToReview(): Promise<Array<TransferReview>>;
     list_subaccounts(args: ListSubaccountsArgs): Promise<Array<Subaccount>>;
+    markBuybackCancelled(id: BuybackId, block: bigint): Promise<Result_1>;
+    markRefundedManually(kind: TransferKind, purchaseId: bigint, block: bigint): Promise<ReviewResult>;
+    markTransferArrived(kind: TransferKind, purchaseId: bigint, block: bigint): Promise<ReviewResult>;
+    markTransferNotArrived(kind: TransferKind, purchaseId: bigint): Promise<ReviewResult>;
+    quoteBuyback(massToken: PayToken, percent: bigint, receiveToken: PayToken): Promise<Result_3>;
+    reconcileReserved(): Promise<Result_2>;
     refreshIcpPrice(): Promise<PriceResult>;
     refreshTokenPrice(token: PayToken): Promise<TokenPriceResult>;
+    requestBuyback(massToken: PayToken, percent: bigint, receiveToken: PayToken, fromSubaccount: Uint8Array | null): Promise<Result_1>;
+    retryBuybackPayout(buybackId: BuybackId): Promise<Result_1>;
     schema(): Promise<string>;
+    setBuybackAdminAccount(account: Account): Promise<void>;
     setDeliveryAddress(principalText: string): Promise<DeliveryAddressResult>;
     setPayTokenAccount(token: PayToken, account: Account): Promise<TokenAccountResult>;
     setSalesPaused(paused: boolean): Promise<void>;
@@ -1050,5 +1534,6 @@ export interface backendInterface {
     set_fee(newFee: bigint): Promise<SetFeeResult>;
     status(): Promise<IndexStatus>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
+    updateContact(id: ContactId, input: ContactInput): Promise<Result>;
     withdrawReserveExcess(amount: bigint): Promise<WithdrawReserveResult>;
 }

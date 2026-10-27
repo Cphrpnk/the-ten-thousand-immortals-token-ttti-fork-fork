@@ -1,19 +1,20 @@
 {
-  "overview": "A token app for TTTI-T where users buy with ICP, ckBTC, ckUSDC, ckUSDT or Bitcoin, manage a wallet and read the white paper.",
+  "overview": "A token site for The Ten Thousand Immortals (TTTI-T test version) with minting, a built-in wallet, optional limited buybacks and a corrected white paper in seven languages.",
   "features": [
-    "Buy TTTI-T with ICP, ckBTC, ckUSDC, ckUSDT or Bitcoin",
-    "Built-in wallet with personal purchase history",
-    "Live transaction links to the explorer",
-    "Corrected white paper matching how the app works, next to the preserved original",
-    "Site in seven languages"
+    "Mint TTTI-T with ICP, ckBTC, ckUSDC, ckUSDT or BTC",
+    "Built-in wallet with send, receive, swap and history",
+    "Optional, limited buybacks held in the contract's holding account until payout succeeds",
+    "Corrected white paper and archived original",
+    "Site in seven languages with English authoritative",
+    "Admin review screen for transfers, refunds and buybacks"
   ],
-  "category": "token-app",
+  "category": "token-platform",
   "tags": [
     "crypto",
-    "token",
     "internet-computer",
-    "white-paper",
+    "token",
+    "wallet",
     "multilingual"
   ],
-  "last_updated": "2026-10-23T05:24:37.937Z"
+  "last_updated": "2026-10-27T16:33:10.585Z"
 }

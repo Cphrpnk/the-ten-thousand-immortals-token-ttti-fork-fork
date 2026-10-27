@@ -62,6 +62,15 @@ module {
     lastSuccessAt : ?Timestamp;
   };
 
+  // The stored hourly BTC/USD rate, same shape as the stored ICP/USD rate.
+  // Display-only (wallet USD value of ckBTC); never used by purchases.
+  public type BtcUsdRate = {
+    usdE8 : Nat; // USD per whole BTC * 10^8
+    source : PriceSource;
+    fetchedAt : Timestamp;
+    validUntil : Timestamp; // fetchedAt + 1 h
+  };
+
   // Result of refreshTokenPrice (refused with #Err while the rate is valid).
   public type TokenPriceResult = {
     #Ok : TokenPrice;

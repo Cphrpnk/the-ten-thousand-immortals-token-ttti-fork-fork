@@ -20,6 +20,8 @@ export const MESSAGES_TEXT = defineDict({
     ackSignInFirst: "Sign in before accepting the purchase acknowledgements",
     ackConnectPlugFirst:
       "Connect Plug before accepting the purchase acknowledgements",
+    ackConnectWalletFirst:
+      "Connect your wallet before accepting the purchase acknowledgements",
     ackNotRecorded: "Could not record the acknowledgements",
     btcAnonymousCaller: "Sign in to use a Bitcoin deposit address.",
     btcAcknowledgementRequired:
@@ -91,6 +93,8 @@ export const MESSAGES_TEXT = defineDict({
     ackSignInFirst: "Connectez-vous avant d'accepter les confirmations d'achat",
     ackConnectPlugFirst:
       "Connectez Plug avant d'accepter les confirmations d'achat",
+    ackConnectWalletFirst:
+      "Connectez votre wallet avant d'accepter les confirmations d'achat",
     ackNotRecorded: "Impossible d'enregistrer les confirmations",
     btcAnonymousCaller:
       "Connectez-vous pour utiliser une adresse de dépôt Bitcoin.",
@@ -166,6 +170,8 @@ export const MESSAGES_TEXT = defineDict({
       "Inicie sesión antes de aceptar las confirmaciones de compra",
     ackConnectPlugFirst:
       "Conecte Plug antes de aceptar las confirmaciones de compra",
+    ackConnectWalletFirst:
+      "Conecte su wallet antes de aceptar las confirmaciones de compra",
     ackNotRecorded: "No se pudieron registrar las confirmaciones",
     btcAnonymousCaller:
       "Inicie sesión para usar una dirección de depósito de Bitcoin.",
@@ -237,6 +243,7 @@ export const MESSAGES_TEXT = defineDict({
     deliveryAnonymousCaller: "保存收货地址前请先登录。",
     ackSignInFirst: "接受购买确认事项前请先登录",
     ackConnectPlugFirst: "接受购买确认事项前请先连接 Plug",
+    ackConnectWalletFirst: "接受购买确认事项前请先连接您的钱包",
     ackNotRecorded: "无法记录确认事项",
     btcAnonymousCaller: "请登录以使用 Bitcoin 存款地址。",
     btcAcknowledgementRequired: "首次购买前请接受购买确认事项。",
@@ -298,6 +305,8 @@ export const MESSAGES_TEXT = defineDict({
     ackSignInFirst: "Entre antes de aceitar as confirmações de compra",
     ackConnectPlugFirst:
       "Conecte o Plug antes de aceitar as confirmações de compra",
+    ackConnectWalletFirst:
+      "Conecte sua carteira antes de aceitar as confirmações de compra",
     ackNotRecorded: "Não foi possível registrar as confirmações",
     btcAnonymousCaller: "Entre para usar um endereço de depósito de Bitcoin.",
     btcAcknowledgementRequired:
@@ -369,6 +378,7 @@ export const MESSAGES_TEXT = defineDict({
     deliveryAnonymousCaller: "수령 주소를 저장하기 전에 로그인하십시오.",
     ackSignInFirst: "구매 확인 사항에 동의하기 전에 로그인하십시오",
     ackConnectPlugFirst: "구매 확인 사항에 동의하기 전에 Plug를 연결하십시오",
+    ackConnectWalletFirst: "구매 확인 사항에 동의하기 전에 지갑을 연결하십시오",
     ackNotRecorded: "확인 사항을 기록할 수 없습니다",
     btcAnonymousCaller: "Bitcoin 입금 주소를 사용하려면 로그인하십시오.",
     btcAcknowledgementRequired: "첫 구매 전에 구매 확인 사항에 동의하십시오.",
@@ -438,6 +448,7 @@ export const MESSAGES_TEXT = defineDict({
     deliveryAnonymousCaller: "ਡਿਲੀਵਰੀ ਪਤਾ ਸੇਵ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਾਈਨ ਇਨ ਕਰੋ।",
     ackSignInFirst: "ਖਰੀਦ ਪੁਸ਼ਟੀਆਂ ਸਵੀਕਾਰ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਾਈਨ ਇਨ ਕਰੋ",
     ackConnectPlugFirst: "ਖਰੀਦ ਪੁਸ਼ਟੀਆਂ ਸਵੀਕਾਰ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ Plug ਕਨੈਕਟ ਕਰੋ",
+    ackConnectWalletFirst: "ਖਰੀਦ ਪੁਸ਼ਟੀਆਂ ਸਵੀਕਾਰ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਆਪਣਾ ਵਾਲਿਟ ਕਨੈਕਟ ਕਰੋ",
     ackNotRecorded: "ਪੁਸ਼ਟੀਆਂ ਦਰਜ ਨਹੀਂ ਕੀਤੀਆਂ ਜਾ ਸਕੀਆਂ",
     btcAnonymousCaller: "Bitcoin ਜਮ੍ਹਾਂ ਪਤਾ ਵਰਤਣ ਲਈ ਸਾਈਨ ਇਨ ਕਰੋ।",
     btcAcknowledgementRequired: "ਆਪਣੀ ਪਹਿਲੀ ਖਰੀਦ ਤੋਂ ਪਹਿਲਾਂ ਖਰੀਦ ਪੁਸ਼ਟੀਆਂ ਸਵੀਕਾਰ ਕਰੋ।",

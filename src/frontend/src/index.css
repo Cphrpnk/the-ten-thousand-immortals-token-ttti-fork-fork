@@ -496,4 +496,46 @@
     border-color: oklch(var(--success));
     color: oklch(var(--success));
   }
+
+  /* ── Address book & ICRC-2 approvals (existing tokens only) ────── */
+  /* Recipient suggestion row: keyboard/hover highlight = gold hairline at start. */
+  .suggestion-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: calc(var(--radius) - 2px);
+    border-inline-start: 2px solid transparent;
+    transition: var(--transition-smooth);
+  }
+  .suggestion-row:hover,
+  .suggestion-row[data-highlighted],
+  .suggestion-row[aria-selected="true"] {
+    background: oklch(var(--muted));
+    border-inline-start-color: oklch(var(--primary));
+  }
+  /* Approval caution: factual note before any approval action. */
+  .callout-warning {
+    border: 1px solid oklch(var(--warning) / 0.4);
+    border-inline-start: 3px solid oklch(var(--warning));
+    background: oklch(var(--warning) / 0.08);
+    color: oklch(var(--foreground));
+    border-radius: calc(var(--radius) - 2px);
+  }
+  /* Irreversible/high-risk note (revoke, unlimited amount, unknown spender). */
+  .callout-danger {
+    border: 1px solid oklch(var(--destructive) / 0.4);
+    border-inline-start: 3px solid oklch(var(--destructive));
+    background: oklch(var(--destructive) / 0.08);
+    color: oklch(var(--foreground));
+    border-radius: calc(var(--radius) - 2px);
+  }
+  /* Neutral numbered instruction steps. */
+  .callout-info {
+    border-inline-start: 2px solid oklch(var(--border));
+    background: oklch(var(--muted) / 0.5);
+    color: oklch(var(--muted-foreground));
+    border-radius: calc(var(--radius) - 2px);
+  }
 }

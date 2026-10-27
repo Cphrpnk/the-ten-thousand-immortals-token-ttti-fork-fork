@@ -19,6 +19,8 @@ export const WALLET_TEXT = defineDict({
     signOutIi: "Sign out of II",
     connectIi: "Connect Internet Identity",
     disconnectPlug: "Disconnect Plug",
+    disconnectWallet: (name: string) => `Disconnect ${name}`,
+    toastWalletDisconnected: (name: string) => `${name} disconnected`,
     connectPlug: "Connect Plug",
     plugNotDetected:
       "Plug extension not detected. Install Plug to connect a browser wallet.",
@@ -47,7 +49,8 @@ export const WALLET_TEXT = defineDict({
     fee: "Fee:",
     balanceSuffix: (amount: string, symbol: string) =>
       ` · Balance: ${amount} ${symbol}`,
-    sendConnectHint: "Connect Internet Identity or Plug to send tokens.",
+    sendConnectHint:
+      "Sign in with Internet Identity or connect OISY, NFID Wallet or Plug to send tokens.",
     errConnectWallet: "Connect a wallet before sending.",
     errSelectToken: "Select a token to send.",
     errRecipient: "Enter a valid recipient principal.",
@@ -77,9 +80,11 @@ export const WALLET_TEXT = defineDict({
     // BTC → ckBTC panel
     btcFact: (minDeposit: string, confirmations: string) =>
       `Minimum deposit ${minDeposit} · ${confirmations} Bitcoin confirmations · ckBTC arrive in your wallet, no app fee, no TTTI-T created.`,
-    btcCreditedToIi:
-      "ckBTC from this address are credited to your internal wallet (Internet Identity), not to Plug.",
-    btcInternalBalance: "Internal wallet ckBTC balance",
+    btcCreditedTo: (wallet: string) =>
+      `ckBTC from this address are credited to ${wallet}.`,
+    btcWalletBalance: (wallet: string) => `${wallet} ckBTC balance`,
+    btcSignatureEachCheck: (wallet: string) =>
+      `${wallet} asks for a signature on each check.`,
     btcBalanceUnavailable: "Unavailable",
     btcAddressLabel: "Your Bitcoin address",
     btcGetAddress: "Get my Bitcoin address",
@@ -103,6 +108,7 @@ export const WALLET_TEXT = defineDict({
     historyStatusFailed: "Failed",
     historyStatusRefunded: "Refunded",
     historyStatusRefundFailed: "Refund failed",
+    historyStatusRefundReview: "Refund under review",
     historyShowDetails: "Show details",
     historyHideDetails: "Hide details",
     historyRecipient: "Recipient address",
@@ -112,10 +118,42 @@ export const WALLET_TEXT = defineDict({
     historyEmpty: "No purchases yet.",
     historyLoading: "Loading purchase history…",
     historyError: "Purchase history unavailable. The canister did not respond.",
+    // Summary, token list and history (OISY-like layout)
+    totalValue: "Total value",
+    swap: "Swap",
+    tokens: "Tokens",
+    calculationValue: "calculation value",
+    totalNote: (price: string) =>
+      `TTTI-T counted at a calculation value of ${price} per token. Tokens without a USD rate are not counted.`,
+    historyButton: "History",
+    buy: "Buy",
+    advancedTransfer: "Advanced transfer",
+    toastBuyCopied: "Address copied — paste it in Onramper",
+    tokenActions: (symbol: string) => `${symbol} actions`,
+    tokenHistoryTitle: (symbol: string) => `${symbol} history`,
+    walletHistoryTitle: "History",
+    movementsTitle: "TTTI-T movements",
+    movementSent: "Sent",
+    movementReceived: "Received",
+    movementMinted: "Minted",
+    movementApproval: "Approval",
+    movementFrom: "From",
+    movementTo: "To",
+    movementsEmpty: "No TTTI-T movements yet.",
+    movementsLoading: "Loading TTTI-T movements…",
+    movementsError: "TTTI-T movements unavailable. The ledger did not respond.",
+    movementsConnect: "Connect a wallet to view TTTI-T movements.",
+    pagePrevious: "Previous",
+    pageNext: "Next",
+    pageNumber: (page: string) => `Page ${page}`,
+    purchasesNeedIi: "Purchase history is available with Internet Identity.",
+    purchasesPaidWith: (symbol: string) => `Purchases paid with ${symbol}`,
+    accountOnDashboard: (symbol: string) =>
+      `Your ${symbol} account on the ICP Dashboard`,
   },
   fr: {
     // Page
-    title: "Wallet",
+    title: "Portefeuille",
     intro:
       "Connectez votre wallet, consultez vos soldes et envoyez ou recevez des jetons.",
     activeIdentity: "Identité active",
@@ -127,6 +165,8 @@ export const WALLET_TEXT = defineDict({
     signOutIi: "Se déconnecter d'II",
     connectIi: "Connecter Internet Identity",
     disconnectPlug: "Déconnecter Plug",
+    disconnectWallet: (name: string) => `Déconnecter ${name}`,
+    toastWalletDisconnected: (name: string) => `${name} déconnecté`,
     connectPlug: "Connecter Plug",
     plugNotDetected:
       "Extension Plug non détectée. Installez Plug pour connecter un wallet de navigateur.",
@@ -157,7 +197,7 @@ export const WALLET_TEXT = defineDict({
     balanceSuffix: (amount: string, symbol: string) =>
       ` · Solde : ${amount} ${symbol}`,
     sendConnectHint:
-      "Connectez Internet Identity ou Plug pour envoyer des jetons.",
+      "Connectez-vous avec Internet Identity ou connectez OISY, NFID Wallet ou Plug pour envoyer des jetons.",
     errConnectWallet: "Connectez un wallet avant d'envoyer.",
     errSelectToken: "Sélectionnez un jeton à envoyer.",
     errRecipient: "Saisissez un principal de destinataire valide.",
@@ -188,9 +228,11 @@ export const WALLET_TEXT = defineDict({
     // BTC → ckBTC panel
     btcFact: (minDeposit: string, confirmations: string) =>
       `Dépôt minimum ${minDeposit} · ${confirmations} confirmations Bitcoin · les ckBTC arrivent dans votre wallet, sans frais de l'app, sans création de TTTI-T.`,
-    btcCreditedToIi:
-      "Les ckBTC de cette adresse sont crédités sur votre wallet interne (Internet Identity), pas sur Plug.",
-    btcInternalBalance: "Solde ckBTC du wallet interne",
+    btcCreditedTo: (wallet: string) =>
+      `Les ckBTC de cette adresse sont crédités sur ${wallet}.`,
+    btcWalletBalance: (wallet: string) => `Solde ckBTC de ${wallet}`,
+    btcSignatureEachCheck: (wallet: string) =>
+      `${wallet} demande une signature à chaque vérification.`,
     btcBalanceUnavailable: "Indisponible",
     btcAddressLabel: "Votre adresse Bitcoin",
     btcGetAddress: "Obtenir mon adresse Bitcoin",
@@ -214,6 +256,7 @@ export const WALLET_TEXT = defineDict({
     historyStatusFailed: "Échoué",
     historyStatusRefunded: "Remboursé",
     historyStatusRefundFailed: "Échec du remboursement",
+    historyStatusRefundReview: "Remboursement en cours de vérification",
     historyShowDetails: "Afficher les détails",
     historyHideDetails: "Masquer les détails",
     historyRecipient: "Adresse du destinataire",
@@ -224,10 +267,44 @@ export const WALLET_TEXT = defineDict({
     historyLoading: "Chargement de l'historique des achats…",
     historyError:
       "Historique des achats indisponible. Le canister n'a pas répondu.",
+    // Summary, token list and history (OISY-like layout)
+    totalValue: "Valeur totale",
+    swap: "Échanger",
+    tokens: "Jetons",
+    calculationValue: "valeur de calcul",
+    totalNote: (price: string) =>
+      `TTTI-T compté à une valeur de calcul de ${price} par jeton. Les jetons sans cours en USD ne sont pas comptés.`,
+    historyButton: "Historique",
+    buy: "Acheter",
+    advancedTransfer: "Transfert avancé",
+    toastBuyCopied: "Adresse copiée — collez-la dans Onramper",
+    tokenActions: (symbol: string) => `Actions ${symbol}`,
+    tokenHistoryTitle: (symbol: string) => `Historique ${symbol}`,
+    walletHistoryTitle: "Historique",
+    movementsTitle: "Mouvements TTTI-T",
+    movementSent: "Envoyé",
+    movementReceived: "Reçu",
+    movementMinted: "Créé",
+    movementApproval: "Autorisation",
+    movementFrom: "De",
+    movementTo: "À",
+    movementsEmpty: "Aucun mouvement TTTI-T pour l'instant.",
+    movementsLoading: "Chargement des mouvements TTTI-T…",
+    movementsError:
+      "Mouvements TTTI-T indisponibles. Le ledger n'a pas répondu.",
+    movementsConnect: "Connectez un wallet pour voir les mouvements TTTI-T.",
+    pagePrevious: "Précédent",
+    pageNext: "Suivant",
+    pageNumber: (page: string) => `Page ${page}`,
+    purchasesNeedIi:
+      "L'historique des achats est disponible avec Internet Identity.",
+    purchasesPaidWith: (symbol: string) => `Achats payés en ${symbol}`,
+    accountOnDashboard: (symbol: string) =>
+      `Votre compte ${symbol} sur l'ICP Dashboard`,
   },
   es: {
     // Page
-    title: "Wallet",
+    title: "Billetera",
     intro: "Conecte su wallet, consulte sus saldos y envíe o reciba tokens.",
     activeIdentity: "Identidad activa",
     connectedWith: (source: string) => `Conectado con ${source}`,
@@ -251,6 +328,8 @@ export const WALLET_TEXT = defineDict({
     toastPlugConnected: "Wallet Plug conectado",
     toastPlugConnectFailed: "No se pudo conectar Plug",
     toastPlugDisconnected: "Wallet Plug desconectado",
+    disconnectWallet: (name: string) => `Desconectar ${name}`,
+    toastWalletDisconnected: (name: string) => `${name} desconectado`,
     toastIiSignedOut: "Sesión de Internet Identity cerrada",
     // Token balance card
     refreshBalance: (symbol: string) => `Actualizar el saldo de ${symbol}`,
@@ -267,7 +346,8 @@ export const WALLET_TEXT = defineDict({
     fee: "Comisión:",
     balanceSuffix: (amount: string, symbol: string) =>
       ` · Saldo: ${amount} ${symbol}`,
-    sendConnectHint: "Conecte Internet Identity o Plug para enviar tokens.",
+    sendConnectHint:
+      "Inicie sesión con Internet Identity o conecte OISY, NFID Wallet o Plug para enviar tokens.",
     errConnectWallet: "Conecte un wallet antes de enviar.",
     errSelectToken: "Seleccione un token para enviar.",
     errRecipient: "Introduzca un principal de destinatario válido.",
@@ -298,9 +378,11 @@ export const WALLET_TEXT = defineDict({
     // BTC → ckBTC panel
     btcFact: (minDeposit: string, confirmations: string) =>
       `Depósito mínimo ${minDeposit} · ${confirmations} confirmaciones de Bitcoin · los ckBTC llegan a su wallet, sin comisión de la app, sin creación de TTTI-T.`,
-    btcCreditedToIi:
-      "Los ckBTC de esta dirección se abonan en su wallet interno (Internet Identity), no en Plug.",
-    btcInternalBalance: "Saldo de ckBTC del wallet interno",
+    btcCreditedTo: (wallet: string) =>
+      `Los ckBTC de esta dirección se abonan en ${wallet}.`,
+    btcWalletBalance: (wallet: string) => `Saldo de ckBTC de ${wallet}`,
+    btcSignatureEachCheck: (wallet: string) =>
+      `${wallet} pide una firma en cada verificación.`,
     btcBalanceUnavailable: "No disponible",
     btcAddressLabel: "Su dirección Bitcoin",
     btcGetAddress: "Obtener mi dirección Bitcoin",
@@ -324,6 +406,7 @@ export const WALLET_TEXT = defineDict({
     historyStatusFailed: "Fallida",
     historyStatusRefunded: "Reembolsada",
     historyStatusRefundFailed: "Reembolso fallido",
+    historyStatusRefundReview: "Reembolso en revisión",
     historyShowDetails: "Mostrar detalles",
     historyHideDetails: "Ocultar detalles",
     historyRecipient: "Dirección del destinatario",
@@ -334,6 +417,40 @@ export const WALLET_TEXT = defineDict({
     historyLoading: "Cargando el historial de compras…",
     historyError:
       "Historial de compras no disponible. El canister no respondió.",
+    // Summary, token list and history (OISY-like layout)
+    totalValue: "Valor total",
+    swap: "Intercambiar",
+    tokens: "Tokens",
+    calculationValue: "valor de cálculo",
+    totalNote: (price: string) =>
+      `TTTI-T contabilizado a un valor de cálculo de ${price} por token. Los tokens sin cotización en USD no se contabilizan.`,
+    historyButton: "Historial",
+    buy: "Comprar",
+    advancedTransfer: "Transferencia avanzada",
+    toastBuyCopied: "Dirección copiada: pégala en Onramper",
+    tokenActions: (symbol: string) => `Acciones de ${symbol}`,
+    tokenHistoryTitle: (symbol: string) => `Historial de ${symbol}`,
+    walletHistoryTitle: "Historial",
+    movementsTitle: "Movimientos de TTTI-T",
+    movementSent: "Enviado",
+    movementReceived: "Recibido",
+    movementMinted: "Creado",
+    movementApproval: "Autorización",
+    movementFrom: "De",
+    movementTo: "A",
+    movementsEmpty: "Todavía no hay movimientos de TTTI-T.",
+    movementsLoading: "Cargando los movimientos de TTTI-T…",
+    movementsError:
+      "Movimientos de TTTI-T no disponibles. El ledger no respondió.",
+    movementsConnect: "Conecte un wallet para ver los movimientos de TTTI-T.",
+    pagePrevious: "Anterior",
+    pageNext: "Siguiente",
+    pageNumber: (page: string) => `Página ${page}`,
+    purchasesNeedIi:
+      "El historial de compras está disponible con Internet Identity.",
+    purchasesPaidWith: (symbol: string) => `Compras pagadas con ${symbol}`,
+    accountOnDashboard: (symbol: string) =>
+      `Su cuenta ${symbol} en el ICP Dashboard`,
   },
   "zh-Hans": {
     // Page
@@ -359,6 +476,8 @@ export const WALLET_TEXT = defineDict({
     toastPlugConnected: "Plug 钱包已连接",
     toastPlugConnectFailed: "无法连接 Plug",
     toastPlugDisconnected: "Plug 钱包已断开",
+    disconnectWallet: (name: string) => `断开 ${name}`,
+    toastWalletDisconnected: (name: string) => `${name} 已断开`,
     toastIiSignedOut: "已退出 Internet Identity",
     // Token balance card
     refreshBalance: (symbol: string) => `刷新 ${symbol} 余额`,
@@ -375,7 +494,8 @@ export const WALLET_TEXT = defineDict({
     fee: "手续费：",
     balanceSuffix: (amount: string, symbol: string) =>
       ` · 余额：${amount} ${symbol}`,
-    sendConnectHint: "连接 Internet Identity 或 Plug 以发送代币。",
+    sendConnectHint:
+      "请使用 Internet Identity 登录，或连接 OISY、NFID Wallet 或 Plug 以发送代币。",
     errConnectWallet: "发送前请先连接钱包。",
     errSelectToken: "请选择要发送的代币。",
     errRecipient: "请输入有效的收款方 Principal。",
@@ -404,9 +524,10 @@ export const WALLET_TEXT = defineDict({
     // BTC → ckBTC panel
     btcFact: (minDeposit: string, confirmations: string) =>
       `最低存款 ${minDeposit} · ${confirmations} 个 Bitcoin 确认 · ckBTC 到账至您的钱包，不收取应用手续费，不创建 TTTI-T。`,
-    btcCreditedToIi:
-      "来自此地址的 ckBTC 记入您的内部钱包（Internet Identity），而非 Plug。",
-    btcInternalBalance: "内部钱包 ckBTC 余额",
+    btcCreditedTo: (wallet: string) => `来自此地址的 ckBTC 记入 ${wallet}。`,
+    btcWalletBalance: (wallet: string) => `${wallet} ckBTC 余额`,
+    btcSignatureEachCheck: (wallet: string) =>
+      `每次检查时 ${wallet} 都会请求签名。`,
     btcBalanceUnavailable: "不可用",
     btcAddressLabel: "您的 Bitcoin 地址",
     btcGetAddress: "获取我的 Bitcoin 地址",
@@ -430,6 +551,7 @@ export const WALLET_TEXT = defineDict({
     historyStatusFailed: "失败",
     historyStatusRefunded: "已退款",
     historyStatusRefundFailed: "退款失败",
+    historyStatusRefundReview: "退款审核中",
     historyShowDetails: "显示详情",
     historyHideDetails: "隐藏详情",
     historyRecipient: "收款地址",
@@ -439,6 +561,38 @@ export const WALLET_TEXT = defineDict({
     historyEmpty: "暂无购买记录。",
     historyLoading: "正在加载购买记录…",
     historyError: "购买记录不可用。canister 未响应。",
+    // Summary, token list and history (OISY-like layout)
+    totalValue: "总价值",
+    swap: "兑换",
+    tokens: "代币",
+    calculationValue: "计算价值",
+    totalNote: (price: string) =>
+      `TTTI-T 按每枚 ${price} 的计算价值计入。没有美元汇率的代币不计入。`,
+    historyButton: "记录",
+    buy: "购买",
+    advancedTransfer: "高级转账",
+    toastBuyCopied: "地址已复制——请粘贴到 Onramper 中",
+    tokenActions: (symbol: string) => `${symbol} 操作`,
+    tokenHistoryTitle: (symbol: string) => `${symbol} 记录`,
+    walletHistoryTitle: "记录",
+    movementsTitle: "TTTI-T 变动",
+    movementSent: "已发送",
+    movementReceived: "已接收",
+    movementMinted: "已铸造",
+    movementApproval: "授权",
+    movementFrom: "来自",
+    movementTo: "至",
+    movementsEmpty: "暂无 TTTI-T 变动。",
+    movementsLoading: "正在加载 TTTI-T 变动…",
+    movementsError: "TTTI-T 变动不可用。账本未响应。",
+    movementsConnect: "连接钱包以查看 TTTI-T 变动。",
+    pagePrevious: "上一页",
+    pageNext: "下一页",
+    pageNumber: (page: string) => `第 ${page} 页`,
+    purchasesNeedIi: "购买记录需通过 Internet Identity 查看。",
+    purchasesPaidWith: (symbol: string) => `使用 ${symbol} 支付的购买`,
+    accountOnDashboard: (symbol: string) =>
+      `您在 ICP Dashboard 上的 ${symbol} 账户`,
   },
   "pt-BR": {
     // Page
@@ -467,6 +621,8 @@ export const WALLET_TEXT = defineDict({
     toastPlugConnected: "Carteira Plug conectada",
     toastPlugConnectFailed: "Não foi possível conectar o Plug",
     toastPlugDisconnected: "Carteira Plug desconectada",
+    disconnectWallet: (name: string) => `Desconectar ${name}`,
+    toastWalletDisconnected: (name: string) => `${name} desconectado`,
     toastIiSignedOut: "Sessão do Internet Identity encerrada",
     // Token balance card
     refreshBalance: (symbol: string) => `Atualizar saldo de ${symbol}`,
@@ -484,7 +640,7 @@ export const WALLET_TEXT = defineDict({
     balanceSuffix: (amount: string, symbol: string) =>
       ` · Saldo: ${amount} ${symbol}`,
     sendConnectHint:
-      "Conecte o Internet Identity ou o Plug para enviar tokens.",
+      "Entre com Internet Identity ou conecte OISY, NFID Wallet ou Plug para enviar tokens.",
     errConnectWallet: "Conecte uma carteira antes de enviar.",
     errSelectToken: "Selecione um token para enviar.",
     errRecipient: "Informe um principal de destinatário válido.",
@@ -515,9 +671,11 @@ export const WALLET_TEXT = defineDict({
     // BTC → ckBTC panel
     btcFact: (minDeposit: string, confirmations: string) =>
       `Depósito mínimo ${minDeposit} · ${confirmations} confirmações de Bitcoin · os ckBTC chegam à sua carteira, sem taxa do app, sem criação de TTTI-T.`,
-    btcCreditedToIi:
-      "Os ckBTC deste endereço são creditados na sua carteira interna (Internet Identity), não no Plug.",
-    btcInternalBalance: "Saldo de ckBTC da carteira interna",
+    btcCreditedTo: (wallet: string) =>
+      `Os ckBTC deste endereço são creditados em ${wallet}.`,
+    btcWalletBalance: (wallet: string) => `Saldo de ckBTC de ${wallet}`,
+    btcSignatureEachCheck: (wallet: string) =>
+      `${wallet} pede uma assinatura a cada verificação.`,
     btcBalanceUnavailable: "Indisponível",
     btcAddressLabel: "Seu endereço Bitcoin",
     btcGetAddress: "Obter meu endereço Bitcoin",
@@ -541,6 +699,7 @@ export const WALLET_TEXT = defineDict({
     historyStatusFailed: "Falhou",
     historyStatusRefunded: "Reembolsada",
     historyStatusRefundFailed: "Falha no reembolso",
+    historyStatusRefundReview: "Reembolso em verificação",
     historyShowDetails: "Mostrar detalhes",
     historyHideDetails: "Ocultar detalhes",
     historyRecipient: "Endereço do destinatário",
@@ -551,6 +710,41 @@ export const WALLET_TEXT = defineDict({
     historyLoading: "Carregando o histórico de compras…",
     historyError:
       "Histórico de compras indisponível. O canister não respondeu.",
+    // Summary, token list and history (OISY-like layout)
+    totalValue: "Valor total",
+    swap: "Trocar",
+    tokens: "Tokens",
+    calculationValue: "valor de cálculo",
+    totalNote: (price: string) =>
+      `TTTI-T contabilizado a um valor de cálculo de ${price} por token. Tokens sem cotação em USD não são contabilizados.`,
+    historyButton: "Histórico",
+    buy: "Comprar",
+    advancedTransfer: "Transferência avançada",
+    toastBuyCopied: "Endereço copiado — cole no Onramper",
+    tokenActions: (symbol: string) => `Ações de ${symbol}`,
+    tokenHistoryTitle: (symbol: string) => `Histórico de ${symbol}`,
+    walletHistoryTitle: "Histórico",
+    movementsTitle: "Movimentações de TTTI-T",
+    movementSent: "Enviado",
+    movementReceived: "Recebido",
+    movementMinted: "Criado",
+    movementApproval: "Autorização",
+    movementFrom: "De",
+    movementTo: "Para",
+    movementsEmpty: "Nenhuma movimentação de TTTI-T ainda.",
+    movementsLoading: "Carregando as movimentações de TTTI-T…",
+    movementsError:
+      "Movimentações de TTTI-T indisponíveis. O ledger não respondeu.",
+    movementsConnect:
+      "Conecte uma carteira para ver as movimentações de TTTI-T.",
+    pagePrevious: "Anterior",
+    pageNext: "Próxima",
+    pageNumber: (page: string) => `Página ${page}`,
+    purchasesNeedIi:
+      "O histórico de compras está disponível com o Internet Identity.",
+    purchasesPaidWith: (symbol: string) => `Compras pagas com ${symbol}`,
+    accountOnDashboard: (symbol: string) =>
+      `Sua conta ${symbol} no ICP Dashboard`,
   },
   ko: {
     // Page
@@ -578,6 +772,8 @@ export const WALLET_TEXT = defineDict({
     toastPlugConnected: "Plug 지갑이 연결되었습니다",
     toastPlugConnectFailed: "Plug를 연결할 수 없습니다",
     toastPlugDisconnected: "Plug 지갑 연결이 해제되었습니다",
+    disconnectWallet: (name: string) => `${name} 연결 해제`,
+    toastWalletDisconnected: (name: string) => `${name} 연결이 해제되었습니다`,
     toastIiSignedOut: "Internet Identity에서 로그아웃되었습니다",
     // Token balance card
     refreshBalance: (symbol: string) => `${symbol} 잔액 새로고침`,
@@ -596,7 +792,7 @@ export const WALLET_TEXT = defineDict({
     balanceSuffix: (amount: string, symbol: string) =>
       ` · 잔액: ${amount} ${symbol}`,
     sendConnectHint:
-      "토큰을 보내려면 Internet Identity 또는 Plug를 연결하세요.",
+      "토큰을 보내려면 Internet Identity로 로그인하거나 OISY, NFID Wallet 또는 Plug를 연결하세요.",
     errConnectWallet: "보내기 전에 지갑을 연결하세요.",
     errSelectToken: "보낼 토큰을 선택하세요.",
     errRecipient: "유효한 수신자 principal을 입력하세요.",
@@ -626,9 +822,11 @@ export const WALLET_TEXT = defineDict({
     // BTC → ckBTC panel
     btcFact: (minDeposit: string, confirmations: string) =>
       `최소 입금 ${minDeposit} · Bitcoin 확인 ${confirmations}회 · ckBTC가 지갑에 입금되며, 앱 수수료 없음, TTTI-T 생성 없음.`,
-    btcCreditedToIi:
-      "이 주소의 ckBTC는 Plug가 아닌 내부 지갑(Internet Identity)에 입금됩니다.",
-    btcInternalBalance: "내부 지갑 ckBTC 잔액",
+    btcCreditedTo: (wallet: string) =>
+      `이 주소의 ckBTC는 ${wallet}에 입금됩니다.`,
+    btcWalletBalance: (wallet: string) => `${wallet} ckBTC 잔액`,
+    btcSignatureEachCheck: (wallet: string) =>
+      `${wallet}은(는) 확인할 때마다 서명을 요청합니다.`,
     btcBalanceUnavailable: "사용할 수 없음",
     btcAddressLabel: "내 Bitcoin 주소",
     btcGetAddress: "내 Bitcoin 주소 받기",
@@ -652,6 +850,7 @@ export const WALLET_TEXT = defineDict({
     historyStatusFailed: "실패",
     historyStatusRefunded: "환불됨",
     historyStatusRefundFailed: "환불 실패",
+    historyStatusRefundReview: "환불 검토 중",
     historyShowDetails: "세부 정보 보기",
     historyHideDetails: "세부 정보 숨기기",
     historyRecipient: "수신자 주소",
@@ -662,6 +861,38 @@ export const WALLET_TEXT = defineDict({
     historyLoading: "구매 내역을 불러오는 중…",
     historyError:
       "구매 내역을 사용할 수 없습니다. canister가 응답하지 않았습니다.",
+    // Summary, token list and history (OISY-like layout)
+    totalValue: "총 가치",
+    swap: "스왑",
+    tokens: "토큰",
+    calculationValue: "계산 가치",
+    totalNote: (price: string) =>
+      `TTTI-T는 토큰당 ${price}의 계산 가치로 합산됩니다. USD 시세가 없는 토큰은 합산되지 않습니다.`,
+    historyButton: "내역",
+    buy: "구매",
+    advancedTransfer: "고급 전송",
+    toastBuyCopied: "주소가 복사되었습니다 — Onramper에 붙여넣으세요",
+    tokenActions: (symbol: string) => `${symbol} 작업`,
+    tokenHistoryTitle: (symbol: string) => `${symbol} 내역`,
+    walletHistoryTitle: "내역",
+    movementsTitle: "TTTI-T 이동 내역",
+    movementSent: "보냄",
+    movementReceived: "받음",
+    movementMinted: "발행됨",
+    movementApproval: "승인",
+    movementFrom: "보낸 계정",
+    movementTo: "받는 계정",
+    movementsEmpty: "아직 TTTI-T 이동 내역이 없습니다.",
+    movementsLoading: "TTTI-T 이동 내역을 불러오는 중…",
+    movementsError:
+      "TTTI-T 이동 내역을 사용할 수 없습니다. ledger가 응답하지 않았습니다.",
+    movementsConnect: "TTTI-T 이동 내역을 보려면 지갑을 연결하세요.",
+    pagePrevious: "이전",
+    pageNext: "다음",
+    pageNumber: (page: string) => `${page}페이지`,
+    purchasesNeedIi: "구매 내역은 Internet Identity로 확인할 수 있습니다.",
+    purchasesPaidWith: (symbol: string) => `${symbol}(으)로 결제한 구매`,
+    accountOnDashboard: (symbol: string) => `ICP Dashboard의 내 ${symbol} 계정`,
   },
   "pa-Guru": {
     // Page
@@ -688,6 +919,8 @@ export const WALLET_TEXT = defineDict({
     toastPlugConnected: "Plug ਵਾਲਿਟ ਕਨੈਕਟ ਹੋ ਗਿਆ",
     toastPlugConnectFailed: "Plug ਕਨੈਕਟ ਨਹੀਂ ਹੋ ਸਕਿਆ",
     toastPlugDisconnected: "Plug ਵਾਲਿਟ ਡਿਸਕਨੈਕਟ ਹੋ ਗਿਆ",
+    disconnectWallet: (name: string) => `${name} ਡਿਸਕਨੈਕਟ ਕਰੋ`,
+    toastWalletDisconnected: (name: string) => `${name} ਡਿਸਕਨੈਕਟ ਹੋ ਗਿਆ`,
     toastIiSignedOut: "Internet Identity ਤੋਂ ਸਾਈਨ ਆਉਟ ਹੋ ਗਿਆ",
     // Token balance card
     refreshBalance: (symbol: string) => `${symbol} ਬਕਾਇਆ ਤਾਜ਼ਾ ਕਰੋ`,
@@ -704,7 +937,8 @@ export const WALLET_TEXT = defineDict({
     fee: "ਫੀਸ:",
     balanceSuffix: (amount: string, symbol: string) =>
       ` · ਬਕਾਇਆ: ${amount} ${symbol}`,
-    sendConnectHint: "ਟੋਕਨ ਭੇਜਣ ਲਈ Internet Identity ਜਾਂ Plug ਕਨੈਕਟ ਕਰੋ।",
+    sendConnectHint:
+      "ਟੋਕਨ ਭੇਜਣ ਲਈ Internet Identity ਨਾਲ ਸਾਈਨ ਇਨ ਕਰੋ ਜਾਂ OISY, NFID Wallet ਜਾਂ Plug ਕਨੈਕਟ ਕਰੋ।",
     errConnectWallet: "ਭੇਜਣ ਤੋਂ ਪਹਿਲਾਂ ਵਾਲਿਟ ਕਨੈਕਟ ਕਰੋ।",
     errSelectToken: "ਭੇਜਣ ਲਈ ਟੋਕਨ ਚੁਣੋ।",
     errRecipient: "ਇੱਕ ਸਹੀ ਪ੍ਰਾਪਤਕਰਤਾ principal ਦਰਜ ਕਰੋ।",
@@ -734,9 +968,11 @@ export const WALLET_TEXT = defineDict({
     // BTC → ckBTC panel
     btcFact: (minDeposit: string, confirmations: string) =>
       `ਘੱਟੋ-ਘੱਟ ਜਮ੍ਹਾਂ ${minDeposit} · ${confirmations} Bitcoin ਪੁਸ਼ਟੀਆਂ · ckBTC ਤੁਹਾਡੇ ਵਾਲਿਟ ਵਿੱਚ ਆਉਂਦੇ ਹਨ, ਕੋਈ ਐਪ ਫੀਸ ਨਹੀਂ, ਕੋਈ TTTI-T ਨਹੀਂ ਬਣਦਾ।`,
-    btcCreditedToIi:
-      "ਇਸ ਪਤੇ ਦੇ ckBTC ਤੁਹਾਡੇ ਅੰਦਰੂਨੀ ਵਾਲਿਟ (Internet Identity) ਵਿੱਚ ਜਮ੍ਹਾਂ ਹੁੰਦੇ ਹਨ, Plug ਵਿੱਚ ਨਹੀਂ।",
-    btcInternalBalance: "ਅੰਦਰੂਨੀ ਵਾਲਿਟ ckBTC ਬਕਾਇਆ",
+    btcCreditedTo: (wallet: string) =>
+      `ਇਸ ਪਤੇ ਦੇ ckBTC ${wallet} ਵਿੱਚ ਜਮ੍ਹਾਂ ਹੁੰਦੇ ਹਨ।`,
+    btcWalletBalance: (wallet: string) => `${wallet} ckBTC ਬਕਾਇਆ`,
+    btcSignatureEachCheck: (wallet: string) =>
+      `${wallet} ਹਰ ਜਾਂਚ 'ਤੇ ਦਸਤਖਤ ਮੰਗਦਾ ਹੈ।`,
     btcBalanceUnavailable: "ਉਪਲਬਧ ਨਹੀਂ",
     btcAddressLabel: "ਤੁਹਾਡਾ Bitcoin ਪਤਾ",
     btcGetAddress: "ਮੇਰਾ Bitcoin ਪਤਾ ਪ੍ਰਾਪਤ ਕਰੋ",
@@ -760,6 +996,7 @@ export const WALLET_TEXT = defineDict({
     historyStatusFailed: "ਅਸਫਲ",
     historyStatusRefunded: "ਰਿਫੰਡ ਕੀਤਾ ਗਿਆ",
     historyStatusRefundFailed: "ਰਿਫੰਡ ਅਸਫਲ",
+    historyStatusRefundReview: "ਰਿਫੰਡ ਦੀ ਸਮੀਖਿਆ ਜਾਰੀ ਹੈ",
     historyShowDetails: "ਵੇਰਵੇ ਵੇਖੋ",
     historyHideDetails: "ਵੇਰਵੇ ਲੁਕਾਓ",
     historyRecipient: "ਪ੍ਰਾਪਤਕਰਤਾ ਪਤਾ",
@@ -769,6 +1006,38 @@ export const WALLET_TEXT = defineDict({
     historyEmpty: "ਹਾਲੇ ਕੋਈ ਖਰੀਦ ਨਹੀਂ।",
     historyLoading: "ਖਰੀਦ ਇਤਿਹਾਸ ਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…",
     historyError: "ਖਰੀਦ ਇਤਿਹਾਸ ਉਪਲਬਧ ਨਹੀਂ। canister ਨੇ ਜਵਾਬ ਨਹੀਂ ਦਿੱਤਾ।",
+    // Summary, token list and history (OISY-like layout)
+    totalValue: "ਕੁੱਲ ਮੁੱਲ",
+    swap: "ਸਵੈਪ",
+    tokens: "ਟੋਕਨ",
+    calculationValue: "ਗਣਨਾ ਮੁੱਲ",
+    totalNote: (price: string) =>
+      `TTTI-T ਨੂੰ ਪ੍ਰਤੀ ਟੋਕਨ ${price} ਦੇ ਗਣਨਾ ਮੁੱਲ 'ਤੇ ਗਿਣਿਆ ਜਾਂਦਾ ਹੈ। USD ਦਰ ਤੋਂ ਬਿਨਾਂ ਟੋਕਨ ਨਹੀਂ ਗਿਣੇ ਜਾਂਦੇ।`,
+    historyButton: "ਇਤਿਹਾਸ",
+    buy: "ਖਰੀਦੋ",
+    advancedTransfer: "ਉੱਨਤ ਟ੍ਰਾਂਸਫਰ",
+    toastBuyCopied: "ਪਤਾ ਕਾਪੀ ਹੋ ਗਿਆ — ਇਸਨੂੰ Onramper ਵਿੱਚ ਪੇਸਟ ਕਰੋ",
+    tokenActions: (symbol: string) => `${symbol} ਕਾਰਵਾਈਆਂ`,
+    tokenHistoryTitle: (symbol: string) => `${symbol} ਇਤਿਹਾਸ`,
+    walletHistoryTitle: "ਇਤਿਹਾਸ",
+    movementsTitle: "TTTI-T ਲੈਣ-ਦੇਣ",
+    movementSent: "ਭੇਜੇ",
+    movementReceived: "ਪ੍ਰਾਪਤ",
+    movementMinted: "ਮਿੰਟ ਕੀਤੇ",
+    movementApproval: "ਮਨਜ਼ੂਰੀ",
+    movementFrom: "ਤੋਂ",
+    movementTo: "ਨੂੰ",
+    movementsEmpty: "ਹਾਲੇ ਕੋਈ TTTI-T ਲੈਣ-ਦੇਣ ਨਹੀਂ।",
+    movementsLoading: "TTTI-T ਲੈਣ-ਦੇਣ ਲੋਡ ਹੋ ਰਹੇ ਹਨ…",
+    movementsError: "TTTI-T ਲੈਣ-ਦੇਣ ਉਪਲਬਧ ਨਹੀਂ। ledger ਨੇ ਜਵਾਬ ਨਹੀਂ ਦਿੱਤਾ।",
+    movementsConnect: "TTTI-T ਲੈਣ-ਦੇਣ ਵੇਖਣ ਲਈ ਵਾਲਿਟ ਕਨੈਕਟ ਕਰੋ।",
+    pagePrevious: "ਪਿਛਲਾ",
+    pageNext: "ਅਗਲਾ",
+    pageNumber: (page: string) => `ਪੰਨਾ ${page}`,
+    purchasesNeedIi: "ਖਰੀਦ ਇਤਿਹਾਸ Internet Identity ਨਾਲ ਉਪਲਬਧ ਹੈ।",
+    purchasesPaidWith: (symbol: string) => `${symbol} ਨਾਲ ਭੁਗਤਾਨ ਕੀਤੀਆਂ ਖਰੀਦਾਂ`,
+    accountOnDashboard: (symbol: string) =>
+      `ICP Dashboard 'ਤੇ ਤੁਹਾਡਾ ${symbol} ਖਾਤਾ`,
   },
 });
 
@@ -857,5 +1126,94 @@ export const WALLET_EXPLORER_TEXT = defineDict({
     viewOnIcpDashboard: "ICP Dashboard 'ਤੇ ਵੇਖੋ",
     viewBlockInHistory: "ਇਤਿਹਾਸ ਵਿੱਚ ਬਲਾਕ ਵੇਖੋ",
     trackOnMempool: "mempool.space 'ਤੇ ਲਾਈਵ ਟ੍ਰੈਕ ਕਰੋ",
+  },
+});
+
+/**
+ * Percentage bar of the send forms (wallet Send dialog and Transfer page).
+ * A plain transfer keeps one ledger fee out of the balance. Amounts and fees
+ * are passed in already formatted in the active language's number format.
+ */
+export const SEND_PERCENT_TEXT = defineDict({
+  en: {
+    percentConnect: "Connect a wallet to use the bar.",
+    percentLoading: "Loading balance…",
+    percentBalanceUnavailable: "Balance unavailable.",
+    percentNotCover: (fee: string) =>
+      `Balance does not cover the ${fee} network fee.`,
+    percentShare: (symbol: string) => `Share of wallet ${symbol}`,
+    percentSummary: (percent: string, amount: string) =>
+      `${percent}% = ${amount}`,
+    percentComputedOn: (fee: string) =>
+      `Computed on balance minus the ${fee} network fee.`,
+  },
+  fr: {
+    percentConnect: "Connectez un wallet pour utiliser la barre.",
+    percentLoading: "Chargement du solde…",
+    percentBalanceUnavailable: "Solde indisponible.",
+    percentNotCover: (fee: string) =>
+      `Le solde ne couvre pas les frais de réseau de ${fee}.`,
+    percentShare: (symbol: string) => `Part du solde ${symbol} du wallet`,
+    percentSummary: (percent: string, amount: string) =>
+      `${percent}% = ${amount}`,
+    percentComputedOn: (fee: string) =>
+      `Calculé sur le solde moins ${fee} de frais de réseau.`,
+  },
+  es: {
+    percentConnect: "Conecte un wallet para usar la barra.",
+    percentLoading: "Cargando el saldo…",
+    percentBalanceUnavailable: "Saldo no disponible.",
+    percentNotCover: (fee: string) =>
+      `El saldo no cubre la comisión de red de ${fee}.`,
+    percentShare: (symbol: string) => `Parte del saldo ${symbol} del wallet`,
+    percentSummary: (percent: string, amount: string) =>
+      `${percent}% = ${amount}`,
+    percentComputedOn: (fee: string) =>
+      `Calculado sobre el saldo menos ${fee} de comisión de red.`,
+  },
+  "zh-Hans": {
+    percentConnect: "连接钱包以使用此滑块。",
+    percentLoading: "正在加载余额…",
+    percentBalanceUnavailable: "余额不可用。",
+    percentNotCover: (fee: string) => `余额不足以支付 ${fee} 的网络手续费。`,
+    percentShare: (symbol: string) => `钱包 ${symbol} 余额占比`,
+    percentSummary: (percent: string, amount: string) =>
+      `${percent}% = ${amount}`,
+    percentComputedOn: (fee: string) => `按余额减去 ${fee} 网络手续费计算。`,
+  },
+  "pt-BR": {
+    percentConnect: "Conecte uma carteira para usar a barra.",
+    percentLoading: "Carregando o saldo…",
+    percentBalanceUnavailable: "Saldo indisponível.",
+    percentNotCover: (fee: string) =>
+      `O saldo não cobre a taxa de rede de ${fee}.`,
+    percentShare: (symbol: string) => `Parte do saldo de ${symbol} da carteira`,
+    percentSummary: (percent: string, amount: string) =>
+      `${percent}% = ${amount}`,
+    percentComputedOn: (fee: string) =>
+      `Calculado sobre o saldo menos ${fee} de taxa de rede.`,
+  },
+  ko: {
+    percentConnect: "바를 사용하려면 지갑을 연결하세요.",
+    percentLoading: "잔액을 불러오는 중…",
+    percentBalanceUnavailable: "잔액을 확인할 수 없습니다.",
+    percentNotCover: (fee: string) =>
+      `잔액이 ${fee}의 네트워크 수수료에 미치지 못합니다.`,
+    percentShare: (symbol: string) => `지갑 ${symbol} 잔액 비율`,
+    percentSummary: (percent: string, amount: string) =>
+      `${percent}% = ${amount}`,
+    percentComputedOn: (fee: string) =>
+      `잔액에서 네트워크 수수료 ${fee}을(를) 뺀 금액 기준으로 계산됩니다.`,
+  },
+  "pa-Guru": {
+    percentConnect: "ਬਾਰ ਵਰਤਣ ਲਈ ਇੱਕ ਵਾਲਿਟ ਜੋੜੋ।",
+    percentLoading: "ਬਕਾਇਆ ਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…",
+    percentBalanceUnavailable: "ਬਕਾਇਆ ਉਪਲਬਧ ਨਹੀਂ।",
+    percentNotCover: (fee: string) => `ਬਕਾਇਆ ${fee} ਨੈੱਟਵਰਕ ਫੀਸ ਨੂੰ ਪੂਰਾ ਨਹੀਂ ਕਰਦਾ।`,
+    percentShare: (symbol: string) => `ਵਾਲਿਟ ${symbol} ਦਾ ਹਿੱਸਾ`,
+    percentSummary: (percent: string, amount: string) =>
+      `${percent}% = ${amount}`,
+    percentComputedOn: (fee: string) =>
+      `ਬਕਾਏ ਵਿੱਚੋਂ ${fee} ਨੈੱਟਵਰਕ ਫੀਸ ਘਟਾ ਕੇ ਗਿਣਿਆ ਗਿਆ।`,
   },
 });

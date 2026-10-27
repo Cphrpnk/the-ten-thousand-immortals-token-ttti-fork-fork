@@ -7,15 +7,21 @@ import {
   type DepositTracking,
   PayToken,
 } from "../../backend";
+import { useConnectedWallet } from "../../hooks/useConnectedWallet";
 import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import {
+  btcAddressShownBefore,
   depositCkbtcMintBlock,
   depositTxids,
   isDepositTerminal,
+  rememberBtcAddressShown,
   useBtcDepositInfo,
+  useBtcWalletDepositsFor,
   useCheckBtcWalletDeposit,
+  useCheckBtcWalletDepositFor,
   useDepositView,
   useGetBtcWalletAddress,
+  useGetBtcWalletAddressFor,
   useMyBtcDeposits,
   usePayTokenBalance,
   useRefreshOnDepositProgress,
@@ -40,8 +46,8 @@ import {
 import { Skeleton } from "../ui/skeleton";
 
 interface BtcToCkbtcPanelProps {
-  /** True when the balances shown above belong to another wallet (Plug). */
-  otherWalletActive?: boolean;
+  /** Request the personal BTC address once when none exists yet (setup step 3). */
+  requestAddress?: boolean;
 }
 
 /** Checks for a new transfer once every deposit is final. */
@@ -77,18 +83,33 @@ function freshestTracking(
   return best;
 }
 
-/** BTC → ckBTC conversion into the signed-in user's own wallet. */
-export function BtcToCkbtcPanel({ otherWalletActive }: BtcToCkbtcPanelProps) {
+/** BTC → ckBTC conversion into the active wallet (built-in or external). */
+export function BtcToCkbtcPanel({ requestAddress }: BtcToCkbtcPanelProps) {
   const t = useDict(WALLET_TEXT);
+  const { principal: externalPrincipal, name: walletName } =
+    useConnectedWallet();
+  // External wallets (Plug, OISY, NFID) use the unsigned *For calls.
+  const owner = externalPrincipal ?? undefined;
+  const external = owner !== undefined;
   const { identity } = useInternetIdentity();
+  const principalText = external
+    ? owner.toText()
+    : identity?.getPrincipal().toText();
   const { data: info } = useBtcDepositInfo();
-  const { data: deposits, isLoading } = useMyBtcDeposits();
-  const getAddress = useGetBtcWalletAddress();
-  const check = useCheckBtcWalletDeposit();
+  const mine = useMyBtcDeposits(!external);
+  const forOwner = useBtcWalletDepositsFor(owner);
+  const iiGetAddress = useGetBtcWalletAddress();
+  const iiCheck = useCheckBtcWalletDeposit();
+  const ownerGetAddress = useGetBtcWalletAddressFor(owner);
+  const ownerCheck = useCheckBtcWalletDepositFor(owner);
+  const getAddress = external ? ownerGetAddress : iiGetAddress;
+  const check = external ? ownerCheck : iiCheck;
+  const isLoading = external ? !forOwner.isFetched : mine.isLoading;
+  const deposits = external ? undefined : mine.data;
   const [autoError, setAutoError] = useState<string | null>(null);
 
   const tracking = freshestTracking([
-    deposits?.wallet,
+    external ? (forOwner.data ?? undefined) : deposits?.wallet,
     check.data,
     getAddress.data,
   ]);
@@ -104,15 +125,9 @@ export function BtcToCkbtcPanel({ otherWalletActive }: BtcToCkbtcPanelProps) {
   // Slower checks for a new transfer once every deposit is final.
   const intervalMs = settled ? Math.max(pollMs, IDLE_CHECK_MS) : pollMs;
 
-  // The ckBTC land in the internal (Internet Identity) wallet.
-  const iiPrincipal = identity?.getPrincipal();
-  const iiAccount: Account | undefined = iiPrincipal
-    ? { owner: iiPrincipal }
-    : undefined;
-  const iiBalance = usePayTokenBalance(
-    PayToken.ckbtc,
-    otherWalletActive ? iiAccount : undefined,
-  );
+  // The ckBTC land in the external wallet's own account.
+  const ownerAccount: Account | undefined = owner ? { owner } : undefined;
+  const ownerBalance = usePayTokenBalance(PayToken.ckbtc, ownerAccount);
 
   const checkRef = useRef(check);
   checkRef.current = check;
@@ -141,8 +156,33 @@ export function BtcToCkbtcPanel({ otherWalletActive }: BtcToCkbtcPanelProps) {
   useRefreshOnDepositProgress(tracking);
   useRefreshOnDepositProgress(deposits?.purchase);
 
+  // Setup step 3, or back on the page before any deposit: fetch the (stable)
+  // personal address once, so it shows and the automatic checks resume.
+  const { mutate: requestBtcAddress, isPending: addressPending } = getAddress;
+  const addressRequestedRef = useRef(false);
+  useEffect(() => {
+    if (addressRequestedRef.current) return;
+    if (!requestAddress && !btcAddressShownBefore("wallet", principalText)) {
+      return;
+    }
+    if (isLoading || hasTracking || addressPending) return;
+    addressRequestedRef.current = true;
+    requestBtcAddress(undefined, {
+      onSuccess: () => rememberBtcAddressShown("wallet", principalText),
+      onError: (error) => toast.error(error.message),
+    });
+  }, [
+    requestAddress,
+    principalText,
+    isLoading,
+    hasTracking,
+    addressPending,
+    requestBtcAddress,
+  ]);
+
   const handleGetAddress = () => {
     getAddress.mutate(undefined, {
+      onSuccess: () => rememberBtcAddressShown("wallet", principalText),
       onError: (error) => toast.error(error.message),
     });
   };
@@ -158,7 +198,8 @@ export function BtcToCkbtcPanel({ otherWalletActive }: BtcToCkbtcPanelProps) {
 
   return (
     <Card
-      className="rounded-lg border-gold bg-card shadow-subtle"
+      id="wallet-btc"
+      className="scroll-mt-24 rounded-lg border-gold bg-card shadow-subtle"
       data-ocid="wallet.btc.panel"
     >
       <CardHeader>
@@ -169,8 +210,10 @@ export function BtcToCkbtcPanel({ otherWalletActive }: BtcToCkbtcPanelProps) {
         <CardDescription data-ocid="wallet.btc.fact">{fact}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
-        {otherWalletActive && !tracking ? (
-          <p className="text-xs text-muted-foreground">{t.btcCreditedToIi}</p>
+        {external && walletName && !tracking ? (
+          <p className="text-xs text-muted-foreground">
+            {t.btcCreditedTo(walletName)}
+          </p>
         ) : null}
 
         {isLoading ? (
@@ -193,17 +236,17 @@ export function BtcToCkbtcPanel({ otherWalletActive }: BtcToCkbtcPanelProps) {
               view={view}
               ocidPrefix="wallet.btc"
             />
-            {otherWalletActive ? (
+            {external && walletName ? (
               <div
                 className="flex flex-col gap-2 rounded-lg border border-gold bg-primary/10 px-4 py-3 text-sm"
                 data-ocid="wallet.btc.internal_wallet.panel"
               >
-                <p className="text-foreground">{t.btcCreditedToIi}</p>
+                <p className="text-foreground">{t.btcCreditedTo(walletName)}</p>
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-muted-foreground">
-                    {t.btcInternalBalance}
+                    {t.btcWalletBalance(walletName)}
                   </span>
-                  {iiBalance.isLoading ? (
+                  {ownerBalance.isLoading ? (
                     <Skeleton
                       className="h-5 w-28"
                       data-ocid="wallet.btc.internal_balance.loading_state"
@@ -213,8 +256,8 @@ export function BtcToCkbtcPanel({ otherWalletActive }: BtcToCkbtcPanelProps) {
                       className="font-mono font-semibold tabular-nums text-foreground"
                       data-ocid="wallet.btc.internal_balance"
                     >
-                      {iiBalance.data !== undefined
-                        ? formatSats(iiBalance.data, "ckBTC")
+                      {ownerBalance.data !== undefined
+                        ? formatSats(ownerBalance.data, "ckBTC")
                         : t.btcBalanceUnavailable}
                     </span>
                   )}

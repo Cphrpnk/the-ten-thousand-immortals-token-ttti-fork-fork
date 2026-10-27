@@ -40,15 +40,17 @@ module {
     #completed; // TTTI-T delivered
     #failed; // refused or ICP collection failed; nothing taken
     #refunded; // ICP taken, delivery failed, ICP refunded (minus ICP fee)
-    #refundFailed; // ICP taken, delivery failed, refund also failed
+    #refundFailed; // taken, delivery failed, refund not done yet: an RF attempt (RetryStore.refunds) is retried by the timer
+    #refundReview; // refund outcome unknown after 23 h, or legacy / BTC-path failure: admin verification required
   };
 
   // What happened to the collected ICP after a successful delivery.
   public type ForwardStatus = {
-    #notRequired; // treasury icpAccount is the canister account (or legacy record)
-    #pending; // not attempted yet
-    #forwarded : Nat; // ICP ledger block index
-    #failed : Text; // forwarding failed; the buyer's credit stands
+    #notRequired; // zero amount, treasury account is the canister account, or legacy record
+    #pending; // an attempt is open (RetryStore.forwards); sent or resent by the 10-min timer
+    #forwarded : Nat; // pay-token ledger block index
+    #failed : Text; // legacy: forwarding failed; the buyer's credit stands
+    #needsReview; // outcome unknown after 23 h (or legacy): admin verification required
   };
 
   // One pay token -> TTTI-T conversion record.

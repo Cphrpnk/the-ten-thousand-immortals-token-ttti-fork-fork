@@ -3,11 +3,14 @@ import { useLocation } from "@tanstack/react-router";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Coins,
+  Copy,
+  Hash,
   History,
   Link2,
   PiggyBank,
@@ -69,6 +72,7 @@ import {
   MAX_BLOCKS_PER_CALL,
   decodeBlock,
   decodeTipHashTree,
+  hashBlockValue,
   shortHex,
   toHex,
 } from "../lib/icrc3Blocks";
@@ -432,6 +436,74 @@ function BlockId({
   );
 }
 
+/** The block's own hash: shortened toggle to the full hex, plus a copy icon. */
+function BlockHash({ hash, index }: { hash: string; index: number }) {
+  const t = useDict(HISTORY_TEXT);
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const copy = () => {
+    void navigator.clipboard
+      .writeText(hash)
+      .then(() => {
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1800);
+      })
+      .catch(() => undefined);
+  };
+
+  const copyLabel = copied ? t.blockHashCopied : t.blockHashCopy;
+  return (
+    <span
+      className="inline-flex max-w-[18rem] items-start gap-1 text-[11px] text-muted-foreground"
+      data-ocid={`history.block_hash.${index + 1}`}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((open) => !open)}
+        aria-expanded={expanded}
+        title={t.blockHash}
+        className="inline-flex min-w-0 items-start gap-1 rounded text-left font-mono transition-smooth hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-ocid={`history.block_hash_toggle.${index + 1}`}
+      >
+        <Hash className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+        <span className="sr-only">{t.blockHash} </span>
+        <span className={expanded ? "min-w-0 break-all" : ""}>
+          {expanded ? hash : shortHex(hash)}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={copyLabel}
+        title={copyLabel}
+        className="-my-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded transition-smooth hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-5 md:w-5"
+        data-ocid={`history.block_hash_copy.${index + 1}`}
+      >
+        {copied ? (
+          <Check className="h-3 w-3 text-success" aria-hidden="true" />
+        ) : (
+          <Copy className="h-3 w-3" aria-hidden="true" />
+        )}
+      </button>
+      <span
+        className={copied ? "shrink-0 text-success" : "sr-only"}
+        aria-live="polite"
+      >
+        {copied ? t.blockHashCopied : ""}
+      </span>
+    </span>
+  );
+}
+
 function FromValue({ entry }: { entry: DecodedBlock }) {
   const t = useDict(HISTORY_TEXT);
   if (entry.kind === "mint") {
@@ -464,10 +536,19 @@ interface EntryProps {
   highlighted: boolean;
   /** Carries the block anchor id (visible layout only, so ids stay unique). */
   anchored: boolean;
+  /** Lowercase hex of the block's own ICRC-3 hash, once computed. */
+  hash?: string;
   onJump: (id: bigint) => void;
 }
 
-function EntryRow({ entry, index, highlighted, anchored, onJump }: EntryProps) {
+function EntryRow({
+  entry,
+  index,
+  highlighted,
+  anchored,
+  hash,
+  onJump,
+}: EntryProps) {
   const t = useDict(HISTORY_TEXT);
   const details = detailItems(entry, t);
   const rowTone = highlighted ? "bg-primary/10" : "";
@@ -480,7 +561,10 @@ function EntryRow({ entry, index, highlighted, anchored, onJump }: EntryProps) {
         data-ocid={`history.item.${index + 1}`}
       >
         <TableCell className="align-top font-mono text-xs text-muted-foreground">
-          <BlockId entry={entry} index={index} onJump={onJump} />
+          <span className="inline-flex flex-col items-start gap-1">
+            <BlockId entry={entry} index={index} onJump={onJump} />
+            {hash && <BlockHash hash={hash} index={index} />}
+          </span>
         </TableCell>
         <TableCell className="align-top">
           <KindBadge kind={entry.kind} />
@@ -532,6 +616,7 @@ function EntryCard({
   index,
   highlighted,
   anchored,
+  hash,
   onJump,
 }: EntryProps) {
   const t = useDict(HISTORY_TEXT);
@@ -593,6 +678,14 @@ function EntryCard({
           ))}
           <dt className="text-muted-foreground">{t.time}</dt>
           <dd className="text-right">{formatTimestamp(entry.ts)}</dd>
+          {hash && (
+            <>
+              <dt className="text-muted-foreground">{t.blockHash}</dt>
+              <dd className="flex min-w-0 justify-end">
+                <BlockHash hash={hash} index={index} />
+              </dd>
+            </>
+          )}
         </dl>
       </CardContent>
     </Card>
@@ -831,6 +924,32 @@ export function HistoryPage() {
       .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   }, [data, legacyInfo]);
 
+  // Each block's own hash over the raw Value (before decoding), by block id.
+  const [blockHashes, setBlockHashes] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    const blocks = data?.blocks;
+    if (!blocks) return;
+    let active = true;
+    Promise.all(
+      blocks.map(
+        async (block) =>
+          [
+            block.id.toString(),
+            toHex(await hashBlockValue(block.block)),
+          ] as const,
+      ),
+    )
+      .then((pairs) => {
+        if (active) setBlockHashes(new Map(pairs));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [data]);
+
   // Follow a phash link: switch to the page holding the parent, then scroll.
   const jumpToBlock = useCallback(
     (id: bigint) => {
@@ -1022,6 +1141,7 @@ export function HistoryPage() {
                               index={index}
                               highlighted={entry.id === highlightId}
                               anchored={!isMobile}
+                              hash={blockHashes.get(entry.id.toString())}
                               onJump={jumpToBlock}
                             />
                           ))}
@@ -1039,6 +1159,7 @@ export function HistoryPage() {
                         index={index}
                         highlighted={entry.id === highlightId}
                         anchored={isMobile}
+                        hash={blockHashes.get(entry.id.toString())}
                         onJump={jumpToBlock}
                       />
                     ))}

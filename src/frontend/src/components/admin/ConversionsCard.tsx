@@ -7,9 +7,24 @@ import {
   Undo2,
 } from "lucide-react";
 import { Fragment } from "react";
-import type { Conversion } from "../../backend";
+import type { Buyback, Conversion } from "../../backend";
 import { ConversionStatus } from "../../backend";
+import { useAllBuybacks } from "../../hooks/useBuyback";
 import { useConversions } from "../../hooks/useQueries";
+import { BUYBACK_TEXT } from "../../i18n/pages/buyback";
+import {
+  buybackFeeLabel,
+  buybackForPurchase,
+  buybackRuleLabel,
+  buybackStatusLabel,
+  formatAmountReturned,
+  formatBuybackFee,
+  formatThirdPartyFees,
+  formatTttiQuantity,
+  isBuybackEligible,
+  payoutBlockTarget,
+  pullBlockTarget,
+} from "../../lib/buyback";
 import type { BlockLinkTarget } from "../../lib/explorer";
 import {
   formatBlockIndex,
@@ -27,6 +42,7 @@ import {
   encodeAccountText,
   formatBps,
   formatUsdE8,
+  payTokenSymbol,
   truncateAccountText,
 } from "../../lib/token";
 import { ExplorerLink } from "../ExplorerLink";
@@ -129,6 +145,61 @@ function purchaseDetails(c: Conversion): PurchaseDetail[] {
   ];
 }
 
+const BB = BUYBACK_TEXT.en;
+
+/**
+ * Buyback data of a purchase, shared by both layouts: its per-purchase record
+ * made before mass buybacks, or the mass it counts in.
+ */
+function buybackDetails(
+  c: Conversion,
+  b: Buyback | undefined,
+): PurchaseDetail[] {
+  if (!b) {
+    return [
+      {
+        label: BB.historyLabel,
+        value: isBuybackEligible(c)
+          ? `Counted in the ${payTokenSymbol(c.payToken)} mass (mass buybacks are listed in the Buybacks card)`
+          : "Not eligible",
+      },
+    ];
+  }
+  return [
+    { label: BB.historyLabel, value: buybackStatusLabel(b.status, BB) },
+    { label: BB.ruleLabel, value: buybackRuleLabel(b.rule, BB) },
+    {
+      label: BB.amountReturnedLabel,
+      value: formatAmountReturned(b, "en"),
+    },
+    {
+      label: BB.feeLabel(buybackFeeLabel("en")),
+      value: formatBuybackFee(b, "en"),
+    },
+    { label: BB.thirdPartyLabel, value: formatThirdPartyFees(b, "en") },
+    {
+      label: `${TTTI_SYMBOL} taken back`,
+      value: formatTttiQuantity(b.tttiAmount, "en"),
+    },
+    { label: "Buyback date", value: formatTimestamp(b.timestamp) },
+    {
+      label: BB.pullBlockLabel,
+      value: formatBlockIndex(b.pullBlock) ?? BB.notRecorded,
+      target: pullBlockTarget(b),
+      linkLabel: HISTORY_LINK_LABEL,
+      linkKey: "buyback_pull_block",
+    },
+    {
+      label: BB.payoutBlockLabel(payTokenSymbol(b.tokenReturned)),
+      value: formatBlockIndex(b.payoutBlock) ?? BB.notRecorded,
+      target: payoutBlockTarget(b),
+      linkLabel: DASHBOARD_LINK_LABEL,
+      linkKey: "buyback_payout_block",
+    },
+    ...(b.message ? [{ label: "Buyback message", value: b.message }] : []),
+  ];
+}
+
 function truncatePrincipal(principal: Principal): string {
   const text = principal.toText();
   if (text.length <= 18) return text;
@@ -155,6 +226,11 @@ const STATUS_STYLES: Record<
       "border-destructive/50 bg-destructive/20 text-destructive font-semibold",
     icon: AlertCircle,
   },
+  [ConversionStatus.refundReview]: {
+    label: "Refund under review",
+    className: "border-warning/50 bg-warning/15 text-warning font-semibold",
+    icon: AlertCircle,
+  },
   [ConversionStatus.failed]: {
     label: "Failed",
     className: "border-destructive/20 bg-destructive/10 text-destructive",
@@ -173,7 +249,13 @@ function ConversionStatusBadge({ status }: { status: ConversionStatus }) {
   );
 }
 
-function ConversionList({ conversions }: { conversions: Conversion[] }) {
+function ConversionList({
+  conversions,
+  buybacks,
+}: {
+  conversions: Conversion[];
+  buybacks: Buyback[] | undefined;
+}) {
   const sorted = [...conversions].sort((a, b) =>
     a.id < b.id ? 1 : a.id > b.id ? -1 : 0,
   );
@@ -280,6 +362,27 @@ function ConversionList({ conversions }: { conversions: Conversion[] }) {
                         </dd>
                       </div>
                     </dl>
+                    <dl
+                      className="mt-1.5 flex flex-wrap gap-x-6 gap-y-1 border-l border-gold pl-3 text-xs"
+                      data-ocid={`admin.conversion_buyback.${index + 1}`}
+                    >
+                      {buybackDetails(
+                        conversion,
+                        buybackForPurchase(buybacks, conversion.id),
+                      ).map((detail) => (
+                        <div key={detail.label} className="flex gap-1.5">
+                          <dt className="text-muted-foreground">
+                            {detail.label}
+                          </dt>
+                          <dd className="font-mono tabular-nums">
+                            <DetailValue
+                              detail={detail}
+                              ocid={`admin.conversion_${detail.linkKey}_link.${index + 1}`}
+                            />
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
                   </TableCell>
                 </TableRow>
               </Fragment>
@@ -335,6 +438,20 @@ function ConversionList({ conversions }: { conversions: Conversion[] }) {
                   </dd>
                 </Fragment>
               ))}
+              {buybackDetails(
+                conversion,
+                buybackForPurchase(buybacks, conversion.id),
+              ).map((detail) => (
+                <Fragment key={`buyback-${detail.label}`}>
+                  <dt className="text-muted-foreground">{detail.label}</dt>
+                  <dd className="font-mono text-right tabular-nums break-words">
+                    <DetailValue
+                      detail={detail}
+                      ocid={`admin.conversion_item_${detail.linkKey}_link.${index + 1}`}
+                    />
+                  </dd>
+                </Fragment>
+              ))}
               <dt className="text-muted-foreground/70">{AUDIT_RATE_LABEL}</dt>
               <dd className="font-mono text-right tabular-nums text-muted-foreground/70">
                 {formatUsdE8(conversion.priceUsdE8)}
@@ -367,6 +484,7 @@ function ConversionList({ conversions }: { conversions: Conversion[] }) {
 /** Read-only list of every purchase, most recent first. */
 export function ConversionsCard({ className }: { className: string }) {
   const { data: conversions, isLoading } = useConversions();
+  const { data: buybacks } = useAllBuybacks();
 
   return (
     <Card className={className} data-ocid="admin.conversions_card">
@@ -378,7 +496,8 @@ export function ConversionsCard({ className }: { className: string }) {
         <CardDescription>
           Every purchase with the token paid, the fee, the net refundable basis,
           the {TTTI_SYMBOL} received, the ratios, the block indexes, the USD
-          price used and its status, most recent first. Read-only.
+          price used and its status, with its per-purchase buyback record or the
+          mass it counts in, most recent first. Read-only.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -412,7 +531,7 @@ export function ConversionsCard({ className }: { className: string }) {
             </div>
           </div>
         ) : (
-          <ConversionList conversions={conversions} />
+          <ConversionList conversions={conversions} buybacks={buybacks} />
         )}
       </CardContent>
     </Card>

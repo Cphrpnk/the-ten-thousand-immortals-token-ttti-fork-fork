@@ -362,6 +362,91 @@ export function decodeBlock(
   return decodeBlockValue(block.id, block.block, legacyInfo);
 }
 
+// --- ICRC-3 representation-independent hash ------------------------------------
+
+function encodeLeb128(value: bigint): number[] {
+  const out: number[] = [];
+  let rest = value;
+  do {
+    const byte = Number(rest & 0x7fn);
+    rest >>= 7n;
+    out.push(rest > 0n ? byte | 0x80 : byte);
+  } while (rest > 0n);
+  return out;
+}
+
+function encodeSleb128(value: bigint): number[] {
+  const out: number[] = [];
+  let rest = value;
+  for (;;) {
+    const byte = Number(rest & 0x7fn);
+    rest >>= 7n;
+    const done =
+      (rest === 0n && (byte & 0x40) === 0) ||
+      (rest === -1n && (byte & 0x40) !== 0);
+    out.push(done ? byte : byte | 0x80);
+    if (done) return out;
+  }
+}
+
+async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
+  const copy = new Uint8Array(bytes);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", copy));
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return a.length - b.length;
+}
+
+/**
+ * ICRC-3 representation-independent hash (SHA-256) of a block Value exactly
+ * as returned by icrc3_get_blocks. Legacy Text blocks hash as sha256(utf8).
+ * The hash of block N equals the phash stored in block N+1.
+ */
+export async function hashBlockValue(value: BlockValue): Promise<Uint8Array> {
+  switch (value.__kind__) {
+    case "Nat":
+      return sha256(new Uint8Array(encodeLeb128(value.Nat)));
+    case "Int":
+      return sha256(new Uint8Array(encodeSleb128(value.Int)));
+    case "Text":
+      return sha256(new TextEncoder().encode(value.Text));
+    case "Blob":
+      return sha256(value.Blob);
+    case "Array":
+      return sha256(
+        concatBytes(await Promise.all(value.Array.map(hashBlockValue))),
+      );
+    case "Map": {
+      const pairs = await Promise.all(
+        value.Map.map(async ([key, inner]) =>
+          concatBytes([
+            await sha256(new TextEncoder().encode(key)),
+            await hashBlockValue(inner),
+          ]),
+        ),
+      );
+      pairs.sort(compareBytes);
+      return sha256(concatBytes(pairs));
+    }
+  }
+}
+
 // --- Tip certificate hash tree -------------------------------------------------
 
 export interface DecodedHashTree {

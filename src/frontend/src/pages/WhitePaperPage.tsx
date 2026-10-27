@@ -11,6 +11,7 @@ import {
 } from "../hooks/useQueries";
 import { SITE_TEXT } from "../i18n/common";
 import { useDict } from "../i18n/core";
+import { MINT_INFO_EN } from "../i18n/pages/buy";
 import { FAQ_TEXT } from "../i18n/pages/landing";
 import { WHITE_PAPER_TEXT } from "../i18n/pages/whitePaper";
 import {
@@ -373,7 +374,7 @@ export function WhitePaperPage() {
                     <strong>
                       {formatUnits(MIN_PURCHASE, TTTI_DECIMALS, 0)} TTTI-T
                     </strong>{" "}
-                    is {formatInteger(MIN_PURCHASE)} base units, as on the buy
+                    is {formatInteger(MIN_PURCHASE)} base units, as on the mint
                     page. A smaller purchase is accepted only when it takes
                     everything that remains available.
                   </p>
@@ -423,9 +424,19 @@ export function WhitePaperPage() {
                     the {maxSupplyLabel} TTTI-T maximum. No one, administrators
                     included, has a separate mint operation. Each purchase mints
                     new tokens first; transfer fees collected in the fee account
-                    are delivered to buyers only after fresh minting has reached
-                    the cap.
+                    are delivered to minters only after fresh minting has
+                    reached the cap.
                   </p>
+                  <div
+                    className="space-y-2 border-l paper-rule pl-5"
+                    data-ocid="white_paper.mint_info.panel"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em]">
+                      {t.mintInfoHeading}
+                    </p>
+                    <p>{MINT_INFO_EN.paragraphs[0]}</p>
+                    <p>{MINT_INFO_EN.paragraphs[1]}</p>
+                  </div>
                   <p data-ocid="white_paper.rate.text">
                     {rateText} A rate is never used more than 5 minutes past its
                     one-hour validity. When every source fails, the fetch is
@@ -456,7 +467,7 @@ export function WhitePaperPage() {
                     Each account can run one purchase at a time; a purchase
                     started while another is in progress is refused. An ICP
                     payment uses an approval that expires after 15 minutes. The
-                    buy page opens with ICP selected.
+                    mint page opens with ICP selected.
                   </p>
                   <p data-ocid="white_paper.purchase_records.text">
                     Each purchase record keeps the exact amount paid, the fee,
@@ -537,7 +548,7 @@ export function WhitePaperPage() {
                   <p>TTTI and THAT have the same creator.</p>
                   <p>
                     No free tokens. The creator received no TTTI or TTTI-T at
-                    creation. Any token the creator holds was bought at the same
+                    creation. Any token the creator holds was minted at the same
                     price as everyone else.
                   </p>
                   <p>
@@ -545,8 +556,9 @@ export function WhitePaperPage() {
                     holding will be published here.
                   </p>
                   <p>
-                    No price support. The creator does not buy back TTTI, defend
-                    a price or trade to create volume.
+                    No guaranteed price support. The creator may fund optional,
+                    limited buybacks with personal funds, but does not defend a
+                    price or trade to create volume.
                   </p>
                   <p>
                     No mechanical link to THAT. TTTI cannot be exchanged for

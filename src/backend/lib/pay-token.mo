@@ -214,8 +214,11 @@ module {
     };
   };
 
-  // icrc2_transfer_from(buyer -> canisterAccount, amount); canister is the spender.
-  public func collect(payLedger : PayLedger, buyer : Principal, canisterAccount : Account, amount : Nat) : async Treasury.CollectResult {
+  // icrc2_transfer_from(buyer -> canisterAccount, amount); canister is the
+  // spender. Always sends the purchase trace memo (TTTI-PC-<n>) and its
+  // created_at_time. Ok or #Duplicate -> #ok(block); Err -> #ledgerError;
+  // rejected call -> #callFailed (outcome unknown).
+  public func collect(payLedger : PayLedger, buyer : Principal, canisterAccount : Account, amount : Nat, memo : Blob, createdAtTime : Nat64) : async Treasury.CollectResult {
     try {
       let result = await payLedger.icrc2_transfer_from({
         spender_subaccount = null;
@@ -223,11 +226,12 @@ module {
         to = canisterAccount;
         amount;
         fee = null;
-        memo = null;
-        created_at_time = null;
+        memo = ?memo;
+        created_at_time = ?createdAtTime;
       });
       switch (result) {
         case (#Ok(blockIndex)) { #ok(blockIndex) };
+        case (#Err(#Duplicate({ duplicate_of }))) { #ok(duplicate_of) };
         case (#Err(err)) { #ledgerError(err) };
       };
     } catch (e) {
@@ -235,80 +239,33 @@ module {
     };
   };
 
-  // icrc1_transfer(canister -> buyer, amount - ledger fee).
-  public func refund(payLedger : PayLedger, token : PayToken, buyer : Principal, amount : Nat) : async { #ok : Nat; #err : Text } {
-    let net = minusFee(token, amount);
-    if (net == 0) {
-      return #err("the amount does not cover the " # feeText(token) # " ledger fee");
-    };
-    try {
-      let result = await payLedger.icrc1_transfer({
-        from_subaccount = null;
-        to = { owner = buyer; subaccount = null };
-        amount = net;
-        fee = null;
-        memo = null;
-        created_at_time = null;
-      });
-      switch (result) {
-        case (#Ok(blockIndex)) { #ok(blockIndex) };
-        case (#Err(err)) { #err(transferFromErrorMessage(token, err)) };
-      };
-    } catch (e) {
-      #err("the " # symbol(token) # " ledger could not be reached: " # e.message());
-    };
-  };
-
-  // icrc1_transfer(canister -> target, amount - ledger fee); #notRequired when
-  // target is the canister account.
-  public func forward(payLedger : PayLedger, token : PayToken, canisterAccount : Account, target : Account, amount : Nat) : async Treasury.ForwardStatus {
-    if (target == canisterAccount) {
-      return #notRequired;
-    };
-    let net = minusFee(token, amount);
-    if (net == 0) {
-      return #failed("The amount does not cover the " # feeText(token) # " ledger fee");
-    };
-    try {
-      let result = await payLedger.icrc1_transfer({
-        from_subaccount = null;
-        to = target;
-        amount = net;
-        fee = null;
-        memo = null;
-        created_at_time = null;
-      });
-      switch (result) {
-        case (#Ok(blockIndex)) { #forwarded(blockIndex) };
-        case (#Err(err)) { #failed(transferFromErrorMessage(token, err)) };
-      };
-    } catch (e) {
-      #failed("The " # symbol(token) # " ledger could not be reached: " # e.message());
-    };
-  };
-
-  // icrc1_transfer(canister `subaccount` -> to, debit - ledger fee): the
-  // subaccount is debited exactly `debit`. Never traps.
-  public func sendFromSubaccount(payLedger : PayLedger, token : PayToken, subaccount : Blob, to : Account, debit : Nat) : async { #ok : Nat; #err : Text } {
+  // icrc1_transfer(canister `subaccount` -> to, debit - ledger fee, explicit
+  // ledger fee) with `memo` and `createdAtTime` passed unchanged: the
+  // subaccount is debited exactly `debit`. Ok or #Duplicate -> #ok(block);
+  // ledger Err or an amount not covering the fee -> #ledgerError (nothing
+  // moved); rejected call -> #callFailed (outcome unknown). Never traps.
+  // Outcomes are classified by lib/retry.mo (sendBtcCounted).
+  public func sendFromSubaccount(payLedger : PayLedger, token : PayToken, subaccount : Blob, to : Account, debit : Nat, memo : Blob, createdAtTime : Nat64) : async Treasury.CollectResult {
     let net = minusFee(token, debit);
     if (net == 0) {
-      return #err("the amount does not cover the " # feeText(token) # " ledger fee");
+      return #ledgerError(#GenericError({ error_code = 0; message = "the amount does not cover the " # feeText(token) # " ledger fee" }));
     };
     try {
       let result = await payLedger.icrc1_transfer({
         from_subaccount = ?subaccount;
         to;
         amount = net;
-        fee = null;
-        memo = null;
-        created_at_time = null;
+        fee = ?expectedFee(token);
+        memo = ?memo;
+        created_at_time = ?createdAtTime;
       });
       switch (result) {
         case (#Ok(blockIndex)) { #ok(blockIndex) };
-        case (#Err(err)) { #err(transferFromErrorMessage(token, err)) };
+        case (#Err(#Duplicate({ duplicate_of }))) { #ok(duplicate_of) };
+        case (#Err(err)) { #ledgerError(err) };
       };
     } catch (e) {
-      #err("the " # symbol(token) # " ledger could not be reached: " # e.message());
+      #callFailed(e.message());
     };
   };
 

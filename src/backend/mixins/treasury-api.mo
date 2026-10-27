@@ -11,6 +11,7 @@ import IcrcLib "../lib/icrc";
 import OracleLib "../lib/oracle";
 import CyclesReserveLib "../lib/cycles-reserve";
 import PayTokenLib "../lib/pay-token";
+import RetryLib "../lib/retry";
 
 // Treasury configuration (the accounts that receive the creator's ICP, ckBTC,
 // ckUSDC and ckUSDT), conversion history and the buy-to-mint purchase
@@ -31,6 +32,8 @@ mixin (
   // Principals with a purchase in flight (one per principal), shared with the
   // BTC deposit finalization. Transient, owned by main.mo.
   purchasesInFlight : Set.Set<Principal>,
+  // FW / SH retry context of the purchase pipeline. Transient, owned by main.mo.
+  transferContext : RetryLib.TransferContext,
 ) {
   // The ICP ledger canister (mainnet). Transient: a capability handle.
   transient let icpLedger : TreasuryLib.IcpLedger = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai");
@@ -58,6 +61,7 @@ mixin (
       icpLedger;
       canister = canisterPrincipal;
       cyclesReserve;
+      transfers = transferContext;
     };
   };
 

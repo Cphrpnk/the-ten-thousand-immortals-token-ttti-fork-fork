@@ -144,7 +144,7 @@ export const HERO_TEXT = defineDict({
   ko: {
     statusComplete: "테스트 할당 완료",
     statusPaused: "테스트 구매 일시 중지",
-    statusOpen: "TTTI-T 구매 가능",
+    statusOpen: "TTTI-T 발행 가능",
     crestAlt: "만 명의 불사대 엠블럼: TTTI 워드마크 위의 금색 날개 투구",
     titleLead: "만 명의 ",
     titleAccent: "불사대.",
@@ -1025,7 +1025,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Total supply: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Creator disclosures",
     disclosure1:
-      "The ICP, ckBTC, ckUSDC or ckUSDT you pay goes to the creator, except the ICP fee share that funds the canister's cycles. The creator does not buy back, defend a price or trade to create volume. He will not open a liquidity pool or list TTTI on any other exchange. Any market is created by holders.",
+      "The ICP, ckBTC, ckUSDC or ckUSDT you pay goes to the creator, except the ICP fee share that funds the canister's cycles. The creator may fund buybacks with personal funds. Buybacks are optional and limited, and nobody is obligated to buy back. The creator does not defend a price or trade to create volume. He will not open a liquidity pool or list TTTI on any other exchange. Any market is created by holders.",
     disclosure2:
       "TTTI and THAT have the same creator. TTTI has no link to THAT: it cannot be exchanged for THAT, used inside THAT, or converted into anything else.",
   },
@@ -1052,7 +1052,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Offre totale : ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Déclarations du créateur",
     disclosure1:
-      "L'ICP, le ckBTC, le ckUSDC ou le ckUSDT que vous payez revient au créateur, à l'exception de la part des frais en ICP qui finance les cycles du canister. Le créateur ne rachète pas, ne défend aucun prix et n'effectue pas de transactions pour créer du volume. Il n'ouvrira pas de pool de liquidité et ne listera TTTI sur aucune autre plateforme d'échange. Tout marché est créé par les détenteurs.",
+      "L'ICP, le ckBTC, le ckUSDC ou le ckUSDT que vous payez revient au créateur, à l'exception de la part des frais en ICP qui finance les cycles du canister. Le créateur peut financer des rachats avec ses fonds personnels. Les rachats sont facultatifs et limités, et personne n'est obligé de racheter. Le créateur ne défend aucun prix et n'effectue pas de transactions pour créer du volume. Il n'ouvrira pas de pool de liquidité et ne listera TTTI sur aucune autre plateforme d'échange. Tout marché est créé par les détenteurs.",
     disclosure2:
       "TTTI et THAT ont le même créateur. TTTI n'a aucun lien avec THAT : il ne peut pas être échangé contre THAT, ni utilisé au sein de THAT, ni converti en quoi que ce soit d'autre.",
   },
@@ -1079,7 +1079,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Suministro total: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Declaraciones del creador",
     disclosure1:
-      "El ICP, ckBTC, ckUSDC o ckUSDT que usted paga va al creador, excepto la parte de la comisión en ICP que financia los ciclos del canister. El creador no recompra, no defiende ningún precio ni opera para generar volumen. No abrirá ningún pool de liquidez ni listará TTTI en ninguna otra plataforma de intercambio. Cualquier mercado lo crean los poseedores.",
+      "El ICP, ckBTC, ckUSDC o ckUSDT que usted paga va al creador, excepto la parte de la comisión en ICP que financia los ciclos del canister. El creador puede financiar recompras con fondos personales. Las recompras son opcionales y limitadas, y nadie está obligado a recomprar. El creador no defiende ningún precio ni opera para generar volumen. No abrirá ningún pool de liquidez ni listará TTTI en ninguna otra plataforma de intercambio. Cualquier mercado lo crean los poseedores.",
     disclosure2:
       "TTTI y THAT tienen el mismo creador. TTTI no tiene ningún vínculo con THAT: no puede intercambiarse por THAT, ni usarse dentro de THAT, ni convertirse en ninguna otra cosa.",
   },
@@ -1104,7 +1104,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `总供应量：${total} / ${max} ${symbol}（${percent}%）`,
     disclosuresTitle: "创建者声明",
     disclosure1:
-      "您支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 归创建者所有，但用于支付该 canister cycles 的 ICP 手续费部分除外。创建者不回购、不维护任何价格，也不为制造交易量而交易。他不会开设流动性池，也不会在任何其他交易所上架 TTTI。任何市场均由持有者创建。",
+      "您支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 归创建者所有，但用于支付该 canister cycles 的 ICP 手续费部分除外。创建者可以用个人资金为回购提供资金。回购是可选且有限的，任何人都没有回购的义务。创建者不维护任何价格，也不为制造交易量而交易。他不会开设流动性池，也不会在任何其他交易所上架 TTTI。任何市场均由持有者创建。",
     disclosure2:
       "TTTI 与 THAT 出自同一创建者。TTTI 与 THAT 没有任何关联：它不能兑换为 THAT，不能在 THAT 中使用，也不能转换为任何其他东西。",
   },
@@ -1131,7 +1131,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Oferta total: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Declarações do criador",
     disclosure1:
-      "O ICP, ckBTC, ckUSDC ou ckUSDT que você paga vai para o criador, exceto a parcela da taxa em ICP que financia os cycles do canister. O criador não recompra, não defende nenhum preço nem negocia para gerar volume. Ele não abrirá nenhum pool de liquidez nem listará TTTI em nenhuma outra plataforma de negociação. Qualquer mercado é criado pelos detentores.",
+      "O ICP, ckBTC, ckUSDC ou ckUSDT que você paga vai para o criador, exceto a parcela da taxa em ICP que financia os cycles do canister. O criador pode financiar recompras com fundos pessoais. As recompras são opcionais e limitadas, e ninguém é obrigado a recomprar. O criador não defende nenhum preço nem negocia para gerar volume. Ele não abrirá nenhum pool de liquidez nem listará TTTI em nenhuma outra plataforma de negociação. Qualquer mercado é criado pelos detentores.",
     disclosure2:
       "TTTI e THAT têm o mesmo criador. TTTI não tem nenhum vínculo com THAT: não pode ser trocado por THAT, nem usado dentro de THAT, nem convertido em qualquer outra coisa.",
   },
@@ -1156,7 +1156,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `총 공급량: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "창작자 고지",
     disclosure1:
-      "귀하가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT는 canister의 cycles 비용에 충당되는 ICP 수수료 몫을 제외하고 창작자에게 갑니다. 창작자는 되사지 않고, 가격을 방어하지 않으며, 거래량을 만들기 위해 거래하지 않습니다. 창작자는 유동성 풀을 열지 않으며 다른 어떤 거래소에도 TTTI를 상장하지 않습니다. 모든 시장은 보유자가 만듭니다.",
+      "귀하가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT는 canister의 cycles 비용에 충당되는 ICP 수수료 몫을 제외하고 창작자에게 갑니다. 창작자는 개인 자금으로 환매 자금을 댈 수 있습니다. 환매는 선택적이고 제한적이며, 누구도 환매할 의무가 없습니다. 창작자는 가격을 방어하지 않으며, 거래량을 만들기 위해 거래하지 않습니다. 창작자는 유동성 풀을 열지 않으며 다른 어떤 거래소에도 TTTI를 상장하지 않습니다. 모든 시장은 보유자가 만듭니다.",
     disclosure2:
       "TTTI와 THAT은 창작자가 같습니다. TTTI는 THAT과 아무 관련이 없습니다: THAT으로 교환할 수 없고, THAT 안에서 사용할 수 없으며, 다른 어떤 것으로도 전환할 수 없습니다.",
   },
@@ -1181,7 +1181,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `ਕੁੱਲ ਸਪਲਾਈ: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "ਨਿਰਮਾਤਾ ਦੇ ਖੁਲਾਸੇ",
     disclosure1:
-      "ਤੁਸੀਂ ਜੋ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਅਦਾ ਕਰਦੇ ਹੋ ਉਹ ਨਿਰਮਾਤਾ ਨੂੰ ਜਾਂਦਾ ਹੈ, ICP ਫੀਸ ਦੇ ਉਸ ਹਿੱਸੇ ਨੂੰ ਛੱਡ ਕੇ ਜੋ canister ਦੇ cycles ਦਾ ਖਰਚਾ ਚੁੱਕਦਾ ਹੈ। ਨਿਰਮਾਤਾ ਵਾਪਸ ਨਹੀਂ ਖਰੀਦਦਾ, ਕਿਸੇ ਕੀਮਤ ਦਾ ਬਚਾਅ ਨਹੀਂ ਕਰਦਾ ਅਤੇ ਵਾਲੀਅਮ ਬਣਾਉਣ ਲਈ ਵਪਾਰ ਨਹੀਂ ਕਰਦਾ। ਉਹ ਕੋਈ ਲਿਕਵਿਡਿਟੀ ਪੂਲ ਨਹੀਂ ਖੋਲ੍ਹੇਗਾ ਅਤੇ TTTI ਨੂੰ ਕਿਸੇ ਹੋਰ ਐਕਸਚੇਂਜ 'ਤੇ ਸੂਚੀਬੱਧ ਨਹੀਂ ਕਰੇਗਾ। ਕੋਈ ਵੀ ਬਾਜ਼ਾਰ ਧਾਰਕਾਂ ਵੱਲੋਂ ਬਣਾਇਆ ਜਾਂਦਾ ਹੈ।",
+      "ਤੁਸੀਂ ਜੋ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਅਦਾ ਕਰਦੇ ਹੋ ਉਹ ਨਿਰਮਾਤਾ ਨੂੰ ਜਾਂਦਾ ਹੈ, ICP ਫੀਸ ਦੇ ਉਸ ਹਿੱਸੇ ਨੂੰ ਛੱਡ ਕੇ ਜੋ canister ਦੇ cycles ਦਾ ਖਰਚਾ ਚੁੱਕਦਾ ਹੈ। ਨਿਰਮਾਤਾ ਨਿੱਜੀ ਫੰਡਾਂ ਨਾਲ ਵਾਪਸ ਖਰੀਦਾਂ ਲਈ ਫੰਡ ਦੇ ਸਕਦਾ ਹੈ। ਵਾਪਸ ਖਰੀਦਾਂ ਵਿਕਲਪਿਕ ਅਤੇ ਸੀਮਤ ਹਨ, ਅਤੇ ਕੋਈ ਵੀ ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਮਜਬੂਰ ਨਹੀਂ ਹੈ। ਨਿਰਮਾਤਾ ਕਿਸੇ ਕੀਮਤ ਦਾ ਬਚਾਅ ਨਹੀਂ ਕਰਦਾ ਅਤੇ ਵਾਲੀਅਮ ਬਣਾਉਣ ਲਈ ਵਪਾਰ ਨਹੀਂ ਕਰਦਾ। ਉਹ ਕੋਈ ਲਿਕਵਿਡਿਟੀ ਪੂਲ ਨਹੀਂ ਖੋਲ੍ਹੇਗਾ ਅਤੇ TTTI ਨੂੰ ਕਿਸੇ ਹੋਰ ਐਕਸਚੇਂਜ 'ਤੇ ਸੂਚੀਬੱਧ ਨਹੀਂ ਕਰੇਗਾ। ਕੋਈ ਵੀ ਬਾਜ਼ਾਰ ਧਾਰਕਾਂ ਵੱਲੋਂ ਬਣਾਇਆ ਜਾਂਦਾ ਹੈ।",
     disclosure2:
       "TTTI ਅਤੇ THAT ਦਾ ਨਿਰਮਾਤਾ ਇੱਕੋ ਹੈ। TTTI ਦਾ THAT ਨਾਲ ਕੋਈ ਸਬੰਧ ਨਹੀਂ ਹੈ: ਇਸ ਨੂੰ THAT ਨਾਲ ਬਦਲਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ, THAT ਦੇ ਅੰਦਰ ਵਰਤਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ, ਜਾਂ ਕਿਸੇ ਹੋਰ ਚੀਜ਼ ਵਿੱਚ ਬਦਲਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ।",
   },
@@ -1193,9 +1193,10 @@ export const HOW_TEXT = defineDict({
     title: "How it works",
     walletTitle: "Pick a wallet",
     walletText: "Use the built-in wallet in one tap, or bring your own.",
-    icpTitle: "Add ICP",
-    icpText: "Buy ICP by card, or transfer what you already hold.",
-    buyTitle: "Buy TTTI-T",
+    icpTitle: "Add a payment token",
+    icpText:
+      "Pay in ICP, ckBTC, ckUSDC or ckUSDT, or send BTC to your personal deposit address (converted to ckBTC). Buy ICP by card, or transfer what you already hold.",
+    buyTitle: "Mint TTTI-T",
     buyText: "One button. Your tokens land in your wallet.",
   },
   fr: {
@@ -1203,10 +1204,10 @@ export const HOW_TEXT = defineDict({
     title: "Comment ça marche",
     walletTitle: "Choisir un wallet",
     walletText: "Utilisez le wallet intégré en un clic, ou apportez le vôtre.",
-    icpTitle: "Ajouter de l'ICP",
+    icpTitle: "Ajouter un jeton de paiement",
     icpText:
-      "Achetez de l'ICP par carte, ou transférez celui que vous détenez déjà.",
-    buyTitle: "Acheter du TTTI-T",
+      "Payez en ICP, ckBTC, ckUSDC ou ckUSDT, ou envoyez du BTC à votre adresse de dépôt personnelle (converti en ckBTC). Achetez de l'ICP par carte, ou transférez ce que vous détenez déjà.",
+    buyTitle: "Frapper du TTTI-T",
     buyText: "Un seul bouton. Vos jetons arrivent dans votre wallet.",
   },
   es: {
@@ -1214,9 +1215,10 @@ export const HOW_TEXT = defineDict({
     title: "Cómo funciona",
     walletTitle: "Elegir un wallet",
     walletText: "Use el wallet integrado con un toque, o traiga el suyo.",
-    icpTitle: "Añadir ICP",
-    icpText: "Compre ICP con tarjeta, o transfiera el que ya tiene.",
-    buyTitle: "Comprar TTTI-T",
+    icpTitle: "Añadir un token de pago",
+    icpText:
+      "Pague en ICP, ckBTC, ckUSDC o ckUSDT, o envíe BTC a su dirección de depósito personal (convertido en ckBTC). Compre ICP con tarjeta, o transfiera lo que ya tiene.",
+    buyTitle: "Acuñar TTTI-T",
     buyText: "Un solo botón. Sus tokens llegan a su wallet.",
   },
   "zh-Hans": {
@@ -1224,9 +1226,10 @@ export const HOW_TEXT = defineDict({
     title: "如何运作",
     walletTitle: "选择钱包",
     walletText: "一键使用内置钱包，或使用您自己的钱包。",
-    icpTitle: "添加 ICP",
-    icpText: "用银行卡购买 ICP，或转入您已持有的 ICP。",
-    buyTitle: "购买 TTTI-T",
+    icpTitle: "添加支付代币",
+    icpText:
+      "以 ICP、ckBTC、ckUSDC 或 ckUSDT 支付，或将 BTC 发送至您的个人存款地址（转换为 ckBTC）。用银行卡购买 ICP，或转入您已持有的代币。",
+    buyTitle: "铸造 TTTI-T",
     buyText: "只需一个按钮。代币直接到达您的钱包。",
   },
   "pt-BR": {
@@ -1234,9 +1237,10 @@ export const HOW_TEXT = defineDict({
     title: "Como funciona",
     walletTitle: "Escolha uma carteira",
     walletText: "Use a carteira integrada com um toque, ou traga a sua.",
-    icpTitle: "Adicione ICP",
-    icpText: "Compre ICP com cartão, ou transfira o que você já tem.",
-    buyTitle: "Compre TTTI-T",
+    icpTitle: "Adicione um token de pagamento",
+    icpText:
+      "Pague em ICP, ckBTC, ckUSDC ou ckUSDT, ou envie BTC para o seu endereço de depósito pessoal (convertido em ckBTC). Compre ICP com cartão, ou transfira o que você já tem.",
+    buyTitle: "Cunhe TTTI-T",
     buyText: "Um botão. Seus tokens chegam à sua carteira.",
   },
   ko: {
@@ -1245,9 +1249,10 @@ export const HOW_TEXT = defineDict({
     walletTitle: "지갑 선택",
     walletText:
       "한 번의 탭으로 내장 지갑을 사용하거나, 직접 가진 지갑을 사용하세요.",
-    icpTitle: "ICP 추가",
-    icpText: "카드로 ICP를 구매하거나, 이미 보유한 ICP를 전송하세요.",
-    buyTitle: "TTTI-T 구매",
+    icpTitle: "결제 토큰 추가",
+    icpText:
+      "ICP, ckBTC, ckUSDC 또는 ckUSDT로 결제하거나, 개인 입금 주소로 BTC를 보내세요(ckBTC로 전환됨). 카드로 ICP를 구매하거나, 이미 보유한 토큰을 전송하세요.",
+    buyTitle: "TTTI-T 발행",
     buyText: "버튼 하나면 됩니다. 토큰이 지갑으로 들어옵니다.",
   },
   "pa-Guru": {
@@ -1255,9 +1260,10 @@ export const HOW_TEXT = defineDict({
     title: "ਇਹ ਕਿਵੇਂ ਕੰਮ ਕਰਦਾ ਹੈ",
     walletTitle: "ਇੱਕ ਵਾਲਿਟ ਚੁਣੋ",
     walletText: "ਇੱਕ ਟੈਪ ਨਾਲ ਬਿਲਟ-ਇਨ ਵਾਲਿਟ ਵਰਤੋ, ਜਾਂ ਆਪਣਾ ਲਿਆਓ।",
-    icpTitle: "ICP ਜੋੜੋ",
-    icpText: "ਕਾਰਡ ਨਾਲ ICP ਖਰੀਦੋ, ਜਾਂ ਜੋ ਤੁਹਾਡੇ ਕੋਲ ਪਹਿਲਾਂ ਹੈ ਉਹ ਟ੍ਰਾਂਸਫਰ ਕਰੋ।",
-    buyTitle: "TTTI-T ਖਰੀਦੋ",
+    icpTitle: "ਭੁਗਤਾਨ ਟੋਕਨ ਜੋੜੋ",
+    icpText:
+      "ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚ ਭੁਗਤਾਨ ਕਰੋ, ਜਾਂ ਆਪਣੇ ਨਿੱਜੀ ਜਮ੍ਹਾਂ ਪਤੇ 'ਤੇ BTC ਭੇਜੋ (ckBTC ਵਿੱਚ ਬਦਲਿਆ ਜਾਂਦਾ ਹੈ)। ਕਾਰਡ ਨਾਲ ICP ਖਰੀਦੋ, ਜਾਂ ਜੋ ਤੁਹਾਡੇ ਕੋਲ ਪਹਿਲਾਂ ਹੈ ਉਹ ਟ੍ਰਾਂਸਫਰ ਕਰੋ।",
+    buyTitle: "TTTI-T ਮਿੰਟ ਕਰੋ",
     buyText: "ਇੱਕ ਬਟਨ। ਤੁਹਾਡੇ ਟੋਕਨ ਤੁਹਾਡੇ ਵਾਲਿਟ ਵਿੱਚ ਪਹੁੰਚ ਜਾਂਦੇ ਹਨ।",
   },
 });
@@ -1265,28 +1271,28 @@ export const HOW_TEXT = defineDict({
 export const FAQ_TEXT = defineDict({
   en: {
     label: "Questions",
-    title: "Before you buy",
-    intro: "Clear answers on the token, the wallets and how a purchase works.",
+    title: "Before you mint",
+    intro: "Clear answers on the token, the wallets and how minting works.",
     whatQ: "What is TTTI-T?",
     whatA:
       "TTTI-T is the test release of TTTI, an exchange currency on the Internet Computer. The ledger uses 8 decimals, and this test release contains one token. The price is 10,000 USD per token plus a fee, paid in ICP, ckBTC, ckUSDC or ckUSDT.",
     noReturns: "There is no promise of returns of any kind.",
     icpQ: "How do I get ICP?",
-    icpBefore: "TTTI-T is bought with ICP. If you do not hold any yet, visit ",
+    icpBefore: "TTTI-T is minted with ICP. If you do not hold any yet, visit ",
     icpLink: "Get ICP first",
     icpAfter:
-      " for trusted ways to buy ICP and send it to your wallet, then come back to complete your purchase.",
+      " for trusted ways to buy ICP and send it to your wallet, then come back to mint.",
     btcQ: "Can I pay in BTC?",
     rateQ: "How is the USD rate set?",
     walletsQ: "Which wallets are supported?",
     walletsA:
       "You can sign in with Internet Identity or with the Plug wallet. Both keep you in control: the app reads your balances and you sign every transfer yourself.",
-    whereQ: "Where do my purchased tokens appear?",
+    whereQ: "Where do my minted tokens appear?",
     whereBefore:
-      "Your TTTI-T purchase is delivered to the account you signed in with. It appears under TTTI-T on the ",
+      "Your minted TTTI-T is delivered to the account you signed in with. It appears under TTTI-T on the ",
     whereLink: "Wallet page",
     whereAfter:
-      ". If you prefer, you can add an optional delivery address (a Principal ID) before buying — it is never required.",
+      ". If you prefer, you can add an optional delivery address (a Principal ID) before minting — it is never required.",
     supplyQ: "How many tokens can exist?",
     supplyIntro: "TTTI is the future version; TTTI-T is the live test.",
     privacyQ: "What is public, and what does the app keep?",
@@ -1295,30 +1301,30 @@ export const FAQ_TEXT = defineDict({
   },
   fr: {
     label: "Questions",
-    title: "Avant d'acheter",
+    title: "Avant de frapper",
     intro:
-      "Des réponses claires sur le jeton, les wallets et le déroulement d'un achat.",
+      "Des réponses claires sur le jeton, les wallets et le déroulement de la frappe.",
     whatQ: "Qu'est-ce que TTTI-T ?",
     whatA:
       "TTTI-T est la version de test de TTTI, une monnaie d'échange sur l'Internet Computer. Le ledger utilise 8 décimales, et cette version de test contient un jeton. Le prix est de 10,000 USD par jeton plus des frais, payés en ICP, ckBTC, ckUSDC ou ckUSDT.",
     noReturns: "Il n'existe aucune promesse de rendement d'aucune sorte.",
     icpQ: "Comment obtenir de l'ICP ?",
     icpBefore:
-      "TTTI-T s'achète avec de l'ICP. Si vous n'en détenez pas encore, consultez d'abord ",
+      "TTTI-T se frappe avec de l'ICP. Si vous n'en détenez pas encore, consultez d'abord ",
     icpLink: "Obtenir de l'ICP",
     icpAfter:
-      " pour des moyens fiables d'acheter de l'ICP et de l'envoyer dans votre wallet, puis revenez finaliser votre achat.",
+      " pour des moyens fiables d'acheter de l'ICP et de l'envoyer dans votre wallet, puis revenez frapper.",
     btcQ: "Puis-je payer en BTC ?",
     rateQ: "Comment le taux USD est-il fixé ?",
     walletsQ: "Quels wallets sont pris en charge ?",
     walletsA:
       "Vous pouvez vous connecter avec Internet Identity ou avec le wallet Plug. Les deux vous laissent le contrôle : l'app lit vos soldes et vous signez vous-même chaque transfert.",
-    whereQ: "Où apparaissent les jetons achetés ?",
+    whereQ: "Où apparaissent les jetons frappés ?",
     whereBefore:
-      "Votre achat de TTTI-T est livré sur le compte avec lequel vous vous êtes connecté. Il apparaît sous TTTI-T sur la ",
-    whereLink: "page Wallet",
+      "Le TTTI-T frappé est livré sur le compte avec lequel vous vous êtes connecté. Il apparaît sous TTTI-T sur la ",
+    whereLink: "page Portefeuille",
     whereAfter:
-      ". Si vous le souhaitez, vous pouvez ajouter une adresse de livraison facultative (un Principal ID) avant d'acheter — elle n'est jamais obligatoire.",
+      ". Si vous le souhaitez, vous pouvez ajouter une adresse de livraison facultative (un Principal ID) avant de frapper — elle n'est jamais obligatoire.",
     supplyQ: "Combien de jetons peuvent exister ?",
     supplyIntro: "TTTI est la version future ; TTTI-T est le test en cours.",
     privacyQ: "Qu'est-ce qui est public, et que conserve l'app ?",
@@ -1327,29 +1333,29 @@ export const FAQ_TEXT = defineDict({
   },
   es: {
     label: "Preguntas",
-    title: "Antes de comprar",
+    title: "Antes de acuñar",
     intro:
-      "Respuestas claras sobre el token, los wallets y cómo funciona una compra.",
+      "Respuestas claras sobre el token, los wallets y cómo funciona la acuñación.",
     whatQ: "¿Qué es TTTI-T?",
     whatA:
       "TTTI-T es la versión de prueba de TTTI, una moneda de intercambio en el Internet Computer. El ledger usa 8 decimales, y esta versión de prueba contiene un token. El precio es de 10,000 USD por token más una comisión, pagado en ICP, ckBTC, ckUSDC o ckUSDT.",
     noReturns: "No existe ninguna promesa de rendimiento de ningún tipo.",
     icpQ: "¿Cómo consigo ICP?",
-    icpBefore: "TTTI-T se compra con ICP. Si todavía no tiene, visite primero ",
+    icpBefore: "TTTI-T se acuña con ICP. Si todavía no tiene, visite primero ",
     icpLink: "Conseguir ICP",
     icpAfter:
-      " para conocer formas fiables de comprar ICP y enviarlo a su wallet; después vuelva para completar su compra.",
+      " para conocer formas fiables de comprar ICP y enviarlo a su wallet; después vuelva para acuñar.",
     btcQ: "¿Puedo pagar en BTC?",
     rateQ: "¿Cómo se fija el tipo de cambio en USD?",
     walletsQ: "¿Qué wallets son compatibles?",
     walletsA:
       "Puede iniciar sesión con Internet Identity o con el wallet Plug. Ambos le dejan el control: la app lee sus saldos y usted mismo firma cada transferencia.",
-    whereQ: "¿Dónde aparecen los tokens comprados?",
+    whereQ: "¿Dónde aparecen los tokens acuñados?",
     whereBefore:
-      "Su compra de TTTI-T se entrega en la cuenta con la que inició sesión. Aparece en TTTI-T en la ",
-    whereLink: "página Wallet",
+      "El TTTI-T acuñado se entrega en la cuenta con la que inició sesión. Aparece en TTTI-T en la ",
+    whereLink: "página Billetera",
     whereAfter:
-      ". Si lo prefiere, puede añadir una dirección de entrega opcional (un Principal ID) antes de comprar; nunca es obligatoria.",
+      ". Si lo prefiere, puede añadir una dirección de entrega opcional (un Principal ID) antes de acuñar; nunca es obligatoria.",
     supplyQ: "¿Cuántos tokens pueden existir?",
     supplyIntro: "TTTI es la versión futura; TTTI-T es la prueba en curso.",
     privacyQ: "¿Qué es público y qué conserva la app?",
@@ -1358,26 +1364,26 @@ export const FAQ_TEXT = defineDict({
   },
   "zh-Hans": {
     label: "常见问题",
-    title: "购买之前",
-    intro: "关于代币、钱包以及购买流程的清晰解答。",
+    title: "铸造之前",
+    intro: "关于代币、钱包以及铸造流程的清晰解答。",
     whatQ: "TTTI-T 是什么？",
     whatA:
       "TTTI-T 是 TTTI 的测试版，TTTI 是 Internet Computer 上的一种交换货币。账本使用 8 位小数，本测试版包含一枚代币。价格为每枚 10,000 USD 另加手续费，以 ICP、ckBTC、ckUSDC 或 ckUSDT 支付。",
     noReturns: "不存在任何形式的收益承诺。",
     icpQ: "如何获得 ICP？",
-    icpBefore: "TTTI-T 需用 ICP 购买。如果您还没有 ICP，请先访问",
+    icpBefore: "TTTI-T 需用 ICP 铸造。如果您还没有 ICP，请先访问",
     icpLink: "获取 ICP",
-    icpAfter: "，了解购买 ICP 并将其发送到您钱包的可靠方式，然后返回完成购买。",
+    icpAfter: "，了解购买 ICP 并将其发送到您钱包的可靠方式，然后返回进行铸造。",
     btcQ: "可以用 BTC 支付吗？",
     rateQ: "美元汇率如何确定？",
     walletsQ: "支持哪些钱包？",
     walletsA:
       "您可以使用 Internet Identity 或 Plug 钱包登录。两者都让您保有控制权：应用读取您的余额，每笔转账都由您亲自签名。",
-    whereQ: "购买的代币显示在哪里？",
-    whereBefore: "您购买的 TTTI-T 会交付到您登录所用的账户，显示在",
+    whereQ: "铸造的代币显示在哪里？",
+    whereBefore: "您铸造的 TTTI-T 会交付到您登录所用的账户，显示在",
     whereLink: "钱包页面",
     whereAfter:
-      "的 TTTI-T 下。如果您愿意，可以在购买前添加一个可选的交付地址（Principal ID），但这从来不是必需的。",
+      "的 TTTI-T 下。如果您愿意，可以在铸造前添加一个可选的交付地址（Principal ID），但这从来不是必需的。",
     supplyQ: "最多可以存在多少枚代币？",
     supplyIntro: "TTTI 是未来版本；TTTI-T 是正在进行的测试。",
     privacyQ: "哪些信息是公开的？应用会保留什么？",
@@ -1386,30 +1392,30 @@ export const FAQ_TEXT = defineDict({
   },
   "pt-BR": {
     label: "Perguntas",
-    title: "Antes de comprar",
+    title: "Antes de cunhar",
     intro:
-      "Respostas claras sobre o token, as carteiras e como funciona uma compra.",
+      "Respostas claras sobre o token, as carteiras e como funciona a cunhagem.",
     whatQ: "O que é TTTI-T?",
     whatA:
       "TTTI-T é a versão de teste do TTTI, uma moeda de troca no Internet Computer. O ledger usa 8 casas decimais, e esta versão de teste contém um token. O preço é de 10.000 USD por token mais uma taxa, pago em ICP, ckBTC, ckUSDC ou ckUSDT.",
     noReturns: "Não há promessa de retorno de qualquer tipo.",
     icpQ: "Como consigo ICP?",
     icpBefore:
-      "TTTI-T é comprado com ICP. Se você ainda não tem, acesse primeiro ",
+      "TTTI-T é cunhado com ICP. Se você ainda não tem, acesse primeiro ",
     icpLink: "Obter ICP",
     icpAfter:
-      " para conhecer formas confiáveis de comprar ICP e enviá-lo à sua carteira; depois volte para concluir a compra.",
+      " para conhecer formas confiáveis de comprar ICP e enviá-lo à sua carteira; depois volte para cunhar.",
     btcQ: "Posso pagar em BTC?",
     rateQ: "Como a cotação em USD é definida?",
     walletsQ: "Quais carteiras são compatíveis?",
     walletsA:
       "Você pode entrar com Internet Identity ou com a carteira Plug. As duas mantêm o controle com você: o app lê seus saldos e você mesmo assina cada transferência.",
-    whereQ: "Onde aparecem os tokens comprados?",
+    whereQ: "Onde aparecem os tokens cunhados?",
     whereBefore:
-      "Sua compra de TTTI-T é entregue na conta com a qual você entrou. Ela aparece em TTTI-T na ",
-    whereLink: "página Wallet",
+      "O TTTI-T cunhado é entregue na conta com a qual você entrou. Ele aparece em TTTI-T na ",
+    whereLink: "página Carteira",
     whereAfter:
-      ". Se preferir, você pode adicionar um endereço de entrega opcional (um Principal ID) antes de comprar — ele nunca é obrigatório.",
+      ". Se preferir, você pode adicionar um endereço de entrega opcional (um Principal ID) antes de cunhar — ele nunca é obrigatório.",
     supplyQ: "Quantos tokens podem existir?",
     supplyIntro: "TTTI é a versão futura; TTTI-T é o teste em andamento.",
     privacyQ: "O que é público e o que o app guarda?",
@@ -1418,27 +1424,27 @@ export const FAQ_TEXT = defineDict({
   },
   ko: {
     label: "질문",
-    title: "구매하기 전에",
-    intro: "토큰, 지갑, 구매 절차에 대한 명확한 답변입니다.",
+    title: "발행하기 전에",
+    intro: "토큰, 지갑, 발행 절차에 대한 명확한 답변입니다.",
     whatQ: "TTTI-T란 무엇인가요?",
     whatA:
       "TTTI-T는 Internet Computer 기반 교환 화폐인 TTTI의 테스트 출시 버전입니다. 원장은 소수점 8자리를 사용하며, 이 테스트 출시에는 토큰 하나가 포함됩니다. 가격은 토큰당 10,000 USD에 수수료가 더해지며, ICP, ckBTC, ckUSDC 또는 ckUSDT로 지불합니다.",
     noReturns: "어떠한 종류의 수익도 약속하지 않습니다.",
     icpQ: "ICP는 어떻게 구하나요?",
-    icpBefore: "TTTI-T는 ICP로 구매합니다. 아직 ICP가 없다면 먼저 ",
+    icpBefore: "TTTI-T는 ICP로 발행합니다. 아직 ICP가 없다면 먼저 ",
     icpLink: "ICP 구하기",
     icpAfter:
-      " 페이지에서 ICP를 구매해 지갑으로 보내는 믿을 수 있는 방법을 확인한 뒤, 돌아와서 구매를 완료하세요.",
+      " 페이지에서 ICP를 구매해 지갑으로 보내는 믿을 수 있는 방법을 확인한 뒤, 돌아와서 발행하세요.",
     btcQ: "BTC로 결제할 수 있나요?",
     rateQ: "USD 환율은 어떻게 정해지나요?",
     walletsQ: "어떤 지갑을 지원하나요?",
     walletsA:
       "Internet Identity 또는 Plug 지갑으로 로그인할 수 있습니다. 두 방법 모두 통제권은 귀하에게 있습니다: 앱은 잔액을 읽기만 하고, 모든 전송은 귀하가 직접 서명합니다.",
-    whereQ: "구매한 토큰은 어디에 표시되나요?",
-    whereBefore: "구매한 TTTI-T는 로그인한 계정으로 지급됩니다. ",
-    whereLink: "Wallet 페이지",
+    whereQ: "발행한 토큰은 어디에 표시되나요?",
+    whereBefore: "발행한 TTTI-T는 로그인한 계정으로 지급됩니다. ",
+    whereLink: "지갑 페이지",
     whereAfter:
-      "의 TTTI-T 항목에 표시됩니다. 원하시면 구매 전에 선택 사항인 지급 주소(Principal ID)를 추가할 수 있습니다. 필수는 아닙니다.",
+      "의 TTTI-T 항목에 표시됩니다. 원하시면 발행 전에 선택 사항인 지급 주소(Principal ID)를 추가할 수 있습니다. 필수는 아닙니다.",
     supplyQ: "토큰은 최대 몇 개까지 존재할 수 있나요?",
     supplyIntro: "TTTI는 향후 버전이고, TTTI-T는 현재 진행 중인 테스트입니다.",
     privacyQ: "무엇이 공개되며, 앱은 무엇을 보관하나요?",
@@ -1447,29 +1453,29 @@ export const FAQ_TEXT = defineDict({
   },
   "pa-Guru": {
     label: "ਸਵਾਲ",
-    title: "ਖਰੀਦਣ ਤੋਂ ਪਹਿਲਾਂ",
-    intro: "ਟੋਕਨ, ਵਾਲਿਟਾਂ ਅਤੇ ਖਰੀਦ ਕਿਵੇਂ ਹੁੰਦੀ ਹੈ, ਇਸ ਬਾਰੇ ਸਾਫ਼ ਜਵਾਬ।",
+    title: "ਮਿੰਟ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ",
+    intro: "ਟੋਕਨ, ਵਾਲਿਟਾਂ ਅਤੇ ਮਿੰਟਿੰਗ ਕਿਵੇਂ ਹੁੰਦੀ ਹੈ, ਇਸ ਬਾਰੇ ਸਾਫ਼ ਜਵਾਬ।",
     whatQ: "TTTI-T ਕੀ ਹੈ?",
     whatA:
       "TTTI-T, TTTI ਦੀ ਟੈਸਟ ਰਿਲੀਜ਼ ਹੈ, ਜੋ Internet Computer 'ਤੇ ਇੱਕ ਲੈਣ-ਦੇਣ ਦੀ ਮੁਦਰਾ ਹੈ। ਲੈਜਰ 8 ਦਸ਼ਮਲਵ ਅੰਕ ਵਰਤਦਾ ਹੈ, ਅਤੇ ਇਸ ਟੈਸਟ ਰਿਲੀਜ਼ ਵਿੱਚ ਇੱਕ ਟੋਕਨ ਹੈ। ਕੀਮਤ ਪ੍ਰਤੀ ਟੋਕਨ 10,000 USD ਅਤੇ ਫੀਸ ਹੈ, ਜੋ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚ ਅਦਾ ਕੀਤੀ ਜਾਂਦੀ ਹੈ।",
     noReturns: "ਕਿਸੇ ਵੀ ਕਿਸਮ ਦੇ ਮੁਨਾਫ਼ੇ ਦਾ ਕੋਈ ਵਾਅਦਾ ਨਹੀਂ ਹੈ।",
     icpQ: "ਮੈਂ ICP ਕਿਵੇਂ ਪ੍ਰਾਪਤ ਕਰਾਂ?",
     icpBefore:
-      "TTTI-T, ICP ਨਾਲ ਖਰੀਦਿਆ ਜਾਂਦਾ ਹੈ। ਜੇ ਤੁਹਾਡੇ ਕੋਲ ਹਾਲੇ ICP ਨਹੀਂ ਹੈ, ਤਾਂ ਪਹਿਲਾਂ ",
+      "TTTI-T, ICP ਨਾਲ ਮਿੰਟ ਕੀਤਾ ਜਾਂਦਾ ਹੈ। ਜੇ ਤੁਹਾਡੇ ਕੋਲ ਹਾਲੇ ICP ਨਹੀਂ ਹੈ, ਤਾਂ ਪਹਿਲਾਂ ",
     icpLink: "ICP ਪ੍ਰਾਪਤ ਕਰੋ",
     icpAfter:
-      " 'ਤੇ ਜਾਓ, ਜਿੱਥੇ ICP ਖਰੀਦਣ ਅਤੇ ਇਸ ਨੂੰ ਆਪਣੇ ਵਾਲਿਟ ਵਿੱਚ ਭੇਜਣ ਦੇ ਭਰੋਸੇਯੋਗ ਤਰੀਕੇ ਹਨ, ਫਿਰ ਆਪਣੀ ਖਰੀਦ ਪੂਰੀ ਕਰਨ ਲਈ ਵਾਪਸ ਆਓ।",
+      " 'ਤੇ ਜਾਓ, ਜਿੱਥੇ ICP ਖਰੀਦਣ ਅਤੇ ਇਸ ਨੂੰ ਆਪਣੇ ਵਾਲਿਟ ਵਿੱਚ ਭੇਜਣ ਦੇ ਭਰੋਸੇਯੋਗ ਤਰੀਕੇ ਹਨ, ਫਿਰ ਮਿੰਟ ਕਰਨ ਲਈ ਵਾਪਸ ਆਓ।",
     btcQ: "ਕੀ ਮੈਂ BTC ਵਿੱਚ ਭੁਗਤਾਨ ਕਰ ਸਕਦਾ ਹਾਂ?",
     rateQ: "USD ਦਰ ਕਿਵੇਂ ਤੈਅ ਹੁੰਦੀ ਹੈ?",
     walletsQ: "ਕਿਹੜੇ ਵਾਲਿਟ ਸਮਰਥਿਤ ਹਨ?",
     walletsA:
       "ਤੁਸੀਂ Internet Identity ਜਾਂ Plug ਵਾਲਿਟ ਨਾਲ ਸਾਈਨ ਇਨ ਕਰ ਸਕਦੇ ਹੋ। ਦੋਵਾਂ ਵਿੱਚ ਕੰਟਰੋਲ ਤੁਹਾਡੇ ਕੋਲ ਰਹਿੰਦਾ ਹੈ: ਐਪ ਤੁਹਾਡੇ ਬਕਾਏ ਪੜ੍ਹਦੀ ਹੈ ਅਤੇ ਹਰ ਟ੍ਰਾਂਸਫਰ 'ਤੇ ਤੁਸੀਂ ਖੁਦ ਦਸਤਖਤ ਕਰਦੇ ਹੋ।",
-    whereQ: "ਮੇਰੇ ਖਰੀਦੇ ਟੋਕਨ ਕਿੱਥੇ ਦਿਖਾਈ ਦਿੰਦੇ ਹਨ?",
+    whereQ: "ਮੇਰੇ ਮਿੰਟ ਕੀਤੇ ਟੋਕਨ ਕਿੱਥੇ ਦਿਖਾਈ ਦਿੰਦੇ ਹਨ?",
     whereBefore:
-      "ਤੁਹਾਡੀ TTTI-T ਖਰੀਦ ਉਸ ਖਾਤੇ ਵਿੱਚ ਡਿਲੀਵਰ ਕੀਤੀ ਜਾਂਦੀ ਹੈ ਜਿਸ ਨਾਲ ਤੁਸੀਂ ਸਾਈਨ ਇਨ ਕੀਤਾ ਸੀ। ਇਹ ",
-    whereLink: "Wallet ਪੰਨੇ",
+      "ਤੁਹਾਡਾ ਮਿੰਟ ਕੀਤਾ TTTI-T ਉਸ ਖਾਤੇ ਵਿੱਚ ਡਿਲੀਵਰ ਕੀਤਾ ਜਾਂਦਾ ਹੈ ਜਿਸ ਨਾਲ ਤੁਸੀਂ ਸਾਈਨ ਇਨ ਕੀਤਾ ਸੀ। ਇਹ ",
+    whereLink: "ਵਾਲਿਟ ਪੰਨੇ",
     whereAfter:
-      " 'ਤੇ TTTI-T ਹੇਠ ਦਿਖਾਈ ਦਿੰਦੀ ਹੈ। ਜੇ ਤੁਸੀਂ ਚਾਹੋ, ਤਾਂ ਖਰੀਦਣ ਤੋਂ ਪਹਿਲਾਂ ਇੱਕ ਵਿਕਲਪਿਕ ਡਿਲੀਵਰੀ ਪਤਾ (Principal ID) ਜੋੜ ਸਕਦੇ ਹੋ — ਇਹ ਕਦੇ ਲਾਜ਼ਮੀ ਨਹੀਂ ਹੁੰਦਾ।",
+      " 'ਤੇ TTTI-T ਹੇਠ ਦਿਖਾਈ ਦਿੰਦਾ ਹੈ। ਜੇ ਤੁਸੀਂ ਚਾਹੋ, ਤਾਂ ਮਿੰਟ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਇੱਕ ਵਿਕਲਪਿਕ ਡਿਲੀਵਰੀ ਪਤਾ (Principal ID) ਜੋੜ ਸਕਦੇ ਹੋ — ਇਹ ਕਦੇ ਲਾਜ਼ਮੀ ਨਹੀਂ ਹੁੰਦਾ।",
     supplyQ: "ਕਿੰਨੇ ਟੋਕਨ ਮੌਜੂਦ ਹੋ ਸਕਦੇ ਹਨ?",
     supplyIntro: "TTTI ਭਵਿੱਖੀ ਸੰਸਕਰਣ ਹੈ; TTTI-T ਚੱਲ ਰਿਹਾ ਟੈਸਟ ਹੈ।",
     privacyQ: "ਕੀ ਜਨਤਕ ਹੈ, ਅਤੇ ਐਪ ਕੀ ਰੱਖਦੀ ਹੈ?",

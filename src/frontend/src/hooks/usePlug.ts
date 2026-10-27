@@ -1,6 +1,6 @@
-import { loadConfig } from "@caffeineai/core-infrastructure";
+import type { ActorSubclass } from "@icp-sdk/core/agent";
 import type { IDL } from "@icp-sdk/core/candid";
-import type { Principal } from "@icp-sdk/core/principal";
+import { Principal } from "@icp-sdk/core/principal";
 import {
   createContext,
   createElement,
@@ -10,9 +10,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { PayToken } from "../backend";
-import { MESSAGES_TEXT } from "../i18n/common/messages";
-import { pickDict } from "../i18n/core/dict";
+import { Backend, PayToken } from "../backend";
+import { type _SERVICE, idlFactory } from "../declarations/backend.did";
 import {
   type ApproveOutcome,
   type IcpLedgerActor,
@@ -22,6 +21,15 @@ import {
   mapApproveResult,
 } from "../lib/icpLedger";
 import { PAY_TOKENS, PAY_TOKEN_LEDGER_IDS } from "../lib/token";
+import {
+  WALLET_CONNECT_TIMEOUT_MS,
+  WalletConnectError,
+  cachedWalletConfig,
+  isMobileDevice,
+  rememberWalletKind,
+  walletConfig,
+  withWalletTimeout,
+} from "./useSignerWallet";
 
 /**
  * Canisters a Plug session must whitelist: the backend plus the ICP, ckBTC,
@@ -31,7 +39,7 @@ export function plugWhitelist(backendCanisterId: string): string[] {
   return [backendCanisterId, ...PAY_TOKEN_LEDGER_IDS];
 }
 
-/** Arguments accepted by Plug's `requestTransfer`. */
+/** Arguments of a Plug-signed ICRC-1 transfer. */
 export interface PlugTransferArgs {
   to: string;
   amount: bigint;
@@ -43,7 +51,7 @@ export interface PlugTransferArgs {
   };
 }
 
-/** Result returned by Plug's `requestTransfer`. */
+/** Result of a Plug-signed transfer (ledger block index). */
 export interface PlugTransferResult {
   height: number;
 }
@@ -59,10 +67,10 @@ export interface PlugApi {
   isConnected: () => Promise<boolean>;
   getPrincipal: () => Promise<Principal>;
   disconnect: () => Promise<void>;
-  requestTransfer: (
-    args: PlugTransferArgs,
-    options?: { host?: string; timeout?: number },
-  ) => Promise<PlugTransferResult>;
+  createAgent?: (options: {
+    whitelist: string[];
+    host?: string;
+  }) => Promise<unknown>;
   createActor: <T>(options: {
     canisterId: string;
     interfaceFactory: IDL.InterfaceFactory;
@@ -79,7 +87,7 @@ declare global {
   }
 }
 
-/** Canisters whitelisted by the last requestConnect this page issued. */
+/** Canisters whitelisted by the current Plug session. */
 let sessionWhitelist = new Set<string>();
 /** Increments whenever the Plug session (agent/whitelist) is replaced. */
 let sessionVersion = 0;
@@ -89,9 +97,39 @@ function recordSession(whitelist: string[]) {
   sessionVersion += 1;
 }
 
-/** Current Plug session version; cached Plug actors are valid for one version. */
 export function getPlugSessionVersion(): number {
   return sessionVersion;
+}
+
+/** Plug as injected right now (checked at call time, not only at load). */
+export function getPlug(): PlugApi | undefined {
+  return typeof window !== "undefined" ? window.ic?.plug : undefined;
+}
+
+function missingPlugError(): WalletConnectError {
+  return new WalletConnectError(
+    isMobileDevice() ? "mobileUnsupported" : "notInstalled",
+    "plug",
+  );
+}
+
+function classifyPlugError(error: unknown): WalletConnectError {
+  if (error instanceof WalletConnectError) return error;
+  const message = (
+    error instanceof Error ? error.message : String(error)
+  ).toLowerCase();
+  if (message.includes("timeout") || message.includes("timed out")) {
+    return new WalletConnectError("timeout", "plug");
+  }
+  if (
+    message.includes("reject") ||
+    message.includes("denied") ||
+    message.includes("declin") ||
+    message.includes("cancel")
+  ) {
+    return new WalletConnectError("rejected", "plug");
+  }
+  return new WalletConnectError("failed", "plug");
 }
 
 /**
@@ -111,41 +149,121 @@ export async function ensurePlugSession(
   ) {
     return;
   }
-  await plug.requestConnect({ whitelist, host });
+  await withWalletTimeout(
+    plug.requestConnect({
+      whitelist,
+      host,
+      timeout: WALLET_CONNECT_TIMEOUT_MS,
+    }),
+    "plug",
+    WALLET_CONNECT_TIMEOUT_MS + 2_000,
+  ).catch((error: unknown) => {
+    throw classifyPlugError(error);
+  });
   recordSession(whitelist);
 }
 
+/** Full session whitelist, plus the `extra` canisters not already covered. */
+export async function readyPlug(
+  extra?: string | ReadonlyArray<string>,
+): Promise<PlugApi> {
+  const plug = getPlug();
+  if (!plug) throw missingPlugError();
+  const config = await walletConfig();
+  const whitelist = plugWhitelist(config.backend_canister_id);
+  const extras = typeof extra === "string" ? [extra] : (extra ?? []);
+  for (const id of extras) {
+    if (!whitelist.includes(id)) whitelist.push(id);
+  }
+  await ensurePlugSession(plug, whitelist, config.backend_host);
+  return plug;
+}
+
+const unsupportedBlob = async (): Promise<never> => {
+  throw new Error("File transfer is not available through a wallet actor.");
+};
+
+let cachedBackend: { version: number; backend: Backend } | null = null;
+
+/** Backend client whose calls are signed by the connected Plug wallet. */
+export async function createPlugBackend(): Promise<Backend> {
+  const plug = await readyPlug();
+  const version = getPlugSessionVersion();
+  if (cachedBackend && cachedBackend.version === version) {
+    return cachedBackend.backend;
+  }
+  const config = await walletConfig();
+  const actor = await plug.createActor<ActorSubclass<_SERVICE>>({
+    canisterId: config.backend_canister_id,
+    interfaceFactory: idlFactory,
+  });
+  const backend = new Backend(actor, unsupportedBlob, unsupportedBlob);
+  cachedBackend = { version, backend };
+  return backend;
+}
+
+type TransferResult = { Ok: bigint } | { Err: Record<string, unknown> };
+interface Icrc1TransferActor {
+  icrc1_transfer: (args: {
+    to: { owner: Principal; subaccount: [] | [Uint8Array] };
+    amount: bigint;
+    fee: [] | [bigint];
+    memo: [] | [Uint8Array];
+    from_subaccount: [] | [Uint8Array];
+    created_at_time: [] | [bigint];
+  }) => Promise<TransferResult>;
+}
+
+const icrc1TransferIdl: IDL.InterfaceFactory = ({ IDL: I }) => {
+  const Account = I.Record({
+    owner: I.Principal,
+    subaccount: I.Opt(I.Vec(I.Nat8)),
+  });
+  const TransferError = I.Variant({
+    BadFee: I.Record({ expected_fee: I.Nat }),
+    BadBurn: I.Record({ min_burn_amount: I.Nat }),
+    InsufficientFunds: I.Record({ balance: I.Nat }),
+    TooOld: I.Null,
+    CreatedInFuture: I.Record({ ledger_time: I.Nat64 }),
+    TemporarilyUnavailable: I.Null,
+    Duplicate: I.Record({ duplicate_of: I.Nat }),
+    GenericError: I.Record({ error_code: I.Nat, message: I.Text }),
+  });
+  return I.Service({
+    icrc1_transfer: I.Func(
+      [
+        I.Record({
+          to: Account,
+          amount: I.Nat,
+          fee: I.Opt(I.Nat),
+          memo: I.Opt(I.Vec(I.Nat8)),
+          from_subaccount: I.Opt(I.Vec(I.Nat8)),
+          created_at_time: I.Opt(I.Nat64),
+        }),
+      ],
+      [I.Variant({ Ok: I.Nat, Err: TransferError })],
+      [],
+    ),
+  });
+};
+
 export interface PlugContextValue {
-  /** The principal currently connected through Plug, or null. */
   principal: Principal | null;
-  /** True while a connect/disconnect request is in flight. */
   isConnecting: boolean;
-  /** True when the Plug extension is available in this browser. */
+  /** Plug extension present (re-checked while the page is open). */
   isAvailable: boolean;
-  /** Open the Plug popup and connect the wallet. */
+  /** Call from a click: the Plug popup opens before any await. */
   connect: () => Promise<void>;
-  /** Disconnect the Plug wallet. */
   disconnect: () => Promise<void>;
-  /**
-   * Ask the Plug wallet to sign and submit a transfer to the given ledger
-   * canister. Resolves with the block height once Plug submits it.
-   */
+  /** ICRC-1 transfer on `canisterId`, signed by Plug. */
   requestTransfer: (
     canisterId: Principal,
     args: PlugTransferArgs,
   ) => Promise<PlugTransferResult>;
-  /**
-   * Approve `spender` on the ICP ledger for the purchase plus the 0.0001 ICP
-   * transfer_from fee, signed by Plug. Never throws; failures are returned.
-   */
   approveIcp: (
     spender: Principal,
     purchaseE8s: bigint,
   ) => Promise<ApproveOutcome>;
-  /**
-   * Approve `spender` on the pay token's ledger for `amount` plus that
-   * ledger's fee, signed by Plug. Never throws; failures are returned.
-   */
   approveToken: (
     spender: Principal,
     token: PayToken,
@@ -155,25 +273,47 @@ export interface PlugContextValue {
 
 const PlugContext = createContext<PlugContextValue | undefined>(undefined);
 
-function getPlug(): PlugApi | undefined {
-  return typeof window !== "undefined" ? window.ic?.plug : undefined;
-}
-
 export function PlugProvider({ children }: { children: React.ReactNode }) {
   const [principal, setPrincipal] = useState<Principal | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
+  const [isAvailable, setIsAvailable] = useState(() => !!getPlug());
 
+  // Preload config so connect() can call requestConnect without awaiting.
   useEffect(() => {
-    const plug = getPlug();
-    setIsAvailable(!!plug);
-    if (!plug) return;
+    void walletConfig().catch(() => undefined);
+  }, []);
 
+  // Detect an extension installed or injected after the page loaded.
+  useEffect(() => {
+    if (isAvailable) return;
+    const check = () => {
+      if (getPlug()) setIsAvailable(true);
+    };
+    const timer = window.setInterval(check, 1_500);
+    window.addEventListener("focus", check);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", check);
+    };
+  }, [isAvailable]);
+
+  // Restore a Plug session left connected on a previous visit.
+  useEffect(() => {
+    const plug = isAvailable ? getPlug() : undefined;
+    if (!plug) return;
     let cancelled = false;
     const restore = async () => {
       try {
         const connected = await plug.isConnected();
         if (!connected || cancelled) return;
+        const config = await walletConfig();
+        const whitelist = plugWhitelist(config.backend_canister_id);
+        if (!plug.agent && plug.createAgent) {
+          await plug
+            .createAgent({ whitelist, host: config.backend_host })
+            .catch(() => undefined);
+        }
+        if (plug.agent) recordSession(whitelist);
         const restored = await plug.getPrincipal();
         if (!cancelled) setPrincipal(restored);
       } catch {
@@ -184,27 +324,36 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAvailable]);
 
   const connect = useCallback(async () => {
     const plug = getPlug();
-    if (!plug) {
-      throw new Error(pickDict(MESSAGES_TEXT).plugNotDetected);
-    }
+    if (!plug) throw missingPlugError();
+    setIsAvailable(true);
+    // Normally preloaded: then the popup opens synchronously from the click.
+    const config = cachedWalletConfig() ?? (await walletConfig());
+    const whitelist = plugWhitelist(config.backend_canister_id);
+    const request = plug.requestConnect({
+      whitelist,
+      host: config.backend_host,
+      timeout: WALLET_CONNECT_TIMEOUT_MS,
+      onConnectionUpdate: () => {
+        void plug.getPrincipal().then(setPrincipal, () => undefined);
+      },
+    });
     setIsConnecting(true);
     try {
-      const config = await loadConfig();
-      const whitelist = plugWhitelist(config.backend_canister_id);
-      await plug.requestConnect({
-        whitelist,
-        host: config.backend_host,
-        onConnectionUpdate: () => {
-          void plug.getPrincipal().then(setPrincipal);
-        },
-      });
+      await withWalletTimeout(
+        request,
+        "plug",
+        WALLET_CONNECT_TIMEOUT_MS + 2_000,
+      );
       recordSession(whitelist);
       const connectedPrincipal = await plug.getPrincipal();
       setPrincipal(connectedPrincipal);
+      rememberWalletKind("plug");
+    } catch (error) {
+      throw classifyPlugError(error);
     } finally {
       setIsConnecting(false);
     }
@@ -212,12 +361,14 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
 
   const disconnect = useCallback(async () => {
     const plug = getPlug();
-    if (!plug) return;
     setIsConnecting(true);
     try {
-      await plug.disconnect();
+      await plug?.disconnect();
+    } catch {
+      // Already disconnected on Plug's side.
     } finally {
       recordSession([]);
+      cachedBackend = null;
       setPrincipal(null);
       setIsConnecting(false);
     }
@@ -225,22 +376,31 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
 
   const requestTransfer = useCallback(
     async (canisterId: Principal, args: PlugTransferArgs) => {
-      const plug = getPlug();
-      if (!plug) {
-        throw new Error(pickDict(MESSAGES_TEXT).plugNotDetected);
+      const plug = await readyPlug(canisterId.toText());
+      const ledger = await plug.createActor<Icrc1TransferActor>({
+        canisterId: canisterId.toText(),
+        interfaceFactory: icrc1TransferIdl,
+      });
+      const memo = args.opts?.memo;
+      const result = await ledger.icrc1_transfer({
+        to: { owner: Principal.fromText(args.to), subaccount: [] },
+        amount: args.amount,
+        fee: args.opts?.fee === undefined ? [] : [args.opts.fee],
+        memo: memo instanceof Uint8Array ? [memo] : [],
+        from_subaccount: args.opts?.from_subaccount
+          ? [args.opts.from_subaccount]
+          : [],
+        created_at_time:
+          args.opts?.createdAtTime === undefined
+            ? []
+            : [args.opts.createdAtTime],
+      });
+      if ("Err" in result) {
+        throw new Error(
+          `Transfer failed: ${Object.keys(result.Err)[0] ?? "unknown error"}`,
+        );
       }
-      const config = await loadConfig();
-      // Plug's requestTransfer does not take a canister id: it transfers on the
-      // canister whitelisted for this Plug session. Whitelist ONLY the selected
-      // token's ledger canister so Plug signs against the selected ledger.
-      await plug.requestConnect({
-        whitelist: [canisterId.toText()],
-        host: config.backend_host,
-      });
-      recordSession([canisterId.toText()]);
-      return plug.requestTransfer(args, {
-        host: config.backend_host,
-      });
+      return { height: Number(result.Ok) };
     },
     [],
   );
@@ -252,22 +412,10 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
       amount: bigint,
     ): Promise<ApproveOutcome> => {
       const descriptor = PAY_TOKENS[token];
-      const plug = getPlug();
-      if (!plug) {
-        return {
-          ok: false,
-          message: pickDict(MESSAGES_TEXT).plugNotDetected,
-        };
-      }
       try {
-        const config = await loadConfig();
-        // The approval is signed on the pay token's ledger; the whitelist also
-        // covers the backend so the purchase call that follows reuses it.
-        await ensurePlugSession(
-          plug,
-          plugWhitelist(config.backend_canister_id),
-          config.backend_host,
-        );
+        // The full whitelist already covers every pay ledger and the backend,
+        // so no extra Plug prompt opens for the approval or the purchase.
+        const plug = await readyPlug();
         const ledger = await plug.createActor<IcpLedgerActor>({
           canisterId: descriptor.ledgerCanisterId,
           interfaceFactory: icpLedgerIdlFactory,
@@ -279,7 +427,10 @@ export function PlugProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         return {
           ok: false,
-          message: describeCallFailure(error, descriptor.symbol),
+          message:
+            error instanceof WalletConnectError
+              ? error.message
+              : describeCallFailure(error, descriptor.symbol),
         };
       }
     },

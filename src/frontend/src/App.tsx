@@ -14,6 +14,7 @@ import { Header } from "./components/Header";
 import { WhitePaperRoute } from "./components/WhitePaperRoute";
 import { Toaster } from "./components/ui/sonner";
 import { BuyFunnelProvider } from "./hooks/useBuyFunnel";
+import { ConnectedWalletProvider } from "./hooks/useConnectedWallet";
 import { PlugProvider } from "./hooks/usePlug";
 import { LanguageProvider } from "./i18n/core";
 import { AdminPage } from "./pages/AdminPage";
@@ -131,8 +132,10 @@ export default function App() {
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <QueryClientProvider client={queryClient}>
           <PlugProvider>
-            <RouterProvider router={router} />
-            <Toaster />
+            <ConnectedWalletProvider>
+              <RouterProvider router={router} />
+              <Toaster />
+            </ConnectedWalletProvider>
           </PlugProvider>
         </QueryClientProvider>
       </ThemeProvider>

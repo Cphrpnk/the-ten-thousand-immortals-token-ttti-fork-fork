@@ -91,16 +91,53 @@ export function withMetadata(
   };
 }
 
-/** ICRC-1 transfer arguments built in the app (no memo, created now). */
+/** ICRC-1 memo limit, in bytes (also the address book limit). */
+export const MAX_MEMO_BYTES = 32;
+
+export type MemoEncoding =
+  | { ok: true; bytes: Uint8Array | undefined; length: number }
+  | { ok: false; length: number };
+
+/**
+ * Encode memo text as UTF-8 bytes. Blank text gives no memo; more than
+ * MAX_MEMO_BYTES bytes is refused.
+ */
+export function encodeMemoText(text: string): MemoEncoding {
+  const trimmed = text.trim();
+  if (trimmed === "") return { ok: true, bytes: undefined, length: 0 };
+  const bytes = new TextEncoder().encode(trimmed);
+  if (bytes.length > MAX_MEMO_BYTES) return { ok: false, length: bytes.length };
+  return { ok: true, bytes, length: bytes.length };
+}
+
+/** Memo bytes as text (UTF-8), or hex when they are not valid UTF-8. */
+export function decodeMemoText(bytes: Uint8Array | undefined): string {
+  if (!bytes || bytes.length === 0) return "";
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+}
+
+/**
+ * ICRC-1 transfer arguments built in the app (created now). The optional
+ * memo must be at most MAX_MEMO_BYTES bytes.
+ */
 export function buildTransferArgs(
   to: Account,
   amount: bigint,
   fee: bigint,
+  memo?: Uint8Array,
 ): TransferArgs {
+  if (memo && memo.length > MAX_MEMO_BYTES) {
+    throw new Error(`Memo longer than ${MAX_MEMO_BYTES} bytes`);
+  }
   return {
     to,
     amount,
     fee,
+    ...(memo && memo.length > 0 ? { memo } : {}),
     created_at_time: BigInt(Date.now()) * 1_000_000n,
   };
 }

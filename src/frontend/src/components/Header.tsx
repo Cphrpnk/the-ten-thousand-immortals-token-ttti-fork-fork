@@ -1,9 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  ArrowRightLeft,
   BookOpen,
-  Coins,
   History,
   Home,
   LogIn,
@@ -15,8 +13,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useBuyFunnel } from "../hooks/useBuyFunnel";
+import { useConnectedWallet } from "../hooks/useConnectedWallet";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { usePlug } from "../hooks/usePlug";
 import { useIsCallerAdmin } from "../hooks/useQueries";
 import { LAYOUT_TEXT } from "../i18n/common/layout";
 import { useDict } from "../i18n/core";
@@ -62,22 +60,10 @@ const BASE_NAV: Array<NavItem> = [
     ocid: "header.white_paper_link",
   },
   {
-    to: "/buy-icp",
-    labelKey: "navGetIcp",
-    icon: Coins,
-    ocid: "header.buy_icp_link",
-  },
-  {
     to: "/wallet",
     labelKey: "navWallet",
     icon: Wallet,
     ocid: "header.wallet_link",
-  },
-  {
-    to: "/transfer",
-    labelKey: "navTransfer",
-    icon: ArrowRightLeft,
-    ocid: "header.transfer_link",
   },
   {
     to: "/history",
@@ -105,22 +91,23 @@ const authButtonClass =
 
 export function Header() {
   const { login, clear, loginStatus, identity } = useInternetIdentity();
-  const { principal: plugPrincipal, disconnect: disconnectPlug } = usePlug();
+  const { principal: walletPrincipal, disconnect: disconnectWallet } =
+    useConnectedWallet();
   const { data: isAdmin } = useIsCallerAdmin();
   const queryClient = useQueryClient();
   const { openSetup } = useBuyFunnel();
   const [menuOpen, setMenuOpen] = useState(false);
   const t = useDict(LAYOUT_TEXT);
 
-  const isAuthenticated = !!identity || !!plugPrincipal;
+  const isAuthenticated = !!identity || !!walletPrincipal;
   const isLoggingIn = loginStatus === "logging-in";
   const navItems = isAdmin ? [...BASE_NAV, ADMIN_NAV] : BASE_NAV;
 
   const handleAuth = async () => {
     if (isAuthenticated) {
       await clear();
-      if (plugPrincipal) {
-        await disconnectPlug();
+      if (walletPrincipal) {
+        await disconnectWallet();
       }
       queryClient.clear();
     } else {

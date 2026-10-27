@@ -329,6 +329,40 @@ export const BTC_PAY_OPTION = {
   settlesAs: PayToken.ckbtc,
 } as const;
 
+// --- Setup step 3 payment choices -------------------------------------------
+
+/** A payment option offered in setup step 3: a pay token or BTC. */
+export type SetupPayChoice = PayToken | typeof BTC_PAY_OPTION.id;
+
+export interface SetupPayOption {
+  id: SetupPayChoice;
+  symbol: string;
+}
+
+/**
+ * Setup payment options in display order: every pay token of PAY_TOKEN_ORDER,
+ * then BTC. A token added to PAY_TOKENS / PAY_TOKEN_ORDER appears here too.
+ */
+export const SETUP_PAY_OPTIONS: ReadonlyArray<SetupPayOption> = [
+  ...PAY_TOKEN_ORDER.map((token) => ({
+    id: token as SetupPayChoice,
+    symbol: PAY_TOKENS[token].symbol,
+  })),
+  { id: BTC_PAY_OPTION.id, symbol: BTC_PAY_OPTION.symbol },
+];
+
+/** True when `value` is one of the setup payment option ids. */
+export function isSetupPayChoice(value: unknown): value is SetupPayChoice {
+  return SETUP_PAY_OPTIONS.some((option) => option.id === value);
+}
+
+/** Symbol of a setup payment option: "ICP", "ckBTC", …, "BTC". */
+export function setupPayChoiceSymbol(choice: SetupPayChoice): string {
+  return choice === BTC_PAY_OPTION.id
+    ? BTC_PAY_OPTION.symbol
+    : PAY_TOKENS[choice].symbol;
+}
+
 /** Satoshis as "0.0005 BTC" (or another symbol, e.g. "ckBTC"). */
 export function formatSats(
   sats: bigint,
@@ -543,6 +577,88 @@ export function tokenForWalletPercent(
 /** Spendable balance of a pay token from its descriptor. */
 export function spendableToken(balance: bigint, token: PayToken): bigint {
   return spendableBalance(balance, PAY_TOKENS[token].fee);
+}
+
+/** Ledger fees kept out of a wallet percentage for `feeCount` ledger calls. */
+export function networkFeesFor(ledgerFee: bigint, feeCount: number): bigint {
+  return BigInt(Math.max(0, Math.round(feeCount))) * ledgerFee;
+}
+
+/** Balance minus `feeCount` ledger fees, never below 0. */
+export function spendableWithFees(
+  balance: bigint,
+  ledgerFee: bigint,
+  feeCount: number,
+): bigint {
+  const fees = networkFeesFor(ledgerFee, feeCount);
+  return balance > fees ? balance - fees : 0n;
+}
+
+/** Base units (rounded down) for a whole percentage of balance − feeCount fees. */
+export function amountForPercentWithFees(
+  balance: bigint,
+  ledgerFee: bigint,
+  feeCount: number,
+  percent: number,
+): bigint {
+  const pct = BigInt(Math.min(100, Math.max(0, Math.round(percent))));
+  return (spendableWithFees(balance, ledgerFee, feeCount) * pct) / 100n;
+}
+
+/**
+ * Whole percentage (1..100) of balance − feeCount fees that `amount`
+ * represents; null when nothing is spendable, the amount is 0 or it exceeds
+ * the spendable balance.
+ */
+export function percentForAmountWithFees(
+  amount: bigint,
+  balance: bigint,
+  ledgerFee: bigint,
+  feeCount: number,
+): number | null {
+  const spendable = spendableWithFees(balance, ledgerFee, feeCount);
+  if (spendable <= 0n || amount <= 0n || amount > spendable) return null;
+  if (amount === spendable) return 100;
+  const pct = Number((amount * 100n) / spendable);
+  return Math.min(100, Math.max(1, pct));
+}
+
+/** Plain transfer (one ledger fee): largest amount with amount + fee <= balance. */
+export function sendableBalance(balance: bigint, ledgerFee: bigint): bigint {
+  return spendableWithFees(balance, ledgerFee, 1);
+}
+
+/** Plain transfer: base units (rounded down) for a percentage of balance − fee. */
+export function amountForSendPercent(
+  balance: bigint,
+  ledgerFee: bigint,
+  percent: number,
+): bigint {
+  return amountForPercentWithFees(balance, ledgerFee, 1, percent);
+}
+
+/** Plain transfer: percentage of balance − fee that an amount represents. */
+export function percentForSendAmount(
+  amount: bigint,
+  balance: bigint,
+  ledgerFee: bigint,
+): number | null {
+  return percentForAmountWithFees(amount, balance, ledgerFee, 1);
+}
+
+/**
+ * Plain transfer: percentage for a typed amount ('.' or ',' as the decimal
+ * separator); null when the text is invalid or outside 0 < amount <= balance − fee.
+ */
+export function percentForTypedSendAmount(
+  text: string,
+  decimals: number,
+  balance: bigint,
+  ledgerFee: bigint,
+): number | null {
+  const amount = parseUnits(text, decimals);
+  if (amount === null) return null;
+  return percentForSendAmount(amount, balance, ledgerFee);
 }
 
 /** Integer division rounded up (positive operands). */

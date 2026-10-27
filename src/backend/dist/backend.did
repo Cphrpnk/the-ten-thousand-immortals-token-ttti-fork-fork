@@ -45,6 +45,21 @@ type UserRole =
    guest;
    user;
  };
+type UpgradeReadiness = 
+ record {
+   btcLockHeld: bool;
+   buybacksInFlight: vec text;
+   buybacksInFlightCount: nat;
+   lastReconciliation: opt ReservedReconciliation;
+   openTraceCount: nat;
+   openTraces: vec PurchaseTrace;
+   pendingTopUp: opt TopUpAttempt;
+   purchasesInFlight: vec principal;
+   purchasesInFlightCount: nat;
+   reserveLockBusy: bool;
+   "reserved": nat;
+   salesPaused: bool;
+ };
 type TreasuryConfigResult = 
  variant {
    Err: text;
@@ -62,10 +77,50 @@ type TransformationInput =
    context: blob;
    response: HttpRequestResult;
  };
+type TransferReview = 
+ record {
+   amount: nat;
+   block: opt nat;
+   buyer: opt principal;
+   collect: opt CollectState;
+   conversionId: opt nat;
+   createdAtTimeNs: opt nat64;
+   depositIndex: opt nat;
+   destination: opt Account;
+   fee: opt nat;
+   kind: TransferKind;
+   lastError: opt text;
+   memoHex: opt text;
+   memoText: opt text;
+   outcome: opt AttemptOutcome;
+   purchaseId: nat;
+   refundPurpose: opt BtcRefundPurpose;
+   sends: nat;
+   token: PayToken;
+ };
 type TransferResult = 
  variant {
    Err: TransferError;
    Ok: nat;
+ };
+type TransferRequest = 
+ record {
+   amount: nat;
+   fee: opt nat;
+   from_subaccount: opt blob;
+   to: Account;
+   token: PayToken;
+ };
+type TransferKind = 
+ variant {
+   BB;
+   BC;
+   BM;
+   BR;
+   FW;
+   PC;
+   RF;
+   SH;
  };
 type TransferFromResult = 
  variant {
@@ -76,7 +131,7 @@ type TransferFromError =
  variant {
    BadBurn: record {min_burn_amount: nat;};
    BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: Timestamp__1;};
+   CreatedInFuture: record {ledger_time: Timestamp__2;};
    Duplicate: record {duplicate_of: nat;};
    GenericError: record {
                    error_code: nat;
@@ -90,7 +145,7 @@ type TransferFromError =
 type TransferFromArgs = 
  record {
    amount: nat;
-   created_at_time: opt Timestamp__1;
+   created_at_time: opt Timestamp__2;
    fee: opt nat;
    from: Account;
    memo: opt blob;
@@ -101,7 +156,7 @@ type TransferError =
  variant {
    BadBurn: record {min_burn_amount: nat;};
    BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: Timestamp__1;};
+   CreatedInFuture: record {ledger_time: Timestamp__2;};
    Duplicate: record {duplicate_of: nat;};
    GenericError: record {
                    error_code: nat;
@@ -111,10 +166,21 @@ type TransferError =
    TemporarilyUnavailable;
    TooOld;
  };
+type TransferAttempt = 
+ record {
+   attempt: nat;
+   created_at_time: nat64;
+   lastError: opt text;
+   memo: blob;
+   n: nat;
+   outcome: AttemptOutcome;
+   request: TransferRequest;
+   sends: nat;
+ };
 type TransferArgs = 
  record {
    amount: nat;
-   created_at_time: opt Timestamp__1;
+   created_at_time: opt Timestamp__2;
    fee: opt nat;
    from_subaccount: opt Subaccount;
    memo: opt blob;
@@ -124,6 +190,13 @@ type TransactionWithId =
  record {
    id: BlockIndex;
    transaction: IndexTransaction;
+ };
+type TopUpTransferRequest = 
+ record {
+   amount: nat;
+   fee: nat;
+   from_subaccount: opt blob;
+   to: Account;
  };
 type TopUpStatus = 
  variant {
@@ -138,6 +211,26 @@ type TopUpRecord =
    lastError: opt text;
    status: TopUpStatus;
    timestamp: Timestamp;
+ };
+type TopUpOutcome = 
+ variant {
+   failed: text;
+   pending;
+   succeeded: nat;
+   unknown;
+ };
+type TopUpAttempt = 
+ record {
+   amount: nat;
+   blockIndex: opt nat;
+   createdAt: Timestamp;
+   created_at_time: nat64;
+   lastError: opt text;
+   memo: blob;
+   needsReview: bool;
+   outcome: TopUpOutcome;
+   request: TopUpTransferRequest;
+   sends: nat;
  };
 type Tokens = nat;
 type TokenPriceResult = 
@@ -167,7 +260,7 @@ type TokenAccountInfo =
    account: opt Account;
    token: PayToken;
  };
-type Timestamp__1 = nat64;
+type Timestamp__2 = nat64;
 type Timestamp = int;
 type TechnicalDetails = 
  record {
@@ -250,15 +343,73 @@ type SaleStatus =
    tokenPriceUsd: nat;
    totalSupply: nat;
  };
+type ReviewResult = 
+ variant {
+   err: ReviewError;
+   ok;
+ };
+type ReviewError = 
+ variant {
+   notAdmin;
+   notApplicable;
+   notFound;
+   notUnderReview;
+ };
 type Result__1 = 
+ record {
+   hasMore: bool;
+   rows: vec vec Cell;
+ };
+type Result_8 = 
  variant {
    err: Error;
    ok;
  };
+type Result_7 = 
+ variant {
+   err: AddressBookError;
+   ok;
+ };
+type Result_6 = 
+ variant {
+   err: BuybackError;
+   ok: vec BuybackMass;
+ };
+type Result_5 = 
+ variant {
+   err: BuybackError;
+   ok: vec Buyback;
+ };
+type Result_4 = 
+ variant {
+   err: AddressBookError;
+   ok: vec Contact;
+ };
+type Result_3 = 
+ variant {
+   err: BuybackError;
+   ok: BuybackQuote;
+ };
+type Result_2 = 
+ variant {
+   err: ReconcileError;
+   ok: ReservedReconciliation;
+ };
+type Result_1 = 
+ variant {
+   err: BuybackError;
+   ok: Buyback;
+ };
 type Result = 
+ variant {
+   err: AddressBookError;
+   ok: Contact;
+ };
+type ReservedReconciliation = 
  record {
-   hasMore: bool;
-   rows: vec vec Cell;
+   by: principal;
+   previousReserved: nat;
+   reconciledAt: int;
  };
 type ReserveWithdrawal = 
  record {
@@ -266,11 +417,29 @@ type ReserveWithdrawal =
    blockIndex: nat;
    timestamp: Timestamp;
  };
+type ReconcileError = 
+ variant {
+   notAdmin;
+   notPaused;
+   openTraces;
+   purchaseInFlight;
+ };
+type PurchaseTrace = 
+ record {
+   amount: nat;
+   buyer: principal;
+   created_at_time: nat64;
+   memo: blob;
+   n: nat;
+   "reserved": nat;
+   token: PayToken;
+ };
 type PurchaseResult = 
  variant {
    Err: PurchaseError;
    Ok: Conversion;
  };
+type PurchaseId = nat;
 type PurchaseErrorCode = 
  variant {
    aboveRemaining:
@@ -393,6 +562,13 @@ type LegacyBlockInfo =
    boundaryIndex: nat;
    currentDecimals: nat8;
    legacyDecimals: nat8;
+ };
+type InvalidReason = 
+ variant {
+   memoTooLong: record {maxBytes: nat;};
+   nicknameEmpty;
+   nicknameTooLong: record {maxChars: nat;};
+   principalNotAllowed;
  };
 type IndexTransfer = 
  record {
@@ -535,6 +711,7 @@ type ForwardStatus =
  variant {
    failed: text;
    forwarded: nat;
+   needsReview;
    notRequired;
    pending;
  };
@@ -612,11 +789,13 @@ type DepositErrorKind =
 type DepositEntry = 
  record {
    btcDetectedSats: nat;
+   btcRefund: opt BtcRefund;
    btcTxids: vec text;
    ckbtcMintBlockIndex: opt nat;
    ckbtcMintedSats: nat;
    ckbtcPendingSats: nat;
    conversionId: opt nat;
+   costToRefund: opt BtcCostToRefund;
    detectedAt: Timestamp;
    errorKind: opt DepositErrorKind;
    errorMessage: opt text;
@@ -667,6 +846,7 @@ type ConversionStatus =
    completed;
    failed;
    refundFailed;
+   refundReview;
    refunded;
  };
 type Conversion = 
@@ -688,14 +868,193 @@ type Conversion =
    priceUsdE8: nat;
    recipient: Account;
    status: ConversionStatus;
-   timestamp: Timestamp__1;
+   timestamp: Timestamp__2;
    tttiAmount: nat;
    usedFallback: bool;
+ };
+type ContactInput = 
+ record {
+   memo: opt blob;
+   nickname: text;
+   "principal": principal;
+ };
+type ContactId = nat;
+type Contact = 
+ record {
+   createdAt: int;
+   id: ContactId;
+   memo: opt blob;
+   nickname: text;
+   "principal": principal;
+   updatedAt: int;
+ };
+type CollectState = 
+ variant {
+   confirmed;
+   unknown;
  };
 type Cell = 
  record {
    name: text;
    value: Value__2;
+ };
+type BuybackStatus = 
+ variant {
+   cancelled;
+   completed;
+   inProgress;
+   payoutFailed;
+ };
+type BuybackRule = 
+ variant {
+   dayRate;
+   originalNet;
+ };
+type BuybackQuote = 
+ record {
+   amountReturned: nat;
+   baseAmount: nat;
+   baseAmountReturned: nat;
+   buybackFee: nat;
+   massRemainingNet: nat;
+   massRemainingTtti: nat;
+   massTotalNet: nat;
+   massTotalTtti: nat;
+   originalNetAmount: nat;
+   originalRateUsdE8: nat;
+   originalToken: PayToken;
+   percent: nat;
+   returnedRateUsdE8: nat;
+   rule: BuybackRule;
+   thirdPartyFees: nat;
+   tokenReturned: PayToken;
+   tttiAllowanceRequired: nat;
+   tttiAmount: nat;
+   tttiEscrowFee: nat;
+   tttiTransferFee: nat;
+ };
+type BuybackPayoutAttempt = 
+ record {
+   attempt: TransferAttempt;
+   from: Account;
+ };
+type BuybackMass = 
+ record {
+   boughtBackNet: nat;
+   boughtBackTtti: nat;
+   buyer: principal;
+   inProgress: bool;
+   purchaseCount: nat;
+   remainingNet: nat;
+   remainingTtti: nat;
+   token: PayToken;
+   totalNet: nat;
+   totalTtti: nat;
+ };
+type BuybackId = nat;
+type BuybackFunding = 
+ record {
+   allowance: nat;
+   balance: nat;
+   error: opt text;
+   expiresAt: opt nat64;
+   token: PayToken;
+ };
+type BuybackError = 
+ variant {
+   adminAccountNotSet;
+   adminAllowanceExpired: record {token: PayToken;};
+   adminAllowanceInsufficient:
+    record {
+      allowance: nat;
+      required: nat;
+      token: PayToken;
+    };
+   adminBalanceInsufficient:
+    record {
+      balance: nat;
+      required: nat;
+      token: PayToken;
+    };
+   amountTooSmall;
+   anonymous;
+   attemptArrived;
+   attemptUnknown;
+   buybackInProgress;
+   buybackNotFound;
+   buyerAllowanceInsufficient: record {
+                                 allowance: nat;
+                                 required: nat;
+                               };
+   callFailed: text;
+   cancelFailed: text;
+   invalidPercent;
+   massBuybackInProgress;
+   notAuthorized;
+   notBuyer;
+   notCancellable;
+   notLegacy;
+   notRetryable;
+   nothingRemaining;
+   payoutFailed: text;
+   pullFailed: text;
+   rateUnavailable: PayToken;
+   receiveTokenMismatch;
+   releaseFailed: text;
+   salesPaused;
+ };
+type Buyback = 
+ record {
+   amountReturned: nat;
+   baseAmount: nat;
+   baseAmountReturned: nat;
+   buybackFee: nat;
+   buyer: principal;
+   buyerAccount: Account;
+   cancelBlock: opt nat;
+   id: BuybackId;
+   legacy: bool;
+   massRemainingNet: nat;
+   massRemainingTtti: nat;
+   massTotalNet: nat;
+   massTotalTtti: nat;
+   message: opt text;
+   originalNetAmount: nat;
+   originalRateUsdE8: nat;
+   originalToken: PayToken;
+   payoutAttempts: vec BuybackPayoutAttempt;
+   payoutBlock: opt nat;
+   percent: nat;
+   pullBlock: opt nat;
+   purchaseId: opt PurchaseId;
+   releaseBlock: opt nat;
+   returnedRateUsdE8: nat;
+   rule: BuybackRule;
+   status: BuybackStatus;
+   thirdPartyFees: nat;
+   timestamp: Timestamp;
+   tokenReturned: PayToken;
+   tttiAmount: nat;
+   tttiEscrowFee: nat;
+   tttiTransferFee: nat;
+ };
+type BtcUsdRate = 
+ record {
+   fetchedAt: Timestamp;
+   source: PriceSource;
+   usdE8: nat;
+   validUntil: Timestamp;
+ };
+type BtcRefundPurpose = 
+ variant {
+   deliveryFailedExcess;
+   excess;
+   fullRefund;
+ };
+type BtcRefund = 
+ record {
+   attempt: TransferAttempt;
+   purpose: BtcRefundPurpose;
  };
 type BtcDepositResult = 
  variant {
@@ -726,6 +1085,12 @@ type BtcDepositError =
    code: BtcDepositErrorCode;
    message: text;
  };
+type BtcCostToRefund = 
+ record {
+   amount: nat;
+   conversionId: opt nat;
+   refundedBlock: opt nat;
+ };
 type BlockIndex = nat;
 type Block = 
  record {
@@ -735,9 +1100,16 @@ type Block =
 type BalanceSnapshot = 
  record {
    decimals: nat8;
-   exportedAt: Timestamp__1;
+   exportedAt: Timestamp__2;
    holders: vec SnapshotEntry;
    totalSupply: nat;
+ };
+type AttemptOutcome = 
+ variant {
+   failed: text;
+   pending;
+   succeeded: nat;
+   unknown;
  };
 type ArchiveInfo = 
  record {
@@ -754,10 +1126,10 @@ type ApproveError =
  variant {
    AllowanceChanged: record {current_allowance: nat;};
    BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: Timestamp__1;};
+   CreatedInFuture: record {ledger_time: Timestamp__2;};
    Duplicate: record {duplicate_of: nat;};
-   Expired: record {ledger_time: Timestamp__1;};
-   ExpiredFrom: record {ledger_time: Timestamp__1;};
+   Expired: record {ledger_time: Timestamp__2;};
+   ExpiredFrom: record {ledger_time: Timestamp__2;};
    GenericError: record {
                    error_code: nat;
                    message: text;
@@ -769,9 +1141,9 @@ type ApproveError =
 type ApproveArgs = 
  record {
    amount: nat;
-   created_at_time: opt Timestamp__1;
+   created_at_time: opt Timestamp__2;
    expected_allowance: opt nat;
-   expires_at: opt Timestamp__1;
+   expires_at: opt Timestamp__2;
    fee: opt nat;
    from_subaccount: opt Subaccount;
    memo: opt blob;
@@ -785,7 +1157,15 @@ type AllowanceArgs =
 type Allowance = 
  record {
    allowance: nat;
-   expires_at: opt Timestamp__1;
+   expires_at: opt Timestamp__2;
+ };
+type AddressBookError = 
+ variant {
+   anonymous;
+   duplicateNickname;
+   invalidInput: InvalidReason;
+   limitReached: record {max: nat;};
+   notFound;
  };
 type AcknowledgementError = variant {anonymousCaller;};
 type AcknowledgedAt = int;
@@ -796,28 +1176,37 @@ type Account =
  };
 service : {
   _initialize_access_control: () -> ();
-  _internet_identity_sign_in_finish: () -> (Result__1);
+  _internet_identity_sign_in_finish: () -> (Result_8);
   _internet_identity_sign_in_start: () -> (blob);
   acceptPurchaseAcknowledgements: () ->
    (variant {
       err: AcknowledgementError;
       ok: PurchaseAcknowledgement;
     });
+  addContact: (input: ContactInput) -> (Result);
   assignCallerUserRole: (user: principal, role: UserRole) -> ();
+  cancelBuyback: (id: BuybackId) -> (Result_1);
   checkBtcPurchaseDeposit: () -> (BtcDepositResult);
   checkBtcWalletDeposit: () -> (BtcDepositResult);
+  checkBtcWalletDepositFor: (owner: principal) -> (BtcDepositResult);
   clearDeliveryAddress: () -> (bool);
   convertDeposit: (recipient: opt Account, icpAmount: nat) ->
    (PurchaseResult);
   convertDepositWith: (token: PayToken, recipient: opt Account, payAmount:
    nat, tttiTarget: opt nat) -> (PurchaseResult);
-  execute: (qJson: text) -> (Result) query;
+  deleteContact: (id: ContactId) -> (Result_7);
+  execute: (qJson: text) -> (Result__1) query;
   exportBalanceSnapshot: () -> (BalanceSnapshot) query;
   getApiDoc: () -> (text) query;
   getBtcDepositInfo: () -> (BtcDepositInfo) query;
   getBtcPurchaseAddress: () -> (BtcDepositResult);
+  getBtcUsdRate: () -> (opt BtcUsdRate) query;
   getBtcWalletAddress: () -> (BtcDepositResult);
+  getBtcWalletAddressFor: (owner: principal) -> (BtcDepositResult);
+  getBtcWalletDepositsFor: (owner: principal) -> (opt DepositTracking) query;
   getBurnAccount: () -> (Account) query;
+  getBuybackAdminAccount: () -> (opt Account) query;
+  getBuybackFunding: () -> (vec BuybackFunding);
   getCallerUserRole: () -> (UserRole) query;
   getCanisterPrincipal: () -> (principal) query;
   getConversions: () -> (vec Conversion) query;
@@ -834,6 +1223,7 @@ service : {
   getTechnicalDetails: () -> (TechnicalDetails) query;
   getTokenPrices: () -> (vec TokenPrice) query;
   getTreasuryConfig: () -> (opt TreasuryConfig) query;
+  getUpgradeReadiness: () -> (UpgradeReadiness) query;
   get_account_transactions: (args: GetAccountTransactionsArgs) ->
    (GetTransactionsResult) query;
   get_fee: () -> (nat) query;
@@ -862,10 +1252,30 @@ service : {
   icrc3_supported_block_types: () -> (vec SupportedBlockType) query;
   isCallerAdmin: () -> (bool) query;
   ledger_id: () -> (principal) query;
+  listAllBuybackMasses: () -> (vec BuybackMass) query;
+  listAllBuybacks: () -> (vec Buyback) query;
+  listMyBuybackMasses: () -> (Result_6) query;
+  listMyBuybacks: () -> (Result_5) query;
+  listMyContacts: () -> (Result_4) query;
+  listTransfersToReview: () -> (vec TransferReview) query;
   list_subaccounts: (args: ListSubaccountsArgs) -> (vec Subaccount) query;
+  markBuybackCancelled: (id: BuybackId, block: nat) -> (Result_1);
+  markRefundedManually: (kind: TransferKind, purchaseId: nat, block: 
+   nat) -> (ReviewResult);
+  markTransferArrived: (kind: TransferKind, purchaseId: nat, block: nat) ->
+   (ReviewResult);
+  markTransferNotArrived: (kind: TransferKind, purchaseId: nat) ->
+   (ReviewResult);
+  quoteBuyback: (massToken: PayToken, percent: nat, receiveToken:
+   PayToken) -> (Result_3) query;
+  reconcileReserved: () -> (Result_2);
   refreshIcpPrice: () -> (PriceResult);
   refreshTokenPrice: (token: PayToken) -> (TokenPriceResult);
+  requestBuyback: (massToken: PayToken, percent: nat, receiveToken: PayToken,
+   fromSubaccount: opt blob) -> (Result_1);
+  retryBuybackPayout: (buybackId: BuybackId) -> (Result_1);
   schema: () -> (text) query;
+  setBuybackAdminAccount: (account: Account) -> ();
   setDeliveryAddress: (principalText: text) -> (DeliveryAddressResult);
   setPayTokenAccount: (token: PayToken, account: Account) ->
    (TokenAccountResult);
@@ -874,5 +1284,6 @@ service : {
   set_fee: (newFee: nat) -> (SetFeeResult);
   status: () -> (IndexStatus) query;
   transform: (input: TransformationInput) -> (TransformationOutput) query;
+  updateContact: (id: ContactId, input: ContactInput) -> (Result);
   withdrawReserveExcess: (amount: nat) -> (WithdrawReserveResult);
 }

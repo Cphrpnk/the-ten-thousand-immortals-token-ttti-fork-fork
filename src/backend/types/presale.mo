@@ -69,8 +69,15 @@ module {
   // Nanoseconds since epoch (Time.now()).
   public type AcknowledgedAt = Int;
 
-  // Per principal: when the caller accepted the six purchase acknowledgements.
-  public type AcknowledgementStore = Map.Map<Principal, AcknowledgedAt>;
+  // When the caller accepted the purchase acknowledgements and which terms
+  // version (records from before versioning are version 1).
+  public type AcknowledgementRecord = {
+    acceptedAt : AcknowledgedAt;
+    version : Nat;
+  };
+
+  // Per principal: the caller's latest acceptance of the purchase acknowledgements.
+  public type AcknowledgementStore = Map.Map<Principal, AcknowledgementRecord>;
 
   public type PurchaseAcknowledgement = {
     accepted : Bool;
@@ -127,7 +134,7 @@ module {
     // The caller already has a purchase in flight (any token); refused
     // immediately, with no external call.
     #purchaseInProgress;
-    #acknowledgementRequired; // the six purchase acknowledgements are not accepted yet
+    #acknowledgementRequired; // the current version of the six purchase acknowledgements is not accepted
     #notConfigured; // ICP treasury account not set
     #tokenNotConfigured : { token : PayToken }; // receiving account of this ck token not set
     // icrc1_decimals / icrc1_fee of the ledger differ from the expected values.

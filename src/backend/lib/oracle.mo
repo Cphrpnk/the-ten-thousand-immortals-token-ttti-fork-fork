@@ -100,6 +100,19 @@ module {
     ];
   };
 
+  // The stored BTC/USD rate (rates.ckbtc) as { usdE8; source; fetchedAt;
+  // validUntil }, or null while no rate has been fetched. Never an outcall.
+  public func getBtcUsdRate(rates : TokenRateStore) : ?Oracle.BtcUsdRate {
+    let store = rates.ckbtc;
+    if (store.fetchedAt == 0 or store.usdE8 == 0) return null;
+    ?{
+      usdE8 = store.usdE8;
+      source = store.source;
+      fetchedAt = store.fetchedAt;
+      validUntil = store.validUntil;
+    };
+  };
+
   // Coinbase then CoinGecko for `token`; same storage and error rules as
   // fetchAndStore. Never traps.
   public func fetchAndStoreToken(store : OracleStore, token : PayToken, transform : OutCall.Transform) : async PriceResult {

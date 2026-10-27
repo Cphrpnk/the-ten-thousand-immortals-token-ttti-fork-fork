@@ -46,6 +46,9 @@ export const HISTORY_TEXT = defineDict({
     parentHashTitle: (hash: string) => `Parent hash ${hash}`,
     parentHashAria: (hash: string, block: string) =>
       `Parent hash ${hash}, go to block ${block}`,
+    blockHash: "Block hash",
+    blockHashCopy: "Copy block hash",
+    blockHashCopied: "Copied",
     minted: "Minted",
     ledger: "Ledger",
     spenderNote: "spender",
@@ -129,6 +132,9 @@ export const HISTORY_TEXT = defineDict({
     parentHashTitle: (hash: string) => `Hash parent ${hash}`,
     parentHashAria: (hash: string, block: string) =>
       `Hash parent ${hash}, aller au bloc ${block}`,
+    blockHash: "Hash du bloc",
+    blockHashCopy: "Copier le hash du bloc",
+    blockHashCopied: "Copié",
     minted: "Minté",
     ledger: "Ledger",
     spenderNote: "spender",
@@ -212,6 +218,9 @@ export const HISTORY_TEXT = defineDict({
     parentHashTitle: (hash: string) => `Hash padre ${hash}`,
     parentHashAria: (hash: string, block: string) =>
       `Hash padre ${hash}, ir al bloque ${block}`,
+    blockHash: "Hash del bloque",
+    blockHashCopy: "Copiar el hash del bloque",
+    blockHashCopied: "Copiado",
     minted: "Minteado",
     ledger: "Ledger",
     spenderNote: "spender",
@@ -291,6 +300,9 @@ export const HISTORY_TEXT = defineDict({
     parentHashTitle: (hash: string) => `父哈希 ${hash}`,
     parentHashAria: (hash: string, block: string) =>
       `父哈希 ${hash}，前往区块 ${block}`,
+    blockHash: "区块哈希",
+    blockHashCopy: "复制区块哈希",
+    blockHashCopied: "已复制",
     minted: "已铸造",
     ledger: "Ledger",
     spenderNote: "spender",
@@ -373,6 +385,9 @@ export const HISTORY_TEXT = defineDict({
     parentHashTitle: (hash: string) => `Hash pai ${hash}`,
     parentHashAria: (hash: string, block: string) =>
       `Hash pai ${hash}, ir para o bloco ${block}`,
+    blockHash: "Hash do bloco",
+    blockHashCopy: "Copiar o hash do bloco",
+    blockHashCopied: "Copiado",
     minted: "Mintado",
     ledger: "Ledger",
     spenderNote: "spender",
@@ -455,6 +470,9 @@ export const HISTORY_TEXT = defineDict({
     parentHashTitle: (hash: string) => `부모 해시 ${hash}`,
     parentHashAria: (hash: string, block: string) =>
       `부모 해시 ${hash}, 블록 ${block}(으)로 이동`,
+    blockHash: "블록 해시",
+    blockHashCopy: "블록 해시 복사",
+    blockHashCopied: "복사됨",
     minted: "발행됨",
     ledger: "Ledger",
     spenderNote: "spender",
@@ -535,6 +553,9 @@ export const HISTORY_TEXT = defineDict({
     parentHashTitle: (hash: string) => `ਪੇਰੈਂਟ ਹੈਸ਼ ${hash}`,
     parentHashAria: (hash: string, block: string) =>
       `ਪੇਰੈਂਟ ਹੈਸ਼ ${hash}, ਬਲਾਕ ${block} 'ਤੇ ਜਾਓ`,
+    blockHash: "ਬਲਾਕ ਦਾ ਹੈਸ਼",
+    blockHashCopy: "ਬਲਾਕ ਦਾ ਹੈਸ਼ ਕਾਪੀ ਕਰੋ",
+    blockHashCopied: "ਕਾਪੀ ਹੋ ਗਿਆ",
     minted: "Mint ਕੀਤਾ",
     ledger: "Ledger",
     spenderNote: "spender",

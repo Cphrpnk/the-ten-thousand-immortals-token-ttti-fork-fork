@@ -11,6 +11,8 @@ interface ChoiceTileProps {
   tone?: ChoiceTone;
   /** Small pill next to the label (e.g. "Recommended"). */
   badge?: string;
+  /** Short muted line under the label. */
+  description?: string;
   /** Replaces the default chevron on the right. */
   trailing?: ReactNode;
   /** Renders an external link opening in a new tab instead of a button. */
@@ -41,6 +43,7 @@ export function ChoiceTile({
   ocid,
   tone = "default",
   badge,
+  description,
   trailing,
   href,
   onClick,
@@ -76,6 +79,11 @@ export function ChoiceTile({
         {badge ? (
           <span className="rounded-full border border-gold px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
             {badge}
+          </span>
+        ) : null}
+        {description ? (
+          <span className="basis-full text-left text-sm text-muted-foreground">
+            {description}
           </span>
         ) : null}
       </span>

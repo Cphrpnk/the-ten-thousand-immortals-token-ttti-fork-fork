@@ -113,34 +113,6 @@ module {
     store.conversions.reverseEntries().map(func((_, c)) = c).filter(func c = c.depositor == caller or c.recipient.owner == caller).toArray();
   };
 
-  func isFailedForward(c : Conversion) : Bool {
-    c.status == #completed and (switch (c.forward) { case (#failed(_)) { true }; case (_) { false } });
-  };
-
-  // Automatic rule (no admin endpoint): re-sends, once each, the treasury part
-  // of conversions whose forward is #failed, in the conversion's own pay token
-  // to that token's treasury account (amount = forwardBase(conversion) minus
-  // the token's ledger fee; forwardBase excludes the cycles reserve share of
-  // ICP conversions, so it is never sent again). Each is re-checked and marked
-  // #pending synchronously before its ledger await so it can never forward
-  // twice; ends as #forwarded(blockIndex) or #failed(reason). Called after a
-  // successful delivery. Never traps.
-  public func retryFailedForwards(store : TreasuryStore, canisterAccount : Account, forwardBase : Conversion -> Nat) : async () {
-    let failed = store.conversions.values().filter(isFailedForward).toArray();
-    for (candidate in failed.values()) {
-      let current = store.conversions.get(candidate.id) ?? candidate;
-      switch (if (isFailedForward(current)) tokenAccount(store, current.payToken) else null) {
-        case (?target) {
-          store.conversions.add(current.id, { current with forward = #pending });
-          let forward = await PayTokenLib.forward(PayTokenLib.ledger(current.payToken), current.payToken, canisterAccount, target, forwardBase(current));
-          let latest = store.conversions.get(current.id) ?? current;
-          store.conversions.add(current.id, { latest with forward });
-        };
-        case null {};
-      };
-    };
-  };
-
   // --- Conversion records ----------------------------------------------------
 
   // Stores `conversion` under a fresh id (store.nextConversionId) with

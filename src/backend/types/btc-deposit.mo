@@ -1,4 +1,5 @@
 import Map "mo:core/Map";
+import Retry "retry";
 
 module {
   // Native BTC deposits through the ckBTC minter (mqygn-kiaaa-aaaar-qaadq-cai).
@@ -40,6 +41,23 @@ module {
     #refundFailed;
   };
 
+  // The current BTC refund attempt of a deposit entry (memo
+  // TTTI-BR-<n>-<attempt>, sent from the buyer's deposit subaccount through
+  // lib/retry.mo). A new attempt replaces the previous one.
+  public type BtcRefund = {
+    purpose : Retry.BtcRefundPurpose;
+    attempt : Retry.TransferAttempt;
+  };
+
+  // The BTC cost of a delivery-and-refund failure (already sent to the
+  // treasury), to be refunded by hand by the admin. `refundedBlock` is set by
+  // markRefundedManually.
+  public type BtcCostToRefund = {
+    amount : Nat; // ckBTC sats
+    conversionId : ?Nat;
+    refundedBlock : ?Nat;
+  };
+
   // One Bitcoin transfer (transaction) sent to the stable address, tracked and
   // converted for its own amount; UTXOs are attributed to entries by txid.
   public type DepositEntry = {
@@ -60,6 +78,11 @@ module {
     updatedAt : Timestamp;
     errorKind : ?DepositErrorKind;
     errorMessage : ?Text;
+    // Purchase: current BTC refund attempt (null = none; legacy entries
+    // recorded without created_at_time have none).
+    btcRefund : ?BtcRefund;
+    // Purchase, delivery-and-refund failure: cost to refund by hand.
+    costToRefund : ?BtcCostToRefund;
   };
 
   // Per principal and kind: one stable address, never rotated, with the
@@ -96,7 +119,7 @@ module {
     #anonymousCaller;
     #acknowledgementRequired; // purchase only
     #purchaseInProgress; // purchase only: shared one-purchase-per-principal lock
-    #noAddressYet; // check called before the address was requested
+    #noAddressYet; // no longer returned (kept for API compatibility)
     #minterUnavailable; // minter call rejected or failed
   };
 

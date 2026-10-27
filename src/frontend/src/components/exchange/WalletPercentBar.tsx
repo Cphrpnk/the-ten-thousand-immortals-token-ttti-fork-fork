@@ -1,17 +1,18 @@
 import * as SliderPrimitive from "@radix-ui/react-slider";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import type { PayToken } from "../../backend";
 import { useDict } from "../../i18n/core/dict";
 import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
 import {
   PAY_TOKENS,
   WALLET_PERCENT_SNAPS,
+  amountForPercentWithFees,
   formatPayAmount,
   formatTtti,
+  formatUnits,
+  networkFeesFor,
   snapWalletPercent,
-  spendableToken,
-  tokenForWalletPercent,
-  walletNetworkFees,
+  spendableWithFees,
 } from "../../lib/token";
 import { cn } from "../../lib/utils";
 
@@ -23,41 +24,88 @@ function markLeft(value: number): string {
   return `calc(${pct}% + ${THUMB_PX / 2 - (pct * THUMB_PX) / 100}px)`;
 }
 
-interface WalletPercentBarProps {
-  /** Selected pay token. */
-  token: PayToken;
-  /** Wallet balance of the token in base units. */
+/** Labels of the bar: BUY_PANELS_TEXT (mint) or SEND_PERCENT_TEXT (send forms). */
+export interface PercentBarText {
+  percentConnect: string;
+  /** Shown while the balance loads; falls back to percentBalanceUnavailable. */
+  percentLoading?: string;
+  percentBalanceUnavailable: string;
+  percentNotCover: (fees: string) => string;
+  percentShare: (symbol: string) => string;
+  /** `quote` is the formatted quote, or "" when the bar has no quote. */
+  percentSummary: (percent: string, amount: string, quote: string) => string;
+  percentComputedOn: (fees: string) => string;
+}
+
+export interface PercentBarProps {
+  /** Token symbol shown in the label. */
+  symbol: string;
+  /** Token decimals, used by the default amount format. */
+  decimals: number;
+  /** Ledger fee in base units. */
+  ledgerFee: bigint;
+  /** Ledger fees kept out of the balance: 2 for approve + transfer_from, 1 for a transfer. */
+  feeCount: number;
+  /** Wallet balance in base units. */
   balance: bigint | undefined;
+  /** True while the balance is being fetched. */
+  balanceLoading?: boolean;
   walletConnected: boolean;
   /** Chosen percentage, or null when the amount was typed. */
   percent: number | null;
-  /** Current pay amount, used to place the thumb when no percentage is set. */
+  /** Current amount, used to place the thumb when no percentage is set. */
   currentAmount: bigint;
   disabled: boolean;
-  /** TTTI-T received (rounded down) for a pay amount; null without a rate. */
-  quote: (amount: bigint) => bigint | null;
+  text: PercentBarText;
+  /** Amount display; defaults to formatUnits(amount, decimals). */
+  formatAmount?: (amount: bigint) => string;
+  /** Optional quote for an amount (e.g. TTTI-T received); null without a rate. */
+  quote?: (amount: bigint) => bigint | null;
+  /** Quote display; defaults to formatAmount. */
+  formatQuote?: (value: bigint) => string;
+  /** data-ocid prefix; defaults to "exchange.percent_bar". */
+  ocidPrefix?: string;
+  /** id of the label element; generated when omitted. */
+  labelId?: string;
   onSelect: (percent: number) => void;
 }
 
-export function WalletPercentBar({
-  token,
+/** Wallet percentage bar: slider 1..100 snapping at 10/25/50/75/90/100. */
+export function PercentBar({
+  symbol,
+  decimals,
+  ledgerFee,
+  feeCount,
   balance,
+  balanceLoading = false,
   walletConnected,
   percent,
   currentAmount,
   disabled,
+  text: t,
+  formatAmount,
   quote,
+  formatQuote,
+  ocidPrefix = "exchange.percent_bar",
+  labelId,
   onSelect,
-}: WalletPercentBarProps) {
-  const t = useDict(BUY_PANELS_TEXT);
+}: PercentBarProps) {
   const keyboard = useRef(false);
-  const { symbol, fee } = PAY_TOKENS[token];
-  const feesText = formatPayAmount(walletNetworkFees(fee), token);
-  const spendable = balance !== undefined ? spendableToken(balance, token) : 0n;
+  const generatedId = useId();
+  const labelElementId = labelId ?? `percent-label-${generatedId}`;
+  const format =
+    formatAmount ?? ((amount: bigint) => formatUnits(amount, decimals));
+  const feesText = format(networkFeesFor(ledgerFee, feeCount));
+  const spendable =
+    balance !== undefined
+      ? spendableWithFees(balance, ledgerFee, feeCount)
+      : 0n;
   const hint = !walletConnected
     ? t.percentConnect
     : balance === undefined
-      ? t.percentBalanceUnavailable
+      ? balanceLoading && t.percentLoading
+        ? t.percentLoading
+        : t.percentBalanceUnavailable
       : spendable <= 0n
         ? t.percentNotCover(feesText)
         : null;
@@ -68,27 +116,29 @@ export function WalletPercentBar({
   const sliderValue = percent ?? Math.min(100, Math.max(1, approx));
   const amountAtPercent =
     percent !== null && balance !== undefined
-      ? tokenForWalletPercent(balance, token, percent)
+      ? amountForPercentWithFees(balance, ledgerFee, feeCount, percent)
       : null;
-  const tttiAtPercent =
-    amountAtPercent !== null ? quote(amountAtPercent) : null;
+  const quoteValue =
+    quote && amountAtPercent !== null ? quote(amountAtPercent) : null;
+  const quoteText = !quote
+    ? ""
+    : quoteValue !== null
+      ? (formatQuote ?? format)(quoteValue)
+      : "—";
 
   return (
     <div
       className="space-y-3 rounded-lg border border-border bg-background/60 px-3 py-3"
-      data-ocid="exchange.percent_bar.panel"
+      data-ocid={`${ocidPrefix}.panel`}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <span
-          id="wallet-percent-label"
-          className="text-sm text-muted-foreground"
-        >
+        <span id={labelElementId} className="text-sm text-muted-foreground">
           {t.percentShare(symbol)}
         </span>
         <span
           className="font-mono text-sm font-semibold tabular-nums text-primary"
           aria-live="polite"
-          data-ocid="exchange.percent_bar.value"
+          data-ocid={`${ocidPrefix}.value`}
         >
           {percent !== null ? `${percent}%` : "—"}
         </span>
@@ -114,13 +164,13 @@ export function WalletPercentBar({
             );
           }}
           className="relative flex w-full touch-none select-none items-center py-3 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
-          data-ocid="exchange.percent_bar.input"
+          data-ocid={`${ocidPrefix}.input`}
         >
           <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted">
             <SliderPrimitive.Range className="absolute h-full bg-gradient-primary" />
           </SliderPrimitive.Track>
           <SliderPrimitive.Thumb
-            aria-labelledby="wallet-percent-label"
+            aria-labelledby={labelElementId}
             aria-valuetext={percent !== null ? `${percent}%` : undefined}
             className="block size-5 rounded-full border-2 border-gold-strong bg-background shadow-gold transition-smooth hover:ring-4 hover:ring-ring/30 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/70 data-[disabled]:pointer-events-none"
           />
@@ -153,7 +203,7 @@ export function WalletPercentBar({
                 ? "border-gold-strong bg-primary/15 text-primary"
                 : "border-border text-muted-foreground hover:border-gold hover:text-foreground",
             )}
-            data-ocid={`exchange.percent_bar.button.${index + 1}`}
+            data-ocid={`${ocidPrefix}.button.${index + 1}`}
           >
             {point}%
           </button>
@@ -163,19 +213,19 @@ export function WalletPercentBar({
       {hint ? (
         <p
           className="text-xs text-muted-foreground"
-          data-ocid="exchange.percent_bar.hint"
+          data-ocid={`${ocidPrefix}.hint`}
         >
           {hint}
         </p>
       ) : amountAtPercent !== null ? (
         <p
           className="text-xs tabular-nums text-muted-foreground"
-          data-ocid="exchange.percent_bar.summary"
+          data-ocid={`${ocidPrefix}.summary`}
         >
           {t.percentSummary(
             String(percent),
-            formatPayAmount(amountAtPercent, token),
-            tttiAtPercent !== null ? formatTtti(tttiAtPercent) : "—",
+            format(amountAtPercent),
+            quoteText,
           )}
         </p>
       ) : (
@@ -184,5 +234,55 @@ export function WalletPercentBar({
         </p>
       )}
     </div>
+  );
+}
+
+interface WalletPercentBarProps {
+  /** Selected pay token. */
+  token: PayToken;
+  /** Wallet balance of the token in base units. */
+  balance: bigint | undefined;
+  walletConnected: boolean;
+  /** Chosen percentage, or null when the amount was typed. */
+  percent: number | null;
+  /** Current pay amount, used to place the thumb when no percentage is set. */
+  currentAmount: bigint;
+  disabled: boolean;
+  /** TTTI-T received (rounded down) for a pay amount; null without a rate. */
+  quote: (amount: bigint) => bigint | null;
+  onSelect: (percent: number) => void;
+}
+
+/** Mint page bar: pay token, 2 ledger fees (approve + transfer_from), TTTI-T quote. */
+export function WalletPercentBar({
+  token,
+  balance,
+  walletConnected,
+  percent,
+  currentAmount,
+  disabled,
+  quote,
+  onSelect,
+}: WalletPercentBarProps) {
+  const t = useDict(BUY_PANELS_TEXT);
+  const { symbol, decimals, fee } = PAY_TOKENS[token];
+  return (
+    <PercentBar
+      symbol={symbol}
+      decimals={decimals}
+      ledgerFee={fee}
+      feeCount={2}
+      balance={balance}
+      walletConnected={walletConnected}
+      percent={percent}
+      currentAmount={currentAmount}
+      disabled={disabled}
+      text={t}
+      formatAmount={(amount) => formatPayAmount(amount, token)}
+      quote={quote}
+      formatQuote={(value) => formatTtti(value)}
+      labelId="wallet-percent-label"
+      onSelect={onSelect}
+    />
   );
 }

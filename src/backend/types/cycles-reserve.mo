@@ -71,9 +71,10 @@ module {
 
   // Transfer of a purchase's reserve share into the reserve subaccount.
   public type ReserveTransferStatus = {
-    #pending; // not attempted yet, or in flight
+    #pending; // an attempt is open (RetryStore.shares); sent or resent by the 10-min timer
     #transferred : Nat; // ICP ledger block index
-    #failed : Text; // retried automatically after the next purchase
+    #failed : Text; // legacy failure text
+    #needsReview; // outcome unknown after 23 h (or legacy): admin verification required
   };
 
   // Fee split of one delivered purchase (keyed by conversion id).
@@ -87,20 +88,57 @@ module {
     transfer : ReserveTransferStatus;
   };
 
+  // Outcome of a recorded top-up transfer, same rule as lib/retry.mo:
+  // #pending   = recorded, not sent yet;
+  // #unknown   = a send was rejected or trapped; stays unknown until an Ok or
+  //              a #Duplicate (resent identically within 23 h);
+  // #failed    = known ledger Err: a new attempt is allowed;
+  // #succeeded = Ok or #Duplicate, with the ICP ledger block index.
+  public type TopUpOutcome = {
+    #pending;
+    #unknown;
+    #failed : Text;
+    #succeeded : Nat;
+  };
+
+  // The complete recorded ICP transfer to the CMC; a resend uses it unchanged.
+  public type TopUpTransferRequest = {
+    from_subaccount : ?Blob; // CYCLES_RESERVE_SUBACCOUNT
+    to : Account; // CMC top-up account of this canister
+    amount : Nat; // e8s
+    fee : Nat; // e8s
+  };
+
+  // The cycles top-up transfer attempt, recorded before the first await and
+  // kept in stable state so it survives upgrades. memo is the CMC TPUP memo
+  // blob; created_at_time is fixed for the attempt. After 23 h with an
+  // unknown outcome, needsReview = true and it is no longer resent.
+  public type TopUpAttempt = {
+    amount : Nat; // e8s
+    created_at_time : Nat64; // ns
+    memo : Blob; // TPUP_MEMO_BLOB
+    request : TopUpTransferRequest;
+    blockIndex : ?Nat; // ICP ledger block when known
+    createdAt : Timestamp;
+    sends : Nat;
+    lastError : ?Text;
+    outcome : TopUpOutcome;
+    needsReview : Bool;
+  };
+
   // Stable reserve state.
   public type CyclesReserveStore = {
     var reserveBalanceE8s : Nat;
     var lastTopUp : ?TopUpRecord;
     withdrawals : List.List<ReserveWithdrawal>;
     shares : Map.Map<Nat, ReserveShare>;
+    var pendingTopUp : ?TopUpAttempt; // the stored top-up attempt, null when none
   };
 
   // Shared (transient) lock: top-up and withdrawal never run at the same time.
-  // unconfirmedTopUp: a CMC transfer sent whose ledger reply was lost; it is
-  // re-sent with the same amount and created_at_time (ledger deduplication).
+  // The top-up attempt itself is stored in CyclesReserveStore.pendingTopUp.
   public type ReserveLock = {
     var busy : Bool;
-    var unconfirmedTopUp : ?{ amount : Nat; createdAt : Nat64 };
   };
 
   // --- Cycles Minting Canister (rkp4c-7iaaa-aaaaa-aaaca-cai) -----------------

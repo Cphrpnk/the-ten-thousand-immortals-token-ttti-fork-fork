@@ -1,4 +1,4 @@
-import { Check, Copy, Download } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { Account } from "../../backend";
@@ -8,13 +8,6 @@ import { encodeAccountText } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
 import { FlatTokenIcon } from "../FlatTokenIcon";
 import { Button } from "../ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
 import { Label } from "../ui/label";
 import {
   Select,
@@ -27,11 +20,18 @@ import {
 interface ReceivePanelProps {
   tokens: Array<TokenDescriptor>;
   account: Account | undefined;
+  /** Ledger canister ID preselected in the token selector. */
+  initialTokenId?: string;
 }
 
-export function ReceivePanel({ tokens, account }: ReceivePanelProps) {
+/** Receive account (shown in the wallet's Receive dialog); same for every ICRC token. */
+export function ReceivePanel({
+  tokens,
+  account,
+  initialTokenId = "",
+}: ReceivePanelProps) {
   const t = useDict(WALLET_TEXT);
-  const [tokenId, setTokenId] = useState<string>("");
+  const [tokenId, setTokenId] = useState<string>(initialTokenId);
   const [copied, setCopied] = useState(false);
 
   const selected = tokens.find((tk) => tk.canisterId.toText() === tokenId);
@@ -50,84 +50,77 @@ export function ReceivePanel({ tokens, account }: ReceivePanelProps) {
   };
 
   return (
-    <Card
-      className="rounded-lg border-gold bg-card shadow-elevated"
-      data-ocid="wallet.receive_panel"
-    >
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg font-display">
-          <Download className="h-4 w-4 text-primary" />
-          {t.receive}
-        </CardTitle>
-        <CardDescription>{t.receiveDescription}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="receive-token">{t.token}</Label>
-          <Select value={tokenId} onValueChange={setTokenId}>
-            <SelectTrigger
-              id="receive-token"
-              className="w-full"
-              data-ocid="wallet.receive_token_select"
-            >
-              <SelectValue placeholder={t.selectToken} />
-            </SelectTrigger>
-            <SelectContent>
-              {tokens.map((token) => (
-                <SelectItem
-                  key={token.canisterId.toText()}
-                  value={token.canisterId.toText()}
-                >
-                  {token.symbol.startsWith("TTTI") ? (
-                    <span className="inline-flex items-center gap-2">
-                      <FlatTokenIcon className="h-4 w-4" alt="" />
-                      {token.symbol} — {token.name}
-                    </span>
-                  ) : (
-                    <>
-                      {token.symbol} — {token.name}
-                    </>
-                  )}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label>{t.account}</Label>
-          <div
-            className="rounded-lg border border-gold bg-muted p-3"
-            data-ocid="wallet.receive_identifier"
+    <div className="flex flex-col gap-4" data-ocid="wallet.receive_panel">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="receive-token">{t.token}</Label>
+        <Select value={tokenId} onValueChange={setTokenId}>
+          <SelectTrigger
+            id="receive-token"
+            className="w-full"
+            data-ocid="wallet.receive_token_select"
           >
-            <p className="break-all font-mono text-xs text-foreground">
-              {identifier || t.receiveConnectHint}
-            </p>
-          </div>
-        </div>
+            <SelectValue placeholder={t.selectToken} />
+          </SelectTrigger>
+          <SelectContent>
+            {tokens.map((token) => (
+              <SelectItem
+                key={token.canisterId.toText()}
+                value={token.canisterId.toText()}
+              >
+                {token.symbol.startsWith("TTTI") ? (
+                  <span className="inline-flex items-center gap-2">
+                    <FlatTokenIcon className="h-4 w-4" alt="" />
+                    {token.symbol} — {token.name}
+                  </span>
+                ) : (
+                  <>
+                    {token.symbol} — {token.name}
+                  </>
+                )}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-        <Button
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="receive-identifier">{t.account}</Label>
+        <button
+          id="receive-identifier"
           type="button"
-          variant="outline"
-          className="w-full rounded-lg border-gold transition-smooth hover:border-gold-strong hover:bg-primary/10 hover:text-foreground"
           onClick={handleCopy}
           disabled={!identifier}
-          data-ocid="wallet.receive_copy_button"
+          title={identifier ? t.copyAccount : undefined}
+          className="rounded-lg border border-gold bg-muted p-3 text-left transition-smooth hover:border-gold-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+          data-ocid="wallet.receive_identifier"
         >
-          {copied ? (
-            <Check className="h-4 w-4 text-success" />
-          ) : (
-            <Copy className="h-4 w-4" />
-          )}
-          {copied ? t.copied : t.copyAccount}
-        </Button>
+          <span className="block break-all font-mono text-xs text-foreground">
+            {identifier || t.receiveConnectHint}
+          </span>
+        </button>
+      </div>
 
-        {selected && (
-          <p className="text-xs text-muted-foreground">
-            {t.receivingTo(selected.symbol)}
-          </p>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full rounded-lg border-gold transition-smooth hover:border-gold-strong hover:bg-primary/10 hover:text-foreground"
+        onClick={handleCopy}
+        disabled={!identifier}
+        data-ocid="wallet.receive_copy_button"
+      >
+        {copied ? (
+          <Check className="h-4 w-4 text-success" />
+        ) : (
+          <Copy className="h-4 w-4" />
         )}
-      </CardContent>
-    </Card>
+        {copied ? t.copied : t.copyAccount}
+      </Button>
+
+      {selected && (
+        <p className="text-xs text-muted-foreground">
+          {t.receivingTo(selected.symbol)}
+        </p>
+      )}
+    </div>
   );
 }

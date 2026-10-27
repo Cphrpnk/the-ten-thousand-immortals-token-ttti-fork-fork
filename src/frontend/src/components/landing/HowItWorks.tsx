@@ -1,5 +1,7 @@
+import { useNavigate } from "@tanstack/react-router";
 import { Coins, Sparkles, Wallet } from "lucide-react";
 import { motion } from "motion/react";
+import { useBuyFunnel } from "../../hooks/useBuyFunnel";
 import { useDict } from "../../i18n/core";
 import { HOW_TEXT } from "../../i18n/pages/landing";
 
@@ -11,6 +13,15 @@ const steps = [
 
 export function HowItWorks() {
   const t = useDict(HOW_TEXT);
+  const navigate = useNavigate();
+  const { openSetup, startBuy } = useBuyFunnel();
+  const actions: Record<(typeof steps)[number]["id"], () => void> = {
+    wallet: openSetup,
+    icp: () => {
+      void navigate({ to: "/wallet", hash: "wallet-tokens" });
+    },
+    buy: startBuy,
+  };
   return (
     <section
       id="how-it-works"
@@ -51,12 +62,23 @@ export function HowItWorks() {
                 className="relative flex flex-col items-center text-center"
                 data-ocid={`landing.how_it_works.item.${index + 1}`}
               >
-                <span className="relative flex h-16 w-16 items-center justify-center rounded-full border border-gold-strong bg-background text-primary shadow-gold">
-                  <step.icon className="h-6 w-6" aria-hidden="true" />
-                  <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-primary font-display text-xs font-semibold text-primary-foreground">
-                    {index + 1}
+                <button
+                  type="button"
+                  onClick={actions[step.id]}
+                  aria-label={t[step.title]}
+                  className="cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  data-ocid={`landing.how_it_works.step_button.${index + 1}`}
+                >
+                  <span className="relative flex h-16 w-16 items-center justify-center rounded-full border border-gold-strong bg-background text-primary shadow-gold">
+                    <step.icon className="h-6 w-6" aria-hidden="true" />
+                    <span
+                      aria-hidden="true"
+                      className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-primary font-display text-xs font-semibold text-primary-foreground"
+                    >
+                      {index + 1}
+                    </span>
                   </span>
-                </span>
+                </button>
                 <h3 className="mt-6 font-display text-xl text-foreground">
                   {t[step.title]}
                 </h3>

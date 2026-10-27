@@ -1,9 +1,20 @@
 import { AlertTriangle, ChevronDown, History, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { type Conversion, ConversionStatus } from "../../backend";
+import {
+  type Buyback,
+  type BuybackMass,
+  type Conversion,
+  ConversionStatus,
+  type PayToken,
+} from "../../backend";
+import { useBuybackMasses, useMyBuybacks } from "../../hooks/useBuyback";
+import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import { useMyConversions } from "../../hooks/useQueries";
+import { WALLET_HISTORY_PAGE_SIZE } from "../../hooks/useWallet";
 import { useDict, useLanguage } from "../../i18n/core";
+import { BUYBACK_TEXT } from "../../i18n/pages/buyback";
 import { WALLET_EXPLORER_TEXT, WALLET_TEXT } from "../../i18n/pages/wallet";
+import { buybackForPurchase, massBuybacks, massFor } from "../../lib/buyback";
 import type { BlockLinkTarget } from "../../lib/explorer";
 import {
   formatBlockIndex,
@@ -23,6 +34,11 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
+import { HistoryPager } from "./HistoryPager";
+import {
+  BuybackRecordState,
+  PurchaseBuybackState,
+} from "./PurchaseBuybackState";
 
 type WalletText = (typeof WALLET_TEXT)["en"];
 
@@ -34,6 +50,7 @@ const STATUS_CLASS: Record<ConversionStatus, string> = {
   [ConversionStatus.refunded]: "border-border text-muted-foreground",
   [ConversionStatus.failed]: "border-destructive/50 text-destructive",
   [ConversionStatus.refundFailed]: "border-destructive/50 text-destructive",
+  [ConversionStatus.refundReview]: "border-destructive/50 text-destructive",
 };
 
 function statusLabel(status: ConversionStatus, t: WalletText): string {
@@ -46,6 +63,8 @@ function statusLabel(status: ConversionStatus, t: WalletText): string {
       return t.historyStatusFailed;
     case ConversionStatus.refundFailed:
       return t.historyStatusRefundFailed;
+    case ConversionStatus.refundReview:
+      return t.historyStatusRefundReview;
   }
 }
 
@@ -99,10 +118,20 @@ function PurchaseRow({
   conversion,
   index,
   t,
+  buyback,
+  mass,
+  buybacksReady,
+  isBuyer,
+  onBuyback,
 }: {
   conversion: Conversion;
   index: number;
   t: WalletText;
+  buyback: Buyback | undefined;
+  mass: BuybackMass | undefined;
+  buybacksReady: boolean;
+  isBuyer: boolean;
+  onBuyback?: (purchaseId: bigint) => void;
 }) {
   const { lang } = useLanguage();
   const tx = useDict(WALLET_EXPLORER_TEXT);
@@ -170,6 +199,16 @@ function PurchaseRow({
         />
       </dl>
 
+      <PurchaseBuybackState
+        conversion={conversion}
+        buyback={buyback}
+        mass={mass}
+        buybacksReady={buybacksReady}
+        isBuyer={isBuyer}
+        index={index}
+        onBuyback={onBuyback}
+      />
+
       <div className="flex flex-col gap-4">
         <Button
           type="button"
@@ -229,21 +268,56 @@ function PurchaseRow({
   );
 }
 
-export function PurchaseHistorySection() {
+interface PurchaseHistorySectionProps {
+  /** Only purchases paid with this token (all purchases when absent). */
+  payToken?: PayToken;
+  /** Section title; defaults to the purchase history title. */
+  title?: string;
+  /** Opens the buyback flow on the mass of a purchase's payment token. */
+  onBuyback?: (purchaseId: bigint) => void;
+}
+
+/**
+ * The user's purchases, newest first, 25 per page, with the buyback state of
+ * each purchase's mass, then the mass buybacks.
+ */
+export function PurchaseHistorySection({
+  payToken,
+  title,
+  onBuyback,
+}: PurchaseHistorySectionProps = {}) {
   const t = useDict(WALLET_TEXT);
+  const tb = useDict(BUYBACK_TEXT);
   const { data, isLoading, isError, isFetching, refetch } = useMyConversions();
+  const { data: buybacks } = useMyBuybacks();
+  const masses = useBuybackMasses();
+  const buybacksReady =
+    buybacks !== undefined && (masses.data !== undefined || masses.isError);
+  const records = massBuybacks(buybacks, payToken);
+  const { identity } = useInternetIdentity();
+  const callerText = identity?.getPrincipal().toText();
+  const [page, setPage] = useState(1);
 
   const purchases = useMemo(
     () =>
-      [...(data ?? [])].sort((a, b) =>
-        a.timestamp === b.timestamp
-          ? Number(b.id - a.id)
-          : b.timestamp > a.timestamp
-            ? 1
-            : -1,
-      ),
-    [data],
+      (data ?? [])
+        .filter((c) => payToken === undefined || c.payToken === payToken)
+        .sort((a, b) =>
+          a.timestamp === b.timestamp
+            ? Number(b.id - a.id)
+            : b.timestamp > a.timestamp
+              ? 1
+              : -1,
+        ),
+    [data, payToken],
   );
+  const pageCount = Math.max(
+    1,
+    Math.ceil(purchases.length / WALLET_HISTORY_PAGE_SIZE),
+  );
+  const currentPage = Math.min(page, pageCount);
+  const offset = (currentPage - 1) * WALLET_HISTORY_PAGE_SIZE;
+  const visible = purchases.slice(offset, offset + WALLET_HISTORY_PAGE_SIZE);
 
   return (
     <section
@@ -254,7 +328,7 @@ export function PurchaseHistorySection() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 font-display text-lg">
             <History className="h-5 w-5 text-primary" />
-            {t.historyTitle}
+            {title ?? t.historyTitle}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -306,16 +380,65 @@ export function PurchaseHistorySection() {
               {t.historyEmpty}
             </p>
           ) : (
-            <ul className="flex flex-col gap-4" data-ocid="wallet.history.list">
-              {purchases.map((conversion, i) => (
-                <PurchaseRow
-                  key={conversion.id.toString()}
-                  conversion={conversion}
-                  index={i + 1}
-                  t={t}
+            <div className="flex flex-col gap-4">
+              <ul
+                className="flex flex-col gap-4"
+                data-ocid="wallet.history.list"
+              >
+                {visible.map((conversion, i) => (
+                  <PurchaseRow
+                    key={conversion.id.toString()}
+                    conversion={conversion}
+                    index={offset + i + 1}
+                    t={t}
+                    buyback={buybackForPurchase(buybacks, conversion.id)}
+                    mass={massFor(masses.data, conversion.payToken)}
+                    buybacksReady={buybacksReady}
+                    isBuyer={conversion.depositor.toText() === callerText}
+                    onBuyback={onBuyback}
+                  />
+                ))}
+              </ul>
+              {pageCount > 1 && (
+                <HistoryPager
+                  page={currentPage}
+                  hasNext={currentPage < pageCount}
+                  onPrevious={() => setPage(currentPage - 1)}
+                  onNext={() => setPage(currentPage + 1)}
+                  ocid="wallet.history"
                 />
-              ))}
-            </ul>
+              )}
+              {buybacksReady && records.length > 0 && (
+                <section
+                  className="flex flex-col gap-4 border-t border-border pt-4"
+                  data-ocid="wallet.history.mass_buybacks.section"
+                >
+                  <h3 className="font-display text-base">
+                    {tb.historyMassTitle}
+                  </h3>
+                  <ul
+                    className="flex flex-col gap-4"
+                    data-ocid="wallet.history.mass_buybacks.list"
+                  >
+                    {records.map((record, i) => (
+                      <li
+                        key={record.id.toString()}
+                        className="rounded-lg border border-border bg-background/40 p-4 md:p-6"
+                        data-ocid={`wallet.history.mass_buybacks.item.${i + 1}`}
+                      >
+                        <BuybackRecordState
+                          buyback={record}
+                          isBuyer={record.buyer.toText() === callerText}
+                          index={i + 1}
+                          ocid="wallet.history.mass_buyback"
+                          bordered={false}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

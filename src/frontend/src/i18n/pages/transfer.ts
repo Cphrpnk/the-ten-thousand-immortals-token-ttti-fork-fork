@@ -803,3 +803,6 @@ export const TRANSFER_EXPLORER_TEXT = defineDict({
 });
 
 export type TransferText = (typeof TRANSFER_TEXT)["en"];
+
+/** Percentage-bar labels of the Transfer form: the shared send-form texts. */
+export { SEND_PERCENT_TEXT as TRANSFER_PERCENT_TEXT } from "./wallet";

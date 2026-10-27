@@ -2,7 +2,6 @@ import Array "mo:core/Array";
 import Cycles "mo:core/Cycles";
 import Error "mo:core/Error";
 import Int "mo:core/Int";
-import Iter "mo:core/Iter";
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Nat64 "mo:core/Nat64";
@@ -21,6 +20,7 @@ module {
   public type ReserveLock = Types.ReserveLock;
   public type CyclesStatus = Types.CyclesStatus;
   public type TopUpRecord = Types.TopUpRecord;
+  public type TopUpAttempt = Types.TopUpAttempt;
   public type ReserveWithdrawal = Types.ReserveWithdrawal;
   public type ReserveShare = Types.ReserveShare;
   public type WithdrawReserveResult = Types.WithdrawReserveResult;
@@ -42,6 +42,9 @@ module {
   public let TOPUP_INTERVAL_SECONDS : Nat = 21_600;
   // Smallest top-up sent to the CMC (0.001 ICP); smaller amounts are skipped.
   public let MIN_TOPUP_E8S : Nat = 100_000;
+  // Identical resend window of a top-up attempt, from its created_at_time:
+  // 23 h (same rule as lib/retry.mo, defined here to avoid importing it).
+  public let TOPUP_RESEND_WINDOW_NS : Nat = 82_800_000_000_000;
 
   // Cycles Minting Canister (mainnet).
   public let CMC_CANISTER_ID : Text = "rkp4c-7iaaa-aaaaa-aaaca-cai";
@@ -119,7 +122,7 @@ module {
   public func withdrawalBlockedReason(store : CyclesReserveStore, lock : ReserveLock) : ?Types.WithdrawalBlockedReason {
     if (lock.busy) {
       ?#topUpRunning;
-    } else if (isPendingNotify(store) or lock.unconfirmedTopUp != null) {
+    } else if (isPendingNotify(store) or hasOpenTopUp(store)) {
       ?#topUpAwaitingConfirmation;
     } else if (Cycles.balance() < TOPUP_THRESHOLD) {
       ?#cyclesBelowThreshold;
@@ -164,86 +167,44 @@ module {
 
   // --- Purchase reserve shares -----------------------------------------------
 
-  // Records the fee split of a delivered purchase, already claimed (#pending)
-  // by the caller. Returns the claim to pass to transferShare.
+  // Records the fee split of a delivered purchase. A non-zero share is
+  // #pending: it is sent to reserveAccount only by the shared retry module
+  // (lib/retry.mo, memo TTTI-SH-<n>, recorded request with a fixed
+  // created_at_time). A zero share needs no transfer and is #transferred(0).
   public func recordShare(store : CyclesReserveStore, conversionId : Nat, shareE8s : Nat, treasuryE8s : Nat) : ReserveShare {
-    let share : ReserveShare = { conversionId; shareE8s; treasuryE8s; transfer = #pending };
+    let transfer : Types.ReserveTransferStatus = if (shareE8s == 0) #transferred(0) else #pending;
+    let share : ReserveShare = { conversionId; shareE8s; treasuryE8s; transfer };
     store.shares.add(conversionId, share);
     share;
   };
 
-  // Synchronously claims a #failed share by marking it #pending (no await
-  // between the check and the mark). Returns null for #pending/#transferred.
-  func claimFailedShare(store : CyclesReserveStore, conversionId : Nat) : ?ReserveShare {
-    switch (store.shares.get(conversionId)) {
-      case (?share) {
-        switch (share.transfer) {
-          case (#failed(_)) {
-            let claimed = { share with transfer = #pending };
-            store.shares.add(conversionId, claimed);
-            ?claimed;
-          };
-          case (_) { null };
-        };
-      };
-      case null { null };
-    };
-  };
-
-  // Transfers exactly a share the caller has claimed (#pending, set
-  // synchronously by recordShare or claimFailedShare) from the canister
-  // default account to the reserve (fee paid on top by the sender). Never trap.
-  public func transferShare(store : CyclesReserveStore, ledger : TreasuryLib.IcpLedger, canister : Principal, share : ReserveShare) : async () {
-    let conversionId = share.conversionId;
-    // Send only while the caller's #pending claim is still in place.
-    switch (store.shares.get(conversionId)) {
-      case (?{ transfer = #pending }) {};
-      case (_) { return };
-    };
-    if (share.shareE8s == 0) {
-      store.shares.add(conversionId, { share with transfer = #transferred(0) });
-      return;
-    };
-    let transfer : Types.ReserveTransferStatus = try {
-      switch (
-        await ledger.icrc1_transfer({
-          from_subaccount = null;
-          to = reserveAccount(canister);
-          amount = share.shareE8s;
-          fee = ?TreasuryLib.ICP_FEE;
-          memo = null;
-          created_at_time = null;
-        })
-      ) {
-        case (#Ok(blockIndex)) { #transferred(blockIndex) };
-        case (#Err(err)) { #failed(TreasuryLib.transferErrorMessage(err)) };
-      };
-    } catch (e) {
-      #failed("The ICP ledger could not be reached: " # e.message());
-    };
-    store.shares.add(conversionId, { share with transfer });
-    switch (transfer) {
-      case (#transferred(_)) { await refreshReserveBalance(store, canister) };
-      case (_) {};
-    };
-  };
-
-  // Re-sends, to the reserve only, the shares whose transfer #failed.
-  public func retryFailedShareTransfers(store : CyclesReserveStore, ledger : TreasuryLib.IcpLedger, canister : Principal) : async () {
-    let failed = store.shares.values().filter(
-      func s = switch (s.transfer) { case (#failed(_)) { true }; case (_) { false } }
-    ).toArray();
-    for (share in failed.values()) {
-      // Claim synchronously before awaiting: a concurrent retry then sees
-      // #pending and skips this share, so it is never sent twice.
-      switch (claimFailedShare(store, share.conversionId)) {
-        case (?claimed) { await transferShare(store, ledger, canister, claimed) };
-        case null {};
-      };
+  // True once the share has reached the reserve. #pending, #failed (legacy)
+  // and #needsReview are all treated as not yet transferred.
+  public func isShareTransferred(share : ReserveShare) : Bool {
+    switch (share.transfer) {
+      case (#transferred(_)) { true };
+      case (#pending) { false };
+      case (#failed(_)) { false };
+      case (#needsReview) { false };
     };
   };
 
   // --- Top-up ----------------------------------------------------------------
+
+  // True while a recorded top-up transfer has no definite outcome
+  // (#pending / #unknown, including needsReview): no other transfer may start.
+  public func hasOpenTopUp(store : CyclesReserveStore) : Bool {
+    switch (store.pendingTopUp) {
+      case (?a) {
+        switch (a.outcome) {
+          case (#pending or #unknown) { true };
+          case (#succeeded(_)) { false };
+          case (#failed(_)) { false };
+        };
+      };
+      case null { false };
+    };
+  };
 
   func isPendingNotify(store : CyclesReserveStore) : Bool {
     switch (store.lastTopUp) {
@@ -280,7 +241,52 @@ module {
     await refreshReserveBalance(store, canister);
   };
 
-  func topUpPass(store : CyclesReserveStore, lock : ReserveLock, canister : Principal) : async () {
+  // Creates and records a new top-up attempt (null when no top-up is needed
+  // or possible). Only called when no attempt is open.
+  func newAttempt(store : CyclesReserveStore, canister : Principal) : async ?TopUpAttempt {
+    if (Cycles.balance() >= TOPUP_THRESHOLD) {
+      return null;
+    };
+    let permyriad = try {
+      (await cmc().get_icp_xdr_conversion_rate()).data.xdr_permyriad_per_icp.toNat();
+    } catch (_) {
+      return null;
+    };
+    if (permyriad == 0) {
+      return null;
+    };
+    // The rate await may have let another path record an attempt meanwhile.
+    if (hasOpenTopUp(store)) {
+      return null;
+    };
+    let wanted = TOPUP_TARGET_CYCLES * 10_000 * 100_000_000 / (permyriad * 1_000_000_000_000);
+    let amount = Nat.min(wanted, sat(store.reserveBalanceE8s, TreasuryLib.ICP_FEE));
+    if (amount == 0 or amount < MIN_TOPUP_E8S) {
+      return null;
+    };
+    let a : TopUpAttempt = {
+      amount;
+      created_at_time = nowNat64();
+      memo = TPUP_MEMO_BLOB;
+      request = {
+        from_subaccount = ?CYCLES_RESERVE_SUBACCOUNT;
+        to = { owner = Principal.fromText(CMC_CANISTER_ID); subaccount = ?cmcTopUpSubaccount(canister) };
+        amount;
+        fee = TreasuryLib.ICP_FEE;
+      };
+      blockIndex = null;
+      createdAt = Time.now();
+      sends = 0;
+      lastError = null;
+      outcome = #pending;
+      needsReview = false;
+    };
+    // Recorded in stable state before the transfer await.
+    store.pendingTopUp := ?a;
+    ?a;
+  };
+
+  func topUpPass(store : CyclesReserveStore, canister : Principal) : async () {
     await refreshReserveBalance(store, canister);
     // A transfer awaiting its notify: retry notify only, never a new transfer.
     switch (store.lastTopUp) {
@@ -295,64 +301,81 @@ module {
       };
       case null {};
     };
-    // A transfer whose reply was lost is re-sent identically (same amount and
-    // created_at_time), so the ledger deduplicates it instead of paying twice.
-    let attempt = switch (lock.unconfirmedTopUp) {
+    // An open attempt (#pending / #unknown) is resent identically (same
+    // created_at_time, memo, amount, fee, destination) for 23 h, then marked
+    // needsReview and no longer sent. No other transfer is created meanwhile.
+    let open : ?TopUpAttempt = switch (store.pendingTopUp) {
+      case (?a) {
+        if (a.needsReview) {
+          return;
+        };
+        switch (a.outcome) {
+          case (#pending or #unknown) {
+            if (Time.now() - a.created_at_time.toNat() >= TOPUP_RESEND_WINDOW_NS) {
+              store.pendingTopUp := ?{ a with needsReview = true };
+              return;
+            };
+            ?a;
+          };
+          case (#succeeded(_)) { null };
+          case (#failed(_)) { null };
+        };
+      };
+      case null { null };
+    };
+    let attempt = switch (open) {
       case (?a) { a };
       case null {
-        if (Cycles.balance() >= TOPUP_THRESHOLD) {
-          return;
+        switch (await newAttempt(store, canister)) {
+          case (?a) { a };
+          case null { return };
         };
-        let permyriad = try {
-          (await cmc().get_icp_xdr_conversion_rate()).data.xdr_permyriad_per_icp.toNat();
-        } catch (_) {
-          return;
-        };
-        if (permyriad == 0) {
-          return;
-        };
-        let wanted = TOPUP_TARGET_CYCLES * 10_000 * 100_000_000 / (permyriad * 1_000_000_000_000);
-        let amount = Nat.min(wanted, sat(store.reserveBalanceE8s, TreasuryLib.ICP_FEE));
-        if (amount == 0 or amount < MIN_TOPUP_E8S) {
-          return;
-        };
-        let a = { amount; createdAt = nowNat64() };
-        lock.unconfirmedTopUp := ?a;
-        a;
       };
     };
-    let amount = attempt.amount;
-    let cmcPrincipal = Principal.fromText(CMC_CANISTER_ID);
+    let sent : TopUpAttempt = { attempt with sends = attempt.sends + 1 };
+    store.pendingTopUp := ?sent;
+    let req = sent.request;
     let result = try {
       await icpLedger().icrc1_transfer({
-        from_subaccount = ?CYCLES_RESERVE_SUBACCOUNT;
-        to = { owner = cmcPrincipal; subaccount = ?cmcTopUpSubaccount(canister) };
-        amount;
-        fee = ?TreasuryLib.ICP_FEE;
-        memo = ?TPUP_MEMO_BLOB;
-        created_at_time = ?attempt.createdAt;
+        from_subaccount = req.from_subaccount;
+        to = req.to;
+        amount = req.amount;
+        fee = ?req.fee;
+        memo = ?sent.memo;
+        created_at_time = ?sent.created_at_time;
       });
-    } catch (_) {
-      // Outcome unknown: keep the attempt; the next pass re-sends it identically.
+    } catch (e) {
+      // Reject or trap: outcome unknown until an Ok, a #Duplicate or admin verification.
+      store.pendingTopUp := ?{
+        sent with outcome = #unknown;
+        lastError = ?("The ICP ledger could not be reached: " # e.message());
+      };
       return;
     };
-    lock.unconfirmedTopUp := null;
     let executed : ?Nat = switch (result) {
       case (#Ok(blockIndex)) { ?blockIndex };
       case (#Err(#Duplicate({ duplicate_of }))) { ?duplicate_of };
-      case (#Err(_)) { null };
+      case (#Err(err)) {
+        // Known ledger failure: the attempt is closed; a later pass may create a new one.
+        store.pendingTopUp := ?{
+          sent with outcome = #failed(TreasuryLib.transferErrorMessage(err));
+          lastError = ?TreasuryLib.transferErrorMessage(err);
+        };
+        null;
+      };
     };
     switch (executed) {
       case (?blockIndex) {
         // Persist the block BEFORE notify so a failed notify is retried with it.
         let record : TopUpRecord = {
           timestamp = Time.now();
-          icpE8s = amount;
+          icpE8s = sent.amount;
           blockIndex;
           status = #transferred;
           lastError = null;
         };
         store.lastTopUp := ?record;
+        store.pendingTopUp := null;
         await notify(store, record, canister);
       };
       case null {};
@@ -369,7 +392,7 @@ module {
     };
     lock.busy := true;
     try {
-      await topUpPass(store, lock, canister);
+      await topUpPass(store, canister);
     } catch (_) {} finally {
       lock.busy := false;
     };
@@ -384,7 +407,7 @@ module {
     if (lock.busy) {
       return #busy;
     };
-    if (isPendingNotify(store) or lock.unconfirmedTopUp != null) {
+    if (isPendingNotify(store) or hasOpenTopUp(store)) {
       return #topUpPendingNotify;
     };
     let cyclesBalance = Cycles.balance();

@@ -8,14 +8,17 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { PayToken } from "../backend";
+import { BuybackFundingCard } from "../components/admin/BuybackFundingCard";
 import { ConversionsCard } from "../components/admin/ConversionsCard";
 import { CyclesReserveCard } from "../components/admin/CyclesReserveCard";
 import { IcpAccountCard } from "../components/admin/IcpAccountCard";
 import { LaunchControls } from "../components/admin/LaunchControls";
 import { PayTokenAccountCard } from "../components/admin/PayTokenAccountCard";
 import { SnapshotExport } from "../components/admin/SnapshotExport";
+import { ToReviewCard } from "../components/admin/ToReviewCard";
 import { TokenRatesCard } from "../components/admin/TokenRatesCard";
 import { TransferFeeCard } from "../components/admin/TransferFeeCard";
+import { UpgradeReadinessCard } from "../components/admin/UpgradeReadinessCard";
 import { GOLD_CARD } from "../components/admin/styles";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
@@ -250,6 +253,8 @@ export function AdminPage() {
 
       <LaunchControls />
 
+      <UpgradeReadinessCard />
+
       <TokenRatesCard />
 
       <TransferFeeCard />
@@ -274,6 +279,10 @@ export function AdminPage() {
       </section>
 
       <SnapshotExport />
+
+      <BuybackFundingCard />
+
+      <ToReviewCard className={GOLD_CARD} />
 
       <ConversionsCard className={GOLD_CARD} />
     </div>

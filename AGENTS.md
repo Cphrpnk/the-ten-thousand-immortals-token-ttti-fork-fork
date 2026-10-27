@@ -13,11 +13,9 @@
 - Onramper is the only ICP purchase provider in the funnel.
 - Open the public Onramper buy page https://onramper.com/buy.
 - The footer carries a neutral copyright line with no third-party build credit.
-- Trust badges stay low-key and never compete with the hero Buy TTTI-T button; white badge on dark backgrounds, black on light.
 - Do not name the creator
 - State facts only; no promotional or value-suggesting wording
 - Transfer fee adjustable only in the test (TTTI-T) version, not in the real version
-- Six purchase acknowledgements are asked only once, at the account's first purchase
 - Present TTTI as a perfect instrument without denigrating it; no profit, scarcity-as-value or price-rise promises
 - Amounts accept both '.' and ',' as the decimal separator
 - Ne toucher à aucun solde ni bloc existant
@@ -52,7 +50,6 @@
 - Les frais ne sont jamais remboursables ; seul le montant net échangé sert de base
 - Liens vers l'Explorer officiel de l'ICP quand il prend en charge le ledger
 - Lien de suivi en direct dès que la transaction existe, pour BTC comme pour les autres jetons
-- ICP est le moyen d'achat présélectionné à l'arrivée sur la page d'achat
 - Chaque adresse BTC reste stable par parcours et son suivi survit à la navigation
 - All site text in the 7 language dictionaries
 - All site text in the 7 language dictionaries; English authoritative
@@ -60,6 +57,80 @@
 - Corrected white paper describes only what the app actually does; factual, minimal
 - Never claim ckBTC-first fee routing in the white paper while the app does not do it
 - The token's name is The Ten Thousand Immortals; TTTI is the ticker (TTTI-T for the test version)
+- OISY-like wallet layout: total balance at top, Receive/Send/Swap at top, compact token list
+- Per-token action buttons appear only when the row is selected and disappear when clicking elsewhere
+- TTTI-T valued at a fixed 10,000 USD per token for USD calculation, for now
+- History pages of 25 transactions max
+- Mint wording everywhere TTTI-T is obtained (Mint TTTI-T, Mint with <token>, Minting…); /buy URL, Buy ICP via Onramper, the six acknowledgements and the footer stay unchanged
+- The buy-to-mint explanation stays discreet (collapsible, closed by default) so it does not overload the layout
+- Full block hash shown on click; copy through a dedicated icon
+- Built-in wallet is the promoted default path; Plug is highlighted in colour among wallets
+- Wallet choices under « Connecter mon wallet »: Plug, OISY, NFID Wallet, plus the built-in wallet as recommended
+- Home-page guide icons are clickable without any visual change
+- Address book stored privately in the canister per principal
+- Approvals always require an expiration; clear instructions, warnings and explicit confirmation before each approval action
+- Address suggestions come only from the signed-in user's own transactions, not the whole history
+- The contract (mint) address never appears in Send dialog address suggestions
+- Les TTTI-T rachetés vont au compte de l'admin/créateur ; rien n'est brûlé
+- Le rachat s'exécute automatiquement à la demande de l'acheteur
+- Les fonds du rachat viennent du wallet de l'admin via des autorisations ICRC-2 plafonnées avec expiration
+- 1 % de frais de rachat ; tous les frais des tiers sont déduits du montant rendu
+- Le BTC est remboursé en ckBTC ; l'utilisateur le convertit lui-même en BTC
+- Achats d'avant la Version 26 exclus du rachat
+- Rachat par masse moyenne par jeton de paiement, avec un curseur de pourcentage identique à celui du mint
+- La règle du plus bas des deux s'applique au ratio moyen de la masse
+- Pas de masse globale tous jetons confondus
+- Ne modifier aucun solde ni bloc existant ; aucun changement visuel
+- Buyback slider, maximum and quote follow min(remaining mass, usable TTTI-T wallet balance) in the interface only; the backend keeps the mass percent and transferFrom check
+- Clear short notice when the wallet balance limits the buyback, without visual redesign
+- Token logos defined in one place so they can be swapped easily when official logos are provided
+- No visual design change beyond the setup step 3
+- Step 3 asks for a payment token; ICP stays the default on /buy when no token was chosen
+- No visual change beyond the listed elements
+- No backend change for frontend flow adjustments
+- Setup step 3 sends the user to the wallet (Receive panel or BTC conversion) instead of /buy; 'Non' opens Onramper in one click
+- Transfert and Obtenir de l'ICP not in the main menu; their pages stay reachable by direct link
+- Tous les textes dans les 7 dictionnaires de langue
+- Aucun changement visuel
+- Signature automatique : l'app choisit le wallet qui détient le compte et ouvre sa fenêtre sans choix manuel
+- L'admin choisit librement le wallet du compte de financement du rachat ; les textes restent neutres pour toutes les options (Internet Identity, OISY, NFID, Plug)
+- Aucun changement visuel au-delà du strict nécessaire
+- Aucun changement backend pour la signature multi-wallet
+- Buyback quote shows the lower-of-two rule step by step with USD equivalents, using the quote's own rates
+- Wallet header buttons: Receive, Send, Swap and Mint TTTI-T
+- Swap runs from the user's own wallet through ICPSwap pools; no backend change for the swap
+- Buy (Onramper) on the selected ICP, ckBTC, ckUSDC and ckUSDT cards; none on TTTI-T
+- Slippage tolerance adjustable, 0.5 % by default
+- Écran admin « To review » en anglais, comme le reste de l'admin
+- Déployer uniquement en aperçu (draft), jamais en version publique ; chaque lot validé est mis en aperçu
+- Une migration déjà passée en aperçu ne se modifie plus ; les lots suivants ajoutent une nouvelle migration au nom plus grand
+- Le rachat se paie uniquement dans le jeton de la masse ; receiveToken reste dans l'API mais doit égaler massToken
+- Le contrat simulé garde le cas d'échec ponctuel du paiement en ckUSDT pour tester la reprise, sur une masse ckUSDT de l'appelant
+- Ne toucher à rien d'autre que les points du lot demandé ; partir du code actuel
+- Déployer seulement en aperçu, jamais en version publique ; donner le numéro de version
+- Ne toucher à rien d'autre que les points du lot 2
+- Nouvelle migration au nom plus grand que la dernière ; aucune migration existante modifiée
+- Écran admin « To review » en anglais
+- Mise en aperçu seulement, jamais en version publique ; donner le numéro de version
+- Ne toucher à rien d'autre que les points du lot 3
+- Nouvelle migration au nom plus grand que 20261106_000000 ; aucune migration existante modifiée
+- Ne toucher à rien d'autre que les points du lot 4
+- Utiliser lib/retry.mo pour les remboursements BTC et l'envoi du coût BTC
+- Nouvelle migration au nom plus grand que 20261107_000000 ; aucune migration existante modifiée
+- Ne toucher à rien d'autre que les points du lot 5
+- Utiliser lib/retry.mo et le verrou du rachat pour le paiement du rachat
+- Nouvelle migration au nom plus grand que 20261108_000000 ; aucune migration existante modifiée
+- Ne toucher à rien d'autre que les points du lot 6 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261109_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Écran admin en anglais
+- Ne toucher à rien d'autre que les points du lot 7 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261110_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Ne toucher à rien d'autre que les points du lot 8 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261111_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Textes repris mot pour mot ; traductions précises, l'anglais fait foi
+- Ne toucher à rien d'autre que les points du lot 9 ; partir du code actuel
+- Ne pas nommer le créateur
+- Le nom du portefeuille est traduit dans les 7 langues : Portefeuille en français
 
 ## Accepted Requirements
 
@@ -71,7 +142,6 @@
 - Étape 2 Non : utiliser le wallet interne ou en créer un ; Oui : connecter son wallet ICP ou utiliser le wallet interne
 - Retour dans l'app puis achat de TTTI-T
 - Un seul clic sur « Acheter de l'ICP » copie l'adresse et ouvre Onramper (seul fournisseur) via https://onramper.com/buy
-- Étape 3 : avez-vous de l'ICP ? Oui : transfert ; Non : acheter de l'ICP ici via Onramper
 - Remove the word presale everywhere; new title and meta description as given
 - Rename ledger metadata to name TTTI-T and symbol TTTI-T; remove on-page TTTI-P explanations
 - Explain the Exchange page and relabel or remove it according to who operates it
@@ -81,14 +151,11 @@
 - TTTI-T section with the stated terms
 - Creator disclosures as stated, creator unnamed; creator does not list TTTI on any other exchange
 - Footer without 'not an investment, a security'; keep no returns, final purchases, afford to lose
-- Only two Buy TTTI-T buttons (header and end of page); no sticky bottom bar
 - Remove the adjustable seller margin; small fixed fee to pay for the canister's own cycles, with an estimate of the needed margin
 - No fallback rate; refuse purchase when the rate is stale
 - No one, admin included, can mint tokens outside the buy-to-mint logic
 - Collected TTTI transfer fees are reissued only at the end, after fresh minting reaches the cap
 - Admin cannot freeze transfers; transfer fee change only in the test version
-- Six exact-sentence checkboxes required only once, at the first purchase
-- Only two Buy TTTI-T buttons (header and end of page); no sticky bar; Buy not in menus
 - Admin: remove mint, fallback-rate and presale controls; fixed order; fee account not withdrawable; transfer fee adjustable in beta only
 - Remove unused freeze UI on the Transfer page
 - Backend limited to the contract's essentials
@@ -191,6 +258,148 @@
 - A button to return to the waiting state manually after a successful transaction
 - Several BTC transfers sent back-to-back are each converted as their confirmations arrive
 - Corriger le white paper (édition corrigée) pour qu'il corresponde au fonctionnement actuel de l'app
+- Simplifier le menu du portefeuille
+- Mise en page du portefeuille inspirée d'OISY, adaptée à l'ajout de nombreux tokens
+- Résumé avec le solde total du portefeuille en haut
+- 10 000 USD par TTTI-T pour le calcul de la valeur en USD, pour l'instant
+- Historique paginé, 25 transactions maximum par page
+- Boutons Envoyer, Recevoir et Historique dans chaque carte de token, visibles seulement quand la carte est sélectionnée et masqués quand on clique ailleurs
+- « Buy TTTI-T » devient « Mint TTTI-T » partout
+- Mint partout, y compris « Buy with ICP » et « Buying… »
+- Commentaire expliquant le buy-to-mint avec le parallèle du skin in the game de Bitcoin
+- L'encadré buy-to-mint placé à un endroit où il ne surcharge pas la mise en page
+- Barre de pourcentage du mint (slider aimanté) dans les menus de transfert
+- Afficher le hash propre de chaque bloc TTTI-T sur la page Historique de l'app
+- Vue complète du hash sur un clic
+- Copie du hash avec une icône
+- Les 3 icônes du guide en trois étapes sont cliquables et mènent chacune à l'étape mentionnée
+- Une sous-étape sous « Connecter mon wallet » laisse le choix entre les wallets ICP les plus populaires, comme avant
+- La connexion Plug dans la configuration fonctionne et elle est simple
+- Carnet d'adresses dans le dialogue Envoyer, avec suggestions tirées du ledger
+- Carte de contact configurable : pseudo, memo et approvals ICRC-2
+- Instructions claires et avertissements concernant les approvals
+- Les TTTI-T rachetés reviennent à l'admin/créateur
+- L'acheteur demande le rachat et le reçoit automatiquement
+- Le rachat a une place sur la page Exchange et sur les cartes de token
+- Un message explique la règle du plus bas des deux
+- Les frais de transfert des autres contrats ne sont pas inclus : ils sont retirés du montant rendu
+- 1 % de frais sur le rachat
+- Achats d'avant la Version 26 exclus du rachat
+- Le jeton rendu vient du wallet de l'admin, via une autorisation ICRC-2 plafonnée avec expiration, pour chaque jeton
+- On rend la quantité d'origine si le jeton a baissé, et seulement la valeur des TTTI-T au taux du jour s'il a monté
+- Les frais des tiers sont retirés du montant final de la transaction
+- Le BTC est remboursé en ckBTC ; l'utilisateur fait lui-même la conversion vers le BTC
+- Rachat agrégé : une masse moyenne par jeton de paiement (ICP, ckBTC, ckUSDC, ckUSDT ; BTC compté en ckBTC)
+- Ratio de la masse = total net payé / total TTTI-T reçus, moins ce qui a déjà été racheté
+- Choix de la masse et du pourcentage avec le curseur du mint (1 % à 100 %, aimanté à 10, 25, 50, 75, 90 et 100 %) ; 100 % rachète tout le reste
+- Règle du plus bas des deux appliquée à la moyenne, puis 1 % de frais et frais des tiers déduits
+- Plusieurs rachats partiels, un à la fois, jusqu'à épuisement de la masse
+- Pas de masse globale tous jetons confondus
+- Les rachats existants sont conservés et déduits de la masse ; aucun solde ni bloc modifié
+- Curseur, maximum et devis du rachat basés sur min(masse restante, solde TTTI-T utilisable), dans l'interface seulement
+- Mention claire pour que l'utilisateur comprenne le plafond et ne lance pas une transaction vouée à l'échec
+- Étape 3 : « Avez-vous un jeton de paiement ? » avec une rangée de petits logos des jetons acceptés, générée depuis la liste des jetons de paiement
+- Passer inchangé
+- Logos existants gardés pour l'instant, remplaçables facilement plus tard
+- Étape 3 Oui : choix entre ICP, ckBTC, ckUSDC, ckUSDT et BTC (BTC toujours proposé)
+- ICP ou jeton ck : aller directement sur /wallet, panneau Recevoir ouvert, jeton présélectionné, adresse copiable
+- BTC : aller directement sur /wallet sur la conversion BTC → ckBTC avec l'adresse BTC personnelle et le suivi du dépôt
+- Étape 3 Non : un clic copie l'adresse et ouvre Onramper, sans écran intermédiaire
+- Configuration marquée terminée à chaque sortie ; Passer inchangé
+- Page de mint : offre de transfert avec adresse copiable seulement quand le jeton choisi a un solde nul (BTC : adresse personnelle et suivi)
+- Lien discret « Transfert avancé » sur la carte TTTI-T sélectionnée, vers /transfer
+- Pas d'entrée « Ajouter » dans le menu des jetons
+- Transfert et Obtenir de l'ICP retirés du menu principal ; /transfer et /buy-icp restent accessibles par lien direct
+- Nouveaux textes dans les 7 langues
+- Adresse BTC personnelle, suivi du dépôt et conversion BTC → ckBTC disponibles pour les utilisateurs Plug, OISY et NFID sans passer par le wallet interne
+- BTC disponible pour Plug, OISY et NFID sur la page de mint et via l'étape 3 BTC de la configuration
+- Explication en clair de la faisabilité
+- Approvals ICRC-2 signables depuis n'importe quel wallet qui détient le compte, OISY compris (Plug, OISY, NFID, II)
+- Signature OISY/NFID dans le dialogue Envoyer
+- Signature automatisée : le bon wallet est choisi et ouvert automatiquement
+- Plan de refactor présenté avant la construction
+- Recommandation sur le compte de financement : canister du token ou II admin
+- Textes du rachat ajustés pour toutes les options de compte de financement, au libre choix de l'admin
+- Équivalent en USD affiché dans l'UI du rachat pour expliquer la règle du plus bas des deux
+- Explication claire, avant d'appuyer sur le bouton, de ce que l'utilisateur signe comme échange
+- Échange entre les jetons acceptés (ICP, ckBTC, ckUSDC, ckUSDT) via ICPSwap uniquement, pour l'instant
+- Le bouton Échanger du portefeuille ouvre l'échange
+- Une fonction d'achat distincte dans le portefeuille, en plus de l'échange
+- Achat (Onramper) disponible pour tous les jetons, pas seulement ICP
+- Rachat payé uniquement dans le jeton de la masse ; un receiveToken différent du massToken est refusé par #receiveTokenMismatch avant tout verrou et tout transfert ; receiveToken reste dans l'API
+- Pas de conversion : montant rendu, frais du ledger et taux du jeton de la masse
+- try … finally qui retire la clé buybacksInFlight dans requestBuyback et retryBuybackPayout ; retraits faits à la main supprimés
+- Site sans choix du jeton reçu, sans ligne de conversion, sans second taux et sans phrase sur l'autre jeton ; receiveLabel, receivePaidToken et explainOtherToken supprimés, ainsi que la fin « or choose another token » des errAdmin*
+- errReceiveTokenMismatch dans les 7 langues avec les textes EN et FR donnés
+- getApiDoc et le contrat simulé décrivent et simulent #receiveTokenMismatch, sans conversion
+- Mise en aperçu seulement, avec le numéro de version
+- Module de relance commun lib/retry.mo : tentative enregistrée avant le premier await (numéro, memo, created_at_time, requête complète)
+- Memo TTTI-<préfixe>-<n> ou TTTI-<préfixe>-<n>-<m>, 32 octets au plus, sans principal, n global ; préfixes PC, RF, FW, SH, BB, BR
+- Ok ou #Duplicate = réussi ; Err = échec connu ; rejet ou plantage = issue inconnue, qui le reste jusqu'à un Ok, un #Duplicate ou la vérification de l'admin
+- Renvoi à l'identique pendant 23 h, puis « à vérifier » ; seule une nouvelle tentative change la destination, le montant ou les frais, avec un nouveau memo et un nouveau created_at_time
+- Jamais d'envoi sans created_at_time ; un verrou par transfert, libéré dans un finally
+- Forwards (FW) et parts de réserve (SH) : envoi de la requête enregistrée, execute sans relance, timer de 10 min réarmé à chaque installation et mise à jour, #needsReview après 23 h
+- Forward à montant nul : « non requis »
+- Migration : anciens #pending → #needsReview ; anciens #failed avec un Err du ledger → nouvelle tentative ; les autres → #needsReview
+- markTransferArrived(type, n° d'achat, bloc) et markTransferNotArrived(type, n° d'achat), seulement sur un transfert « à vérifier » ; « Non arrivé » ouvre une nouvelle tentative envoyée par le timer
+- Écran admin « To review » en anglais, avant la liste des achats, avec tous les champs et les boutons « Arrived » et « Not arrived »
+- getApiDoc et le contrat simulé mis à jour
+- Trace d'achat écrite avant l'await de collect (acheteur, jeton, montant, montant réservé, created_at_time, memo TTTI-PC-<n>) ; collect envoie ce created_at_time et ce memo
+- Achat enregistré : trace retirée ; Err sur collect : trace retirée, réservation libérée ; issue inconnue ou plantage après prélèvement : trace vers « paiements à rembourser », réservation libérée
+- sale.reserved lié à la trace et libéré à un seul endroit ; sans trace rien n'est libéré ; execute et purchaseFromDeposit passent par là
+- Remboursements d'achat avec memo TTTI-RF-<n>, relancés par lib/retry.mo seulement si le solde couvre le montant ; réussite #refunded ; issue inconnue après 23 h #refundReview
+- Anciens #refundFailed relancés si Err du ledger, sinon #refundReview ; #refundFailed du chemin BTC en #refundReview
+- Écran « To review » avec les #refundReview, les paiements à rembourser et un bouton « remboursé à la main » avec le bloc ; Arrived / Not arrived couvre aussi les remboursements
+- Nouvelle migration au nom plus grand si l'état enregistré change ; mise en aperçu seulement
+- Pour chaque paiement à rembourser : memo, created_at_time, bloc s'il est connu, prélèvement confirmé ou d'issue inconnue
+- Bouton « Not arrived » qui retire de la liste un paiement à rembourser qui n'a jamais eu lieu
+- Vérifier que collect envoie déjà un memo TTTI-PC avant de commencer
+- sendFromSubaccount accepte un created_at_time et un memo
+- Remboursements BTC R1, R2 (y compris ses anciens échecs) et l'excédent des #deliveryFailedRefundFailed via lib/retry.mo, memo TTTI-BR-<n>-<index>, gardés sur l'entrée de dépôt
+- R3 renvoie la même requête pendant 23 h
+- L'envoi du coût BTC à la trésorerie suit la même règle
+- Anciennes entrées sans created_at_time relancées seulement sur un Err du ledger ; un message ambigu compte comme une issue inconnue
+- Garder le contrôle du solde, la destination et le reste de 10 sat ou moins
+- Écran « To review » : remboursements BTC à vérifier et coûts des #deliveryFailedRefundFailed à rembourser à la main, avec un bouton « remboursé » (avec le bloc)
+- Compte d'attente : sous-compte du contrat sur le ledger TTTI-T, distinct du compte de mint et du collecteur de frais, sans retrait possible
+- Rachat : TTTI-T de l'acheteur vers le compte d'attente ; paiement enregistré (memo TTTI-BB-<n>-<tentative>) puis envoyé dans le jeton payé ; réussite : TTTI-T vers le financeur, #completed ; sinon #payoutFailed avec l'issue notée
+- L'acheteur autorise le montant plus deux frais TTTI-T ; le second frais est noté pour chaque rachat ; le frais du jeton payé reste déduit du montant rendu
+- Si toutes les tentatives ont reçu un Err, la relance crée la suivante, sans l'admin
+- cancelBuyback(id), pour l'acheteur ou l'admin, sous le même verrou, seulement si toutes les tentatives ont reçu un Err : rend les TTTI-T pris, statut #cancelled, bloc noté
+- Anciens #inProgress avec pullBlock et anciens #payoutFailed sans Err : règle de l'issue inconnue ; anciens #payoutFailed : pas d'annulation directe
+- markBuybackCancelled(id, bloc) pour l'admin, seulement si aucune tentative n'est arrivée
+- Site : bouton Annuler, statut, autorisation du montant plus deux frais
+- Écran « To review » : paiements de rachat à vérifier et anciens #payoutFailed
+- Utiliser lib/retry.mo et le verrou du rachat
+- Nouvelle migration au nom plus grand que 20261108_000000 ; mise en aperçu seulement
+- Vérifier que cancelBuyback existe avant de commencer
+- La pause bloque aussi les rachats (demande, relance, annulation), les relances automatiques et les remboursements BTC ; la recharge des cycles continue
+- getUpgradeReadiness (admin) : pause, achats en cours, verrou BTC, rachats en cours, reserveLock, traces d'achat en cours
+- reconcileReserved() (admin) remet sale.reserved à 0 et garde l'ancienne valeur visible ; seulement en pause, sans achat ni trace en cours
+- Aucune migration ne touche à reserved
+- Tentative de recharge des cycles conservée à travers les mises à jour, selon la règle de lib/retry.mo
+- Écran admin : getUpgradeReadiness et un bouton reconcileReserved
+- Nouvelle migration au nom plus grand que la dernière si l'état enregistré change ; mise en aperçu seulement
+- Vérifier que reconcileReserved existe avant de commencer
+- Les fonctions d'adresse BTC (For, portefeuille, achat) donnent l'adresse sans rien enregistrer ; les For restent sans signature
+- Un suivi est créé seulement quand une vérification détecte un dépôt
+- La tâche de 600 s ne surveille que ces suivis : les achats d'abord, puis les suivis actifs récemment
+- Suppression des suivis existants sans dépôt
+- Phrase « Keep this page open until your deposit is detected… » sur l'écran de dépôt BTC d'achat, dans les 7 langues
+- Vérifier que « Keep this page open until your deposit is detected. » existe avant de commencer
+- Acceptations : Map<Principal, { acceptedAt; version }> ; les existantes passent en version 1
+- Version en vigueur 2, vérifiée aux trois contrôles d'achat
+- Clé du navigateur ttti.walletAck.v2
+- Nouveau texte ackPriceZero mot pour mot
+- Nouveau texte ackLegend mot pour mot
+- ackPriceZero et ackLegend traduits dans les 7 langues
+- Vérifier que la clé ttti.walletAck.v2 existe avant de commencer
+- Nouveaux textes du rachat (sectionIntro, requestIntro, warnIrreversible, requestConfirm, explainFunding) dans les 7 langues
+- resultEscrowPayoutFailed pour les nouveaux rachats ; resultPayoutFailed mis à jour pour les anciens
+- disclosure1 : le créateur peut financer des rachats facultatifs et limités avec ses fonds personnels
+- White paper corrigé : « No guaranteed price support. » et la nouvelle phrase sur le rachat ; l'original archivé ne change pas
+- getApiDoc, entités OQL et mocks mis à jour
+- Mise en aperçu seulement, jamais en version publique
 
 ## Verified Commands
 
@@ -200,28 +409,28 @@
 
 ## Learnings
 
-- DepositTracking has btcTxids : [Text] (display-order hex, outpoint bytes reversed) and ckbtcMintBlockIndex : ?Nat; migration 20261030_000000 sets []/null on old records; getBtcDepositInfo returns only minter config.
-- Applied migration files are read-only; a stored-shape change needs a new migration file with a later timestamp.
-- Explorer links: lib/explorer.ts (icpDashboardTxUrl, icpDashboardCanisterUrl, tttiBlockTarget, blockAnchorId, blockIndexFromHash, mempoolTxUrl, mempoolAddressUrl) and components/ExplorerLink.tsx; lib/purchaseHistory.ts paymentBlockTarget and mintBlockTarget.
-- Explorer labels live in separate defineDicts WALLET_/HISTORY_/TECH_/TRANSFER_/BUY_EXPLORER_TEXT at the end of each page dictionary, plus EXPLORER_TEXT in i18n/common.
-- TTTI-T block links open /history#block-<n>; HistoryPage anchors only the visible layout so ids stay unique.
-- Mock DepositTracking in mocks/backend.ts must set every new generated field.
-- Visual QA: Technical details on / is a closed toggle; click it before checking canister links. Mock block 5 is a good /history highlight target.
-- DepositTracking holds deposits : [DepositEntry] newest first (migration 20261031_000000 turns old cumulative content into entry 0); per-deposit amounts, txids, mint block and conversionId live on DepositEntry; tracking.stage mirrors the newest entry.
-- retryPending polls purchase and wallet trackings at every stage, skips those checked under 5 min ago, max 25 minter calls per tick.
-- Frontend helpers in hooks/useQueries.ts: latestDeposit, earlierDeposits, isDepositInProgress, isDepositEntryTerminal; BtcDepositAddressCard takes a kind prop for the flow label.
-- ExchangePage always opens on ICP; a pending BTC purchase deposit shows a status line that calls handleBtcSelect.
-- OQL entity btcDepositTracking is admin-only.
-- Each BTC UTXO maps to its own DepositEntry by txid; DepositErrorKind has #unrecoverable (final) and #refundFailed (delivered entry, refund retried); migration 20261101_000000 widens records unchanged; purchases convert each entry's own amount, oldest first.
-- Frontend useDepositView(tracking) in hooks/useQueries.ts returns focus/finished/waiting/returnToWaiting; BtcDepositProgress needs a view prop; isDepositTerminal means every entry is final.
-- Backend DepositEntry.errorMessage is English free text; the frontend translates the lead sentence and appends the raw text.
-- Legacy entry errorKind #other is not final in isDepositEntryTerminal although the API doc treats it like #unrecoverable.
-- Visual QA preview has no mock sign-in; BTC widgets on /wallet and /buy need a signed-in identity. /exchange redirects to /buy.
-- Motoko record update in an if-branch needs parentheses: if (c) ({ r with f = v }) else r.
-- White paper section 06 renders FAQ_TEXT.en.privacyA, so the FAQ privacy answer and the white paper share one privacy text.
-- White paper shows minConfirmations from useBtcDepositInfo; the shared btcPayment sentence in i18n/common/fees.ts still carries 'about 6' as a fallback.
-- Backend refreshPolicy omits the 5-minute limit and retry; the white paper adds both sentences after it.
-- The TTTI-T icrc1:logo is the TOKEN_LOGO data URI constant in src/backend/lib/icrc.mo (256px PNG, 64-colour palette, about 18 KB), 7th entry of metadata(ledger); getApiDoc's metadata list was left unchanged.
-- No PIL or ImageMagick in the workspace; node sharp in app/node_modules resizes images.
-- The favicon is platform-managed (Settings > App icon in Caffeine); do not add favicon files to app code.
-- Token name is TOKEN_NAME = "The Ten Thousand Immortals" in src/backend/lib/icrc.mo and src/frontend/src/lib/token.ts; the ticker TOKEN_SYMBOL / TTTI_SYMBOL stays "TTTI-T". getApiDoc line about icrc1_name was not updated.
+- Frontend lot 5: lib/buyback.ts canCancelBuyback, payoutOutcomeLabel, cancelBlockTarget; shared components/buyback/BuybackCancelButton.tsx; buyback slider cap uses balance minus 2 TTTI-T fees, or 3 when an approve is needed.
+- Known minor: markBuybackCancelled refuses only when an attempt succeeded, not when a legacy record has an attempt with unknown outcome.
+- Migration 20261110_000000.mo (lot 6: cyclesReserve.pendingTopUp, reservedReconciliations) is the latest; never modify it once in draft; any new migration must sort after it.
+- Lot 6 pause guards: buyback-api (requestBuyback, retryBuybackPayout, cancelBuyback return #salesPaused first), BuybackLib.runRetries(ctx, sale), RetryLib step functions and runRetries, stepBtcRefund, retryBtcCosts; runTopUp has no pause guard by design.
+- Cycles top-up attempt is cyclesReserve.pendingTopUp (TPUP memo, 23 h resend then needsReview); ReserveLock is only { var busy }; a needsReview attempt blocks new top-ups and reserve withdrawals and no admin endpoint resolves it yet (known minor).
+- getUpgradeReadiness and reconcileReserved live in mixins/upgrade-readiness-api.mo; reconcileReserved is the only place besides RetryLib traces that writes sale.reserved; OQL entities reservedReconciliation and cyclesTopUpAttempt are admin-only.
+- Frontend lot 6: components/admin/UpgradeReadinessCard.tsx and hooks/useUpgradeReadiness.ts mounted in AdminPage; errSalesPaused in i18n/pages/buyback.ts for 7 languages.
+- Migration 20261111_000000.mo (lot 7: removes BTC trackings without deposits, touches only btcDeposits) is the latest; never modify it once in draft; any new migration must sort after it.
+- Lot 7: BTC address endpoints store nothing and return an unsaved #addressShown tracking; checks with no deposit return #Ok with an unsaved tracking; a tracking is stored only when a check detects a deposit; the 600 s timer polls only trackings with deposits, purchases first then most recently active.
+- Lot 7 frontend: panels show checkMutation.data ?? getAddressMutation.data before a deposit; useQueries rememberBtcAddressShown/btcAddressShownBefore (localStorage ttti.btcAddressShown.<path>.<principal>) re-fetches the address on return; keep-page-open sentence key in BUY_BTC_TEXT of i18n/pages/buy.ts.
+- Known minor: users whose address was shown before lot 7 have no localStorage hint, so one click on Get address restores it.
+- Visual QA cannot reach the BTC deposit screen anonymously; verify deposit-screen text by source review.
+- Migration 20261112_000000.mo (lot 8: purchaseAcknowledgements Int -> { acceptedAt; version = 1 }) is the latest; never modify it once in draft; any new migration must sort after it.
+- Lot 8: SaleLib.CURRENT_ACK_VERSION = 2; hasAccepted compares the stored version, covering purchaseWith, purchaseFromDeposit, purchaseAddress and checkPurchase; getMyPurchaseAcknowledgement keeps { accepted; acceptedAt } and reports accepted only for the current version.
+- Lot 8 frontend: browser key ttti.walletAck.v2.<principal> in hooks/useSignerWallet.ts; simulated contract stores { acceptedAt; version }, seeded at version 1, ACK_VERSION 2n.
+- With a stored BTC purchase tracking, checkPurchase skips the ack check, but purchaseFromDeposit still refuses version 1 before taking any ckBTC.
+- Anonymous /buy does not render the six acknowledgements; verify acknowledgement text changes by source review.
+- Lot 9: caffeineai-oql 0.8.0 Entity.manual has no description field; OQL buyback wording lives in getApiDoc only, main.mo unchanged.
+- Lot 9: BuybackResult shows resultPayoutFailed only for legacy records; other payoutFailed records show resultEscrowPayoutFailed (i18n/pages/buyback.ts).
+- Lot 9: corrected white paper creator disclosures are JSX in WhitePaperPage.tsx; archived const original stays separate and unchanged.
+- Known minor: Korean disclosure1 in landing.ts uses 되사기 for buyback while buyback.ts uses 환매.
+- /exchange redirects to /buy; the anonymous buyback section renders there and can be checked visually.
+- Wallet name translated: navWallet (i18n/common/layout.ts), WALLET title (i18n/pages/wallet.ts) and FAQ whereLink (i18n/pages/landing.ts) use fr Portefeuille, es Billetera, pt-BR Carteira, zh-Hans 钱包, ko 지갑, pa-Guru ਵਾਲਿਟ; en Wallet.
+- Korean disclosure1 in landing.ts now uses 환매 like buyback.ts.
+- Known minor: i18n/pages/buy.ts line 401 (ko) still uses 되살; French common-noun 'wallet' remains in many dictionary strings (e.g. 'Connecter mon wallet').

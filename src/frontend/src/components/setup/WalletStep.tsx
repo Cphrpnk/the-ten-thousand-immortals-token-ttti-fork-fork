@@ -7,20 +7,29 @@ import {
   Wallet,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ConnectedWalletKind,
+  PLUG_INSTALL_URL,
+  type SetupWalletKind,
+  WalletConnectError,
+  useConnectedWallet,
+  walletErrorText,
+} from "../../hooks/useConnectedWallet";
 import { useInternetIdentity } from "../../hooks/useInternetIdentity";
-import { usePlug } from "../../hooks/usePlug";
 import { useDict } from "../../i18n/core";
 import { SETUP_TEXT } from "../../i18n/pages/setup";
 import { ChoiceTile } from "./ChoiceTile";
 import { StepQuestion } from "./StepParts";
+import { WalletChoiceStep } from "./WalletChoiceStep";
 
-export type WalletKind = "builtIn" | "plug";
-export type WalletScreen = "pickNo" | "pickYes" | "createList";
+export type WalletScreen = "pickNo" | "pickYes" | "chooseWallet" | "createList";
 
 interface WalletStepProps {
   screen: WalletScreen;
   onShowList: () => void;
-  onConnected: (kind: WalletKind) => void;
+  onChooseWallet: () => void;
+  onBack: () => void;
+  onConnected: (kind: SetupWalletKind) => void;
 }
 
 const OTHER_WALLETS = [
@@ -31,24 +40,25 @@ const OTHER_WALLETS = [
 const TITLE_KEY = {
   pickNo: "titlePickNo",
   pickYes: "titlePickYes",
+  chooseWallet: "chooseWalletTitle",
   createList: "titleCreateList",
 } as const satisfies Record<WalletScreen, string>;
-
-type FailKey = "signInFailed" | "connectFailed" | "plugNotInstalled";
 
 /** Step 2: pick or connect a wallet. Sign-in happens right here. */
 export function WalletStep({
   screen,
   onShowList,
+  onChooseWallet,
+  onBack,
   onConnected,
 }: WalletStepProps) {
   const { identity, login, isLoggingIn, isLoginError, loginError } =
     useInternetIdentity();
-  const plug = usePlug();
+  const wallet = useConnectedWallet();
   const t = useDict(SETUP_TEXT);
-  const [pending, setPending] = useState<WalletKind | null>(null);
-  const [failed, setFailed] = useState<WalletKind | null>(null);
-  const [failKey, setFailKey] = useState<FailKey>("signInFailed");
+  const [pending, setPending] = useState<"builtIn" | "plug" | null>(null);
+  const [failed, setFailed] = useState<"builtIn" | "plug" | null>(null);
+  const [failText, setFailText] = useState<string>(t.signInFailed);
   const [plugOpened, setPlugOpened] = useState(false);
   const errorAtStart = useRef<Error | undefined>(undefined);
   const sawLoggingIn = useRef(false);
@@ -57,6 +67,7 @@ export function WalletStep({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const builtInReady = !!identity && !identity.getPrincipal().isAnonymous();
+  const signInFailedText = t.signInFailed;
 
   const clearBuiltInTimeout = useCallback(() => {
     if (timeoutRef.current !== null) {
@@ -93,7 +104,7 @@ export function WalletStep({
       clearBuiltInTimeout();
       setPending(null);
       setFailed("builtIn");
-      setFailKey("signInFailed");
+      setFailText(signInFailedText);
     }
   }, [
     pending,
@@ -103,11 +114,12 @@ export function WalletStep({
     loginError,
     finishBuiltIn,
     clearBuiltInTimeout,
+    signInFailedText,
   ]);
 
   // Identity may land after pending/failure already settled on a pick screen.
   useEffect(() => {
-    if (screen !== "pickNo" && screen !== "pickYes") return;
+    if (screen === "createList") return;
     if (builtInReady && attemptedBuiltIn.current) finishBuiltIn();
   }, [screen, builtInReady, finishBuiltIn]);
 
@@ -131,7 +143,7 @@ export function WalletStep({
       timeoutRef.current = null;
       setPending((current) => (current === "builtIn" ? null : current));
       setFailed("builtIn");
-      setFailKey("signInFailed");
+      setFailText(signInFailedText);
     }, 60_000);
     if (!isLoggingIn) login();
   }, [
@@ -141,42 +153,67 @@ export function WalletStep({
     login,
     isLoggingIn,
     clearBuiltInTimeout,
+    signInFailedText,
   ]);
 
-  const connectPlug = useCallback(async () => {
+  const {
+    kind: connectedKind,
+    principal: connectedPrincipal,
+    connect,
+  } = wallet;
+  const connectPlug = useCallback(() => {
     setFailed(null);
-    if (plug.principal) {
+    if (connectedKind === "plug" && connectedPrincipal) {
       onConnected("plug");
       return;
     }
     setPending("plug");
-    try {
-      await plug.connect();
-      setPending(null);
-      onConnected("plug");
-    } catch {
-      setPending(null);
-      setFailed("plug");
-      setFailKey(plug.isAvailable ? "connectFailed" : "plugNotInstalled");
-    }
-  }, [plug, onConnected]);
+    connect("plug").then(
+      () => {
+        setPending(null);
+        onConnected("plug");
+      },
+      (error: unknown) => {
+        setPending(null);
+        setFailed("plug");
+        setFailText(
+          walletErrorText(
+            error instanceof WalletConnectError ? error.code : "failed",
+          ),
+        );
+      },
+    );
+  }, [connectedKind, connectedPrincipal, connect, onConnected]);
+
+  const handleChoiceConnected = useCallback(
+    (kind: ConnectedWalletKind) => {
+      setFailed(null);
+      onConnected(kind);
+    },
+    [onConnected],
+  );
 
   const retry = () => {
     if (failed === "builtIn") chooseBuiltIn();
-    else void connectPlug();
+    else connectPlug();
   };
 
   const busy = pending !== null;
   const builtInTile = (
+    ocid: string,
+    disabled: boolean,
+    description?: string,
+  ) => (
     <ChoiceTile
       label={t.useBuiltIn}
+      description={description}
       icon={<Wallet />}
       tone="primary"
       badge={t.recommended}
       onClick={chooseBuiltIn}
       loading={pending === "builtIn"}
-      disabled={busy}
-      ocid="setup.wallet.builtin_button"
+      disabled={disabled}
+      ocid={ocid}
     />
   );
   const connectPlugTile = (label: string, ocid: string) => (
@@ -184,7 +221,7 @@ export function WalletStep({
       label={label}
       icon={<Link2 />}
       tone="plug"
-      onClick={() => void connectPlug()}
+      onClick={connectPlug}
       loading={pending === "plug"}
       disabled={busy}
       ocid={ocid}
@@ -194,66 +231,88 @@ export function WalletStep({
   return (
     <>
       <StepQuestion>{t[TITLE_KEY[screen]]}</StepQuestion>
-      <div className="flex w-full flex-col gap-3">
-        {screen === "pickNo" ? (
-          <>
-            {builtInTile}
-            <ChoiceTile
-              label={t.createWallet}
-              icon={<Plus />}
-              onClick={onShowList}
-              disabled={busy}
-              ocid="setup.wallet.create_button"
-            />
-          </>
-        ) : null}
-        {screen === "pickYes" ? (
-          <>
-            {connectPlugTile(t.connectMyWallet, "setup.wallet.connect_button")}
-            {builtInTile}
-          </>
-        ) : null}
-        {screen === "createList" ? (
-          <>
-            <ChoiceTile
-              label="Plug"
-              icon={<Plug />}
-              tone="plug"
-              href="https://plugwallet.ooo"
-              onClick={() => setPlugOpened(true)}
-              trailing={<ExternalLink />}
-              ocid="setup.wallet.plug_link"
-            />
-            {plugOpened || plug.isAvailable
-              ? connectPlugTile(
-                  t.connectPlug,
-                  "setup.wallet.plug_connect_button",
-                )
-              : null}
-            <p className="pt-3 text-left text-xs uppercase tracking-wider text-muted-foreground">
-              {t.otherWallets}
-            </p>
-            {OTHER_WALLETS.map((wallet, index) => (
+      {screen === "chooseWallet" ? (
+        <WalletChoiceStep
+          renderBuiltIn={(disabled) =>
+            builtInTile(
+              "setup.wallet_choice.builtin_button",
+              disabled || busy,
+              t.walletBuiltInDescription,
+            )
+          }
+          builtInBusy={busy}
+          onConnected={handleChoiceConnected}
+          onBack={onBack}
+        />
+      ) : (
+        <div className="flex w-full flex-col gap-3">
+          {screen === "pickNo" ? (
+            <>
+              {builtInTile("setup.wallet.builtin_button", busy)}
               <ChoiceTile
-                key={wallet.id}
-                label={wallet.name}
-                icon={<Wallet />}
-                tone="quiet"
-                href={wallet.href}
-                trailing={<ExternalLink />}
-                ocid={`setup.wallet.other_link.${index + 1}`}
+                label={t.createWallet}
+                icon={<Plus />}
+                onClick={onShowList}
+                disabled={busy}
+                ocid="setup.wallet.create_button"
               />
-            ))}
-          </>
-        ) : null}
-      </div>
+            </>
+          ) : null}
+          {screen === "pickYes" ? (
+            <>
+              <ChoiceTile
+                label={t.connectMyWallet}
+                icon={<Link2 />}
+                tone="plug"
+                onClick={onChooseWallet}
+                disabled={busy}
+                ocid="setup.wallet.connect_button"
+              />
+              {builtInTile("setup.wallet.builtin_button", busy)}
+            </>
+          ) : null}
+          {screen === "createList" ? (
+            <>
+              <ChoiceTile
+                label="Plug"
+                icon={<Plug />}
+                tone="plug"
+                href={PLUG_INSTALL_URL}
+                onClick={() => setPlugOpened(true)}
+                trailing={<ExternalLink />}
+                ocid="setup.wallet.plug_link"
+              />
+              {plugOpened || wallet.plugAvailable
+                ? connectPlugTile(
+                    t.connectPlug,
+                    "setup.wallet.plug_connect_button",
+                  )
+                : null}
+              <p className="pt-3 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                {t.otherWallets}
+              </p>
+              {OTHER_WALLETS.map((item, index) => (
+                <ChoiceTile
+                  key={item.id}
+                  label={item.name}
+                  icon={<Wallet />}
+                  tone="quiet"
+                  href={item.href}
+                  trailing={<ExternalLink />}
+                  ocid={`setup.wallet.other_link.${index + 1}`}
+                />
+              ))}
+            </>
+          ) : null}
+        </div>
+      )}
       {failed ? (
         <div
           className="flex items-center justify-center gap-3 text-sm text-destructive"
           role="alert"
           data-ocid="setup.wallet.error_state"
         >
-          <span>{t[failKey]}</span>
+          <span>{failText}</span>
           <button
             type="button"
             onClick={retry}

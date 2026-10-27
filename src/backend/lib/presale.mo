@@ -20,6 +20,7 @@ import OracleLib "oracle";
 import CyclesReserveLib "cycles-reserve";
 import CanisterInfoLib "canister-info";
 import CkbtcMinterLib "ckbtc-minter";
+import RetryLib "retry";
 
 // TTTI-T sale: status, buy-to-mint purchase pipeline, delivery addresses and
 // the balance snapshot export.
@@ -58,6 +59,8 @@ module {
     icpLedger : TreasuryLib.IcpLedger;
     canister : Principal;
     cyclesReserve : CyclesReserveLib.CyclesReserveStore;
+    // Retry module context for the purchase's forward (FW) and reserve share (SH).
+    transfers : RetryLib.TransferContext;
   };
 
   // Minimum purchase: 0.0001 TTTI-T (1.01 USD with the 1% fee in ICP, ckBTC,
@@ -181,33 +184,57 @@ module {
 
   // --- One-time purchase acknowledgement -------------------------------------
 
-  // True when `caller` already accepted the six purchase acknowledgements.
+  // Version of the purchase acknowledgement terms in force. A stored record
+  // with another version must be accepted again before the next purchase.
+  public let CURRENT_ACK_VERSION : Nat = 2;
+
+  // True when `caller` accepted the current version of the purchase
+  // acknowledgements.
   public func hasAccepted(store : AcknowledgementStore, caller : Principal) : Bool {
-    not caller.isAnonymous() and store.containsKey(caller);
+    if (caller.isAnonymous()) return false;
+    switch (store.get(caller)) {
+      case (?record) { record.version == CURRENT_ACK_VERSION };
+      case null { false };
+    };
   };
 
-  // The caller's acknowledgement (accepted = false, acceptedAt = null when
-  // none recorded, including anonymous callers).
+  // The caller's acknowledgement: accepted only for the current version
+  // (accepted = false, acceptedAt = null otherwise, including anonymous callers).
   public func getAcknowledgement(store : AcknowledgementStore, caller : Principal) : PurchaseAcknowledgement {
     if (caller.isAnonymous()) {
       return { accepted = false; acceptedAt = null };
     };
     switch (store.get(caller)) {
-      case (?at) { { accepted = true; acceptedAt = ?at } };
+      case (?record) {
+        if (record.version == CURRENT_ACK_VERSION) {
+          { accepted = true; acceptedAt = ?record.acceptedAt };
+        } else {
+          { accepted = false; acceptedAt = null };
+        };
+      };
       case null { { accepted = false; acceptedAt = null } };
     };
   };
 
-  // Records the acceptance once for a signed-in caller (idempotent: a repeat
-  // call keeps the first timestamp); anonymous -> #err(#anonymousCaller).
+  // Records the acceptance of the current version for a signed-in caller.
+  // Idempotent at the current version (keeps the first timestamp); an older
+  // version is replaced by { acceptedAt = now; version = current }.
+  // Anonymous -> #err(#anonymousCaller).
   public func accept(store : AcknowledgementStore, caller : Principal, now : Sale.AcknowledgedAt) : { #ok : PurchaseAcknowledgement; #err : AcknowledgementError } {
     if (caller.isAnonymous()) {
       return #err(#anonymousCaller);
     };
     let at = switch (store.get(caller)) {
-      case (?first) { first };
+      case (?record) {
+        if (record.version == CURRENT_ACK_VERSION) {
+          record.acceptedAt;
+        } else {
+          store.add(caller, { acceptedAt = now; version = CURRENT_ACK_VERSION });
+          now;
+        };
+      };
       case null {
-        store.add(caller, now);
+        store.add(caller, { acceptedAt = now; version = CURRENT_ACK_VERSION });
         now;
       };
     };
@@ -250,9 +277,8 @@ module {
     if (blockIndices.size() > 0) ?blockIndices[0] else null;
   };
 
-  func release(sale : SaleStore, amount : Nat) {
-    sale.reserved := if (sale.reserved >= amount) Nat.sub(sale.reserved, amount) else 0;
-  };
+  // sale.reserved is changed only through purchase traces (RetryLib.openTrace
+  // reserves, RetryLib.closeTrace / traceToRefund release, once per trace).
 
   // Purchase in any pay token (convertDepositWith; convertDeposit uses #icp):
   // anonymous -> acknowledgements -> ICP configured -> token account
@@ -277,7 +303,7 @@ module {
   // nothing moved (stay pending). Never traps.
   // The excess refund (balance beyond the returned conversion's payAmount) is
   // sent by the caller (lib/btc-deposit.mo), which tracks the refunded amount.
-  public func purchaseFromDeposit(ctx : PurchaseContext, buyer : Principal, subaccount : Blob, ckbtcAmount : Nat) : async PurchaseResult {
+  public func purchaseFromDeposit(ctx : PurchaseContext, buyer : Principal, subaccount : Blob, depositIndex : Nat, ckbtcAmount : Nat) : async PurchaseResult {
     let token : PayToken = #ckbtc;
     let sym = PayTokenLib.symbol(token);
     let stays = "; the " # sym # " stays in your deposit account";
@@ -339,15 +365,65 @@ module {
     };
     let target = TreasuryLib.tokenAccount(ctx.treasury, token) ?? (return #Err(refusal(#tokenNotConfigured({ token }), "No treasury account is set for " # sym # stays)));
 
-    // RESERVE before the ledger await.
-    ctx.sale.reserved += tttiAmount;
-    let blockIndex = switch (await PayTokenLib.sendFromSubaccount(payLedger, token, subaccount, target, cost)) {
-      case (#ok(b)) { b };
-      case (#err(reason)) {
-        release(ctx.sale, tttiAmount);
-        return #Err(refusal(#ledgerError({ token }), "The " # sym # " could not be moved to the treasury: " # reason # stays));
+    // Purchase trace (memo TTTI-PC-<n>, created_at_time) and its reservation,
+    // written before the ledger await. A trap after it -> payment to refund.
+    let trace = RetryLib.openTrace(ctx.transfers, buyer, token, cost, tttiAmount);
+    try {
+      await settleDeposit(ctx, trace, payLedger, subaccount, depositIndex, target, delivery, usdE8);
+    } catch (e) {
+      interrupted(ctx, trace, e.message());
+    } finally {
+      RetryLib.endTrace(ctx.transfers, trace.n);
+    };
+  };
+
+  // A purchase helper trapped: a trace still present becomes a payment to
+  // refund (collect outcome unknown).
+  func interrupted(ctx : PurchaseContext, trace : RetryLib.PurchaseTrace, reason : Text) : PurchaseResult {
+    let sym = PayTokenLib.symbol(trace.token);
+    if (RetryLib.hasTrace(ctx.transfers, trace.n)) {
+      RetryLib.traceToRefund(ctx.transfers, trace.n, #unknown, null);
+      #Err(refusal(#ledgerError({ token = trace.token }), "The purchase was interrupted (" # reason # "); if " # sym # " was taken, it is listed for a refund"));
+    } else {
+      #Err(refusal(#ledgerError({ token = trace.token }), "The purchase was interrupted after it was recorded (" # reason # "); see your purchase history"));
+    };
+  };
+
+  // BTC path after the trace: payment send (trace memo and created_at_time)
+  // -> deliver -> record. Known Err: trace removed; unknown outcome: payment
+  // to refund; delivery failure: recorded #refundReview (no automatic refund).
+  func settleDeposit(ctx : PurchaseContext, trace : RetryLib.PurchaseTrace, payLedger : PayTokenLib.PayLedger, subaccount : Blob, depositIndex : Nat, target : Account, delivery : Account, usdE8 : Nat) : async PurchaseResult {
+    let token = trace.token;
+    let sym = PayTokenLib.symbol(token);
+    let stays = "; the " # sym # " stays in your deposit account";
+    let buyer = trace.buyer;
+    let cost = trace.amount;
+    let tttiAmount = trace.reserved;
+    let blockIndex = do {
+      let fee = PayTokenLib.expectedFee(token);
+      if (cost <= fee) {
+        RetryLib.closeTrace(ctx.transfers, trace.n);
+        return #Err(refusal(#ledgerError({ token }), "The " # sym # " could not be moved to the treasury: the amount does not cover the ledger fee" # stays));
+      };
+      // BTC cost send (BC) recorded with the trace memo and created_at_time
+      // before the await; an unknown outcome is resent identically for 23 h.
+      let attempt = RetryLib.openBtcCost(ctx.transfers, trace, depositIndex, { token; from_subaccount = ?subaccount; to = target; amount = Nat.sub(cost, fee); fee = ?fee });
+      let result = await RetryLib.sendBtcCounted(attempt);
+      RetryLib.setBtcCostAttempt(ctx.transfers, trace.n, result);
+      switch (result.outcome) {
+        case (#succeeded(b)) { b };
+        case (#failed(text)) {
+          RetryLib.dropBtcCost(ctx.transfers, trace.n);
+          RetryLib.closeTrace(ctx.transfers, trace.n);
+          return #Err(refusal(#ledgerError({ token }), "The " # sym # " could not be moved to the treasury: " # text # stays));
+        };
+        case (_) {
+          RetryLib.traceToRefund(ctx.transfers, trace.n, #unknown, null);
+          return #Err(refusal(#ledgerError({ token }), "The " # sym # " transfer to the treasury has an unknown outcome (" # (result.lastError ?? "") # "); it is resent identically for 23 hours and, if the " # sym # " was moved, it is listed for a refund"));
+        };
       };
     };
+    ignore payLedger;
 
     // Exact fee share of the collected cost (fee included in `cost`) and the
     // net amount converted; recorded once, never recomputed.
@@ -377,14 +453,17 @@ module {
     };
     switch (IcrcLib.deliverMintFirst(ctx.ledger, ctx.canister, delivery, tttiAmount)) {
       case (#ok({ minted; fromCollector; blockIndices })) {
-        release(ctx.sale, tttiAmount);
         ctx.sale.sold += tttiAmount;
-        #Ok(TreasuryLib.recordConversion(ctx.treasury, { base with minted; fromCollector; mintBlock = firstBlock(blockIndices) }));
+        let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with minted; fromCollector; mintBlock = firstBlock(blockIndices) });
+        RetryLib.setBtcCostConversion(ctx.transfers, trace.n, recorded.id);
+        RetryLib.closeTrace(ctx.transfers, trace.n);
+        #Ok(recorded);
       };
       case (#err(reason)) {
-        release(ctx.sale, tttiAmount);
-        let message = "TTTI-T delivery failed (" # reason # ") after the " # sym # " was moved to the treasury; this purchase needs manual follow-up";
-        let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with status = #refundFailed; message = ?message });
+        let message = "TTTI-T delivery failed (" # reason # ") after the " # sym # " was moved to the treasury; this purchase needs admin review for a refund";
+        let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with status = #refundReview; message = ?message });
+        RetryLib.setBtcCostConversion(ctx.transfers, trace.n, recorded.id);
+        RetryLib.closeTrace(ctx.transfers, trace.n);
         #Err({ code = #deliveryFailedRefundFailed; message; conversion = ?recorded });
       };
     };
@@ -489,17 +568,36 @@ module {
     if (delivery == IcrcLib.feeCollectorAccount(ctx.canister) or delivery == IcrcLib.burnAccount(ctx.canister)) {
       return #Err(refusal(#invalidAmount, "This delivery account cannot receive TTTI-T; no " # sym # " was taken"));
     };
-    let target = TreasuryLib.tokenAccount(ctx.treasury, token) ?? (return #Err(refusal(#tokenNotConfigured({ token }), "No treasury account is set for " # sym # "; no " # sym # " was taken")));
+    ignore TreasuryLib.tokenAccount(ctx.treasury, token) ?? (return #Err(refusal(#tokenNotConfigured({ token }), "No treasury account is set for " # sym # "; no " # sym # " was taken")));
+
+    // Purchase trace (memo TTTI-PC-<n>, created_at_time) and its reservation,
+    // written before the collect await. A trap after it -> payment to refund.
+    let trace = RetryLib.openTrace(ctx.transfers, buyer, token, cost, tttiAmount);
+    try {
+      await settle(ctx, trace, payLedger, delivery, usdE8);
+    } catch (e) {
+      interrupted(ctx, trace, e.message());
+    } finally {
+      RetryLib.endTrace(ctx.transfers, trace.n);
+    };
+  };
+
+  // After the trace: collect (trace memo and created_at_time) -> deliver
+  // (mint first) -> record and forward, or record #refundFailed and send the
+  // TTTI-RF refund once (later resends by the retry timer).
+  func settle(ctx : PurchaseContext, trace : RetryLib.PurchaseTrace, payLedger : PayTokenLib.PayLedger, delivery : Account, usdE8 : Nat) : async PurchaseResult {
+    let token = trace.token;
+    let sym = PayTokenLib.symbol(token);
+    let buyer = trace.buyer;
+    let cost = trace.amount;
+    let tttiAmount = trace.reserved;
     let canisterAccount : Account = { owner = ctx.canister; subaccount = null };
     let feeBps = PayTokenLib.feeBps(token);
 
-    // RESERVE before the first ledger await.
-    ctx.sale.reserved += tttiAmount;
-
-    let paymentBlock : Nat = switch (await PayTokenLib.collect(payLedger, buyer, canisterAccount, cost)) {
+    let paymentBlock : Nat = switch (await PayTokenLib.collect(payLedger, buyer, canisterAccount, cost, trace.memo, trace.created_at_time)) {
       case (#ok(b)) { b };
       case (#ledgerError(err)) {
-        release(ctx.sale, tttiAmount);
+        RetryLib.closeTrace(ctx.transfers, trace.n);
         let message = PayTokenLib.transferFromErrorMessage(token, err);
         let code : Sale.PurchaseErrorCode = switch (err) {
           case (#InsufficientAllowance({ allowance })) { #approvalMissing({ token; allowance }) };
@@ -509,8 +607,8 @@ module {
         return #Err(refusal(code, message));
       };
       case (#callFailed(reason)) {
-        release(ctx.sale, tttiAmount);
-        return #Err(refusal(#ledgerError({ token }), "The " # sym # " ledger could not be reached: " # reason));
+        RetryLib.traceToRefund(ctx.transfers, trace.n, #unknown, null);
+        return #Err(refusal(#ledgerError({ token }), "The " # sym # " ledger could not be reached: " # reason # "; if " # sym # " was taken, it is listed for a refund"));
       };
     };
 
@@ -543,46 +641,49 @@ module {
 
     switch (IcrcLib.deliverMintFirst(ctx.ledger, ctx.canister, delivery, tttiAmount)) {
       case (#ok({ minted; fromCollector; blockIndices })) {
-        release(ctx.sale, tttiAmount);
         ctx.sale.sold += tttiAmount;
         let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with minted; fromCollector; mintBlock = firstBlock(blockIndices) });
+        RetryLib.closeTrace(ctx.transfers, trace.n);
         // ICP: the fee share cost * feeBps / (10_000 + feeBps) goes to the
         // cycles reserve (ledger fee paid on top by the canister account) and
         // the rest to the treasury. ck tokens: the whole cost goes to the
         // token's treasury account (minus its ledger fee); no cycles funded.
-        let forwardAmount = if (PayTokenLib.fundsCycles(token)) {
-          let share = fee;
-          let treasuryE8s = CyclesReserveLib.treasuryShare(cost, share);
-          let claim = CyclesReserveLib.recordShare(ctx.cyclesReserve, recorded.id, share, treasuryE8s);
-          await CyclesReserveLib.transferShare(ctx.cyclesReserve, ctx.icpLedger, ctx.canister, claim);
-          treasuryE8s;
-        } else {
-          cost;
+        // One send each (SH, then FW) of the request recorded by the retry
+        // module; later resends come only from its 10-minute timer. A
+        // zero-amount forward is recorded #notRequired with no send.
+        if (PayTokenLib.fundsCycles(token)) {
+          let treasuryE8s = CyclesReserveLib.treasuryShare(cost, fee);
+          ignore CyclesReserveLib.recordShare(ctx.cyclesReserve, recorded.id, fee, treasuryE8s);
+          await RetryLib.sendShare(ctx.transfers, recorded.id);
         };
-        let forward = await PayTokenLib.forward(payLedger, token, canisterAccount, target, forwardAmount);
-        let latest = ctx.treasury.conversions.get(recorded.id) ?? recorded;
-        let message : ?Text = switch (forward) {
-          case (#failed(reason)) { ?(sym # " forwarding to the treasury failed: " # reason) };
-          case (_) { null };
-        };
-        let updated = { latest with forward; message };
-        TreasuryLib.updateConversion(ctx.treasury, updated);
-        let reserve = ctx.cyclesReserve;
-        await TreasuryLib.retryFailedForwards(ctx.treasury, canisterAccount, func c = CyclesReserveLib.forwardBase(reserve, c));
-        await CyclesReserveLib.retryFailedShareTransfers(ctx.cyclesReserve, ctx.icpLedger, ctx.canister);
-        #Ok(ctx.treasury.conversions.get(updated.id) ?? updated);
+        await RetryLib.sendForward(ctx.transfers, recorded.id);
+        #Ok(ctx.treasury.conversions.get(recorded.id) ?? recorded);
       };
       case (#err(reason)) {
-        release(ctx.sale, tttiAmount);
-        switch (await PayTokenLib.refund(payLedger, token, buyer, cost)) {
-          case (#ok(_)) {
-            let message = "TTTI-T delivery failed (" # reason # "); the " # sym # " was refunded minus the " # PayTokenLib.formatAmount(token, PayTokenLib.expectedFee(token)) # " " # sym # " ledger fee";
-            let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with status = #refunded; forward = #notRequired; message = ?message });
-            #Err({ code = #deliveryFailedRefunded; message; conversion = ?recorded });
+        let failed = "TTTI-T delivery failed (" # reason # ")";
+        let feeText = PayTokenLib.formatAmount(token, PayTokenLib.expectedFee(token)) # " " # sym;
+        switch (RetryLib.refundRequest(token, buyer, cost)) {
+          case (?request) {
+            // Recorded #refundFailed with its RF attempt (memo TTTI-RF-<n>)
+            // before the first refund await; the trace is removed with it.
+            let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with status = #refundFailed; forward = #notRequired; message = ?(failed # "; the " # sym # " refund minus the " # feeText # " ledger fee is in progress and retried automatically") });
+            RetryLib.openRefund(ctx.transfers, recorded.id, request);
+            RetryLib.closeTrace(ctx.transfers, trace.n);
+            await RetryLib.sendRefund(ctx.transfers, recorded.id);
+            let current = ctx.treasury.conversions.get(recorded.id) ?? recorded;
+            if (current.status == #refunded) {
+              let message = failed # "; the " # sym # " was refunded minus the " # feeText # " ledger fee";
+              let updated = { current with message = ?message };
+              TreasuryLib.updateConversion(ctx.treasury, updated);
+              #Err({ code = #deliveryFailedRefunded; message; conversion = ?updated });
+            } else {
+              #Err({ code = #deliveryFailedRefundFailed; message = current.message ?? failed; conversion = ?current });
+            };
           };
-          case (#err(refundReason)) {
-            let message = "TTTI-T delivery failed (" # reason # ") and the " # sym # " refund also failed (" # refundReason # "); this purchase needs manual follow-up";
-            let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with status = #refundFailed; forward = #notRequired; message = ?message });
+          case null {
+            let message = failed # " and the " # sym # " amount does not cover the " # feeText # " ledger fee; this purchase needs admin review";
+            let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with status = #refundReview; forward = #notRequired; message = ?message });
+            RetryLib.closeTrace(ctx.transfers, trace.n);
             #Err({ code = #deliveryFailedRefundFailed; message; conversion = ?recorded });
           };
         };
@@ -600,8 +701,8 @@ module {
   // (excess never pulled) -> RESERVE before the first collect await -> collect
   // -> IcrcLib.deliverMintFirst (fresh mint first, fee account only after the
   // mint cap) -> refund minus the ledger fee on delivery failure -> commit
-  // reserved -> sold, record conversion, forward to the treasury account,
-  // retry failed forwards. Never traps.
+  // reserved -> sold, record conversion, one reserve-share send (ICP) and one
+  // forward send through lib/retry.mo (resends by its timer). Never traps.
 
   // --- Delivery address ------------------------------------------------------
 

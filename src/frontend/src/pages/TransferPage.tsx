@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import type { Account } from "../backend";
 import { ExplorerLink } from "../components/ExplorerLink";
 import { FlatTokenIcon } from "../components/FlatTokenIcon";
+import { PercentBar } from "../components/exchange/WalletPercentBar";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -44,6 +45,7 @@ import {
 import { pickDict, useDict } from "../i18n/core";
 import {
   TRANSFER_EXPLORER_TEXT,
+  TRANSFER_PERCENT_TEXT,
   TRANSFER_TEXT,
   type TransferText,
 } from "../i18n/pages/transfer";
@@ -51,10 +53,13 @@ import { tttiBlockTarget } from "../lib/explorer";
 import {
   TTTI_DECIMALS,
   TTTI_SYMBOL,
+  amountForSendPercent,
   encodeAccountText,
   formatTtti,
   formatUnits,
   parseTtti,
+  percentForTypedSendAmount,
+  unitsInputValue,
 } from "../lib/token";
 
 /** Open form sections let the page's spacing carry the hierarchy. */
@@ -278,15 +283,42 @@ interface TransferFormProps {
   owner: Principal;
   fee: bigint | undefined;
   reservedAccount: Account | undefined;
+  balance: bigint | undefined;
+  balanceLoading: boolean;
 }
 
-function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
+function TransferForm({
+  owner,
+  fee,
+  reservedAccount,
+  balance,
+  balanceLoading,
+}: TransferFormProps) {
   const t = useDict(TRANSFER_TEXT);
+  const percentText = useDict(TRANSFER_PERCENT_TEXT);
   const transfer = useIcrc1Transfer();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
+  const [percent, setPercent] = useState<number | null>(null);
   const [error, setError] = useState<FormMessage | null>(null);
   const [success, setSuccess] = useState<FormMessage | null>(null);
+
+  const handleAmountChange = (value: string) => {
+    setAmount(value);
+    setPercent(
+      balance !== undefined && fee !== undefined
+        ? percentForTypedSendAmount(value, TTTI_DECIMALS, balance, fee)
+        : null,
+    );
+  };
+
+  const handlePercentSelect = (value: number) => {
+    if (balance === undefined || fee === undefined) return;
+    setPercent(value);
+    setAmount(
+      unitsInputValue(amountForSendPercent(balance, fee, value), TTTI_DECIMALS),
+    );
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -314,8 +346,10 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
 
     const capturedRecipient = recipient;
     const capturedAmount = amount;
+    const capturedPercent = percent;
     setRecipient("");
     setAmount("");
+    setPercent(null);
 
     transfer.mutate(
       { to: { owner: to }, amount: parsed },
@@ -332,12 +366,14 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
             setError(describeTransferError(result.Err));
             setRecipient(capturedRecipient);
             setAmount(capturedAmount);
+            setPercent(capturedPercent);
           }
         },
         onError: () => {
           setError(msg((t) => t.transferFailed));
           setRecipient(capturedRecipient);
           setAmount(capturedAmount);
+          setPercent(capturedPercent);
         },
       },
     );
@@ -381,9 +417,26 @@ function TransferForm({ owner, fee, reservedAccount }: TransferFormProps) {
               inputMode="decimal"
               placeholder="0.00000000"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => handleAmountChange(e.target.value)}
               autoComplete="off"
               data-ocid="transfer.amount_input"
+            />
+            <PercentBar
+              symbol={TTTI_SYMBOL}
+              decimals={TTTI_DECIMALS}
+              ledgerFee={fee ?? 0n}
+              feeCount={1}
+              balance={fee === undefined ? undefined : balance}
+              balanceLoading={balanceLoading || fee === undefined}
+              walletConnected
+              percent={percent}
+              currentAmount={parseTtti(amount) ?? 0n}
+              disabled={transfer.isPending}
+              text={percentText}
+              formatAmount={(value) => formatTtti(value)}
+              ocidPrefix="transfer.percent_bar"
+              labelId="transfer-percent-label"
+              onSelect={handlePercentSelect}
             />
             <p className="text-xs text-muted-foreground">
               {t.transferHint(
@@ -879,6 +932,8 @@ export function TransferPage() {
             owner={owner}
             fee={fee}
             reservedAccount={reservedAccount}
+            balance={isBalanceLoading ? undefined : balance}
+            balanceLoading={isBalanceLoading}
           />
         </TabsContent>
         <TabsContent value="approve" className="mt-8">

@@ -3,15 +3,18 @@ import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Loader2,
   RefreshCw,
   Undo2,
 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { PayToken, PriceSource, type PurchaseResult } from "../backend";
 import { ExplorerLink } from "../components/ExplorerLink";
 import { FlatTokenIcon } from "../components/FlatTokenIcon";
+import { BuybackExplanation } from "../components/buyback/BuybackExplanation";
+import { BuybackFlow } from "../components/buyback/BuybackFlow";
 import { BtcPurchasePanel } from "../components/exchange/BtcPurchasePanel";
 import { DeliveryAddressCard } from "../components/exchange/DeliveryAddressCard";
 import { GetIcpFirstPanel } from "../components/exchange/GetIcpFirstPanel";
@@ -27,6 +30,7 @@ import {
   TokenRateCard,
 } from "../components/exchange/TokenRateCard";
 import { WalletPercentBar } from "../components/exchange/WalletPercentBar";
+import { ZeroBalanceTransferOffer } from "../components/exchange/ZeroBalanceTransferOffer";
 import {
   type Outcome,
   outcomeFromResult,
@@ -45,13 +49,17 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Skeleton } from "../components/ui/skeleton";
 import { useBuyFunnel } from "../hooks/useBuyFunnel";
+import {
+  type ConnectedWalletKind,
+  useConnectedWallet,
+} from "../hooks/useConnectedWallet";
 import { usePayTokenApprove } from "../hooks/useIcpApprove";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { usePlug } from "../hooks/usePlug";
 import {
-  usePlugAcceptPurchaseAcknowledgements,
-  usePlugPurchase,
-  usePlugPurchaseAcknowledgement,
+  useWalletAcceptPurchaseAcknowledgements,
+  useWalletApprove,
+  useWalletPurchase,
+  useWalletPurchaseAcknowledgement,
 } from "../hooks/usePlugPurchase";
 import {
   findPayTokenStatus,
@@ -66,6 +74,7 @@ import {
   useMyBtcDeposits,
   usePublicTreasuryInfo,
   useRefreshOnDepositProgress,
+  useWalletBtcDeposits,
 } from "../hooks/useQueries";
 import { usePayTokenBalance } from "../hooks/useWallet";
 import { SITE_TEXT } from "../i18n/common/site";
@@ -75,11 +84,14 @@ import {
   BUY_EXPLORER_TEXT,
   BUY_PAGE_TEXT,
 } from "../i18n/pages/buy";
+import { BUYBACK_TEXT } from "../i18n/pages/buyback";
 import { requiredTokenBalance } from "../lib/icpLedger";
 import { mintBlockTarget, paymentBlockTarget } from "../lib/purchaseHistory";
 import {
+  BTC_PAY_OPTION,
   MIN_PURCHASE,
   PAY_TOKENS,
+  type SetupPayChoice,
   TTTI_DECIMALS,
   TTTI_SYMBOL,
   encodeAccountText,
@@ -128,7 +140,7 @@ const ACKNOWLEDGEMENTS = [
 ] as const;
 type AcknowledgementId = (typeof ACKNOWLEDGEMENTS)[number]["id"];
 
-type ActiveWallet = "plug" | "internetIdentity";
+type ActiveWallet = ConnectedWalletKind | "internetIdentity";
 /** `useMax` is the input text that fills the remaining allocation. */
 type Validation = { title: string; message: string; useMax?: string };
 /** What the last attempt produced; turned into text in the active language. */
@@ -141,22 +153,27 @@ export function ExchangePage() {
   const t = useDict(BUY_PAGE_TEXT);
   const tx = useDict(BUY_EXPLORER_TEXT);
   const tb = useDict(BUY_BTC_TEXT);
+  const tbb = useDict(BUYBACK_TEXT);
   const { lang } = useLanguage();
   const site = useDict(SITE_TEXT);
   const priceStatement = usePriceText();
   const { identity } = useInternetIdentity();
-  const { principal: plugPrincipal } = usePlug();
-  const { openSetup } = useBuyFunnel();
+  const connected = useConnectedWallet();
+  const externalPrincipal = connected.principal;
+  const { openSetup, consumePreselectedPayChoice, payChoiceVersion } =
+    useBuyFunnel();
   const iiPrincipal =
     identity && !identity.getPrincipal().isAnonymous()
       ? identity.getPrincipal()
       : null;
-  const wallet: ActiveWallet | null = plugPrincipal
-    ? "plug"
-    : iiPrincipal
-      ? "internetIdentity"
-      : null;
-  const activePrincipal = plugPrincipal ?? iiPrincipal;
+  const wallet: ActiveWallet | null =
+    connected.kind && externalPrincipal
+      ? connected.kind
+      : iiPrincipal
+        ? "internetIdentity"
+        : null;
+  const isExternal = !!wallet && wallet !== "internetIdentity";
+  const activePrincipal = externalPrincipal ?? iiPrincipal;
   const activePrincipalText = activePrincipal?.toText() ?? null;
 
   const [token, setToken] = useState<PayToken>(PayToken.icp);
@@ -176,17 +193,18 @@ export function ExchangePage() {
   const { refetch: refetchBalance } = balanceQuery;
   const iiAddress = useGetDeliveryAddress();
   const approve = usePayTokenApprove();
+  const walletApprove = useWalletApprove();
   const convert = useConvertDepositWith();
-  const plugBuy = usePlugPurchase();
+  const walletBuy = useWalletPurchase();
   // Acknowledgements are read and recorded by the same principal that buys.
   const iiAckQuery = useGetMyPurchaseAcknowledgement(
     wallet === "internetIdentity",
   );
-  const plugAckQuery = usePlugPurchaseAcknowledgement(wallet === "plug");
+  const walletAckQuery = useWalletPurchaseAcknowledgement(isExternal);
   const iiAcceptAck = useAcceptPurchaseAcknowledgements();
-  const plugAcceptAck = usePlugAcceptPurchaseAcknowledgements();
-  const ackQuery = wallet === "plug" ? plugAckQuery : iiAckQuery;
-  const acceptAck = wallet === "plug" ? plugAcceptAck : iiAcceptAck;
+  const walletAcceptAck = useWalletAcceptPurchaseAcknowledgements();
+  const ackQuery = isExternal ? walletAckQuery : iiAckQuery;
+  const acceptAck = isExternal ? walletAcceptAck : iiAcceptAck;
 
   const [checked, setChecked] = useState<
     Partial<Record<AcknowledgementId, boolean>>
@@ -201,6 +219,7 @@ export function ExchangePage() {
   >("idle");
   const [outcomeSource, setOutcome] = useState<OutcomeSource | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [mintInfoOpen, setMintInfoOpen] = useState(false);
   const busy = step !== "idle";
 
   // Re-evaluate rate expiry without waiting for the next status poll.
@@ -236,14 +255,16 @@ export function ExchangePage() {
     t === PayToken.icp ||
     findPayTokenStatus(status, t)?.treasuryConfigured === true;
   const selectedAvailable = tokenAvailable(token);
-  // BTC deposits are tracked for the Internet Identity principal.
-  const btcAvailable =
-    wallet === "internetIdentity" && tokenAvailable(PayToken.ckbtc);
+  // BTC deposits: any signed-in wallet, once the ckBTC treasury is configured.
+  const btcAvailable = !!wallet && tokenAvailable(PayToken.ckbtc);
   const btcActive = btcSelected && btcAvailable;
 
   // ICP stays selected on arrival; a BTC purchase address with deposits is
   // signalled by a status line (in progress or waiting) that opens its tracking.
-  const myBtcDeposits = useMyBtcDeposits();
+  // External wallets read it through their signed backend (Plug only polls).
+  const iiBtcDeposits = useMyBtcDeposits(!isExternal);
+  const walletBtcDeposits = useWalletBtcDeposits(isExternal);
+  const myBtcDeposits = isExternal ? walletBtcDeposits : iiBtcDeposits;
   const btcPurchaseTracking = myBtcDeposits.data?.purchase;
   const btcPending = btcAvailable && isDepositInProgress(btcPurchaseTracking);
   const btcWaiting =
@@ -387,6 +408,9 @@ export function ExchangePage() {
 
   const showIcpPanel = insufficient && token === PayToken.icp;
   const zeroIcp = token === PayToken.icp && balance === 0n && !busy;
+  // ckBTC, ckUSDC, ckUSDT: a loaded zero balance shows the transfer offer.
+  const zeroToken =
+    token !== PayToken.icp && balance === 0n && !busy && selectedAvailable;
   const walletAddress = activePrincipal
     ? encodeAccountText({ owner: activePrincipal })
     : "";
@@ -426,6 +450,38 @@ export function ExchangePage() {
     resetAttempt();
   };
 
+  // The setup flow's payment choice is read once on arrival (and again each
+  // time the flow finishes while this page is mounted), then applied once the
+  // wallet and token availability are known; unavailable choices keep ICP.
+  const setupChoice = useRef<SetupPayChoice | null | undefined>(undefined);
+  const setupChoiceApplied = useRef(false);
+  const seenPayChoiceVersion = useRef(payChoiceVersion);
+  const availabilityKnown =
+    !!wallet && (statusQuery.data !== undefined || statusQuery.isError);
+  useEffect(() => {
+    if (seenPayChoiceVersion.current !== payChoiceVersion) {
+      seenPayChoiceVersion.current = payChoiceVersion;
+      setupChoice.current = undefined;
+      setupChoiceApplied.current = false;
+    }
+    if (setupChoiceApplied.current) return;
+    if (setupChoice.current === undefined) {
+      setupChoice.current = consumePreselectedPayChoice();
+    }
+    const choice = setupChoice.current;
+    if (choice === null) {
+      setupChoiceApplied.current = true;
+      return;
+    }
+    if (!availabilityKnown) return;
+    setupChoiceApplied.current = true;
+    if (choice === BTC_PAY_OPTION.id) {
+      if (btcAvailable) handleBtcSelect();
+    } else if (choice !== PayToken.icp && tokenAvailable(choice)) {
+      handleTokenChange(choice);
+    }
+  });
+
   /** Switch mode, carrying the computed equivalent into the other field. */
   const handleModeChange = (next: OrderMode) => {
     if (next === mode) return;
@@ -460,6 +516,8 @@ export function ExchangePage() {
     const setDraft = mode === "pay" ? setAmount : setTttiAmount;
     const captured = mode === "pay" ? payText : tttiAmount;
     const restore = () => setDraft((cur) => (cur === "" ? captured : cur));
+    // OISY/NFID: open the wallet window now, from the click, for the calls below.
+    const releaseSession = isExternal ? connected.beginSession() : () => {};
     setOutcome(null);
     setPercent(null);
     setDraft("");
@@ -469,12 +527,18 @@ export function ExchangePage() {
         await acceptAck.mutateAsync();
       }
       setStep("approving");
-      const approval = await approve.mutateAsync({
-        token: purchaseToken,
-        amount: purchaseAmount,
-        balance,
-        wallet,
-      });
+      const approval = isExternal
+        ? await walletApprove.mutateAsync({
+            token: purchaseToken,
+            amount: purchaseAmount,
+            balance,
+          })
+        : await approve.mutateAsync({
+            token: purchaseToken,
+            amount: purchaseAmount,
+            balance,
+            wallet: "internetIdentity",
+          });
       if (!approval.ok) {
         setOutcome({
           kind: "approval",
@@ -485,19 +549,18 @@ export function ExchangePage() {
         return;
       }
       setStep("buying");
-      const result =
-        wallet === "plug"
-          ? await plugBuy.mutateAsync({
-              token: purchaseToken,
-              payAmount: purchaseAmount,
-              tttiTarget,
-            })
-          : await convert.mutateAsync({
-              token: purchaseToken,
-              recipient: null,
-              payAmount: purchaseAmount,
-              tttiTarget,
-            });
+      const result = isExternal
+        ? await walletBuy.mutateAsync({
+            token: purchaseToken,
+            payAmount: purchaseAmount,
+            tttiTarget,
+          })
+        : await convert.mutateAsync({
+            token: purchaseToken,
+            recipient: null,
+            payAmount: purchaseAmount,
+            tttiTarget,
+          });
       setOutcome({ kind: "result", result, token: purchaseToken });
       if (outcomeFromResult(result, purchaseToken).kind !== "success") {
         restore();
@@ -509,6 +572,7 @@ export function ExchangePage() {
       });
       restore();
     } finally {
+      releaseSession();
       setStep("idle");
       void refetchBalance();
     }
@@ -751,7 +815,11 @@ export function ExchangePage() {
             className="rounded-full border-gold bg-primary/10 text-primary"
             data-ocid="exchange.wallet_badge"
           >
-            {wallet === "plug" ? t.walletPlug : t.walletBuiltIn}
+            {wallet === "internetIdentity"
+              ? t.walletBuiltIn
+              : wallet === "plug"
+                ? t.walletPlug
+                : connected.name}
           </Badge>
         </div>
         <PayTokenSelector
@@ -845,7 +913,16 @@ export function ExchangePage() {
             )}
             {zeroIcp && !closed ? (
               <>
+                <ZeroBalanceTransferOffer symbol={symbol} />
                 <GetIcpFirstPanel address={walletAddress} balanceE8s={0n} />
+                {outcomeAlerts}
+              </>
+            ) : zeroToken && !closed ? (
+              <>
+                <ZeroBalanceTransferOffer
+                  symbol={symbol}
+                  address={walletAddress}
+                />
                 {outcomeAlerts}
               </>
             ) : (
@@ -1121,13 +1198,56 @@ export function ExchangePage() {
       <div className="grid gap-6 lg:grid-cols-5 lg:items-start">
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-3">
           {purchaseCard}
+          <div className="-mt-3 px-1" data-ocid="exchange.mint_info.section">
+            <button
+              type="button"
+              onClick={() => setMintInfoOpen((open) => !open)}
+              aria-expanded={mintInfoOpen}
+              aria-controls="exchange-mint-info"
+              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 transition-smooth hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              data-ocid="exchange.mint_info.toggle"
+            >
+              {t.mintInfoToggle}
+              <ChevronDown
+                className={cn(
+                  "h-3 w-3 transition-transform",
+                  mintInfoOpen && "rotate-180",
+                )}
+                aria-hidden="true"
+              />
+            </button>
+            {mintInfoOpen && (
+              <div
+                id="exchange-mint-info"
+                className="mt-2 max-w-3xl space-y-2 text-xs text-muted-foreground"
+                data-ocid="exchange.mint_info.panel"
+              >
+                <p>{t.mintInfoBody1}</p>
+                <p>{t.mintInfoBody2}</p>
+              </div>
+            )}
+          </div>
           {wallet && (
             <DeliveryAddressCard
               key={wallet}
               wallet={wallet}
-              plugPrincipal={plugPrincipal}
+              walletPrincipal={externalPrincipal}
             />
           )}
+          <Card className={CARD_CLASS} data-ocid="exchange.buyback_section">
+            <CardHeader className="space-y-2 pb-4">
+              <CardTitle className="font-display text-xl">
+                {tbb.sectionTitle}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {tbb.sectionIntro}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <BuybackExplanation />
+              <BuybackFlow />
+            </CardContent>
+          </Card>
         </div>
 
         <aside className="flex min-w-0 flex-col gap-6 lg:col-span-2">

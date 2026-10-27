@@ -2,11 +2,16 @@ import type { Principal } from "@icp-sdk/core/principal";
 import { CheckCircle2, Loader2, MapPin, RefreshCw, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { DeliveryAddressErrorCode } from "../../backend";
+import {
+  type ConnectedWalletKind,
+  isSignerKind,
+  useConnectedWallet,
+} from "../../hooks/useConnectedWallet";
 import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import {
-  usePlugClearDeliveryAddress,
-  usePlugDeliveryAddress,
-  usePlugSetDeliveryAddress,
+  useWalletClearDeliveryAddress,
+  useWalletDeliveryAddress,
+  useWalletSetDeliveryAddress,
 } from "../../hooks/usePlugPurchase";
 import {
   useClearDeliveryAddress,
@@ -40,36 +45,43 @@ type AddressError =
   | { kind: "removeFailed"; message: string };
 
 interface DeliveryAddressCardProps {
-  /** Wallet that signs the calls; Plug users save as the Plug principal. */
-  wallet: "plug" | "internetIdentity";
-  plugPrincipal: Principal | null;
+  /** Wallet that signs the calls; external wallets save as their principal. */
+  wallet: ConnectedWalletKind | "internetIdentity";
+  walletPrincipal: Principal | null;
 }
+
+const noop = () => {};
 
 export function DeliveryAddressCard({
   wallet,
-  plugPrincipal,
+  walletPrincipal,
 }: DeliveryAddressCardProps) {
   const t = useDict(BUY_DELIVERY_TEXT);
   const { lang } = useLanguage();
+  const isExternal = wallet !== "internetIdentity";
   const isPlug = wallet === "plug";
+  // OISY/NFID approve each call in their window, so nothing runs unprompted.
+  const isSigner = isSignerKind(isExternal ? wallet : null);
+  const { beginSession } = useConnectedWallet();
   const iiQuery = useGetDeliveryAddress();
-  const plugQuery = usePlugDeliveryAddress(isPlug);
+  const walletQuery = useWalletDeliveryAddress(isExternal);
   const iiSet = useSetDeliveryAddress();
-  const plugSet = usePlugSetDeliveryAddress();
+  const walletSet = useWalletSetDeliveryAddress();
   const iiClear = useClearDeliveryAddress();
-  const plugClear = usePlugClearDeliveryAddress();
+  const walletClear = useWalletClearDeliveryAddress();
 
-  const query = isPlug ? plugQuery : iiQuery;
-  const save = isPlug ? plugSet : iiSet;
-  const clear = isPlug ? plugClear : iiClear;
+  const query = isExternal ? walletQuery : iiQuery;
+  const save = isExternal ? walletSet : iiSet;
+  const clear = isExternal ? walletClear : iiClear;
   const savedText = query.data?.owner.toText() ?? null;
-  const plugText = plugPrincipal?.toText() ?? null;
+  const externalText = walletPrincipal?.toText() ?? null;
   const { identity } = useInternetIdentity();
   const iiPrincipal = identity?.getPrincipal();
   const iiText =
     iiPrincipal && !iiPrincipal.isAnonymous() ? iiPrincipal.toText() : null;
   // Principal of the active wallet, used to prefill and auto-save.
-  const walletText = isPlug ? plugText : iiText;
+  const walletText = isExternal ? externalText : iiText;
+  const openSession = () => (isSigner ? beginSession() : noop);
 
   const [draft, setDraft] = useState("");
   const [errorSource, setError] = useState<AddressError | null>(null);
@@ -79,10 +91,11 @@ export function DeliveryAddressCard({
 
   // One-time initialization of the editable field once the saved value loads.
   useEffect(() => {
-    if (initialized.current || query.data === undefined) return;
+    if (initialized.current) return;
+    if (query.data === undefined && !(isSigner && walletText)) return;
     initialized.current = true;
     setDraft(savedText ?? walletText ?? "");
-  }, [query.data, savedText, walletText]);
+  }, [query.data, savedText, walletText, isSigner]);
 
   // If loading the saved address fails, still offer the wallet principal.
   const loadFailed = query.isError && query.data === undefined;
@@ -94,12 +107,12 @@ export function DeliveryAddressCard({
   // Save the active wallet's principal automatically, once, when none is saved.
   const saveMutate = save.mutate;
   useEffect(() => {
-    if (!walletText || autoSaved.current) return;
+    if (!walletText || autoSaved.current || isSigner) return;
     if (query.data !== null) return;
     autoSaved.current = true;
     setDraft((current) => (current === "" ? walletText : current));
     saveMutate(walletText);
-  }, [walletText, query.data, saveMutate]);
+  }, [walletText, query.data, saveMutate, isSigner]);
 
   const handleSave = (event: FormEvent) => {
     event.preventDefault();
@@ -114,6 +127,7 @@ export function DeliveryAddressCard({
       });
       return;
     }
+    const release = openSession();
     save.mutate(validation.principal.toText(), {
       onSuccess: (result) => {
         if (result.__kind__ === "Ok") {
@@ -127,6 +141,7 @@ export function DeliveryAddressCard({
         }
       },
       onError: (err) => setError({ kind: "saveFailed", message: err.message }),
+      onSettled: release,
     });
   };
 
@@ -134,11 +149,18 @@ export function DeliveryAddressCard({
     setError(null);
     setNotice(null);
     if (draft.trim() === savedText) setDraft("");
+    const release = openSession();
     clear.mutate(undefined, {
       onSuccess: () => setNotice("removed"),
       onError: (err) =>
         setError({ kind: "removeFailed", message: err.message }),
+      onSettled: release,
     });
+  };
+
+  const handleLoad = () => {
+    const release = openSession();
+    void query.refetch().finally(release);
   };
 
   const busy = save.isPending || clear.isPending;
@@ -266,18 +288,20 @@ export function DeliveryAddressCard({
           </p>
           {query.isLoading ? (
             <Skeleton className="mt-1 h-5 w-48" />
-          ) : loadFailed ? (
+          ) : loadFailed || (isSigner && query.data === undefined) ? (
             <div
               className="mt-1 flex flex-wrap items-center gap-2"
               data-ocid="delivery.load_error_state"
             >
-              <p className="text-sm text-destructive">{t.loadFailed}</p>
+              {loadFailed && (
+                <p className="text-sm text-destructive">{t.loadFailed}</p>
+              )}
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 className="h-7 rounded-lg border-gold bg-transparent px-2 text-xs transition-smooth hover:border-gold-strong hover:bg-primary/10 hover:text-primary"
-                onClick={() => void query.refetch()}
+                onClick={handleLoad}
                 disabled={query.isFetching}
                 data-ocid="delivery.retry_button"
               >

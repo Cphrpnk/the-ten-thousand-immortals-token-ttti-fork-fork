@@ -47,6 +47,9 @@ mixin () {
     "  `#anonymousCaller`), `getBtcPurchaseAddress`, `checkBtcPurchaseDeposit`,\n" #
     "  `getBtcWalletAddress` and `checkBtcWalletDeposit` (anonymous -> `#Err` code\n" #
     "  `#anonymousCaller`).\n" #
+    "- No signature needed: `getBtcWalletAddressFor(owner)`,\n" #
+    "  `checkBtcWalletDepositFor(owner)` and `getBtcWalletDepositsFor(owner)`\n" #
+    "  accept any caller, anonymous included (see Native BTC deposits).\n" #
     "- None of these need registration. A role matters only for admin endpoints.\n\n" #
 
     "### Registration and roles\n\n" #
@@ -73,16 +76,20 @@ mixin () {
     "  `status`, `ledger_id`),\n" #
     "  `getFeeCollector`, `getBurnAccount`, `getLegacyBlockInfo`, `get_fee`,\n" #
     "  `get_fee_bounds`, `get_max_supply`, `getSaleStatus`, `getTechnicalDetails`,\n" #
-    "  `getIcpPrice`, `getTokenPrices`, `getPublicTreasuryInfo`,\n" #
+    "  `getIcpPrice`, `getTokenPrices`, `getBtcUsdRate`, `getPublicTreasuryInfo`,\n" #
     "  `getCanisterPrincipal`,\n" #
-    "  `getCyclesStatus`, `getBtcDepositInfo`, `schema`, `execute` and `getApiDoc`.\n" #
+    "  `getCyclesStatus`, `getBtcDepositInfo`, `getBtcWalletAddressFor`,\n" #
+    "  `checkBtcWalletDepositFor`, `getBtcWalletDepositsFor`, `schema`, `execute`\n" #
+    "  and `getApiDoc`.\n" #
     "- Caller-scoped: `getMyPurchaseAcknowledgement`,\n" #
     "  `acceptPurchaseAcknowledgements`, `getDeliveryAddress`,\n" #
     "  `setDeliveryAddress`, `clearDeliveryAddress`, `convertDeposit`,\n" #
     "  `convertDepositWith`, `getBtcPurchaseAddress`, `checkBtcPurchaseDeposit`,\n" #
     "  `getBtcWalletAddress`, `checkBtcWalletDeposit`, `getMyBtcDeposits`,\n" #
-    "  `getMyConversions`.\n" #
-    "  No endpoint reads or triggers another principal's BTC deposits.\n" #
+    "  `getMyConversions`, `listMyContacts`, `addContact`, `updateContact`,\n" #
+    "  `deleteContact`.\n" #
+    "  Only the three wallet-path `*For(owner)` endpoints read or trigger another\n" #
+    "  principal's BTC deposits; none touches purchase-path data.\n" #
     "- Admin-only reads: `getTreasuryConfig`, `getConversions`,\n" #
     "  `exportBalanceSnapshot`.\n" #
     "- Admin-only writes: `setSalesPaused`, `refreshIcpPrice`,\n" #
@@ -138,11 +145,11 @@ mixin () {
     "  refused too.\n\n" #
 
     "## ICRC-1 / ICRC-2\n\n" #
-    "- Metadata: `icrc1_name` = \"TTTI-T\", `icrc1_symbol` = \"TTTI-T\",\n" #
-    "  `icrc1_decimals` = 8, `icrc1_fee`, `icrc1_total_supply`,\n" #
+    "- Metadata: `icrc1_name` = \"The Ten Thousand Immortals\", `icrc1_symbol` =\n" #
+    "  \"TTTI-T\", `icrc1_decimals` = 8, `icrc1_fee`, `icrc1_total_supply`,\n" #
     "  `icrc1_balance_of`, `icrc1_metadata` (`icrc1:name`, `icrc1:symbol`,\n" #
     "  `icrc1:decimals`, `icrc1:fee`, `icrc1:max_memo_length` = 32,\n" #
-    "  `icrc1:max_supply`).\n" #
+    "  `icrc1:max_supply`, `icrc1:logo` = PNG data URI).\n" #
     "- `icrc1_supported_standards` and `icrc10_supported_standards` both return\n" #
     "  ICRC-1, ICRC-2, ICRC-3 and ICRC-10 as `{ name; url }`.\n" #
     "- `icrc1_transfer`, `icrc2_approve`, `icrc2_allowance`, `icrc2_transfer_from`.\n\n" #
@@ -288,6 +295,16 @@ mixin () {
     "  entry per pay token in the order #icp, #ckbtc, #ckusdc, #ckusdt, each\n" #
     "  `{ token; pair; usdE8; source; fetchedAt; validUntil; usable; lastError;\n" #
     "  lastSuccessAt }`.\n" #
+    "- `getBtcUsdRate() : ?{ usdE8; source; fetchedAt; validUntil }` (public\n" #
+    "  query, no authentication, anonymous allowed, never an outcall): the stored\n" #
+    "  hourly BTC/USD rate, the same value as the `#ckbtc` entry of\n" #
+    "  `getTokenPrices`. `usdE8` = USD per whole BTC * 10^8; `source` is\n" #
+    "  `#coinbase` or `#coingecko`; `fetchedAt` and `validUntil` (= fetchedAt +\n" #
+    "  1 hour) are nanoseconds since the Unix epoch (Candid `int`). `null` before\n" #
+    "  the first successful fetch. Display-only (wallet USD value of ckBTC): it is\n" #
+    "  never used for purchases, conversions or balances. Polling: the rate\n" #
+    "  changes at most once an hour; polling more than every few minutes gains\n" #
+    "  nothing.\n" #
     "- `refreshIcpPrice() : PriceResult` (admin; trap `Unauthorized: only admins\n" #
     "  can refresh the ICP price`). While the current rate exists and now <=\n" #
     "  validUntil it returns `#Err(\"Refresh refused: the current ICP/USD rate is\n" #
@@ -333,17 +350,34 @@ mixin () {
     "  that payment beyond the cost of what is delivered is never taken.\n" #
     "- `setSalesPaused(Bool)` (admin; trap `Unauthorized: only admins can manage\n" #
     "  the TTTI-T sale`). Idempotent.\n" #
+    "- Pause scope: while sales are paused, purchases, buyback requests\n" #
+    "  (`requestBuyback`), buyback retries (`retryBuybackPayout`) and\n" #
+    "  cancellations (`cancelBuyback`) are refused with `#salesPaused`; the\n" #
+    "  automatic buyback payout retries, the FW/SH/RF transfer retries and all\n" #
+    "  BTC refunds (BR) are not sent. Recorded attempts are kept and sent after\n" #
+    "  the pause. The cycles top-up continues during the pause.\n" #
     "- The price and the 1% fee (every pay token) are code constants; nobody\n" #
     "  can change them.\n\n" #
 
-    "## Purchase acknowledgement (once per principal)\n\n" #
+    "## Purchase acknowledgement (versioned, per principal)\n\n" #
+    "- Each principal has at most one stored record `{ acceptedAt : Int; version :\n" #
+    "  Nat }` (`acceptedAt` in nanoseconds). The terms version in force is 2.\n" #
+    "  Records from before versioning were migrated to version 1 with their\n" #
+    "  original `acceptedAt`; they must be accepted again before the next purchase.\n" #
     "- `acceptPurchaseAcknowledgements() : { #ok : PurchaseAcknowledgement; #err :\n" #
-    "  #anonymousCaller }` records once that the caller accepted the six purchase\n" #
-    "  acknowledgements. Idempotent: a repeat call keeps the first `acceptedAt`.\n" #
+    "  #anonymousCaller }` records that the caller accepted the six purchase\n" #
+    "  acknowledgements of version 2. Idempotent at the current version: a repeat\n" #
+    "  call keeps the first `acceptedAt`. A version 1 record is replaced by\n" #
+    "  `{ acceptedAt = now; version = 2 }`.\n" #
     "- `getMyPurchaseAcknowledgement() : { accepted : Bool; acceptedAt : ?Int }`\n" #
-    "  (query, never traps; anonymous -> not accepted).\n" #
-    "- A purchase by a caller without an acknowledgement is refused with\n" #
-    "  `#acknowledgementRequired` before any token is taken.\n\n" #
+    "  (query, never traps): `accepted = true` and `acceptedAt` set only for a\n" #
+    "  version 2 record; anonymous, no record or version 1 -> `{ accepted = false;\n" #
+    "  acceptedAt = null }`.\n" #
+    "- The three purchase controls refuse a caller without a version 2 record\n" #
+    "  (version 1 included) with `#acknowledgementRequired` before any token is\n" #
+    "  taken: `convertDeposit` / `convertDepositWith`, the BTC purchase\n" #
+    "  conversion, and the BTC purchase deposit gates (`getBtcPurchaseAddress`,\n" #
+    "  `checkBtcPurchaseDeposit` without a stored tracking).\n\n" #
 
     "## Purchase: `convertDepositWith(token, recipient, payAmount, tttiTarget)` and\n" #
     "## `convertDeposit(recipient, icpAmount)`\n\n" #
@@ -392,20 +426,33 @@ mixin () {
     "   buyer may take the whole remainder when it is below the minimum. Only\n" #
     "   the cost of the delivered TTTI-T (rounded up, in pay-token base units)\n" #
     "   is collected; any excess is never pulled.\n" #
-    "5. The amount is reserved before the first ledger transfer (no\n" #
-    "   overselling) and released on every failure. The token is collected with\n" #
-    "   `icrc2_transfer_from` into the canister's own account on that ledger.\n" #
-    "   Ledger refusals return `#approvalMissing { token; allowance }`,\n" #
-    "   `#insufficientBalance { token; balance }` or `#ledgerError { token }`,\n" #
-    "   and nothing is taken.\n" #
+    "5. Before the first ledger transfer a purchase trace is written: global\n" #
+    "   number `n`, buyer, token, amount, the reserved TTTI-T amount,\n" #
+    "   `created_at_time` and memo `TTTI-PC-<n>`. It reserves the TTTI-T (no\n" #
+    "   overselling). The token is collected with `icrc2_transfer_from` into the\n" #
+    "   canister's own account on that ledger, always with that memo and\n" #
+    "   `created_at_time` (the BTC path payment send uses them too). The\n" #
+    "   reservation belongs to the trace and is released in one single place,\n" #
+    "   when the trace is removed; no trace, nothing released, never twice.\n" #
+    "   Purchase recorded: trace removed. Ledger refusals (trace removed) return\n" #
+    "   `#approvalMissing { token; allowance }`, `#insufficientBalance { token;\n" #
+    "   balance }` or `#ledgerError { token }`, and nothing is taken. Unknown\n" #
+    "   outcome (rejected call) or a trap after the debit: the trace becomes a\n" #
+    "   payment to refund (collect `#confirmed` with its block, or `#unknown`),\n" #
+    "   reservation released, `#Err #ledgerError` with `conversion = null`. A\n" #
+    "   trace left by a crash or upgrade is handled the same way by the retry timer.\n" #
     "6. Delivery goes to `recipient`, else the stored delivery address, else\n" #
     "   `{ owner = caller; subaccount = null }`: freshly minted first, from the fee\n" #
     "   account only once minting reached the cap. No TTTI-T fee is charged.\n" #
-    "7. Refund: if delivery fails, the collected amount is sent back to the\n" #
-    "   buyer's default account on the same ledger minus that ledger's fee:\n" #
-    "   `#Err` code `#deliveryFailedRefunded` (record `#refunded`) or, if the\n" #
-    "   refund also fails, `#deliveryFailedRefundFailed` (record `#refundFailed`,\n" #
-    "   needs manual follow-up), both with `conversion = ?<record>`.\n" #
+    "7. Refund: if delivery fails, the record is written as `#refundFailed`\n" #
+    "   with a refund attempt (RF, memo `TTTI-RF-<n>`, recorded\n" #
+    "   `created_at_time`) of the collected amount minus that ledger's fee to the\n" #
+    "   buyer's default account on the same ledger, sent once by the call:\n" #
+    "   `#Err` code `#deliveryFailedRefunded` (record `#refunded`) or\n" #
+    "   `#deliveryFailedRefundFailed` (record `#refundFailed`, retried by the\n" #
+    "   timer, or `#refundReview` for admin review), both with\n" #
+    "   `conversion = ?<record>`. BTC path (`purchaseFromDeposit`): no automatic\n" #
+    "   refund, the record is `#refundReview` with `#deliveryFailedRefundFailed`.\n" #
     "8. Success records a `#completed` conversion and returns `#Ok(Conversion)`.\n" #
     "   The collected amount is then forwarded automatically (see Receiving\n" #
     "   accounts).\n\n" #
@@ -479,14 +526,14 @@ mixin () {
     "  forwarded to `icpAccount`, which receives it minus another 10_000 e8s\n" #
     "  ledger fee (`#notRequired` when `icpAccount` is the canister's own account).\n" #
     "  Earlier ICP conversions keep their recorded feeBps and shares unchanged.\n" #
-    "- `forward` is `#notRequired`, `#pending`, `#forwarded(blockIndex on the\n" #
-    "  pay-token ledger)` or\n" #
-    "  `#failed(reason)`. A failed forward or reserve transfer never undoes the\n" #
-    "  buyer's credit. After the next successful purchase, failed forwards are\n" #
-    "  retried on their own ledger with the treasury part only (never the\n" #
-    "  reserve share again) and\n" #
-    "  failed reserve transfers are retried to the reserve only; each is marked\n" #
-    "  `#pending` before its ledger call. There is no manual forward endpoint.\n" #
+    "- `forward` is `#notRequired` (zero amount: the forward base does not cover\n" #
+    "  the ledger fee, or the treasury account is the canister's own account),\n" #
+    "  `#pending` (an attempt is open, sent or resent by the 10-minute timer),\n" #
+    "  `#forwarded(blockIndex on the pay-token ledger)`, `#needsReview` (unknown\n" #
+    "  outcome after 23 h, admin verification required) or `#failed(reason)`\n" #
+    "  (legacy records only). A forward or reserve transfer never undoes the\n" #
+    "  buyer's credit. Forwards (FW) and ICP reserve shares (SH) follow the\n" #
+    "  transfer retry rule below. There is no manual forward endpoint.\n" #
     "- `getConversions() : [Conversion]` (admin): the purchase history.\n" #
     "- `getMyConversions() : [Conversion]` (query, any caller, never traps):\n" #
     "  only the conversions where the caller is the `depositor` or the\n" #
@@ -496,6 +543,96 @@ mixin () {
     "- `getCanisterPrincipal()` (public): the ICRC-2 spender to approve on every\n" #
     "  pay-token ledger. Read balances directly on each ledger (`icrc1_balance_of`\n" #
     "  query).\n\n" #
+
+    "## Transfer retry (forwards FW, reserve shares SH, refunds RF, traces PC)\n\n" #
+    "Outgoing ledger transfers go through one shared retry module.\n\n" #
+    "- Before the first await, each attempt is recorded: global number `n`,\n" #
+    "  attempt number `m`, `memo`, `created_at_time` and the full request\n" #
+    "  (source subaccount, full destination account, amount, fee). Every send\n" #
+    "  uses the recorded request unchanged; `created_at_time` is always set.\n" #
+    "- Memo: ASCII text `TTTI-<prefix>-<n>` (first attempt) or\n" #
+    "  `TTTI-<prefix>-<n>-<m>` (later attempts), at most 32 bytes, never a\n" #
+    "  principal. `n` is one global counter shared by all prefixes. Prefixes:\n" #
+    "  PC, RF, FW, SH, BB, BR; PC (purchase collect), RF (purchase refund), FW\n" #
+    "  (treasury forward) and SH (ICP reserve share) are the ones in use.\n" #
+    "- Outcomes: `Ok` or `#Duplicate` = succeeded, block index recorded. Any other\n" #
+    "  ledger `Err` = known failure: a new attempt is allowed. A rejected call or\n" #
+    "  trap = unknown outcome; it stays unknown until an `Ok`, a `#Duplicate` or\n" #
+    "  the admin verification, even if a resend receives an `Err`.\n" #
+    "- For 23 h after its `created_at_time`, a pending or unknown attempt is\n" #
+    "  resent identically (same memo, same `created_at_time`, same request), so\n" #
+    "  the ledger deduplicates it. After 23 h an unknown outcome becomes\n" #
+    "  `#needsReview` (\"to review\").\n" #
+    "- Only a new attempt may change the destination, amount or fee, and it\n" #
+    "  always gets a new memo (`m + 1`) and a new `created_at_time`.\n" #
+    "- One lock per transfer (type + purchase id), released in a `finally`; a\n" #
+    "  transfer already in flight is skipped.\n" #
+    "- A purchase sends its SH (ICP purchases only) and its FW exactly once each,\n" #
+    "  with no inline retry. A 10-minute timer, re-armed on every install and\n" #
+    "  upgrade, applies the rule to every `#pending` FW/SH (resend, new attempt,\n" #
+    "  or `#needsReview`). A forward stays `#pending` while its treasury account\n" #
+    "  is not configured. A zero-amount forward is `#notRequired`.\n" #
+    "- Reserve share `transfer` is `#pending`, `#transferred(icpBlockIndex)`,\n" #
+    "  `#needsReview` or `#failed(reason)` (legacy only).\n" #
+    "- Records from before this rule: old `#pending` -> `#needsReview`; old\n" #
+    "  `#failed` carrying a ledger `Err` -> `#pending` with no recorded attempt\n" #
+    "  (the timer opens and sends a new attempt); every other old `#failed` ->\n" #
+    "  `#needsReview`; a forward whose amount does not cover the ledger fee ->\n" #
+    "  `#notRequired`. Balances and blocks are unchanged.\n" #
+    "- Refunds (RF, conversion `#refundFailed`): the timer resends a pending RF\n" #
+    "  only when the canister's balance on that ledger covers amount plus fee;\n" #
+    "  otherwise it waits without sending. `Ok` or `#Duplicate` -> `#refunded`;\n" #
+    "  known `Err` -> new attempt; unknown outcome past 23 h -> `#refundReview`.\n" #
+    "  Old `#refundFailed` records: with a ledger `Err` they became pending RF\n" #
+    "  attempts; all others (including the BTC path, never refunded) became\n" #
+    "  `#refundReview`.\n" #
+    "- Payments to refund (PC): purchase traces whose collect outcome is unknown\n" #
+    "  or confirmed without a recorded purchase. Never sent automatically; the\n" #
+    "  admin reviews them.\n\n" #
+    "Admin review endpoints (admin = `#admin` role of the access control):\n\n" #
+    "- `listTransfersToReview() : [TransferReview]` (query; non-admins trap with\n" #
+    "  `Unauthorized: only admins can review transfers`). Each row: `{ kind\n" #
+    "  (#FW | #SH | #RF | #PC); purchaseId (conversion id; trace number `n` for\n" #
+    "  #PC); token; memoText : ?Text; memoHex :\n" #
+    "  ?Text (lowercase); createdAtTimeNs : ?nat64 (ns); amount; fee : ?Nat;\n" #
+    "  destination : ?Account; sends (number of sends of the attempt);\n" #
+    "  lastError : ?Text; block : ?Nat; collect : ?(#confirmed | #unknown) }`.\n" #
+    "  Rows: FW/SH `#needsReview`, RF `#refundReview`, every PC payment to\n" #
+    "  refund; `block` and `collect` are set only on PC rows. Memo and\n" #
+    "  `created_at_time` are null for a legacy\n" #
+    "  transfer sent without them. Read-only, safe to poll.\n" #
+    "- `markTransferArrived(kind, purchaseId, block) : Result<(), ReviewError>`:\n" #
+    "  the admin checked the ledger and the transfer arrived in `block`; the\n" #
+    "  status becomes `#forwarded(block)` / `#transferred(block)` / `#refunded`\n" #
+    "  (RF). `#PC` returns `#notApplicable`.\n" #
+    "- `markTransferNotArrived(kind, purchaseId) : Result<(), ReviewError>`: it\n" #
+    "  did not arrive; a new attempt is opened (new memo, new `created_at_time`,\n" #
+    "  status `#pending`, RF: `#refundFailed`) and sent by the next timer run,\n" #
+    "  not by this call. `#PC`: the payment never happened; it is removed.\n" #
+    "- `markRefundedManually(kind, purchaseId, block) : Result<(), ReviewError>`:\n" #
+    "  the admin refunded by hand in `block`. RF: record `#refunded` with that\n" #
+    "  block; PC: the payment to refund is removed. Both leave the list. FW/SH\n" #
+    "  return `#notApplicable`.\n" #
+    "- BTC review kinds. `#BR` (id = BR attempt `n`): a BTC refund with an\n" #
+    "  unknown outcome after 23 h; Arrived(block) records it refunded, Not\n" #
+    "  arrived opens a new attempt (new memo and `created_at_time`) sent by\n" #
+    "  the timer. `#BC` (id = trace `n`): a BTC cost send with an unknown\n" #
+    "  outcome after 23 h; Arrived(block) confirms the payment to refund with\n" #
+    "  that block; Not arrived removes the send and its payment to refund, and\n" #
+    "  the deposit is converted again later. `#BM` (id = conversion id): the\n" #
+    "  ckBTC cost of a delivery failure, to refund by hand;\n" #
+    "  `markRefundedManually(#BM, id, block)` records the block and removes the\n" #
+    "  row; Arrived / Not arrived return `#notApplicable`. BR/BC rows carry\n" #
+    "  `buyer`, `depositIndex`, `conversionId`, `refundPurpose` (BR) and\n" #
+    "  `outcome`; BM rows carry `buyer`, `depositIndex`, `conversionId`. These\n" #
+    "  fields are null on FW/SH/RF/PC rows. BC sends are also exposed to OQL as\n" #
+    "  the admin-only `btcCostSend` entity.\n" #
+    "- `ReviewError`: `#notAdmin`, `#notFound` (no such purchase, share or\n" #
+    "  payment to refund), `#notApplicable` (action not valid for that kind),\n" #
+    "  `#notUnderReview` (the transfer is not under review). All mark calls\n" #
+    "  are allowed only on a transfer to review, so a repeated call returns\n" #
+    "  `#notUnderReview` and changes nothing. Check the ledger (memo and\n" #
+    "  `created_at_time`) before marking: a wrong \"Not arrived\" sends again.\n\n" #
 
     "## Cycles reserve\n\n" #
     "Fixed 1% fee on every purchase. ICP purchases: the fee share\n" #
@@ -532,6 +669,14 @@ mixin () {
     "  second transfer while one awaits notification. `#Refunded`,\n" #
     "  `#InvalidTransaction` or `#TransactionTooOld` -> `#failed(reason)`, after\n" #
     "  which a later run may make a new transfer. The timer never traps.\n" #
+    "- Stored attempt (shared retry rule): the top-up transfer is recorded in\n" #
+    "  stable state before the first await (amount, TPUP memo, fixed\n" #
+    "  `created_at_time`, full request) and survives upgrades. A rejected or\n" #
+    "  trapped send is an unknown outcome: the same request is resent unchanged\n" #
+    "  for 23 h (`#Duplicate` counts as arrived), then the attempt needs admin\n" #
+    "  review and is no longer resent. A known ledger Err allows a new attempt.\n" #
+    "  Once the block is known, `notify_top_up` is retried with that block and\n" #
+    "  no second transfer is made.\n" #
     "- `getCyclesStatus() : CyclesStatus` (public query): `{ cyclesBalance;\n" #
     "  topUpThreshold; reserveAccount; reserveBalanceE8s; reserveFloorE8s;\n" #
     "  withdrawableExcessE8s; lastTopUp : ?{ timestamp; icpE8s; blockIndex; status\n" #
@@ -585,7 +730,7 @@ mixin () {
     "ledger `mxzaz-hqaaa-aaaar-qaada-cai`. BTC and ckBTC amounts are satoshis\n" #
     "(8 decimals); TTTI-T amounts are base units (e8). Timestamps are ns.\n\n" #
     "- Purchase (BTC -> ckBTC -> TTTI-T): `getBtcPurchaseAddress() :\n" #
-    "  BtcDepositResult` (signed caller with accepted purchase acknowledgements)\n" #
+    "  BtcDepositResult` (signed caller with accepted version 2 purchase acknowledgements)\n" #
     "  returns tracking whose `btcAddress` is the minter address for owner = this\n" #
     "  canister and a 32-byte subaccount derived from the caller principal\n" #
     "  ([0xBD, principal length, principal bytes, zero padding]); it is stable\n" #
@@ -605,14 +750,45 @@ mixin () {
     "  address for owner = caller, no subaccount. `checkBtcWalletDeposit()` calls\n" #
     "  `update_balance` for the caller; ckBTC is minted directly to the caller's\n" #
     "  own account. No TTTI-T and no app fee.\n" #
-    "- Stable address: exactly one Bitcoin address per principal per flow. The\n" #
-    "  first `getBtcPurchaseAddress` / `getBtcWalletAddress` call stores it; every\n" #
-    "  later call returns the stored tracking without calling the minter. It is\n" #
-    "  never rotated, before or after its deposits are spent, and can be reused\n" #
-    "  for any number of deposits.\n" #
+    "- Wallet path for a given owner (for Plug, OISY or NFID principals known to\n" #
+    "  the frontend): `getBtcWalletAddressFor(owner : Principal) :\n" #
+    "  BtcDepositResult`, `checkBtcWalletDepositFor(owner : Principal) :\n" #
+    "  BtcDepositResult` and `getBtcWalletDepositsFor(owner : Principal) :\n" #
+    "  ?DepositTracking` (query). They act exactly like `getBtcWalletAddress`,\n" #
+    "  `checkBtcWalletDeposit` and the `wallet` field of `getMyBtcDeposits` called\n" #
+    "  by `owner`: same minter account (owner = `owner`, no subaccount), same\n" #
+    "  stored tracking and same Bitcoin address as `owner`'s own wallet path.\n" #
+    "  No signature is needed: ckBTC is minted only to `owner`'s own account, so a\n" #
+    "  caller can only trigger a conversion that credits `owner`. They never read\n" #
+    "  or create purchase-path data. `owner` equal to the anonymous principal or\n" #
+    "  to this canister is refused with `#Err` code `#anonymousCaller` (message\n" #
+    "  \"The anonymous principal and this canister cannot own a Bitcoin wallet\n" #
+    "  deposit address\"); the query returns null for them and for an owner\n" #
+    "  without a stored wallet tracking. Trackings created this way are\n" #
+    "  watched by the background timer like any other. The BTC purchase path\n" #
+    "  (`getBtcPurchaseAddress`, `checkBtcPurchaseDeposit`) stays caller-signed\n" #
+    "  and requires the caller's accepted version 2 acknowledgements.\n" #
+    "- Stable address: exactly one Bitcoin address per principal per flow,\n" #
+    "  derived deterministically by the minter. The address endpoints\n" #
+    "  (`getBtcPurchaseAddress`, `getBtcWalletAddress`, `getBtcWalletAddressFor`)\n" #
+    "  return it without storing anything: with a stored tracking they return\n" #
+    "  it; otherwise they ask the minter and return an unsaved tracking\n" #
+    "  (`stage = #addressShown`, `deposits = []`, `lastCheckedAt = null`). The\n" #
+    "  address is never rotated, before or after its deposits are spent, and\n" #
+    "  can be reused for any number of deposits.\n" #
+    "- Tracking creation: a tracking is stored only when a check\n" #
+    "  (`checkBtcPurchaseDeposit`, `checkBtcWalletDeposit`,\n" #
+    "  `checkBtcWalletDepositFor`) detects a deposit (`update_balance` returns\n" #
+    "  UTXO statuses, or `NoNewUtxos` with pending UTXOs or current\n" #
+    "  confirmations). Without a stored tracking the check derives the address\n" #
+    "  (purchase: version 2 acknowledgements required), calls `update_balance` and, when\n" #
+    "  nothing is detected, stores nothing and returns \"no deposit yet\":\n" #
+    "  `#Ok` with an unsaved tracking (`stage = #addressShown`, `deposits = []`,\n" #
+    "  `lastCheckedAt` set). Later checks update the stored tracking. The\n" #
+    "  lot 7 upgrade removed every stored tracking without a deposit.\n" #
     "- `getMyBtcDeposits() : { purchase : ?DepositTracking; wallet : ?DepositTracking }`\n" #
-    "  (query) returns only the caller's trackings (null before the address was\n" #
-    "  requested).\n" #
+    "  (query) returns only the caller's stored trackings (null until a check\n" #
+    "  detected a deposit).\n" #
     "- `getBtcDepositInfo()` (public query): minter id, ckBTC ledger id,\n" #
     "  `minConfirmations`, `depositMinSats`, `checkFeeSats`, `purchaseFeeBps`\n" #
     "  (100), `suggestedPollSeconds` (60), `infoFetchedAt` (null = defaults\n" #
@@ -648,42 +824,69 @@ mixin () {
     "  (purchase). `#pendingRate`: ckBTC is in the subaccount but no valid hourly\n" #
     "  BTC rate exists; nothing is transferred and no fallback rate is used.\n" #
     "  `#error` with `errorKind` `#valueTooSmall` or `#tainted` (no ckBTC\n" #
-    "  minted), or `#unrecoverable` (purchase: the refund failed, or delivery\n" #
-    "  and refund failed; `ckbtcPendingSats` is the ckBTC still held; never\n" #
-    "  retried automatically); older records may show `#other` with the same\n" #
+    "  minted), or `#unrecoverable` (purchase: the full refund is not confirmed,\n" #
+    "  or delivery failed after the ckBTC cost was sent; `ckbtcPendingSats` is\n" #
+    "  the ckBTC still held); older records may show `#other` with the same\n" #
     "  meaning. Refund failure on a delivered purchase: stage `#delivered`,\n" #
     "  `errorKind` `#refundFailed`, `errorMessage` the reason and\n" #
-    "  `ckbtcPendingSats` the ckBTC still held on that entry; later checks and\n" #
-    "  the timer retry that refund (only while the subaccount still holds every\n" #
-    "  amount the entries account for) and clear both fields on success.\n" #
+    "  `ckbtcPendingSats` the ckBTC still held on that entry.\n" #
+    "- BTC refunds (BR) go through the shared retry rule (see Transfer retry):\n" #
+    "  R1 the excess after a purchase, R2 the full refund (`#saleComplete`,\n" #
+    "  `#belowMinimum`), and the excess of a delivery failure. The attempt\n" #
+    "  (memo `TTTI-BR-<n>-<m>`, `created_at_time`, full request) is stored on\n" #
+    "  the deposit entry before the send. Destination: the default ckBTC\n" #
+    "  account of the principal who created the tracking; amount = held - 10\n" #
+    "  sat fee; 10 sat or less is never refunded; a send happens only when the\n" #
+    "  deposit subaccount balance covers amount plus fee. `checkBtcPurchaseDeposit`\n" #
+    "  and the 600 s timer resend the same request for 23 h (not while sales are\n" #
+    "  paused), then the refund is listed to review. Success: R2 sets\n" #
+    "  `#refunded`; the excess clears `errorKind`/`ckbtcPendingSats`.\n" #
+    "- Entries from before this rule (no `created_at_time`): a failure that\n" #
+    "  is a ledger `Err` gets a new BR attempt; a reject, trap or ambiguous\n" #
+    "  message (e.g. `could not be reached`) is an unknown outcome listed to\n" #
+    "  review without a resend. A legacy delivery failure's excess gets a new\n" #
+    "  attempt; its ckBTC cost becomes a BM cost to refund by hand.\n" #
+    "- BTC cost send (BC): the purchase cost moves to the ckBTC treasury with\n" #
+    "  memo `TTTI-PC-<n>` and its `created_at_time`, stored in the retry state.\n" #
+    "  `Ok`/`#Duplicate` -> purchase recorded; ledger `Err` -> nothing taken,\n" #
+    "  trace closed; unknown -> payment to refund (PC, unknown) and the 600 s\n" #
+    "  timer resends the identical request for 23 h; on success the payment is\n" #
+    "  confirmed with its block; after 23 h it is listed to review (BC). The\n" #
+    "  entry is not converted again while its BC send is unsettled.\n" #
     "  `#addressShown` appears only at tracking level; tracking-level\n" #
     "  `errorKind` may be `#minterUnavailable` or `#other`.\n" #
     "- Errors (`#Err { code; message }`): `#anonymousCaller`,\n" #
     "  `#acknowledgementRequired`, `#purchaseInProgress` (one purchase per\n" #
     "  principal, shared with `convertDeposit*` and the background timer),\n" #
-    "  `#noAddressYet` (check before requesting the address),\n" #
     "  `#minterUnavailable` (minter unreachable and no further stage reached).\n" #
+    "  `#noAddressYet` remains in the type but is no longer returned.\n" #
     "- Background watch: a canister timer runs right after every install and\n" #
-    "  upgrade, then every 600 s. Each tick calls the minter `update_balance`\n" #
-    "  for purchase trackings at any stage (address shown, confirming,\n" #
-    "  finished) and for wallet trackings, so deposits sent while the page is\n" #
-    "  closed are detected; purchase ckBTC is then converted into TTTI-T exactly\n" #
-    "  as by `checkBtcPurchaseDeposit`, and `#pendingRate` is finalized once a\n" #
-    "  valid rate exists. Trackings checked in the last 5 minutes are skipped,\n" #
-    "  at most 25 minter calls are made per tick (confirming deposits first,\n" #
-    "  then the least recently checked), and a principal with a purchase in\n" #
-    "  progress is skipped. A deposit may therefore appear up to about 10 minutes\n" #
-    "  (longer with many trackings) after its confirmations without any client\n" #
-    "  call.\n" #
+    "  upgrade, then every 600 s. Each tick watches only stored trackings (all\n" #
+    "  have at least one deposit): it calls the minter `update_balance` for\n" #
+    "  purchase trackings first, then wallet trackings, each group from the\n" #
+    "  most recently active (latest deposit `updatedAt` / `detectedAt` or\n" #
+    "  `lastCheckedAt`) to the least; purchase ckBTC is then converted into\n" #
+    "  TTTI-T exactly as by `checkBtcPurchaseDeposit`, and `#pendingRate` is\n" #
+    "  finalized once a valid rate exists. Trackings checked in the last 5\n" #
+    "  minutes are skipped, at most 25 minter calls are made per tick, and a\n" #
+    "  principal with a purchase in progress is skipped. A first deposit to an\n" #
+    "  address without a stored tracking is detected only by a check call; a\n" #
+    "  later deposit may appear up to about 10 minutes (longer with many\n" #
+    "  trackings) after its confirmations without any client call.\n" #
     "- Polling: BTC needs about 6 confirmations (about one hour). While the\n" #
     "  widget is open, call the check endpoint every `suggestedPollSeconds` (60 s)\n" #
-    "  at most, or poll `getMyBtcDeposits` (query) and let the timer progress the\n" #
+    "  at most until a deposit is detected; after that, the check endpoint or\n" #
+    "  `getMyBtcDeposits` / `getBtcWalletDepositsFor` (queries) with the timer\n" #
+    "  progressing the\n" #
     "  deposit. An entry is done once final (see above); the address stays in\n" #
     "  use, so keep watching it (the timer does) for a new transfer, which\n" #
     "  appears as a new entry.\n" #
-    "- Retry safety: both check calls are idempotent and safe to repeat;\n" #
-    "  repeated or concurrent calls (yours and the timer's) never mint or\n" #
-    "  deliver twice for the same UTXO or ckBTC. `#purchaseInProgress` means the\n" #
+    "- Retry safety: all check calls (including `checkBtcWalletDepositFor`) are\n" #
+    "  idempotent and safe to repeat; repeated or concurrent calls (yours, other\n" #
+    "  callers' for the same owner and the timer's) never mint or deliver twice\n" #
+    "  for the same UTXO or ckBTC: the minter answers a concurrent\n" #
+    "  `update_balance` for the same account with `AlreadyProcessing`, which\n" #
+    "  leaves the tracking unchanged. `#purchaseInProgress` means the\n" #
     "  timer or another call is finishing that purchase; retry a few seconds\n" #
     "  later. The address endpoints are safe to repeat and return the same\n" #
     "  address.\n" #
@@ -692,12 +895,239 @@ mixin () {
     "  principals, hence different trackings and different Bitcoin addresses;\n" #
     "  a deposit sent to one domain's address is visible only when signed in on\n" #
     "  that domain. The same applies to Internet Identity versus Plug.\n\n" #
+    "## Address book\n\n" #
+    "Private list of saved recipients, one list per caller principal. It only\n" #
+    "stores contacts; it sends nothing and holds no tokens.\n\n" #
+    "- Types: `Contact = { id : Nat; nickname : Text; principal : Principal;\n" #
+    "  memo : ?Blob; createdAt : Int; updatedAt : Int }`,\n" #
+    "  `ContactInput = { nickname : Text; principal : Principal; memo : ?Blob }`.\n" #
+    "  Timestamps are nanoseconds since the Unix epoch. `memo` is raw bytes (at\n" #
+    "  most 32), meant as the default ICRC-1 `memo` of a transfer to the contact.\n" #
+    "- `listMyContacts() : Result<[Contact], AddressBookError>` (query): the\n" #
+    "  caller's contacts sorted by nickname (case-insensitive).\n" #
+    "- `addContact(input) : Result<Contact, AddressBookError>`: creates a contact\n" #
+    "  with `createdAt = updatedAt = now`.\n" #
+    "- `updateContact(id, input) : Result<Contact, AddressBookError>`: replaces\n" #
+    "  nickname, principal and memo; keeps `createdAt`, sets `updatedAt = now`.\n" #
+    "- `deleteContact(id) : Result<(), AddressBookError>`.\n" #
+    "- Authentication: a signed (non-anonymous) caller, Internet Identity or\n" #
+    "  Plug. Anonymous callers get `#err(#anonymous)` on all four methods. No\n" #
+    "  registration is needed.\n" #
+    "- Authorization: the owner is always the caller principal; no argument\n" #
+    "  selects another owner. A contact id of another principal returns\n" #
+    "  `#err(#notFound)`.\n" #
+    "- Validation (add and update): the nickname is trimmed, must be non-empty\n" #
+    "  (`#invalidInput(#nicknameEmpty)`), at most 64 characters\n" #
+    "  (`#invalidInput(#nicknameTooLong { maxChars = 64 })`) and unique per owner\n" #
+    "  ignoring case (`#duplicateNickname`; on update the edited contact is\n" #
+    "  excluded). A memo over 32 bytes gives `#invalidInput(#memoTooLong\n" #
+    "  { maxBytes = 32 })`. The principal must not be anonymous, the caller or\n" #
+    "  the TTTI-T minting account (this canister):\n" #
+    "  `#invalidInput(#principalNotAllowed)`.\n" #
+    "- Limit: 200 contacts per owner; `addContact` beyond it gives\n" #
+    "  `#err(#limitReached { max = 200 })`.\n" #
+    "- Retry safety: `addContact` is not idempotent; a retry after an unknown\n" #
+    "  outcome may return `#duplicateNickname` because the first call succeeded.\n" #
+    "  Re-read with `listMyContacts`. `updateContact` with the same input is safe\n" #
+    "  to repeat. `deleteContact` is destructive; a repeat returns `#notFound`.\n" #
+    "- ICRC-2 approvals: this canister does not create, store or revoke\n" #
+    "  approvals for contacts. The user sends `icrc2_approve` directly to each\n" #
+    "  token ledger (ICP, ckBTC, ckUSDC, ckUSDT, TTTI-T) with the contact as\n" #
+    "  spender. An approval lets the spender move up to the approved amount from\n" #
+    "  the user's account until it expires or is replaced by an approval of 0.\n\n" #
+    "## TTTI-T buyback\n\n" #
+    "Buybacks are optional and limited. Each one depends on the funds available\n" #
+    "at that moment and on the willingness of whoever funds it. Bought-back\n" #
+    "TTTI-T go to the funder, who pays for them with their own money; they are\n" #
+    "never pre-mined or pre-allocated. For now, only the creator funds\n" #
+    "buybacks.\n\n" #
+    "The buyer sells TTTI-T back from a mass: the aggregate of the buyer's\n" #
+    "purchases in one payment token. There is one mass per (buyer, token) for\n" #
+    "ICP, ckBTC, ckUSDC and ckUSDT; there is no mass across tokens. For new\n" #
+    "buybacks the TTTI-T stay in the contract's holding (escrow) account until\n" #
+    "the payout succeeds, then go to the funder (admin) account, and the buyer\n" #
+    "receives `amountReturned`, as calculated at the request (nothing is\n" #
+    "burned, total supply is unchanged). If every payout attempt is refused by\n" #
+    "the ledger, the buyer (or an app admin) can cancel with `cancelBuyback`\n" #
+    "and get the TTTI-T back; otherwise cancelling waits until the admin has\n" #
+    "checked the payout (\"To review\"). A buyback cannot be undone once the\n" #
+    "payout has succeeded. Legacy buybacks (made before escrow) had their\n" #
+    "TTTI-T sent to the funder at the request; when their payout failed, it is\n" #
+    "retried, or the admin is contacted to have them returned\n" #
+    "(`markBuybackCancelled`). The returned mass token comes from the admin\n" #
+    "account.\n\n" #
+    "- Escrow account: `{ owner = this canister; subaccount =\n" #
+    "  \"BUYBACK-ESCROW-TTTI-T-0000000001\" (32 bytes) }` on the TTTI-T ledger,\n" #
+    "  distinct from the minting account and the fee collector. Transfers to it\n" #
+    "  are accepted; no public endpoint, transfer or withdrawal can debit it.\n" #
+    "  Only a buyback release (escrow -> funder) or cancellation (escrow ->\n" #
+    "  buyer) debits it, internally.\n" #
+    "- Mass: `#completed` conversions with `depositor` = caller, that `payToken`,\n" #
+    "  `netAmount` ?n with n > 0 and `tttiAmount` > 0. `totalNet` and `totalTtti`\n" #
+    "  are their sums; the average ratio is `totalNet` / `totalTtti`. Purchases\n" #
+    "  from before Version 26 (`netAmount` null) and TTTI-T received by transfer\n" #
+    "  are not counted. BTC-deposit purchases are recorded as ckBTC, count in\n" #
+    "  the ckBTC mass and are returned in ckBTC; converting ckBTC to BTC is done\n" #
+    "  by the user with the ckBTC minter.\n" #
+    "- Bought back: `boughtBackNet` and `boughtBackTtti` sum the caller's buyback\n" #
+    "  records in that token whose TTTI-T were pulled (`#completed`,\n" #
+    "  `#payoutFailed`, or `#inProgress` with `pullBlock`), legacy per-purchase\n" #
+    "  records included. `remainingNet` and `remainingTtti` = total - bought back\n" #
+    "  (never below 0).\n" #
+    "- Percent: 1..100 of the remainder (`#invalidPercent` otherwise).\n" #
+    "  `tttiAmount` = floor(`remainingTtti` * percent / 100);\n" #
+    "  `originalNetAmount` = floor(`remainingNet` * `tttiAmount` /\n" #
+    "  `remainingTtti`). At 100 they are exactly the whole remainder. Several\n" #
+    "  partial buybacks are possible until `remainingTtti` = 0\n" #
+    "  (`#nothingRemaining`).\n" #
+    "- Lower-of-two rule on the average, in the mass token: `baseAmount` = min(\n" #
+    "  `originalNetAmount`, quantity worth `tttiAmount` at 10,000 USD per TTTI-T\n" #
+    "  at the day's stored rate). `rule` is `#originalNet` or `#dayRate`.\n" #
+    "  Purchase fees are never refunded.\n" #
+    "- Paid only in the mass token: `receiveToken` must equal `massToken`,\n" #
+    "  otherwise `#receiveTokenMismatch`, checked before any lock, ledger call or\n" #
+    "  transfer. `tokenReturned` = the mass token and `baseAmountReturned` =\n" #
+    "  `baseAmount`.\n" #
+    "- Fees: `buybackFee` = floor(1% of `baseAmountReturned`); `thirdPartyFees` =\n" #
+    "  the mass token's ledger fee for the payout. `amountReturned` =\n" #
+    "  `baseAmountReturned` - `buybackFee` - `thirdPartyFees`; `#amountTooSmall`\n" #
+    "  when not positive or `tttiAmount` = 0. Two TTTI-T fees are paid by the\n" #
+    "  buyer through the allowance: `tttiTransferFee` (the pull) and\n" #
+    "  `tttiEscrowFee` (stored per buyback; pays the later escrow release or\n" #
+    "  cancellation). The mass token's ledger fee stays deducted from\n" #
+    "  `amountReturned`.\n" #
+    "- Rates: the stored rate of the mass token from `getTokenPrices`, usable\n" #
+    "  until validUntil + 5 min; otherwise `#rateUnavailable(token)`.\n" #
+    "  `returnedRateUsdE8` = `originalRateUsdE8`. Amounts are base units of each\n" #
+    "  token (ICP, ckBTC, TTTI-T: 8 decimals; ckUSDC, ckUSDT: 6); rates USD*10^8.\n" #
+    "- One buyback at a time per (caller, mass token): a second request while one\n" #
+    "  runs returns `#massBuybackInProgress` (`inProgress` = true in the mass).\n" #
+    "- Authentication: every buyer endpoint requires a signed (non-anonymous)\n" #
+    "  caller (`#anonymous` otherwise). Masses are always the caller's own; a\n" #
+    "  caller cannot see or buy back another user's mass. Use the principal\n" #
+    "  derived against the app's Internet Identity derivation origin (see above).\n\n" #
+    "Endpoints:\n" #
+    "- `listMyBuybackMasses()` (query) : `#ok [BuybackMass]`, the caller's masses\n" #
+    "  with at least one counted purchase, fully bought back ones included.\n" #
+    "- `quoteBuyback(massToken, percent, receiveToken)` (query) : `#ok\n" #
+    "  BuybackQuote` or `#err BuybackError`. Read-only; no external call.\n" #
+    "  `tttiAllowanceRequired` = `tttiAmount` + 2 TTTI-T fees.\n" #
+    "- `requestBuyback(massToken, percent, receiveToken, fromSubaccount)` :\n" #
+    "  prerequisite, the buyer calls `icrc2_approve` on this canister (TTTI-T\n" #
+    "  ledger) with this canister as spender, amount >= `tttiAllowanceRequired`\n" #
+    "  and an `expires_at`. TTTI-T are pulled from and the payout sent to `{ owner\n" #
+    "  = caller; subaccount = fromSubaccount }`. Before any transfer it refuses\n" #
+    "  with the quote errors (`#anonymous`, `#invalidPercent`,\n" #
+    "  `#receiveTokenMismatch`, `#nothingRemaining`, `#massBuybackInProgress`,\n" #
+    "  `#rateUnavailable`,\n" #
+    "  `#amountTooSmall`), `#adminAccountNotSet`, `#adminAllowanceExpired`,\n" #
+    "  `#adminAllowanceInsufficient`, `#adminBalanceInsufficient` (required =\n" #
+    "  `amountReturned` + ledger fee), `#buyerAllowanceInsufficient` or\n" #
+    "  `#callFailed` (ledger unreachable, or its fee/decimals changed). Then it\n" #
+    "  pulls `tttiAmount` + `tttiEscrowFee` with `icrc2_transfer_from` to the\n" #
+    "  escrow account (`pullBlock`; failure: `#pullFailed`, nothing recorded, may\n" #
+    "  be requested again). It records a payout attempt in `payoutAttempts`\n" #
+    "  (`{ from; attempt }`: global n, attempt index m, memo `TTTI-BB-<n>-<m>`,\n" #
+    "  `created_at_time`, full request) before the first await and sends\n" #
+    "  `amountReturned` from the admin account to the buyer with\n" #
+    "  `icrc2_transfer_from` on the mass token's ledger, with exactly that memo\n" #
+    "  and `created_at_time`. Ok or `#Duplicate`: the attempt is `#succeeded`,\n" #
+    "  `payoutBlock` set, `tttiAmount` released from escrow to the funder\n" #
+    "  account (`releaseBlock`), status `#completed` (a failed release returns\n" #
+    "  `#releaseFailed(text)` and is retried by the timer). A ledger Err:\n" #
+    "  attempt `#failed(text)`; a rejected call or trap: attempt `#unknown`; both\n" #
+    "  give `#payoutFailed` and `#err #payoutFailed(text)`. The ICP cycles\n" #
+    "  reserve is never used.\n" #
+    "- Retry rule: an `#unknown` attempt is resent identically (same memo,\n" #
+    "  `created_at_time`, request) for 23 h, then needs admin review. When every\n" #
+    "  attempt got a ledger Err, a retry creates the next attempt (m + 1, new\n" #
+    "  memo and `created_at_time`, current admin account) without the admin. A\n" #
+    "  10-minute timer does the same (new attempts at most once an hour per\n" #
+    "  buyback). Every path takes the same (buyer, mass token) lock.\n" #
+    "- `retryBuybackPayout(buybackId)` : only for the caller's own records\n" #
+    "  (`#buybackNotFound`, `#notBuyer`) in `#payoutFailed` (`#notRetryable`\n" #
+    "  otherwise; `#buybackInProgress` while one runs on that mass;\n" #
+    "  `#attemptUnknown` once an unknown attempt is past 23 h). Applies the\n" #
+    "  retry rule; nothing is recomputed and TTTI-T are never pulled again.\n" #
+    "- `cancelBuyback(id)` : the buyer of that buyback or an app admin\n" #
+    "  (`#notAuthorized` otherwise, `#anonymous` for anonymous callers), same\n" #
+    "  lock (`#buybackInProgress`). Only when the status is `#payoutFailed`, the\n" #
+    "  record is not legacy and every attempt got a ledger Err: `tttiAmount` is\n" #
+    "  returned from escrow to `buyerAccount` (the pull fee is not returned),\n" #
+    "  status `#cancelled`, `cancelBlock` set. Refusals: `#attemptArrived`,\n" #
+    "  `#attemptUnknown`, `#notCancellable` (legacy, other status),\n" #
+    "  `#cancelFailed(text)` (escrow transfer refused).\n" #
+    "- `markBuybackCancelled(id, block)` : app admin only (`#notAuthorized`),\n" #
+    "  for a legacy `#payoutFailed` buyback (`#notLegacy`, `#notCancellable`)\n" #
+    "  with no arrived attempt (`#attemptArrived`): records the admin's own\n" #
+    "  TTTI-T return `block` as `cancelBlock`, status `#cancelled`. No ledger\n" #
+    "  call.\n" #
+    "- Legacy records (`legacy` = true, made before escrow; their TTTI-T went to\n" #
+    "  the admin account): old `#inProgress` with `pullBlock` and old\n" #
+    "  `#payoutFailed` without a ledger Err carry an attempt 0 without memo with\n" #
+    "  an unknown outcome (to review); those with a ledger Err can be retried.\n" #
+    "  Legacy records are never cancelled with `cancelBuyback`.\n" #
+    "- Admin \"To review\": `listTransfersToReview` includes kind `#BB` rows\n" #
+    "  (`purchaseId` = buyback id, memo, created_at_time, amount, fee, token,\n" #
+    "  destination, outcome) for unknown payout attempts past 23 h and legacy\n" #
+    "  `#payoutFailed` buybacks. `markTransferArrived(#BB, id, block)` marks the\n" #
+    "  attempt arrived and completes the buyback (escrow release when not\n" #
+    "  legacy); `markTransferNotArrived(#BB, id)` marks it failed so the next\n" #
+    "  attempt can be created or the buyback cancelled.\n" #
+    "- `listMyBuybacks()` (query) : the caller's buyback records, legacy\n" #
+    "  per-purchase records (`purchaseId` set, `percent` 100) included.\n" #
+    "- Admin only (trap `Unauthorized: admin only`): `listAllBuybackMasses()`\n" #
+    "  (query; every buyer's masses), `listAllBuybacks()`\n" #
+    "  (query), `setBuybackAdminAccount(account)` (refuses accounts owned by\n" #
+    "  this canister or anonymous), `getBuybackAdminAccount()` (query),\n" #
+    "  `getBuybackFunding()` (update; per pay token the admin account's\n" #
+    "  allowance to this canister, its `expiresAt` in nanoseconds and balance,\n" #
+    "  read from the ledgers; `error` on a failed call).\n" #
+    "- Admin funding: the admin account calls `icrc2_approve` on each pay-token\n" #
+    "  ledger with this canister as spender, a capped amount and an `expires_at`.\n" #
+    "  Allowance, expiry and balance are checked before each buyback and retry.\n\n" #
+    "Lifecycle: `#inProgress` (pull or payout running) -> `#completed`\n" #
+    "(`pullBlock`, `payoutBlock` and `releaseBlock` set) or `#payoutFailed`\n" #
+    "(`pullBlock` set, `message` explains) -> retry or `#cancelled`\n" #
+    "(`cancelBlock` set; no longer counted against the mass). `#completed` is\n" #
+    "final: a buyback cannot be undone once the payout has succeeded. Each record keeps the date (`timestamp`, ns), percent,\n" #
+    "the mass before the buyback, rates, rule, tokens, base, fees, amount\n" #
+    "returned and TTTI-T taken back. Calls are synchronous; poll\n" #
+    "`listMyBuybacks` or `listMyBuybackMasses` only after a lost reply. A\n" #
+    "`#payoutFailed` record stays counted against the mass. Retry safety:\n" #
+    "`requestBuyback` is not idempotent (each success is a new buyback; re-read\n" #
+    "before repeating). A resend uses the attempt's own memo and\n" #
+    "`created_at_time`, so a duplicate is detected (`#Duplicate`) and recorded\n" #
+    "as arrived; only a new attempt (after a known Err) is a new ledger\n" #
+    "transfer. `cancelBuyback` and `markBuybackCancelled` refuse a second call\n" #
+    "  (`#notCancellable`).\n" #
+    "- `#salesPaused`: `requestBuyback`, `retryBuybackPayout` and `cancelBuyback`\n" #
+    "  return it first while sales are paused, before any lock or ledger call;\n" #
+    "  the 10-minute automatic payout retry also waits until sales resume.\n\n" #
+    "## Upgrade readiness (admin)\n\n" #
+    "- `getUpgradeReadiness() : UpgradeReadiness` (admin query; others trap\n" #
+    "  `Unauthorized: admin only`): `{ salesPaused; purchasesInFlightCount;\n" #
+    "  purchasesInFlight : [Principal]; btcLockHeld (the BTC finalization uses\n" #
+    "  the same purchase lock, true when it is not empty); buybacksInFlightCount;\n" #
+    "  buybacksInFlight : [Text] (buyback lock keys); reserveLockBusy;\n" #
+    "  pendingTopUp : ?TopUpAttempt (stored cycles top-up attempt);\n" #
+    "  openTraceCount; openTraces : [PurchaseTrace]; reserved (current\n" #
+    "  sale.reserved, TTTI-T base units); lastReconciliation }`. In-flight sets\n" #
+    "  are transient and empty right after an upgrade. Before an upgrade, pause\n" #
+    "  sales and wait until the counts are 0 and `reserveLockBusy` is false.\n" #
+    "- `reconcileReserved() : Result<ReservedReconciliation, ReconcileError>`\n" #
+    "  (admin): sets `sale.reserved` to 0 and records `{ previousReserved;\n" #
+    "  reconciledAt (ns); by }` as the last reconciliation and in the history,\n" #
+    "  so the previous value stays visible. Refusals, nothing changed:\n" #
+    "  `#notAdmin`, `#notPaused` (sales not paused), `#purchaseInFlight`\n" #
+    "  (a purchase or BTC finalization holds the lock), `#openTraces` (open\n" #
+    "  purchase traces). A repeat records a new entry with `previousReserved` 0.\n\n" #
     "## Other endpoints\n\n" #
     "- `exportBalanceSnapshot() : { exportedAt; totalSupply; decimals; holders }`\n" #
     "  (admin query; trap `Unauthorized: only admins can manage the TTTI-T sale`).\n" #
     "  Each holder is `{ account; balance; deliveryAddress; needsMigration; kind\n" #
     "  (#holder/#feeCollector) }`; zero balances are excluded.\n" #
-    "- Data intelligence (OQL): `schema()` and `execute(qJson)` expose two\n" #
+    "- Data intelligence (OQL): `schema()` and `execute(qJson)` expose four\n" #
     "  tables. `conversion` (primary key `id`; columns id, depositor,\n" #
     "  recipientOwner, payToken, payAmount, feeAmount, netAmount, feeBps,\n" #
     "  icpAmount, tttiAmount, status, timestamp, priceUsdE8, usedFallback,\n" #
@@ -706,14 +1136,41 @@ mixin () {
     "  key, principal, kind, btcAddress, stage, depositCount, btcDetectedSats,\n" #
     "  ckbtcMintedSats, ckbtcPendingSats, tttiDelivered, refundedSats (sums over\n" #
     "  all deposit entries), createdAt, lastCheckedAt, errorKind, errorMessage).\n" #
+    "  `addressBookContact` (primary key `id`; columns id, owner, nickname,\n" #
+    "  principal, memoBytes, createdAt, updatedAt).\n" #
+    "  `buyback` (primary key `id`; one row per mass buyback, legacy per-purchase\n" #
+    "  rows included; columns id, purchaseId (null except legacy rows), buyer,\n" #
+    "  timestamp, originalToken (the mass token), tokenReturned, percent,\n" #
+    "  massTotalNet, massTotalTtti, massRemainingNet, massRemainingTtti (mass\n" #
+    "  before this buyback), originalRateUsdE8, returnedRateUsdE8, rule,\n" #
+    "  originalNetAmount (pro-rata net), baseAmount, baseAmountReturned,\n" #
+    "  buybackFee, thirdPartyFees, tttiTransferFee, tttiEscrowFee,\n" #
+    "  amountReturned, tttiAmount, pullBlock, payoutBlock, payoutAttemptCount,\n" #
+    "  releaseBlock, cancelBlock, legacy, status (inProgress, completed,\n" #
+    "  payoutFailed, cancelled), message). Non-legacy rows: TTTI-T stay in the\n" #
+    "  holding (escrow) account until the payout succeeds (`releaseBlock` =\n" #
+    "  release to the funder) or return to the buyer (`cancelBlock`); legacy\n" #
+    "  rows sent TTTI-T to the funder at the request. Buybacks are optional,\n" #
+    "  limited and paid by the funder with their own money. Read by\n" #
+    "  controllers, app admins\n" #
+    "  and the signed-in buyer of each row.\n" #
+    "  `reservedReconciliation` (primary key `reconciledAt`; columns\n" #
+    "  reconciledAt, previousReserved, by) and `cyclesTopUpAttempt` (primary key\n" #
+    "  `createdAtTime`; at most one row, the stored top-up attempt; columns\n" #
+    "  createdAtTime, memo, amount, fee, toOwner, blockIndex, createdAt, sends,\n" #
+    "  lastError, outcome, needsReview): controllers and app admins only.\n" #
     "  Variants appear as their tag text, null optional values as null. Only\n" #
-    "  canister controllers and app admins read their rows; any other signed-in\n" #
-    "  caller sees no rows and anonymous callers are refused. No other app data\n" #
-    "  is exposed.\n\n" #
+    "  canister controllers and app admins read conversion and BTC tracking\n" #
+    "  rows. Address book rows are read only by their signed-in owner (and\n" #
+    "  canister controllers); app admins do not see them. Any other\n" #
+    "  signed-in caller sees no rows and anonymous callers are refused. No other\n" #
+    "  app data is exposed.\n\n" #
 
     "## Polling guidance\n\n" #
     "- Purchases, transfers and approvals are synchronous: the reply is final.\n" #
-    "  There is no background job to poll, except native BTC deposits (above).\n" #
+    "  There is no background job to poll, except native BTC deposits (above)\n" #
+    "  and the FW/SH transfer retry: a `#pending` forward changes at most every\n" #
+    "  10 minutes, when the retry timer runs.\n" #
     "- Poll cheap queries (`getSaleStatus`, `getIcpPrice`, `getTokenPrices`,\n" #
     "  `icrc1_balance_of`) every 10-30 s at most. Each stored rate changes only\n" #
     "  when its hourly timer (or its 5-minute retry) or an allowed admin refresh\n" #
@@ -747,7 +1204,11 @@ mixin () {
     "  ckBTC. ckBTC refunds go to the caller's own account, not to the delivery\n" #
     "  address. `#pendingRate` keeps the ckBTC in the subaccount until a rate\n" #
     "  exists.\n" #
-    "- Admin endpoints trap (reject) instead of returning `#Err`; ICRC, purchase,\n" #
-    "  acknowledgement and delivery-address endpoints return typed errors.\n";
+    "- Admin endpoints trap (reject) instead of returning `#Err`, except\n" #
+    "  `markTransferArrived` / `markTransferNotArrived` / `markRefundedManually`\n" #
+    "  (`#err(#notAdmin)`); ICRC,\n" #
+    "  purchase, acknowledgement and delivery-address endpoints return typed errors.\n" #
+    "- A wrong \"Not arrived\" on a PC payment drops a real refund obligation;\n" #
+    "  check the pay-token ledger for the `TTTI-PC-<n>` memo first.\n";
   };
 };

@@ -31,7 +31,7 @@ export const Error = IDL.Variant({
     'expected' : IDL.Vec(IDL.Text),
   }),
 });
-export const Result__1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
+export const Result_8 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
 export const AcknowledgedAt = IDL.Int;
 export const PurchaseAcknowledgement = IDL.Record({
   'accepted' : IDL.Bool,
@@ -40,16 +40,169 @@ export const PurchaseAcknowledgement = IDL.Record({
 export const AcknowledgementError = IDL.Variant({
   'anonymousCaller' : IDL.Null,
 });
+export const ContactInput = IDL.Record({
+  'principal' : IDL.Principal,
+  'nickname' : IDL.Text,
+  'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+});
+export const ContactId = IDL.Nat;
+export const Contact = IDL.Record({
+  'id' : ContactId,
+  'principal' : IDL.Principal,
+  'nickname' : IDL.Text,
+  'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+  'createdAt' : IDL.Int,
+  'updatedAt' : IDL.Int,
+});
+export const InvalidReason = IDL.Variant({
+  'nicknameTooLong' : IDL.Record({ 'maxChars' : IDL.Nat }),
+  'principalNotAllowed' : IDL.Null,
+  'memoTooLong' : IDL.Record({ 'maxBytes' : IDL.Nat }),
+  'nicknameEmpty' : IDL.Null,
+});
+export const AddressBookError = IDL.Variant({
+  'invalidInput' : InvalidReason,
+  'anonymous' : IDL.Null,
+  'notFound' : IDL.Null,
+  'duplicateNickname' : IDL.Null,
+  'limitReached' : IDL.Record({ 'max' : IDL.Nat }),
+});
+export const Result = IDL.Variant({ 'ok' : Contact, 'err' : AddressBookError });
 export const UserRole = IDL.Variant({
   'admin' : IDL.Null,
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const BuybackId = IDL.Nat;
+export const BuybackStatus = IDL.Variant({
+  'payoutFailed' : IDL.Null,
+  'cancelled' : IDL.Null,
+  'completed' : IDL.Null,
+  'inProgress' : IDL.Null,
+});
+export const Subaccount = IDL.Vec(IDL.Nat8);
+export const Account = IDL.Record({
+  'owner' : IDL.Principal,
+  'subaccount' : IDL.Opt(Subaccount),
+});
+export const PayToken = IDL.Variant({
+  'icp' : IDL.Null,
+  'ckbtc' : IDL.Null,
+  'ckusdc' : IDL.Null,
+  'ckusdt' : IDL.Null,
+});
+export const TransferRequest = IDL.Record({
+  'to' : Account,
+  'fee' : IDL.Opt(IDL.Nat),
+  'token' : PayToken,
+  'from_subaccount' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+  'amount' : IDL.Nat,
+});
+export const AttemptOutcome = IDL.Variant({
+  'pending' : IDL.Null,
+  'unknown' : IDL.Null,
+  'failed' : IDL.Text,
+  'succeeded' : IDL.Nat,
+});
+export const TransferAttempt = IDL.Record({
+  'n' : IDL.Nat,
+  'attempt' : IDL.Nat,
+  'request' : TransferRequest,
+  'memo' : IDL.Vec(IDL.Nat8),
+  'sends' : IDL.Nat,
+  'lastError' : IDL.Opt(IDL.Text),
+  'created_at_time' : IDL.Nat64,
+  'outcome' : AttemptOutcome,
+});
+export const BuybackPayoutAttempt = IDL.Record({
+  'attempt' : TransferAttempt,
+  'from' : Account,
+});
+export const BuybackRule = IDL.Variant({
+  'originalNet' : IDL.Null,
+  'dayRate' : IDL.Null,
+});
+export const Timestamp = IDL.Int;
+export const PurchaseId = IDL.Nat;
+export const Buyback = IDL.Record({
+  'id' : BuybackId,
+  'status' : BuybackStatus,
+  'buybackFee' : IDL.Nat,
+  'buyerAccount' : Account,
+  'tttiEscrowFee' : IDL.Nat,
+  'payoutAttempts' : IDL.Vec(BuybackPayoutAttempt),
+  'tokenReturned' : PayToken,
+  'massTotalNet' : IDL.Nat,
+  'massRemainingTtti' : IDL.Nat,
+  'rule' : BuybackRule,
+  'cancelBlock' : IDL.Opt(IDL.Nat),
+  'returnedRateUsdE8' : IDL.Nat,
+  'thirdPartyFees' : IDL.Nat,
+  'payoutBlock' : IDL.Opt(IDL.Nat),
+  'baseAmountReturned' : IDL.Nat,
+  'originalRateUsdE8' : IDL.Nat,
+  'originalToken' : PayToken,
+  'pullBlock' : IDL.Opt(IDL.Nat),
+  'originalNetAmount' : IDL.Nat,
+  'percent' : IDL.Nat,
+  'releaseBlock' : IDL.Opt(IDL.Nat),
+  'message' : IDL.Opt(IDL.Text),
+  'legacy' : IDL.Bool,
+  'tttiTransferFee' : IDL.Nat,
+  'timestamp' : Timestamp,
+  'massRemainingNet' : IDL.Nat,
+  'baseAmount' : IDL.Nat,
+  'tttiAmount' : IDL.Nat,
+  'buyer' : IDL.Principal,
+  'purchaseId' : IDL.Opt(PurchaseId),
+  'amountReturned' : IDL.Nat,
+  'massTotalTtti' : IDL.Nat,
+});
+export const BuybackError = IDL.Variant({
+  'payoutFailed' : IDL.Text,
+  'notCancellable' : IDL.Null,
+  'callFailed' : IDL.Text,
+  'notLegacy' : IDL.Null,
+  'adminBalanceInsufficient' : IDL.Record({
+    'token' : PayToken,
+    'balance' : IDL.Nat,
+    'required' : IDL.Nat,
+  }),
+  'salesPaused' : IDL.Null,
+  'attemptArrived' : IDL.Null,
+  'notAuthorized' : IDL.Null,
+  'invalidPercent' : IDL.Null,
+  'adminAllowanceInsufficient' : IDL.Record({
+    'token' : PayToken,
+    'required' : IDL.Nat,
+    'allowance' : IDL.Nat,
+  }),
+  'adminAccountNotSet' : IDL.Null,
+  'notBuyer' : IDL.Null,
+  'pullFailed' : IDL.Text,
+  'amountTooSmall' : IDL.Null,
+  'releaseFailed' : IDL.Text,
+  'anonymous' : IDL.Null,
+  'rateUnavailable' : PayToken,
+  'receiveTokenMismatch' : IDL.Null,
+  'buybackInProgress' : IDL.Null,
+  'cancelFailed' : IDL.Text,
+  'adminAllowanceExpired' : IDL.Record({ 'token' : PayToken }),
+  'notRetryable' : IDL.Null,
+  'attemptUnknown' : IDL.Null,
+  'massBuybackInProgress' : IDL.Null,
+  'nothingRemaining' : IDL.Null,
+  'buyerAllowanceInsufficient' : IDL.Record({
+    'required' : IDL.Nat,
+    'allowance' : IDL.Nat,
+  }),
+  'buybackNotFound' : IDL.Null,
+});
+export const Result_1 = IDL.Variant({ 'ok' : Buyback, 'err' : BuybackError });
 export const DepositKind = IDL.Variant({
   'wallet' : IDL.Null,
   'purchase' : IDL.Null,
 });
-export const Timestamp = IDL.Int;
 export const DepositErrorKind = IDL.Variant({
   'refundFailed' : IDL.Null,
   'unrecoverable' : IDL.Null,
@@ -68,10 +221,25 @@ export const DepositStage = IDL.Variant({
   'pendingRate' : IDL.Null,
   'confirming' : IDL.Record({ 'required' : IDL.Nat, 'current' : IDL.Nat }),
 });
+export const BtcCostToRefund = IDL.Record({
+  'amount' : IDL.Nat,
+  'refundedBlock' : IDL.Opt(IDL.Nat),
+  'conversionId' : IDL.Opt(IDL.Nat),
+});
+export const BtcRefundPurpose = IDL.Variant({
+  'deliveryFailedExcess' : IDL.Null,
+  'excess' : IDL.Null,
+  'fullRefund' : IDL.Null,
+});
+export const BtcRefund = IDL.Record({
+  'attempt' : TransferAttempt,
+  'purpose' : BtcRefundPurpose,
+});
 export const DepositEntry = IDL.Record({
   'btcDetectedSats' : IDL.Nat,
   'refundedSats' : IDL.Nat,
   'ckbtcMintedSats' : IDL.Nat,
+  'costToRefund' : IDL.Opt(BtcCostToRefund),
   'errorMessage' : IDL.Opt(IDL.Text),
   'detectedAt' : Timestamp,
   'errorKind' : IDL.Opt(DepositErrorKind),
@@ -79,6 +247,7 @@ export const DepositEntry = IDL.Record({
   'stage' : DepositStage,
   'ckbtcPendingSats' : IDL.Nat,
   'index' : IDL.Nat,
+  'btcRefund' : IDL.Opt(BtcRefund),
   'conversionId' : IDL.Opt(IDL.Nat),
   'tttiDelivered' : IDL.Nat,
   'ckbtcMintBlockIndex' : IDL.Opt(IDL.Nat),
@@ -109,27 +278,18 @@ export const BtcDepositResult = IDL.Variant({
   'Ok' : DepositTracking,
   'Err' : BtcDepositError,
 });
-export const Subaccount = IDL.Vec(IDL.Nat8);
-export const Account = IDL.Record({
-  'owner' : IDL.Principal,
-  'subaccount' : IDL.Opt(Subaccount),
-});
 export const ConversionStatus = IDL.Variant({
   'refundFailed' : IDL.Null,
+  'refundReview' : IDL.Null,
   'completed' : IDL.Null,
   'refunded' : IDL.Null,
   'failed' : IDL.Null,
 });
-export const Timestamp__1 = IDL.Nat64;
-export const PayToken = IDL.Variant({
-  'icp' : IDL.Null,
-  'ckbtc' : IDL.Null,
-  'ckusdc' : IDL.Null,
-  'ckusdt' : IDL.Null,
-});
+export const Timestamp__2 = IDL.Nat64;
 export const ForwardStatus = IDL.Variant({
   'forwarded' : IDL.Nat,
   'pending' : IDL.Null,
+  'needsReview' : IDL.Null,
   'notRequired' : IDL.Null,
   'failed' : IDL.Text,
 });
@@ -146,7 +306,7 @@ export const Conversion = IDL.Record({
   'recipient' : Account,
   'paymentBlock' : IDL.Opt(IDL.Nat),
   'message' : IDL.Opt(IDL.Text),
-  'timestamp' : Timestamp__1,
+  'timestamp' : Timestamp__2,
   'payAmount' : IDL.Nat,
   'tttiAmount' : IDL.Nat,
   'mintBlock' : IDL.Opt(IDL.Nat),
@@ -200,6 +360,10 @@ export const PurchaseResult = IDL.Variant({
   'Ok' : Conversion,
   'Err' : PurchaseError,
 });
+export const Result_7 = IDL.Variant({
+  'ok' : IDL.Null,
+  'err' : AddressBookError,
+});
 export const Value__2 = IDL.Variant({
   'int' : IDL.Int,
   'nat' : IDL.Nat,
@@ -209,7 +373,7 @@ export const Value__2 = IDL.Variant({
   'text' : IDL.Text,
 });
 export const Cell = IDL.Record({ 'value' : Value__2, 'name' : IDL.Text });
-export const Result = IDL.Record({
+export const Result__1 = IDL.Record({
   'hasMore' : IDL.Bool,
   'rows' : IDL.Vec(IDL.Vec(Cell)),
 });
@@ -227,7 +391,7 @@ export const SnapshotEntry = IDL.Record({
 export const BalanceSnapshot = IDL.Record({
   'decimals' : IDL.Nat8,
   'totalSupply' : IDL.Nat,
-  'exportedAt' : Timestamp__1,
+  'exportedAt' : Timestamp__2,
   'holders' : IDL.Vec(SnapshotEntry),
 });
 export const BtcDepositInfo = IDL.Record({
@@ -239,6 +403,24 @@ export const BtcDepositInfo = IDL.Record({
   'ckbtcLedgerId' : IDL.Principal,
   'purchaseFeeBps' : IDL.Nat,
   'minConfirmations' : IDL.Nat,
+});
+export const PriceSource = IDL.Variant({
+  'none' : IDL.Null,
+  'coinbase' : IDL.Null,
+  'coingecko' : IDL.Null,
+});
+export const BtcUsdRate = IDL.Record({
+  'fetchedAt' : Timestamp,
+  'source' : PriceSource,
+  'usdE8' : IDL.Nat,
+  'validUntil' : Timestamp,
+});
+export const BuybackFunding = IDL.Record({
+  'token' : PayToken,
+  'expiresAt' : IDL.Opt(IDL.Nat64),
+  'balance' : IDL.Nat,
+  'error' : IDL.Opt(IDL.Text),
+  'allowance' : IDL.Nat,
 });
 export const TopUpStatus = IDL.Variant({
   'transferred' : IDL.Null,
@@ -277,11 +459,6 @@ export const CyclesStatus = IDL.Record({
 export const FeeCollectorInfo = IDL.Record({
   'balance' : IDL.Nat,
   'account' : Account,
-});
-export const PriceSource = IDL.Variant({
-  'none' : IDL.Null,
-  'coinbase' : IDL.Null,
-  'coingecko' : IDL.Null,
 });
 export const PriceError = IDL.Record({
   'at' : Timestamp,
@@ -398,6 +575,58 @@ export const TokenPrice = IDL.Record({
   'validUntil' : Timestamp,
 });
 export const TreasuryConfig = IDL.Record({ 'icpAccount' : Account });
+export const PurchaseTrace = IDL.Record({
+  'n' : IDL.Nat,
+  'token' : PayToken,
+  'memo' : IDL.Vec(IDL.Nat8),
+  'reserved' : IDL.Nat,
+  'buyer' : IDL.Principal,
+  'created_at_time' : IDL.Nat64,
+  'amount' : IDL.Nat,
+});
+export const TopUpTransferRequest = IDL.Record({
+  'to' : Account,
+  'fee' : IDL.Nat,
+  'from_subaccount' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+  'amount' : IDL.Nat,
+});
+export const TopUpOutcome = IDL.Variant({
+  'pending' : IDL.Null,
+  'unknown' : IDL.Null,
+  'failed' : IDL.Text,
+  'succeeded' : IDL.Nat,
+});
+export const TopUpAttempt = IDL.Record({
+  'request' : TopUpTransferRequest,
+  'memo' : IDL.Vec(IDL.Nat8),
+  'createdAt' : Timestamp,
+  'sends' : IDL.Nat,
+  'blockIndex' : IDL.Opt(IDL.Nat),
+  'needsReview' : IDL.Bool,
+  'lastError' : IDL.Opt(IDL.Text),
+  'created_at_time' : IDL.Nat64,
+  'amount' : IDL.Nat,
+  'outcome' : TopUpOutcome,
+});
+export const ReservedReconciliation = IDL.Record({
+  'by' : IDL.Principal,
+  'reconciledAt' : IDL.Int,
+  'previousReserved' : IDL.Nat,
+});
+export const UpgradeReadiness = IDL.Record({
+  'reserveLockBusy' : IDL.Bool,
+  'purchasesInFlightCount' : IDL.Nat,
+  'salesPaused' : IDL.Bool,
+  'openTraceCount' : IDL.Nat,
+  'reserved' : IDL.Nat,
+  'purchasesInFlight' : IDL.Vec(IDL.Principal),
+  'btcLockHeld' : IDL.Bool,
+  'buybacksInFlight' : IDL.Vec(IDL.Text),
+  'openTraces' : IDL.Vec(PurchaseTrace),
+  'buybacksInFlightCount' : IDL.Nat,
+  'pendingTopUp' : IDL.Opt(TopUpAttempt),
+  'lastReconciliation' : IDL.Opt(ReservedReconciliation),
+});
 export const BlockIndex = IDL.Nat;
 export const GetAccountTransactionsArgs = IDL.Record({
   'max_results' : IDL.Nat,
@@ -502,7 +731,7 @@ export const TransferArgs = IDL.Record({
   'fee' : IDL.Opt(IDL.Nat),
   'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
   'from_subaccount' : IDL.Opt(Subaccount),
-  'created_at_time' : IDL.Opt(Timestamp__1),
+  'created_at_time' : IDL.Opt(Timestamp__2),
   'amount' : IDL.Nat,
 });
 export const TransferError = IDL.Variant({
@@ -511,7 +740,7 @@ export const TransferError = IDL.Variant({
   'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
   'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
   'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
   'TooOld' : IDL.Null,
   'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
 });
@@ -525,28 +754,28 @@ export const AllowanceArgs = IDL.Record({
 });
 export const Allowance = IDL.Record({
   'allowance' : IDL.Nat,
-  'expires_at' : IDL.Opt(Timestamp__1),
+  'expires_at' : IDL.Opt(Timestamp__2),
 });
 export const ApproveArgs = IDL.Record({
   'fee' : IDL.Opt(IDL.Nat),
   'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
   'from_subaccount' : IDL.Opt(Subaccount),
-  'created_at_time' : IDL.Opt(Timestamp__1),
+  'created_at_time' : IDL.Opt(Timestamp__2),
   'amount' : IDL.Nat,
   'expected_allowance' : IDL.Opt(IDL.Nat),
-  'expires_at' : IDL.Opt(Timestamp__1),
+  'expires_at' : IDL.Opt(Timestamp__2),
   'spender' : Account,
 });
 export const ApproveError = IDL.Variant({
   'GenericError' : IDL.Record({ 'message' : IDL.Text, 'error_code' : IDL.Nat }),
   'TemporarilyUnavailable' : IDL.Null,
   'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
-  'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+  'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
   'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
   'AllowanceChanged' : IDL.Record({ 'current_allowance' : IDL.Nat }),
-  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
   'TooOld' : IDL.Null,
-  'Expired' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+  'Expired' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
   'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
 });
 export const ApproveResult = IDL.Variant({
@@ -559,7 +788,7 @@ export const TransferFromArgs = IDL.Record({
   'spender_subaccount' : IDL.Opt(Subaccount),
   'from' : Account,
   'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
-  'created_at_time' : IDL.Opt(Timestamp__1),
+  'created_at_time' : IDL.Opt(Timestamp__2),
   'amount' : IDL.Nat,
 });
 export const TransferFromError = IDL.Variant({
@@ -569,7 +798,7 @@ export const TransferFromError = IDL.Variant({
   'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
   'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
   'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
   'TooOld' : IDL.Null,
   'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
 });
@@ -622,9 +851,113 @@ export const SupportedBlockType = IDL.Record({
   'url' : IDL.Text,
   'block_type' : IDL.Text,
 });
+export const BuybackMass = IDL.Record({
+  'token' : PayToken,
+  'boughtBackTtti' : IDL.Nat,
+  'remainingTtti' : IDL.Nat,
+  'totalTtti' : IDL.Nat,
+  'totalNet' : IDL.Nat,
+  'purchaseCount' : IDL.Nat,
+  'buyer' : IDL.Principal,
+  'remainingNet' : IDL.Nat,
+  'boughtBackNet' : IDL.Nat,
+  'inProgress' : IDL.Bool,
+});
+export const Result_6 = IDL.Variant({
+  'ok' : IDL.Vec(BuybackMass),
+  'err' : BuybackError,
+});
+export const Result_5 = IDL.Variant({
+  'ok' : IDL.Vec(Buyback),
+  'err' : BuybackError,
+});
+export const Result_4 = IDL.Variant({
+  'ok' : IDL.Vec(Contact),
+  'err' : AddressBookError,
+});
+export const TransferKind = IDL.Variant({
+  'BB' : IDL.Null,
+  'BC' : IDL.Null,
+  'BM' : IDL.Null,
+  'BR' : IDL.Null,
+  'FW' : IDL.Null,
+  'PC' : IDL.Null,
+  'RF' : IDL.Null,
+  'SH' : IDL.Null,
+});
+export const CollectState = IDL.Variant({
+  'confirmed' : IDL.Null,
+  'unknown' : IDL.Null,
+});
+export const TransferReview = IDL.Record({
+  'fee' : IDL.Opt(IDL.Nat),
+  'destination' : IDL.Opt(Account),
+  'token' : PayToken,
+  'createdAtTimeNs' : IDL.Opt(IDL.Nat64),
+  'memoHex' : IDL.Opt(IDL.Text),
+  'kind' : TransferKind,
+  'memoText' : IDL.Opt(IDL.Text),
+  'sends' : IDL.Nat,
+  'depositIndex' : IDL.Opt(IDL.Nat),
+  'block' : IDL.Opt(IDL.Nat),
+  'buyer' : IDL.Opt(IDL.Principal),
+  'lastError' : IDL.Opt(IDL.Text),
+  'purchaseId' : IDL.Nat,
+  'amount' : IDL.Nat,
+  'outcome' : IDL.Opt(AttemptOutcome),
+  'refundPurpose' : IDL.Opt(BtcRefundPurpose),
+  'collect' : IDL.Opt(CollectState),
+  'conversionId' : IDL.Opt(IDL.Nat),
+});
 export const ListSubaccountsArgs = IDL.Record({
   'owner' : IDL.Principal,
   'start' : IDL.Opt(Subaccount),
+});
+export const ReviewError = IDL.Variant({
+  'notFound' : IDL.Null,
+  'notAdmin' : IDL.Null,
+  'notApplicable' : IDL.Null,
+  'notUnderReview' : IDL.Null,
+});
+export const ReviewResult = IDL.Variant({
+  'ok' : IDL.Null,
+  'err' : ReviewError,
+});
+export const BuybackQuote = IDL.Record({
+  'buybackFee' : IDL.Nat,
+  'tttiEscrowFee' : IDL.Nat,
+  'tttiAllowanceRequired' : IDL.Nat,
+  'tokenReturned' : PayToken,
+  'massTotalNet' : IDL.Nat,
+  'massRemainingTtti' : IDL.Nat,
+  'rule' : BuybackRule,
+  'returnedRateUsdE8' : IDL.Nat,
+  'thirdPartyFees' : IDL.Nat,
+  'baseAmountReturned' : IDL.Nat,
+  'originalRateUsdE8' : IDL.Nat,
+  'originalToken' : PayToken,
+  'originalNetAmount' : IDL.Nat,
+  'percent' : IDL.Nat,
+  'tttiTransferFee' : IDL.Nat,
+  'massRemainingNet' : IDL.Nat,
+  'baseAmount' : IDL.Nat,
+  'tttiAmount' : IDL.Nat,
+  'amountReturned' : IDL.Nat,
+  'massTotalTtti' : IDL.Nat,
+});
+export const Result_3 = IDL.Variant({
+  'ok' : BuybackQuote,
+  'err' : BuybackError,
+});
+export const ReconcileError = IDL.Variant({
+  'notPaused' : IDL.Null,
+  'openTraces' : IDL.Null,
+  'purchaseInFlight' : IDL.Null,
+  'notAdmin' : IDL.Null,
+});
+export const Result_2 = IDL.Variant({
+  'ok' : ReservedReconciliation,
+  'err' : ReconcileError,
 });
 export const PriceResult = IDL.Variant({ 'Ok' : IcpPrice, 'Err' : IDL.Text });
 export const TokenPriceResult = IDL.Variant({
@@ -687,7 +1020,7 @@ export const WithdrawReserveResult = IDL.Variant({
 
 export const idlService = IDL.Service({
   '_initialize_access_control' : IDL.Func([], [], []),
-  '_internet_identity_sign_in_finish' : IDL.Func([], [Result__1], []),
+  '_internet_identity_sign_in_finish' : IDL.Func([], [Result_8], []),
   '_internet_identity_sign_in_start' : IDL.Func([], [IDL.Vec(IDL.Nat8)], []),
   'acceptPurchaseAcknowledgements' : IDL.Func(
       [],
@@ -699,9 +1032,16 @@ export const idlService = IDL.Service({
       ],
       [],
     ),
+  'addContact' : IDL.Func([ContactInput], [Result], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'cancelBuyback' : IDL.Func([BuybackId], [Result_1], []),
   'checkBtcPurchaseDeposit' : IDL.Func([], [BtcDepositResult], []),
   'checkBtcWalletDeposit' : IDL.Func([], [BtcDepositResult], []),
+  'checkBtcWalletDepositFor' : IDL.Func(
+      [IDL.Principal],
+      [BtcDepositResult],
+      [],
+    ),
   'clearDeliveryAddress' : IDL.Func([], [IDL.Bool], []),
   'convertDeposit' : IDL.Func(
       [IDL.Opt(Account), IDL.Nat],
@@ -713,13 +1053,23 @@ export const idlService = IDL.Service({
       [PurchaseResult],
       [],
     ),
-  'execute' : IDL.Func([IDL.Text], [Result], ['query']),
+  'deleteContact' : IDL.Func([ContactId], [Result_7], []),
+  'execute' : IDL.Func([IDL.Text], [Result__1], ['query']),
   'exportBalanceSnapshot' : IDL.Func([], [BalanceSnapshot], ['query']),
   'getApiDoc' : IDL.Func([], [IDL.Text], ['query']),
   'getBtcDepositInfo' : IDL.Func([], [BtcDepositInfo], ['query']),
   'getBtcPurchaseAddress' : IDL.Func([], [BtcDepositResult], []),
+  'getBtcUsdRate' : IDL.Func([], [IDL.Opt(BtcUsdRate)], ['query']),
   'getBtcWalletAddress' : IDL.Func([], [BtcDepositResult], []),
+  'getBtcWalletAddressFor' : IDL.Func([IDL.Principal], [BtcDepositResult], []),
+  'getBtcWalletDepositsFor' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Opt(DepositTracking)],
+      ['query'],
+    ),
   'getBurnAccount' : IDL.Func([], [Account], ['query']),
+  'getBuybackAdminAccount' : IDL.Func([], [IDL.Opt(Account)], ['query']),
+  'getBuybackFunding' : IDL.Func([], [IDL.Vec(BuybackFunding)], []),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getCanisterPrincipal' : IDL.Func([], [IDL.Principal], ['query']),
   'getConversions' : IDL.Func([], [IDL.Vec(Conversion)], ['query']),
@@ -744,6 +1094,7 @@ export const idlService = IDL.Service({
   'getTechnicalDetails' : IDL.Func([], [TechnicalDetails], ['query']),
   'getTokenPrices' : IDL.Func([], [IDL.Vec(TokenPrice)], ['query']),
   'getTreasuryConfig' : IDL.Func([], [IDL.Opt(TreasuryConfig)], ['query']),
+  'getUpgradeReadiness' : IDL.Func([], [UpgradeReadiness], ['query']),
   'get_account_transactions' : IDL.Func(
       [GetAccountTransactionsArgs],
       [GetTransactionsResult],
@@ -804,14 +1155,49 @@ export const idlService = IDL.Service({
     ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'ledger_id' : IDL.Func([], [IDL.Principal], ['query']),
+  'listAllBuybackMasses' : IDL.Func([], [IDL.Vec(BuybackMass)], ['query']),
+  'listAllBuybacks' : IDL.Func([], [IDL.Vec(Buyback)], ['query']),
+  'listMyBuybackMasses' : IDL.Func([], [Result_6], ['query']),
+  'listMyBuybacks' : IDL.Func([], [Result_5], ['query']),
+  'listMyContacts' : IDL.Func([], [Result_4], ['query']),
+  'listTransfersToReview' : IDL.Func([], [IDL.Vec(TransferReview)], ['query']),
   'list_subaccounts' : IDL.Func(
       [ListSubaccountsArgs],
       [IDL.Vec(Subaccount)],
       ['query'],
     ),
+  'markBuybackCancelled' : IDL.Func([BuybackId, IDL.Nat], [Result_1], []),
+  'markRefundedManually' : IDL.Func(
+      [TransferKind, IDL.Nat, IDL.Nat],
+      [ReviewResult],
+      [],
+    ),
+  'markTransferArrived' : IDL.Func(
+      [TransferKind, IDL.Nat, IDL.Nat],
+      [ReviewResult],
+      [],
+    ),
+  'markTransferNotArrived' : IDL.Func(
+      [TransferKind, IDL.Nat],
+      [ReviewResult],
+      [],
+    ),
+  'quoteBuyback' : IDL.Func(
+      [PayToken, IDL.Nat, PayToken],
+      [Result_3],
+      ['query'],
+    ),
+  'reconcileReserved' : IDL.Func([], [Result_2], []),
   'refreshIcpPrice' : IDL.Func([], [PriceResult], []),
   'refreshTokenPrice' : IDL.Func([PayToken], [TokenPriceResult], []),
+  'requestBuyback' : IDL.Func(
+      [PayToken, IDL.Nat, PayToken, IDL.Opt(IDL.Vec(IDL.Nat8))],
+      [Result_1],
+      [],
+    ),
+  'retryBuybackPayout' : IDL.Func([BuybackId], [Result_1], []),
   'schema' : IDL.Func([], [IDL.Text], ['query']),
+  'setBuybackAdminAccount' : IDL.Func([Account], [], []),
   'setDeliveryAddress' : IDL.Func([IDL.Text], [DeliveryAddressResult], []),
   'setPayTokenAccount' : IDL.Func(
       [PayToken, Account],
@@ -827,6 +1213,7 @@ export const idlService = IDL.Service({
       [TransformationOutput],
       ['query'],
     ),
+  'updateContact' : IDL.Func([ContactId, ContactInput], [Result], []),
   'withdrawReserveExcess' : IDL.Func([IDL.Nat], [WithdrawReserveResult], []),
 });
 
@@ -856,23 +1243,176 @@ export const idlFactory = ({ IDL }) => {
       'expected' : IDL.Vec(IDL.Text),
     }),
   });
-  const Result__1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
+  const Result_8 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
   const AcknowledgedAt = IDL.Int;
   const PurchaseAcknowledgement = IDL.Record({
     'accepted' : IDL.Bool,
     'acceptedAt' : IDL.Opt(AcknowledgedAt),
   });
   const AcknowledgementError = IDL.Variant({ 'anonymousCaller' : IDL.Null });
+  const ContactInput = IDL.Record({
+    'principal' : IDL.Principal,
+    'nickname' : IDL.Text,
+    'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+  });
+  const ContactId = IDL.Nat;
+  const Contact = IDL.Record({
+    'id' : ContactId,
+    'principal' : IDL.Principal,
+    'nickname' : IDL.Text,
+    'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+    'createdAt' : IDL.Int,
+    'updatedAt' : IDL.Int,
+  });
+  const InvalidReason = IDL.Variant({
+    'nicknameTooLong' : IDL.Record({ 'maxChars' : IDL.Nat }),
+    'principalNotAllowed' : IDL.Null,
+    'memoTooLong' : IDL.Record({ 'maxBytes' : IDL.Nat }),
+    'nicknameEmpty' : IDL.Null,
+  });
+  const AddressBookError = IDL.Variant({
+    'invalidInput' : InvalidReason,
+    'anonymous' : IDL.Null,
+    'notFound' : IDL.Null,
+    'duplicateNickname' : IDL.Null,
+    'limitReached' : IDL.Record({ 'max' : IDL.Nat }),
+  });
+  const Result = IDL.Variant({ 'ok' : Contact, 'err' : AddressBookError });
   const UserRole = IDL.Variant({
     'admin' : IDL.Null,
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const BuybackId = IDL.Nat;
+  const BuybackStatus = IDL.Variant({
+    'payoutFailed' : IDL.Null,
+    'cancelled' : IDL.Null,
+    'completed' : IDL.Null,
+    'inProgress' : IDL.Null,
+  });
+  const Subaccount = IDL.Vec(IDL.Nat8);
+  const Account = IDL.Record({
+    'owner' : IDL.Principal,
+    'subaccount' : IDL.Opt(Subaccount),
+  });
+  const PayToken = IDL.Variant({
+    'icp' : IDL.Null,
+    'ckbtc' : IDL.Null,
+    'ckusdc' : IDL.Null,
+    'ckusdt' : IDL.Null,
+  });
+  const TransferRequest = IDL.Record({
+    'to' : Account,
+    'fee' : IDL.Opt(IDL.Nat),
+    'token' : PayToken,
+    'from_subaccount' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+    'amount' : IDL.Nat,
+  });
+  const AttemptOutcome = IDL.Variant({
+    'pending' : IDL.Null,
+    'unknown' : IDL.Null,
+    'failed' : IDL.Text,
+    'succeeded' : IDL.Nat,
+  });
+  const TransferAttempt = IDL.Record({
+    'n' : IDL.Nat,
+    'attempt' : IDL.Nat,
+    'request' : TransferRequest,
+    'memo' : IDL.Vec(IDL.Nat8),
+    'sends' : IDL.Nat,
+    'lastError' : IDL.Opt(IDL.Text),
+    'created_at_time' : IDL.Nat64,
+    'outcome' : AttemptOutcome,
+  });
+  const BuybackPayoutAttempt = IDL.Record({
+    'attempt' : TransferAttempt,
+    'from' : Account,
+  });
+  const BuybackRule = IDL.Variant({
+    'originalNet' : IDL.Null,
+    'dayRate' : IDL.Null,
+  });
+  const Timestamp = IDL.Int;
+  const PurchaseId = IDL.Nat;
+  const Buyback = IDL.Record({
+    'id' : BuybackId,
+    'status' : BuybackStatus,
+    'buybackFee' : IDL.Nat,
+    'buyerAccount' : Account,
+    'tttiEscrowFee' : IDL.Nat,
+    'payoutAttempts' : IDL.Vec(BuybackPayoutAttempt),
+    'tokenReturned' : PayToken,
+    'massTotalNet' : IDL.Nat,
+    'massRemainingTtti' : IDL.Nat,
+    'rule' : BuybackRule,
+    'cancelBlock' : IDL.Opt(IDL.Nat),
+    'returnedRateUsdE8' : IDL.Nat,
+    'thirdPartyFees' : IDL.Nat,
+    'payoutBlock' : IDL.Opt(IDL.Nat),
+    'baseAmountReturned' : IDL.Nat,
+    'originalRateUsdE8' : IDL.Nat,
+    'originalToken' : PayToken,
+    'pullBlock' : IDL.Opt(IDL.Nat),
+    'originalNetAmount' : IDL.Nat,
+    'percent' : IDL.Nat,
+    'releaseBlock' : IDL.Opt(IDL.Nat),
+    'message' : IDL.Opt(IDL.Text),
+    'legacy' : IDL.Bool,
+    'tttiTransferFee' : IDL.Nat,
+    'timestamp' : Timestamp,
+    'massRemainingNet' : IDL.Nat,
+    'baseAmount' : IDL.Nat,
+    'tttiAmount' : IDL.Nat,
+    'buyer' : IDL.Principal,
+    'purchaseId' : IDL.Opt(PurchaseId),
+    'amountReturned' : IDL.Nat,
+    'massTotalTtti' : IDL.Nat,
+  });
+  const BuybackError = IDL.Variant({
+    'payoutFailed' : IDL.Text,
+    'notCancellable' : IDL.Null,
+    'callFailed' : IDL.Text,
+    'notLegacy' : IDL.Null,
+    'adminBalanceInsufficient' : IDL.Record({
+      'token' : PayToken,
+      'balance' : IDL.Nat,
+      'required' : IDL.Nat,
+    }),
+    'salesPaused' : IDL.Null,
+    'attemptArrived' : IDL.Null,
+    'notAuthorized' : IDL.Null,
+    'invalidPercent' : IDL.Null,
+    'adminAllowanceInsufficient' : IDL.Record({
+      'token' : PayToken,
+      'required' : IDL.Nat,
+      'allowance' : IDL.Nat,
+    }),
+    'adminAccountNotSet' : IDL.Null,
+    'notBuyer' : IDL.Null,
+    'pullFailed' : IDL.Text,
+    'amountTooSmall' : IDL.Null,
+    'releaseFailed' : IDL.Text,
+    'anonymous' : IDL.Null,
+    'rateUnavailable' : PayToken,
+    'receiveTokenMismatch' : IDL.Null,
+    'buybackInProgress' : IDL.Null,
+    'cancelFailed' : IDL.Text,
+    'adminAllowanceExpired' : IDL.Record({ 'token' : PayToken }),
+    'notRetryable' : IDL.Null,
+    'attemptUnknown' : IDL.Null,
+    'massBuybackInProgress' : IDL.Null,
+    'nothingRemaining' : IDL.Null,
+    'buyerAllowanceInsufficient' : IDL.Record({
+      'required' : IDL.Nat,
+      'allowance' : IDL.Nat,
+    }),
+    'buybackNotFound' : IDL.Null,
+  });
+  const Result_1 = IDL.Variant({ 'ok' : Buyback, 'err' : BuybackError });
   const DepositKind = IDL.Variant({
     'wallet' : IDL.Null,
     'purchase' : IDL.Null,
   });
-  const Timestamp = IDL.Int;
   const DepositErrorKind = IDL.Variant({
     'refundFailed' : IDL.Null,
     'unrecoverable' : IDL.Null,
@@ -891,10 +1431,25 @@ export const idlFactory = ({ IDL }) => {
     'pendingRate' : IDL.Null,
     'confirming' : IDL.Record({ 'required' : IDL.Nat, 'current' : IDL.Nat }),
   });
+  const BtcCostToRefund = IDL.Record({
+    'amount' : IDL.Nat,
+    'refundedBlock' : IDL.Opt(IDL.Nat),
+    'conversionId' : IDL.Opt(IDL.Nat),
+  });
+  const BtcRefundPurpose = IDL.Variant({
+    'deliveryFailedExcess' : IDL.Null,
+    'excess' : IDL.Null,
+    'fullRefund' : IDL.Null,
+  });
+  const BtcRefund = IDL.Record({
+    'attempt' : TransferAttempt,
+    'purpose' : BtcRefundPurpose,
+  });
   const DepositEntry = IDL.Record({
     'btcDetectedSats' : IDL.Nat,
     'refundedSats' : IDL.Nat,
     'ckbtcMintedSats' : IDL.Nat,
+    'costToRefund' : IDL.Opt(BtcCostToRefund),
     'errorMessage' : IDL.Opt(IDL.Text),
     'detectedAt' : Timestamp,
     'errorKind' : IDL.Opt(DepositErrorKind),
@@ -902,6 +1457,7 @@ export const idlFactory = ({ IDL }) => {
     'stage' : DepositStage,
     'ckbtcPendingSats' : IDL.Nat,
     'index' : IDL.Nat,
+    'btcRefund' : IDL.Opt(BtcRefund),
     'conversionId' : IDL.Opt(IDL.Nat),
     'tttiDelivered' : IDL.Nat,
     'ckbtcMintBlockIndex' : IDL.Opt(IDL.Nat),
@@ -932,27 +1488,18 @@ export const idlFactory = ({ IDL }) => {
     'Ok' : DepositTracking,
     'Err' : BtcDepositError,
   });
-  const Subaccount = IDL.Vec(IDL.Nat8);
-  const Account = IDL.Record({
-    'owner' : IDL.Principal,
-    'subaccount' : IDL.Opt(Subaccount),
-  });
   const ConversionStatus = IDL.Variant({
     'refundFailed' : IDL.Null,
+    'refundReview' : IDL.Null,
     'completed' : IDL.Null,
     'refunded' : IDL.Null,
     'failed' : IDL.Null,
   });
-  const Timestamp__1 = IDL.Nat64;
-  const PayToken = IDL.Variant({
-    'icp' : IDL.Null,
-    'ckbtc' : IDL.Null,
-    'ckusdc' : IDL.Null,
-    'ckusdt' : IDL.Null,
-  });
+  const Timestamp__2 = IDL.Nat64;
   const ForwardStatus = IDL.Variant({
     'forwarded' : IDL.Nat,
     'pending' : IDL.Null,
+    'needsReview' : IDL.Null,
     'notRequired' : IDL.Null,
     'failed' : IDL.Text,
   });
@@ -969,7 +1516,7 @@ export const idlFactory = ({ IDL }) => {
     'recipient' : Account,
     'paymentBlock' : IDL.Opt(IDL.Nat),
     'message' : IDL.Opt(IDL.Text),
-    'timestamp' : Timestamp__1,
+    'timestamp' : Timestamp__2,
     'payAmount' : IDL.Nat,
     'tttiAmount' : IDL.Nat,
     'mintBlock' : IDL.Opt(IDL.Nat),
@@ -1026,6 +1573,7 @@ export const idlFactory = ({ IDL }) => {
     'Ok' : Conversion,
     'Err' : PurchaseError,
   });
+  const Result_7 = IDL.Variant({ 'ok' : IDL.Null, 'err' : AddressBookError });
   const Value__2 = IDL.Variant({
     'int' : IDL.Int,
     'nat' : IDL.Nat,
@@ -1035,7 +1583,7 @@ export const idlFactory = ({ IDL }) => {
     'text' : IDL.Text,
   });
   const Cell = IDL.Record({ 'value' : Value__2, 'name' : IDL.Text });
-  const Result = IDL.Record({
+  const Result__1 = IDL.Record({
     'hasMore' : IDL.Bool,
     'rows' : IDL.Vec(IDL.Vec(Cell)),
   });
@@ -1053,7 +1601,7 @@ export const idlFactory = ({ IDL }) => {
   const BalanceSnapshot = IDL.Record({
     'decimals' : IDL.Nat8,
     'totalSupply' : IDL.Nat,
-    'exportedAt' : Timestamp__1,
+    'exportedAt' : Timestamp__2,
     'holders' : IDL.Vec(SnapshotEntry),
   });
   const BtcDepositInfo = IDL.Record({
@@ -1065,6 +1613,24 @@ export const idlFactory = ({ IDL }) => {
     'ckbtcLedgerId' : IDL.Principal,
     'purchaseFeeBps' : IDL.Nat,
     'minConfirmations' : IDL.Nat,
+  });
+  const PriceSource = IDL.Variant({
+    'none' : IDL.Null,
+    'coinbase' : IDL.Null,
+    'coingecko' : IDL.Null,
+  });
+  const BtcUsdRate = IDL.Record({
+    'fetchedAt' : Timestamp,
+    'source' : PriceSource,
+    'usdE8' : IDL.Nat,
+    'validUntil' : Timestamp,
+  });
+  const BuybackFunding = IDL.Record({
+    'token' : PayToken,
+    'expiresAt' : IDL.Opt(IDL.Nat64),
+    'balance' : IDL.Nat,
+    'error' : IDL.Opt(IDL.Text),
+    'allowance' : IDL.Nat,
   });
   const TopUpStatus = IDL.Variant({
     'transferred' : IDL.Null,
@@ -1103,11 +1669,6 @@ export const idlFactory = ({ IDL }) => {
   const FeeCollectorInfo = IDL.Record({
     'balance' : IDL.Nat,
     'account' : Account,
-  });
-  const PriceSource = IDL.Variant({
-    'none' : IDL.Null,
-    'coinbase' : IDL.Null,
-    'coingecko' : IDL.Null,
   });
   const PriceError = IDL.Record({ 'at' : Timestamp, 'message' : IDL.Text });
   const IcpPrice = IDL.Record({
@@ -1221,6 +1782,58 @@ export const idlFactory = ({ IDL }) => {
     'validUntil' : Timestamp,
   });
   const TreasuryConfig = IDL.Record({ 'icpAccount' : Account });
+  const PurchaseTrace = IDL.Record({
+    'n' : IDL.Nat,
+    'token' : PayToken,
+    'memo' : IDL.Vec(IDL.Nat8),
+    'reserved' : IDL.Nat,
+    'buyer' : IDL.Principal,
+    'created_at_time' : IDL.Nat64,
+    'amount' : IDL.Nat,
+  });
+  const TopUpTransferRequest = IDL.Record({
+    'to' : Account,
+    'fee' : IDL.Nat,
+    'from_subaccount' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+    'amount' : IDL.Nat,
+  });
+  const TopUpOutcome = IDL.Variant({
+    'pending' : IDL.Null,
+    'unknown' : IDL.Null,
+    'failed' : IDL.Text,
+    'succeeded' : IDL.Nat,
+  });
+  const TopUpAttempt = IDL.Record({
+    'request' : TopUpTransferRequest,
+    'memo' : IDL.Vec(IDL.Nat8),
+    'createdAt' : Timestamp,
+    'sends' : IDL.Nat,
+    'blockIndex' : IDL.Opt(IDL.Nat),
+    'needsReview' : IDL.Bool,
+    'lastError' : IDL.Opt(IDL.Text),
+    'created_at_time' : IDL.Nat64,
+    'amount' : IDL.Nat,
+    'outcome' : TopUpOutcome,
+  });
+  const ReservedReconciliation = IDL.Record({
+    'by' : IDL.Principal,
+    'reconciledAt' : IDL.Int,
+    'previousReserved' : IDL.Nat,
+  });
+  const UpgradeReadiness = IDL.Record({
+    'reserveLockBusy' : IDL.Bool,
+    'purchasesInFlightCount' : IDL.Nat,
+    'salesPaused' : IDL.Bool,
+    'openTraceCount' : IDL.Nat,
+    'reserved' : IDL.Nat,
+    'purchasesInFlight' : IDL.Vec(IDL.Principal),
+    'btcLockHeld' : IDL.Bool,
+    'buybacksInFlight' : IDL.Vec(IDL.Text),
+    'openTraces' : IDL.Vec(PurchaseTrace),
+    'buybacksInFlightCount' : IDL.Nat,
+    'pendingTopUp' : IDL.Opt(TopUpAttempt),
+    'lastReconciliation' : IDL.Opt(ReservedReconciliation),
+  });
   const BlockIndex = IDL.Nat;
   const GetAccountTransactionsArgs = IDL.Record({
     'max_results' : IDL.Nat,
@@ -1322,7 +1935,7 @@ export const idlFactory = ({ IDL }) => {
     'fee' : IDL.Opt(IDL.Nat),
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
     'from_subaccount' : IDL.Opt(Subaccount),
-    'created_at_time' : IDL.Opt(Timestamp__1),
+    'created_at_time' : IDL.Opt(Timestamp__2),
     'amount' : IDL.Nat,
   });
   const TransferError = IDL.Variant({
@@ -1334,7 +1947,7 @@ export const idlFactory = ({ IDL }) => {
     'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
     'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
     'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
     'TooOld' : IDL.Null,
     'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
   });
@@ -1345,16 +1958,16 @@ export const idlFactory = ({ IDL }) => {
   });
   const Allowance = IDL.Record({
     'allowance' : IDL.Nat,
-    'expires_at' : IDL.Opt(Timestamp__1),
+    'expires_at' : IDL.Opt(Timestamp__2),
   });
   const ApproveArgs = IDL.Record({
     'fee' : IDL.Opt(IDL.Nat),
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
     'from_subaccount' : IDL.Opt(Subaccount),
-    'created_at_time' : IDL.Opt(Timestamp__1),
+    'created_at_time' : IDL.Opt(Timestamp__2),
     'amount' : IDL.Nat,
     'expected_allowance' : IDL.Opt(IDL.Nat),
-    'expires_at' : IDL.Opt(Timestamp__1),
+    'expires_at' : IDL.Opt(Timestamp__2),
     'spender' : Account,
   });
   const ApproveError = IDL.Variant({
@@ -1364,12 +1977,12 @@ export const idlFactory = ({ IDL }) => {
     }),
     'TemporarilyUnavailable' : IDL.Null,
     'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
-    'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+    'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
     'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
     'AllowanceChanged' : IDL.Record({ 'current_allowance' : IDL.Nat }),
-    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
     'TooOld' : IDL.Null,
-    'Expired' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+    'Expired' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
     'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
   });
   const ApproveResult = IDL.Variant({ 'Ok' : IDL.Nat, 'Err' : ApproveError });
@@ -1379,7 +1992,7 @@ export const idlFactory = ({ IDL }) => {
     'spender_subaccount' : IDL.Opt(Subaccount),
     'from' : Account,
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
-    'created_at_time' : IDL.Opt(Timestamp__1),
+    'created_at_time' : IDL.Opt(Timestamp__2),
     'amount' : IDL.Nat,
   });
   const TransferFromError = IDL.Variant({
@@ -1392,7 +2005,7 @@ export const idlFactory = ({ IDL }) => {
     'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
     'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
     'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__1 }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
     'TooOld' : IDL.Null,
     'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
   });
@@ -1442,9 +2055,107 @@ export const idlFactory = ({ IDL }) => {
     'url' : IDL.Text,
     'block_type' : IDL.Text,
   });
+  const BuybackMass = IDL.Record({
+    'token' : PayToken,
+    'boughtBackTtti' : IDL.Nat,
+    'remainingTtti' : IDL.Nat,
+    'totalTtti' : IDL.Nat,
+    'totalNet' : IDL.Nat,
+    'purchaseCount' : IDL.Nat,
+    'buyer' : IDL.Principal,
+    'remainingNet' : IDL.Nat,
+    'boughtBackNet' : IDL.Nat,
+    'inProgress' : IDL.Bool,
+  });
+  const Result_6 = IDL.Variant({
+    'ok' : IDL.Vec(BuybackMass),
+    'err' : BuybackError,
+  });
+  const Result_5 = IDL.Variant({
+    'ok' : IDL.Vec(Buyback),
+    'err' : BuybackError,
+  });
+  const Result_4 = IDL.Variant({
+    'ok' : IDL.Vec(Contact),
+    'err' : AddressBookError,
+  });
+  const TransferKind = IDL.Variant({
+    'BB' : IDL.Null,
+    'BC' : IDL.Null,
+    'BM' : IDL.Null,
+    'BR' : IDL.Null,
+    'FW' : IDL.Null,
+    'PC' : IDL.Null,
+    'RF' : IDL.Null,
+    'SH' : IDL.Null,
+  });
+  const CollectState = IDL.Variant({
+    'confirmed' : IDL.Null,
+    'unknown' : IDL.Null,
+  });
+  const TransferReview = IDL.Record({
+    'fee' : IDL.Opt(IDL.Nat),
+    'destination' : IDL.Opt(Account),
+    'token' : PayToken,
+    'createdAtTimeNs' : IDL.Opt(IDL.Nat64),
+    'memoHex' : IDL.Opt(IDL.Text),
+    'kind' : TransferKind,
+    'memoText' : IDL.Opt(IDL.Text),
+    'sends' : IDL.Nat,
+    'depositIndex' : IDL.Opt(IDL.Nat),
+    'block' : IDL.Opt(IDL.Nat),
+    'buyer' : IDL.Opt(IDL.Principal),
+    'lastError' : IDL.Opt(IDL.Text),
+    'purchaseId' : IDL.Nat,
+    'amount' : IDL.Nat,
+    'outcome' : IDL.Opt(AttemptOutcome),
+    'refundPurpose' : IDL.Opt(BtcRefundPurpose),
+    'collect' : IDL.Opt(CollectState),
+    'conversionId' : IDL.Opt(IDL.Nat),
+  });
   const ListSubaccountsArgs = IDL.Record({
     'owner' : IDL.Principal,
     'start' : IDL.Opt(Subaccount),
+  });
+  const ReviewError = IDL.Variant({
+    'notFound' : IDL.Null,
+    'notAdmin' : IDL.Null,
+    'notApplicable' : IDL.Null,
+    'notUnderReview' : IDL.Null,
+  });
+  const ReviewResult = IDL.Variant({ 'ok' : IDL.Null, 'err' : ReviewError });
+  const BuybackQuote = IDL.Record({
+    'buybackFee' : IDL.Nat,
+    'tttiEscrowFee' : IDL.Nat,
+    'tttiAllowanceRequired' : IDL.Nat,
+    'tokenReturned' : PayToken,
+    'massTotalNet' : IDL.Nat,
+    'massRemainingTtti' : IDL.Nat,
+    'rule' : BuybackRule,
+    'returnedRateUsdE8' : IDL.Nat,
+    'thirdPartyFees' : IDL.Nat,
+    'baseAmountReturned' : IDL.Nat,
+    'originalRateUsdE8' : IDL.Nat,
+    'originalToken' : PayToken,
+    'originalNetAmount' : IDL.Nat,
+    'percent' : IDL.Nat,
+    'tttiTransferFee' : IDL.Nat,
+    'massRemainingNet' : IDL.Nat,
+    'baseAmount' : IDL.Nat,
+    'tttiAmount' : IDL.Nat,
+    'amountReturned' : IDL.Nat,
+    'massTotalTtti' : IDL.Nat,
+  });
+  const Result_3 = IDL.Variant({ 'ok' : BuybackQuote, 'err' : BuybackError });
+  const ReconcileError = IDL.Variant({
+    'notPaused' : IDL.Null,
+    'openTraces' : IDL.Null,
+    'purchaseInFlight' : IDL.Null,
+    'notAdmin' : IDL.Null,
+  });
+  const Result_2 = IDL.Variant({
+    'ok' : ReservedReconciliation,
+    'err' : ReconcileError,
   });
   const PriceResult = IDL.Variant({ 'Ok' : IcpPrice, 'Err' : IDL.Text });
   const TokenPriceResult = IDL.Variant({ 'Ok' : TokenPrice, 'Err' : IDL.Text });
@@ -1504,7 +2215,7 @@ export const idlFactory = ({ IDL }) => {
   
   return IDL.Service({
     '_initialize_access_control' : IDL.Func([], [], []),
-    '_internet_identity_sign_in_finish' : IDL.Func([], [Result__1], []),
+    '_internet_identity_sign_in_finish' : IDL.Func([], [Result_8], []),
     '_internet_identity_sign_in_start' : IDL.Func([], [IDL.Vec(IDL.Nat8)], []),
     'acceptPurchaseAcknowledgements' : IDL.Func(
         [],
@@ -1516,9 +2227,16 @@ export const idlFactory = ({ IDL }) => {
         ],
         [],
       ),
+    'addContact' : IDL.Func([ContactInput], [Result], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'cancelBuyback' : IDL.Func([BuybackId], [Result_1], []),
     'checkBtcPurchaseDeposit' : IDL.Func([], [BtcDepositResult], []),
     'checkBtcWalletDeposit' : IDL.Func([], [BtcDepositResult], []),
+    'checkBtcWalletDepositFor' : IDL.Func(
+        [IDL.Principal],
+        [BtcDepositResult],
+        [],
+      ),
     'clearDeliveryAddress' : IDL.Func([], [IDL.Bool], []),
     'convertDeposit' : IDL.Func(
         [IDL.Opt(Account), IDL.Nat],
@@ -1530,13 +2248,27 @@ export const idlFactory = ({ IDL }) => {
         [PurchaseResult],
         [],
       ),
-    'execute' : IDL.Func([IDL.Text], [Result], ['query']),
+    'deleteContact' : IDL.Func([ContactId], [Result_7], []),
+    'execute' : IDL.Func([IDL.Text], [Result__1], ['query']),
     'exportBalanceSnapshot' : IDL.Func([], [BalanceSnapshot], ['query']),
     'getApiDoc' : IDL.Func([], [IDL.Text], ['query']),
     'getBtcDepositInfo' : IDL.Func([], [BtcDepositInfo], ['query']),
     'getBtcPurchaseAddress' : IDL.Func([], [BtcDepositResult], []),
+    'getBtcUsdRate' : IDL.Func([], [IDL.Opt(BtcUsdRate)], ['query']),
     'getBtcWalletAddress' : IDL.Func([], [BtcDepositResult], []),
+    'getBtcWalletAddressFor' : IDL.Func(
+        [IDL.Principal],
+        [BtcDepositResult],
+        [],
+      ),
+    'getBtcWalletDepositsFor' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Opt(DepositTracking)],
+        ['query'],
+      ),
     'getBurnAccount' : IDL.Func([], [Account], ['query']),
+    'getBuybackAdminAccount' : IDL.Func([], [IDL.Opt(Account)], ['query']),
+    'getBuybackFunding' : IDL.Func([], [IDL.Vec(BuybackFunding)], []),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getCanisterPrincipal' : IDL.Func([], [IDL.Principal], ['query']),
     'getConversions' : IDL.Func([], [IDL.Vec(Conversion)], ['query']),
@@ -1561,6 +2293,7 @@ export const idlFactory = ({ IDL }) => {
     'getTechnicalDetails' : IDL.Func([], [TechnicalDetails], ['query']),
     'getTokenPrices' : IDL.Func([], [IDL.Vec(TokenPrice)], ['query']),
     'getTreasuryConfig' : IDL.Func([], [IDL.Opt(TreasuryConfig)], ['query']),
+    'getUpgradeReadiness' : IDL.Func([], [UpgradeReadiness], ['query']),
     'get_account_transactions' : IDL.Func(
         [GetAccountTransactionsArgs],
         [GetTransactionsResult],
@@ -1621,14 +2354,53 @@ export const idlFactory = ({ IDL }) => {
       ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'ledger_id' : IDL.Func([], [IDL.Principal], ['query']),
+    'listAllBuybackMasses' : IDL.Func([], [IDL.Vec(BuybackMass)], ['query']),
+    'listAllBuybacks' : IDL.Func([], [IDL.Vec(Buyback)], ['query']),
+    'listMyBuybackMasses' : IDL.Func([], [Result_6], ['query']),
+    'listMyBuybacks' : IDL.Func([], [Result_5], ['query']),
+    'listMyContacts' : IDL.Func([], [Result_4], ['query']),
+    'listTransfersToReview' : IDL.Func(
+        [],
+        [IDL.Vec(TransferReview)],
+        ['query'],
+      ),
     'list_subaccounts' : IDL.Func(
         [ListSubaccountsArgs],
         [IDL.Vec(Subaccount)],
         ['query'],
       ),
+    'markBuybackCancelled' : IDL.Func([BuybackId, IDL.Nat], [Result_1], []),
+    'markRefundedManually' : IDL.Func(
+        [TransferKind, IDL.Nat, IDL.Nat],
+        [ReviewResult],
+        [],
+      ),
+    'markTransferArrived' : IDL.Func(
+        [TransferKind, IDL.Nat, IDL.Nat],
+        [ReviewResult],
+        [],
+      ),
+    'markTransferNotArrived' : IDL.Func(
+        [TransferKind, IDL.Nat],
+        [ReviewResult],
+        [],
+      ),
+    'quoteBuyback' : IDL.Func(
+        [PayToken, IDL.Nat, PayToken],
+        [Result_3],
+        ['query'],
+      ),
+    'reconcileReserved' : IDL.Func([], [Result_2], []),
     'refreshIcpPrice' : IDL.Func([], [PriceResult], []),
     'refreshTokenPrice' : IDL.Func([PayToken], [TokenPriceResult], []),
+    'requestBuyback' : IDL.Func(
+        [PayToken, IDL.Nat, PayToken, IDL.Opt(IDL.Vec(IDL.Nat8))],
+        [Result_1],
+        [],
+      ),
+    'retryBuybackPayout' : IDL.Func([BuybackId], [Result_1], []),
     'schema' : IDL.Func([], [IDL.Text], ['query']),
+    'setBuybackAdminAccount' : IDL.Func([Account], [], []),
     'setDeliveryAddress' : IDL.Func([IDL.Text], [DeliveryAddressResult], []),
     'setPayTokenAccount' : IDL.Func(
         [PayToken, Account],
@@ -1648,6 +2420,7 @@ export const idlFactory = ({ IDL }) => {
         [TransformationOutput],
         ['query'],
       ),
+    'updateContact' : IDL.Func([ContactId, ContactInput], [Result], []),
     'withdrawReserveExcess' : IDL.Func([IDL.Nat], [WithdrawReserveResult], []),
   });
 };

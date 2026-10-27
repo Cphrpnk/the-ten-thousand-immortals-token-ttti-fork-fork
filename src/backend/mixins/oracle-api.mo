@@ -25,6 +25,12 @@ mixin (
     OracleLib.allPrices(oracle, tokenRates, Time.now());
   };
 
+  // The stored hourly BTC/USD rate, null while none has been fetched. Public,
+  // display-only; never performs an outcall.
+  public query func getBtcUsdRate() : async ?Oracle.BtcUsdRate {
+    OracleLib.getBtcUsdRate(tokenRates);
+  };
+
   // Admin-only. Allowed only when the current rate is absent or past
   // validUntil; otherwise refused with #Err and no outcall.
   public shared ({ caller }) func refreshIcpPrice() : async Oracle.PriceResult {

@@ -98,6 +98,18 @@ module {
     { owner = canister; subaccount = null };
   };
 
+  // Fixed 32-byte buyback escrow subaccount (printable ASCII), distinct from
+  // the minting account and the fee collector. Stable account identifier:
+  // never change these bytes.
+  public let BUYBACK_ESCROW_SUBACCOUNT : Blob = "BUYBACK-ESCROW-TTTI-T-0000000001";
+
+  // Buyback escrow: this canister's principal + BUYBACK_ESCROW_SUBACCOUNT.
+  // Transfers to it are accepted; only internal calls (caller = canister)
+  // from the buyback completion and cancellation debit it.
+  public func buybackEscrowAccount(canister : Principal) : Account {
+    { owner = canister; subaccount = ?BUYBACK_ESCROW_SUBACCOUNT };
+  };
+
   // --- SHA-256 (pure Motoko) -------------------------------------------------
 
   let SHA256_K : [Nat32] = [

@@ -23,11 +23,11 @@ export function LandingPage() {
     <MotionConfig reducedMotion="user">
       <div className="relative" data-ocid="landing.page">
         <HeroSection id={HERO_ID} />
+        <HowItWorks />
         <StorySection />
         <Divider />
         <TokenDetailsSection />
         <PresaleSection />
-        <HowItWorks />
         <FaqSection />
         <Divider />
         <ClosingCta id={CLOSING_ID} />

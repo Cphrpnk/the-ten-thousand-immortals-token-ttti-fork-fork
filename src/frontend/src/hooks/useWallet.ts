@@ -1,8 +1,14 @@
 import { loadConfig } from "@caffeineai/core-infrastructure";
 import { Principal } from "@icp-sdk/core/principal";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import type { Account, Backend, PayToken } from "../backend";
+import type {
+  Account,
+  Backend,
+  BtcUsdRate,
+  GetTransactions,
+  PayToken,
+} from "../backend";
 import { createLedgerActor } from "../lib/icpLedger";
 import { PAY_TOKENS } from "../lib/token";
 import {
@@ -110,6 +116,82 @@ export function useWalletBalance(
       return readBalance(canisterId, account, actor);
     },
     enabled: !!actor && !isFetching && !!canisterId && !!account,
+  });
+}
+
+/**
+ * Balances of several tokens for one account, sharing the query keys of
+ * useWalletBalance so each ledger is read once.
+ */
+export function useWalletBalances(
+  canisterIds: Array<Principal>,
+  account: Account | undefined,
+) {
+  const { actor, isFetching } = useActor();
+
+  return useQueries({
+    queries: canisterIds.map((canisterId) => ({
+      queryKey: [
+        "walletBalance",
+        canisterId.toText(),
+        account?.owner.toText(),
+        account?.subaccount,
+      ],
+      queryFn: async (): Promise<bigint> => {
+        if (!actor || !account) throw new Error("Actor not initialized");
+        return readBalance(canisterId, account, actor);
+      },
+      enabled: !!actor && !isFetching && !!account,
+    })),
+  });
+}
+
+/** Stored BTC/USD rate (usdE8 = USD × 1e8); null before the first fetch. */
+export function useBtcUsdRate() {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<BtcUsdRate | null>({
+    queryKey: ["btcUsdRate"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not initialized");
+      return actor.getBtcUsdRate();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+/** Entries per wallet history page. */
+export const WALLET_HISTORY_PAGE_SIZE = 25;
+
+/**
+ * One page of TTTI-T ledger transactions involving `account`, newest first,
+ * from the canister's index-ng interface. `start` is an exclusive upper
+ * bound block index (undefined for the newest page).
+ */
+export function useTttiAccountTransactions(
+  account: Account | undefined,
+  start: bigint | undefined,
+) {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<GetTransactions>({
+    queryKey: [
+      "tttiAccountTransactions",
+      account?.owner.toText(),
+      account?.subaccount,
+      start?.toString() ?? "latest",
+    ],
+    queryFn: async () => {
+      if (!actor || !account) throw new Error("Actor not initialized");
+      const result = await actor.get_account_transactions({
+        account,
+        start,
+        max_results: BigInt(WALLET_HISTORY_PAGE_SIZE),
+      });
+      if (result.__kind__ === "Err") throw new Error(result.Err.message);
+      return result.Ok;
+    },
+    enabled: !!actor && !isFetching && !!account,
   });
 }
 

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, MapPin } from "lucide-react";
-import { usePlug } from "../../hooks/usePlug";
-import { usePlugDeliveryAddress } from "../../hooks/usePlugPurchase";
+import { useConnectedWallet } from "../../hooks/useConnectedWallet";
+import { useWalletDeliveryAddress } from "../../hooks/usePlugPurchase";
 import { useGetDeliveryAddress } from "../../hooks/useQueries";
 import { useDict } from "../../i18n/core";
 import { WALLET_TEXT } from "../../i18n/pages/wallet";
@@ -15,18 +15,19 @@ interface DeliveryAddressReminderProps {
 /**
  * Small notice shown while the caller has no saved delivery address.
  * Hidden while loading, on error and once an address is set.
- * When Plug is the active wallet the lookup is signed by Plug, otherwise by
- * Internet Identity, so it always reflects the connected caller.
+ * When an external wallet is active the lookup is signed by it (Plug only;
+ * OISY/NFID would need their window, so the notice stays hidden for them),
+ * otherwise by Internet Identity, so it always reflects the connected caller.
  */
 export function DeliveryAddressReminder({
   enabled,
 }: DeliveryAddressReminderProps) {
   const t = useDict(WALLET_TEXT);
-  const { principal: plugPrincipal } = usePlug();
-  const isPlug = !!plugPrincipal;
+  const { principal: walletPrincipal } = useConnectedWallet();
+  const isExternal = !!walletPrincipal;
   const iiQuery = useGetDeliveryAddress();
-  const plugQuery = usePlugDeliveryAddress(enabled && isPlug);
-  const { data, isSuccess } = isPlug ? plugQuery : iiQuery;
+  const walletQuery = useWalletDeliveryAddress(enabled && isExternal);
+  const { data, isSuccess } = isExternal ? walletQuery : iiQuery;
 
   if (!enabled || !isSuccess || data !== null) return null;
 

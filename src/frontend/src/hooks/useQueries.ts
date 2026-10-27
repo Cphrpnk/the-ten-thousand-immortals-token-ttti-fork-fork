@@ -20,6 +20,7 @@ import type {
   AllowanceArgs,
   ApproveArgs,
   ApproveResult,
+  Backend,
   BalanceSnapshot,
   BtcDepositInfo,
   BtcDepositResult,
@@ -65,6 +66,7 @@ import {
   payTokenSymbol,
 } from "../lib/token";
 import { useActor } from "./useActor";
+import { useConnectedWallet } from "./useConnectedWallet";
 import { useInternetIdentity } from "./useInternetIdentity";
 
 export {
@@ -938,16 +940,15 @@ export function useBtcDepositInfo() {
 
 /**
  * The caller's persisted purchase and wallet trackings, loaded as soon as a
- * principal exists and polled while any address exists: every 10 to 30 s while
- * a deposit is open, every 60 s otherwise.
+ * principal exists and polled while a stored tracking exists (null until a
+ * check detects a deposit): every 10 to 30 s while a deposit is open, every
+ * 60 s otherwise.
  */
-export function useMyBtcDeposits() {
+export function useMyBtcDeposits(enabled = true) {
   const { actor, isFetching } = useActor();
   const { identity } = useInternetIdentity();
-  const { data: info } = useBtcDepositInfo();
+  const activeMs = useBtcActivePollMs();
   const principalText = identity?.getPrincipal().toText();
-  const suggestedMs = Number(info?.suggestedPollSeconds ?? 30n) * 1000;
-  const activeMs = Math.min(Math.max(suggestedMs, 10_000), 30_000);
 
   return useQuery<MyBtcDeposits>({
     queryKey: ["myBtcDeposits", principalText],
@@ -955,15 +956,74 @@ export function useMyBtcDeposits() {
       if (!actor) throw new Error("Actor not available");
       return actor.getMyBtcDeposits();
     },
-    enabled: !!actor && !isFetching && !!principalText,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data || (!data.purchase && !data.wallet)) return false;
-      const active = [data.purchase, data.wallet].some(
-        (tracking) => tracking !== undefined && !isDepositTerminal(tracking),
-      );
-      return active ? activeMs : 60_000;
+    enabled: enabled && !!actor && !isFetching && !!principalText,
+    refetchInterval: (query) => depositsPollMs(query.state.data, activeMs),
+  });
+}
+
+/** Poll period while a deposit is open: the minter's suggestion, 10 to 30 s. */
+function useBtcActivePollMs(): number {
+  const { data: info } = useBtcDepositInfo();
+  const suggestedMs = Number(info?.suggestedPollSeconds ?? 30n) * 1000;
+  return Math.min(Math.max(suggestedMs, 10_000), 30_000);
+}
+
+/** activeMs while any tracking is open, 60 s otherwise, off without address. */
+function depositsPollMs(
+  data: MyBtcDeposits | undefined,
+  activeMs: number,
+): number | false {
+  if (!data || (!data.purchase && !data.wallet)) return false;
+  const active = [data.purchase, data.wallet].some(
+    (tracking) => tracking !== undefined && !isDepositTerminal(tracking),
+  );
+  return active ? activeMs : 60_000;
+}
+
+/**
+ * Wallet-path tracking of `owner` (an external wallet principal), read through
+ * the plain actor: no signature, no wallet window. Polled like useMyBtcDeposits.
+ */
+export function useBtcWalletDepositsFor(owner: Principal | undefined) {
+  const { actor, isFetching } = useActor();
+  const activeMs = useBtcActivePollMs();
+  const ownerText = owner?.toText();
+
+  return useQuery<DepositTracking | null>({
+    queryKey: ["btcWalletDepositsFor", ownerText],
+    queryFn: async () => {
+      if (!actor || !owner) throw new Error("Actor not available");
+      return actor.getBtcWalletDepositsFor(owner);
     },
+    enabled: !!actor && !isFetching && !!owner,
+    refetchInterval: (query) =>
+      depositsPollMs(
+        query.state.data ? { wallet: query.state.data } : undefined,
+        activeMs,
+      ),
+  });
+}
+
+/**
+ * Purchase-path tracking of the connected external wallet through its signed
+ * backend. Plug signs silently, so it is loaded and polled; OISY/NFID open a
+ * window per call, so their tracking only comes from signed call results.
+ */
+export function useWalletBtcDeposits(enabled: boolean) {
+  const { kind, principal, getBackend } = useConnectedWallet();
+  const activeMs = useBtcActivePollMs();
+  const plug = kind === "plug";
+
+  return useQuery<MyBtcDeposits>({
+    queryKey: ["walletBtcDeposits", kind, principal?.toText()],
+    queryFn: async () => {
+      const backend = await getBackend();
+      return backend.getMyBtcDeposits();
+    },
+    enabled: enabled && !!principal && plug,
+    retry: plug ? 1 : false,
+    refetchInterval: (query) =>
+      plug ? depositsPollMs(query.state.data, activeMs) : false,
   });
 }
 
@@ -1004,6 +1064,44 @@ function invalidateMyBtcDeposits(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ["myBtcDeposits"] });
 }
 
+const BTC_SHOWN_KEY = "ttti.btcAddressShown";
+
+/**
+ * Device-local hint that a BTC address was shown to `principalText` on `path`,
+ * so the panel fetches and shows it again on return (no tracking is stored
+ * before a deposit is detected).
+ */
+export function rememberBtcAddressShown(
+  path: "purchase" | "wallet",
+  principalText: string | undefined,
+): void {
+  if (!principalText) return;
+  try {
+    window.localStorage.setItem(
+      `${BTC_SHOWN_KEY}.${path}.${principalText}`,
+      "1",
+    );
+  } catch {
+    // Storage unavailable: the address is requested again by hand.
+  }
+}
+
+export function btcAddressShownBefore(
+  path: "purchase" | "wallet",
+  principalText: string | undefined,
+): boolean {
+  if (!principalText) return false;
+  try {
+    return (
+      window.localStorage.getItem(
+        `${BTC_SHOWN_KEY}.${path}.${principalText}`,
+      ) === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Bitcoin address for a BTC -> ckBTC -> TTTI-T purchase. */
 export function useGetBtcPurchaseAddress() {
   return useBtcDepositMutation(
@@ -1033,6 +1131,111 @@ export function useCheckBtcWalletDeposit() {
   return useBtcDepositMutation(
     (actor) => actor.checkBtcWalletDeposit(),
     invalidateBtcDeposits,
+  );
+}
+
+/** get/check on the wallet path of `owner` through the plain actor (unsigned). */
+function useBtcWalletForMutation(
+  owner: Principal | undefined,
+  call: (
+    actor: NonNullable<ReturnType<typeof useActor>["actor"]>,
+    owner: Principal,
+  ) => Promise<BtcDepositResult>,
+  invalidate: (queryClient: QueryClient) => void,
+) {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  const ownerText = owner?.toText();
+
+  return useMutation<DepositTracking, Error, void>({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      if (!owner) {
+        throw new BtcDepositFailure(BtcDepositErrorCode.anonymousCaller);
+      }
+      return unwrapBtcDeposit(await call(actor, owner));
+    },
+    onSuccess: (tracking) => {
+      // Only a tracking with deposits is stored; an unsaved one stays local.
+      if (tracking.deposits.length === 0) return;
+      queryClient.setQueryData<DepositTracking | null>(
+        ["btcWalletDepositsFor", ownerText],
+        tracking,
+      );
+    },
+    onSettled: () => {
+      invalidate(queryClient);
+      void queryClient.invalidateQueries({
+        queryKey: ["btcWalletDepositsFor", ownerText],
+      });
+    },
+  });
+}
+
+/** Personal BTC address of an external wallet `owner` (no signature). */
+export function useGetBtcWalletAddressFor(owner: Principal | undefined) {
+  return useBtcWalletForMutation(
+    owner,
+    (actor, target) => actor.getBtcWalletAddressFor(target),
+    () => undefined,
+  );
+}
+
+/** Asks the minter for new deposits on `owner`'s wallet address (no signature). */
+export function useCheckBtcWalletDepositFor(owner: Principal | undefined) {
+  return useBtcWalletForMutation(
+    owner,
+    (actor, target) => actor.checkBtcWalletDepositFor(target),
+    invalidateBtcDeposits,
+  );
+}
+
+/** get/check on the purchase path, signed by the connected external wallet. */
+function useWalletBtcPurchaseMutation(
+  call: (backend: Backend) => Promise<BtcDepositResult>,
+  refreshBalances: boolean,
+) {
+  const { kind, principal, getBackend } = useConnectedWallet();
+  const queryClient = useQueryClient();
+  const principalText = principal?.toText();
+
+  return useMutation<DepositTracking, Error, void>({
+    mutationFn: async () => {
+      const backend = await getBackend();
+      return unwrapBtcDeposit(await call(backend));
+    },
+    onSuccess: (tracking) => {
+      // Only a tracking with deposits is stored; an unsaved one stays local.
+      if (tracking.deposits.length === 0) return;
+      queryClient.setQueryData<MyBtcDeposits>(
+        ["walletBtcDeposits", kind, principalText],
+        (prev) => ({ ...prev, purchase: tracking }),
+      );
+    },
+    onSettled: () => {
+      if (kind === "plug") {
+        void queryClient.invalidateQueries({
+          queryKey: ["walletBtcDeposits", kind, principalText],
+        });
+      }
+      if (refreshBalances) invalidateBtcDeposits(queryClient);
+    },
+  });
+}
+
+/** Purchase BTC address of the connected external wallet (signed call). */
+export function useWalletGetBtcPurchaseAddress() {
+  return useWalletBtcPurchaseMutation(
+    (backend) => backend.getBtcPurchaseAddress(),
+    false,
+  );
+}
+
+/** Checks the external wallet's purchase address (signed call). */
+export function useWalletCheckBtcPurchaseDeposit() {
+  return useWalletBtcPurchaseMutation(
+    (backend) => backend.checkBtcPurchaseDeposit(),
+    true,
   );
 }
 

@@ -2,77 +2,80 @@
 
 ## Direction
 
-Gold & Obsidian, guided-setup edition — extend the existing presale system with a calm, one-question-per-screen onboarding flow (wallet → ICP → buy TTTI-T).
+Gold & Obsidian, unchanged — guided setup flow plus wallet address book (recipient suggestions, contact card, ICRC-2 approvals) built only from existing tokens.
 
 ## Tone
 
-Numismatic restraint: warm black framing, generous space, gold reserved for the recommended path and primary actions; one off-palette violet→magenta accent reserved solely for Plug.
+Numismatic restraint: warm black framing, generous space, gold reserved for primary actions and focus; amber `warning` and red `destructive` used only for approval cautions; violet→magenta only for Plug.
 
 ## Differentiation
 
-A ceremonial three-step setup where each screen asks one question with big answer tiles; the built-in wallet glows gold as the default, Plug alone wears its brand-like gradient frame.
+Calm ledger-like rows: a thin gold start-bar marks the highlighted suggestion; approvals read as factual statements with a required expiry and explicit confirmation.
 
 ## Color Palette
 
 | Token | OKLCH | Role |
 | --- | --- | --- |
-| background / foreground | 0.13 0.008 60 / 0.94 0.025 85 | existing obsidian and warm ivory |
-| card / border | 0.155 0.01 60 / 0.265 0.024 70 | quiet chrome and hairlines |
-| primary / accent | 0.79 0.13 82 / 0.63 0.1 58 | gold (recommended path, CTAs, active step) / bronze |
-| choice-surface / -hover | 0.17 0.012 60 / 0.2 0.018 65 | answer tile fill |
-| step-inactive | 0.3 0.02 65 | upcoming step segments |
-| plug / plug-soft | 0.68 0.19 330 / 0.24 0.06 320 | Plug-only accent; `--gradient-plug` 295→335→10 |
-| success | 0.72 0.14 150 | "Address copied" confirmation |
+| background / foreground | 0.13 0.008 60 / 0.94 0.025 85 | obsidian and warm ivory |
+| card / popover / border | 0.155 0.01 60 / 0.16 0.012 60 / 0.265 0.024 70 | dialogs, hairlines |
+| primary / accent | 0.79 0.13 82 / 0.63 0.1 58 | gold CTAs, focus, highlighted row / bronze |
+| muted / muted-foreground | 0.19 0.012 60 / 0.7 0.035 78 | hover rows, secondary lines |
+| warning | 0.75 0.15 55 | approval caution callouts (existing, unchanged) |
+| destructive | 0.63 0.2 27 | revoke / unlimited / high-risk notes |
+| success | 0.72 0.14 150 | copied, approval confirmed, contact saved |
+| choice-surface, step-inactive, plug-* | unchanged | setup flow only |
 | reading-* | unchanged | white-paper parchment only |
 
 ## Typography
 
-- Display: Fraunces — the single question per screen, `text-3xl md:text-4xl`, balanced.
-- Body: Satoshi — tile labels `text-lg font-medium`, sub-labels `text-sm text-muted-foreground` (one short line max).
-- Mono: JetBrains Mono — step counter `1 / 3`, shortened address, amounts.
-- Script companions (fallbacks only, Latin unchanged): Hangul → Noto Serif KR (display) / Noto Sans KR (body); Gurmukhi → Noto Serif Gurmukhi / Noto Sans Gurmukhi. Loaded via Google Fonts `@import` (unicode-range slices, only needed glyphs fetched), appended after Fraunces/Satoshi in `--font-display` / `--font-body`, then system fallbacks (AppleMyungjo, Batang, Apple SD Gothic Neo, Malgun Gothic, Mukta Mahee, Raavi).
-- `:lang(ko)`: `word-break: keep-all`, no heading tracking. `:lang(pa-Guru)`: body line-height 1.7, no heading tracking. zh-Hans stays on system CJK fallback.
+- Display: Fraunces — dialog titles (Send, Contact, Address book).
+- Body: Satoshi — nicknames `text-sm font-medium`, secondary lines `text-xs text-muted-foreground`.
+- Mono: JetBrains Mono — principals (short `xxxxx…xxx-cai`), allowances, amounts, expiry times.
+- Script companions unchanged (Noto Serif/Sans KR, Noto Serif/Sans Gurmukhi via `@import`); `:lang(ko)` keep-all, `:lang(pa-Guru)` line-height 1.7; zh-Hans on system CJK.
 
 ## Elevation & Depth
 
-Setup flow sits in one dialog (`bg-popover`, `border-gold`, `shadow-elevated`); tiles are flat surfaces; only `.choice-tile-primary` carries the inner gold light and soft gold drop.
+Dialogs `bg-popover border-gold shadow-elevated`; suggestion dropdown `bg-popover border shadow-subtle`; rows and callouts flat — no extra shadows.
 
 ## Structural Zones
 
 | Zone | Background | Border | Notes |
 | --- | --- | --- | --- |
-| Header | existing `bg-background/90 backdrop-blur` | `border-b border-border` | menu gains "Setup wallet" entry to relaunch flow |
-| Setup dialog | `bg-popover` | `border-gold` | emblem (CrestLogo, small) → step bar → question → tiles → Skip |
-| Step bar | transparent | none | 3 `.step-segment` with `data-state` active/done/todo + mono `n / 3` |
-| Purchase page | existing dark surfaces | `.divider-gold` | one ICP field, live TTTI-T preview, one-line acknowledgement, one gold Buy |
-| Footer | existing `bg-card` | `border-t border-border` | unchanged |
+| Header / Footer | existing | existing | unchanged |
+| Send dialog | `bg-popover` | `border-gold` | token → recipient (+ book icon) → amount → fee line → slider → memo (optional) → Send |
+| Suggestion dropdown | `bg-popover` | `border-border` | groups "Contacts", "Recent (ledger)"; max-h-72 scroll |
+| Address book dialog | `bg-popover` | `border-gold` | search input, contact list, "New contact" ghost button |
+| Contact card dialog | `bg-popover` | `border-gold` | identity block → `.divider-gold` → approvals section |
+| Setup dialog / Purchase page | existing | existing | unchanged |
 
 ## Spacing & Rhythm
 
-Dialog `max-w-lg`, `p-8 md:p-10`; 32px between step bar, question and tiles; 12px between tiles; tiles min 88px tall; 44px minimum touch targets.
+Dialogs `max-w-lg p-6 md:p-8`; 24px between form groups; rows min 48px; 12px callout padding (`p-3 md:p-4`); 44px touch targets.
 
 ## Component Patterns
 
-- Answer tile: `.choice-tile` (icon left, label, optional chevron right); whole tile is the button.
-- Recommended: `.choice-tile-primary` + tiny gold "Recommended" pill; always the built-in wallet.
-- Plug: `.choice-tile-plug` frame + `.text-gradient-plug` name; listed first among wallets to create; other wallets as smaller plain `.choice-tile`.
-- Address: `.address-chip` (dashed gold pill, mono, copy icon); `data-copied="true"` turns it success-green with `animate-copied-pop` "Address copied".
-- Buy ICP: single `bg-gradient-primary` button; copies address then opens Onramper.
-- Skip: quiet `text-muted-foreground` text link, bottom-center of every step; Back: ghost icon top-left from step 2.
-- Buy TTTI-T: one identical gold button on every entry surface.
+- Recipient suggestions: `.suggestion-row` (avatar initial in `bg-muted` circle, nickname + mono short principal; ledger rows show short principal + `text-xs` token/last-date); highlighted via `data-highlighted`/`aria-selected` → gold start-bar. Combobox ARIA, arrow keys + Enter.
+- Address book button: ghost icon button (BookUser) inside the recipient field end, `aria-label`.
+- Save recipient: after success, quiet `text-primary` text link "Save to contacts" under the success line.
+- Address book list: rows separated by `.rule-quiet`; nickname, mono short principal, chevron; empty state = one muted line + "New contact".
+- Contact card: inputs Nickname, Principal (mono, copy icon → `.address-chip` style feedback), Default memo; Save gold, Delete as `text-destructive` ghost.
+- Approvals section: one row per token (ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT) — token icon, mono allowance, expiry or "None", `Modify` / `Revoke` text buttons; loading = skeleton rows.
+- Approval form: amount + required expiry (date/time); `.callout-info` numbered 2–3 short steps above it.
+- Warnings: `.callout-warning` (TriangleAlert icon `text-warning`) always visible above the approve button; `.callout-danger` for revoke, large amount vs balance, or spender = own principal.
+- Confirmation: checkbox "I understand" required → outline-gold `Approve` (`border-gold-strong text-primary`); Revoke uses `variant="destructive"` after AlertDialog confirm stating token, spender, amount.
+- Result: success line `text-success` with block index (mono) and explorer link.
 
 ## Motion
 
-- Step change: `animate-step-in` forward, `animate-step-back` backward; honor reduced motion.
-- Hover: `transition-smooth` border/fill shift on tiles; no scale bounce.
-- Feedback: `animate-copied-pop` for copy confirmation only; no shimmer inside the dialog.
+- Dropdown/dialog: `animate-fade-in`; setup steps keep `animate-step-in/back`.
+- Hover: `transition-smooth` on rows and tiles; no scale bounce. Copy: `animate-copied-pop`. Honor reduced motion.
 
 ## Constraints
 
-- Preserve dark default, `.light` variant, crest, flat token icon usage, fonts and existing gold utilities.
-- Violet/magenta appears only on Plug elements — never on CTAs, step bar or text.
-- Minimal English text, no blockchain jargon beyond "wallet" and "ICP"; semantic tokens only; visible focus rings.
+- No token value changed; new utilities only (`.suggestion-row`, `.callout-warning`, `.callout-danger`, `.callout-info`).
+- Gold never used for warnings; amber/red never for CTAs; violet/magenta only on Plug.
+- Text factual and minimal, all 7 languages; principals always mono and copyable; visible focus rings.
 
 ## Signature Detail
 
-A three-segment gold step bar above a single serif question — the flow feels like turning pages of a ledger, with Plug as the lone flash of colour.
+A single gold hairline at the start of the highlighted row — the address book reads like a ledger index.

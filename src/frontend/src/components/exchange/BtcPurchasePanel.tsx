@@ -8,19 +8,30 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { BtcDepositErrorCode } from "../../backend";
 import {
+  isSignerKind,
+  useConnectedWallet,
+} from "../../hooks/useConnectedWallet";
+import { useInternetIdentity } from "../../hooks/useInternetIdentity";
+import {
   BtcDepositFailure,
+  btcAddressShownBefore,
   btcDepositErrorMessage,
   isDepositTerminal,
+  rememberBtcAddressShown,
   useBtcDepositInfo,
   useCheckBtcPurchaseDeposit,
   useDepositView,
   useGetBtcPurchaseAddress,
   useMyBtcDeposits,
   useMyConversions,
+  useWalletBtcDeposits,
+  useWalletCheckBtcPurchaseDeposit,
+  useWalletGetBtcPurchaseAddress,
 } from "../../hooks/useQueries";
 import { useDict, useLanguage } from "../../i18n/core/dict";
 import type { Lang } from "../../i18n/core/lang";
 import { BUY_BTC_TEXT } from "../../i18n/pages/buy";
+import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import {
   BTC_PAY_OPTION,
   btcDepositText,
@@ -75,19 +86,38 @@ export function BtcPurchasePanel({
   closedLabel,
 }: BtcPurchasePanelProps) {
   const t = useDict(BUY_BTC_TEXT);
+  const tw = useDict(WALLET_TEXT);
   const { lang } = useLanguage();
+  const connected = useConnectedWallet();
+  // External wallets (Plug, OISY, NFID) sign the purchase-path calls.
+  const external = connected.principal !== null;
+  const signer = external && isSignerKind(connected.kind);
+  const { identity } = useInternetIdentity();
+  const principalText = external
+    ? connected.principal?.toText()
+    : identity?.getPrincipal().toText();
   const { data: info } = useBtcDepositInfo();
-  const deposits = useMyBtcDeposits();
-  const getAddress = useGetBtcPurchaseAddress();
-  const { mutate: checkDeposit, isPending: checking } =
-    useCheckBtcPurchaseDeposit();
+  const iiDeposits = useMyBtcDeposits(!external);
+  const walletDeposits = useWalletBtcDeposits(external);
+  const deposits = external ? walletDeposits : iiDeposits;
+  const iiGetAddress = useGetBtcPurchaseAddress();
+  const walletGetAddress = useWalletGetBtcPurchaseAddress();
+  const getAddress = external ? walletGetAddress : iiGetAddress;
+  const iiCheck = useCheckBtcPurchaseDeposit();
+  const walletCheck = useWalletCheckBtcPurchaseDeposit();
+  const {
+    mutate: checkDeposit,
+    isPending: checking,
+    data: checked,
+  } = external ? walletCheck : iiCheck;
   // The raw failure is kept so its text follows a language switch.
   const [failure, setError] = useState<{ error: unknown } | null>(null);
   const error = failure ? failureMessage(failure.error, lang) : null;
   const [accepting, setAccepting] = useState(false);
 
-  // The persisted tracking wins so the panel resumes after refresh or sign-in.
-  const tracking = deposits.data?.purchase ?? getAddress.data;
+  // The stored tracking (once a deposit is detected) wins; before that the
+  // unsaved tracking of the latest check or address call is shown.
+  const tracking = deposits.data?.purchase ?? checked ?? getAddress.data;
   const view = useDepositView(tracking);
   const hasTracking = !!tracking;
   const settled = !!tracking && isDepositTerminal(tracking);
@@ -101,8 +131,9 @@ export function BtcPurchasePanel({
   checkingRef.current = checking;
 
   // Automatic checks while the panel is open, also for a new transfer.
+  // OISY/NFID open a window per signed call: manual checks only.
   useEffect(() => {
-    if (!hasTracking) return;
+    if (!hasTracking || signer) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible" || checkingRef.current) return;
       checkDeposit(undefined, {
@@ -116,17 +147,46 @@ export function BtcPurchasePanel({
       });
     }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [hasTracking, intervalMs, checkDeposit]);
+  }, [hasTracking, signer, intervalMs, checkDeposit]);
+
+  // Back on the page before any deposit: fetch the same address again, so it
+  // shows and the automatic checks resume. OISY/NFID: by hand (signed call).
+  const { mutate: fetchAddress, isPending: fetchingAddress } = getAddress;
+  const autoFetchedRef = useRef(false);
+  useEffect(() => {
+    if (autoFetchedRef.current || signer || hasTracking || fetchingAddress) {
+      return;
+    }
+    if (deposits.isLoading || !ackKnown || needsAck) return;
+    if (!btcAddressShownBefore("purchase", principalText)) return;
+    autoFetchedRef.current = true;
+    fetchAddress(undefined, { onError: (err) => setError({ error: err }) });
+  }, [
+    signer,
+    hasTracking,
+    fetchingAddress,
+    deposits.isLoading,
+    ackKnown,
+    needsAck,
+    principalText,
+    fetchAddress,
+  ]);
+
+  // OISY/NFID: the wallet window opens from the click, before any await.
+  const openSession = () => (external ? connected.beginSession() : () => {});
 
   const handleCheck = () => {
     setError(null);
+    const release = openSession();
     checkDeposit(undefined, {
       onError: (err) => setError({ error: err }),
+      onSettled: () => release(),
     });
   };
 
   const handleGetAddress = async () => {
     setError(null);
+    const release = openSession();
     try {
       if (needsAck) {
         setAccepting(true);
@@ -134,10 +194,12 @@ export function BtcPurchasePanel({
         setAccepting(false);
       }
       await getAddress.mutateAsync();
+      rememberBtcAddressShown("purchase", principalText);
     } catch (err) {
       setError({ error: err });
     } finally {
       setAccepting(false);
+      release();
     }
   };
 
@@ -154,7 +216,9 @@ export function BtcPurchasePanel({
   const conversionId = shown?.conversionId;
   const tttiDelivered = shown?.tttiDelivered ?? 0n;
   const refundedSats = shown?.refundedSats ?? 0n;
-  const delivered = stage === "delivered" && conversionId !== undefined;
+  // External wallets: the conversion list is not read (signed call).
+  const delivered =
+    !external && stage === "delivered" && conversionId !== undefined;
   const conversion = delivered
     ? conversions.data?.find((c) => c.id === conversionId)
     : undefined;
@@ -176,6 +240,16 @@ export function BtcPurchasePanel({
       <AlertDescription>{error}</AlertDescription>
     </Alert>
   ) : null;
+
+  const signatureNote =
+    signer && connected.name ? (
+      <p
+        className="px-1 text-xs text-muted-foreground"
+        data-ocid="btc.purchase.signature_note"
+      >
+        {tw.btcSignatureEachCheck(connected.name)}
+      </p>
+    ) : null;
 
   if (deposits.isLoading) {
     return (
@@ -228,6 +302,7 @@ export function BtcPurchasePanel({
             {t.tickAll}
           </p>
         )}
+        {signatureNote}
       </div>
     );
   }
@@ -246,6 +321,12 @@ export function BtcPurchasePanel({
         kind={tracking.kind}
       />
       <p className="px-1 text-xs text-muted-foreground">{t.sentToDelivery}</p>
+      <p
+        className="px-1 text-xs text-muted-foreground"
+        data-ocid="btc.purchase.keep_page_open"
+      >
+        {t.keepPageOpen}
+      </p>
 
       {stage === "delivered" && (
         <Alert
@@ -285,6 +366,7 @@ export function BtcPurchasePanel({
         ocidPrefix="btc.purchase"
         tttiMintBlock={tttiMintBlock}
       />
+      {signatureNote}
     </div>
   );
 }

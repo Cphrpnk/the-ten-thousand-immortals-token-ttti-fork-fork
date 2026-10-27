@@ -6,11 +6,13 @@ import SaleLib "../lib/presale";
 
 // Native BTC deposits via the ckBTC minter: purchase flow (BTC -> ckBTC ->
 // TTTI-T) and wallet-only flow (BTC -> ckBTC in the caller's wallet), with
-// per-caller progress tracking. Every endpoint acts only on the caller.
+// per-caller progress tracking. Existing endpoints act only on the caller; the
+// *For endpoints serve the wallet path for a given owner principal.
 mixin (
   btcDeposits : BtcDepositLib.BtcDepositStore,
   purchaseContext : SaleLib.PurchaseContext,
   purchasesInFlight : Set.Set<Principal>,
+  canisterPrincipal : Principal,
 ) {
   public shared ({ caller }) func getBtcPurchaseAddress() : async Btc.BtcDepositResult {
     await* BtcDepositLib.purchaseAddress(btcDeposits, purchaseContext, caller);
@@ -45,5 +47,32 @@ mixin (
 
   public query func getBtcDepositInfo() : async Btc.BtcDepositInfo {
     BtcDepositLib.depositInfo(btcDeposits);
+  };
+
+  // Wallet path only (BTC -> ckBTC minted to `owner`'s own account, subaccount
+  // null), for a principal known to the frontend (Plug, OISY, NFID) without a
+  // signature. Rejects the anonymous principal and this canister as owner.
+  func btcWalletOwnerAllowed(owner : Principal) : Bool {
+    not owner.isAnonymous() and owner != canisterPrincipal;
+  };
+
+  func btcWalletOwnerRefused() : Btc.BtcDepositResult {
+    #Err({ code = #anonymousCaller; message = "The anonymous principal and this canister cannot own a Bitcoin wallet deposit address" });
+  };
+
+  public shared func getBtcWalletAddressFor(owner : Principal) : async Btc.BtcDepositResult {
+    if (not btcWalletOwnerAllowed(owner)) return btcWalletOwnerRefused();
+    await* BtcDepositLib.walletAddress(btcDeposits, owner);
+  };
+
+  public shared func checkBtcWalletDepositFor(owner : Principal) : async Btc.BtcDepositResult {
+    if (not btcWalletOwnerAllowed(owner)) return btcWalletOwnerRefused();
+    await* BtcDepositLib.checkWallet(btcDeposits, owner);
+  };
+
+  // Only `owner`'s wallet-path tracking; never purchase-path data.
+  public query func getBtcWalletDepositsFor(owner : Principal) : async ?Btc.DepositTracking {
+    if (not btcWalletOwnerAllowed(owner)) return null;
+    btcDeposits.wallets.get(owner);
   };
 };

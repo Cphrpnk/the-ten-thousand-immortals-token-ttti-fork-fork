@@ -9,7 +9,7 @@ import { defineDict } from "../core/dict";
 /** pages/ExchangePage.tsx */
 export const BUY_PAGE_TEXT = defineDict({
   en: {
-    title: (symbol: string) => `Buy ${symbol}`,
+    title: (symbol: string) => `Mint ${symbol}`,
     noExtraTaken:
       "No amount of the paid token beyond the cost of what is delivered is taken.",
     shownAs: (symbol: string) => `Shown as ${symbol} in wallets.`,
@@ -19,16 +19,17 @@ export const BUY_PAGE_TEXT = defineDict({
     ackNoRights:
       "I understand that TTTI has no use, no intrinsic value and gives me no rights of any kind.",
     ackPriceZero:
-      "I understand that its price can fall to zero and that nobody will support it or buy it back.",
+      "I understand that its price can fall to zero and that nobody is obligated to support it or buy back my TTTI-T.",
     ackIcpCreator:
       "The ICP, ckBTC, ckUSDC or ckUSDT I pay, 1% fee included, goes to the creator, except the ICP fee share that funds the canister's cycles.",
     ackNoProfit:
       "I am not relying on any promise of profit, from the creator or from anyone.",
     ackAffordLoss: "I am spending only what I can afford to lose entirely.",
-    ackLegend: "Required once, before the first purchase",
+    ackLegend:
+      "Required before your first purchase and again whenever these terms change.",
     ackWhitePaperLink: 'Open the "Read this first" section',
     ackStatusUnavailable: "Acknowledgement status unavailable",
-    ackTickAll: "Tick all six statements to enable Buy.",
+    ackTickAll: "Tick all six statements to enable Mint.",
     retry: "Retry",
     // Validation
     invalidAmountTitle: "Invalid amount",
@@ -56,20 +57,26 @@ export const BUY_PAGE_TEXT = defineDict({
     purchaseNotCompleted: "Purchase not completed",
     purchaseNotSubmitted:
       "The purchase could not be submitted. Please try again.",
-    // Buy button states
+    // Mint button states
     recordingAcks: "Recording acknowledgements…",
     approving: (symbol: string) => `Approving ${symbol}…`,
-    buying: "Buying…",
+    buying: "Minting…",
     saleComplete: "Sale complete",
     salesPaused: "Sales are paused",
     tokenUnavailable: (symbol: string) => `${symbol} unavailable`,
-    buyWith: (symbol: string) => `Buy with ${symbol}`,
+    buyWith: (symbol: string) => `Mint with ${symbol}`,
     // Success
     received: (amount: string, display: string) =>
       `You received ${amount} ${display}`,
     // Form card
-    buyTtti: "Buy TTTI-T",
-    buyHeading: "Buy",
+    buyTtti: "Mint TTTI-T",
+    buyHeading: "Mint",
+    // Buy-to-mint explanation (also rendered in the white paper)
+    mintInfoToggle: "What is buy-to-mint?",
+    mintInfoBody1:
+      "A TTTI-T is created only when someone pays in ICP, ckBTC, ckUSDC or ckUSDT at the displayed rate. There is no pre-made reserve. No one, admin included, can create TTTI-T any other way.",
+    mintInfoBody2:
+      "A bitcoin comes into existence only when a miner spends a real resource: energy and hardware. A TTTI-T comes into existence only when someone brings a real token. On both sides, that is the skin in the game.",
     walletPlug: "Plug",
     walletBuiltIn: "Built-in wallet",
     balanceLabel: (symbol: string) => `${symbol} balance`,
@@ -86,7 +93,7 @@ export const BUY_PAGE_TEXT = defineDict({
       `Purchases in ${symbol} are unavailable until a rate is set.`,
   },
   fr: {
-    title: (symbol: string) => `Acheter du ${symbol}`,
+    title: (symbol: string) => `Frapper du ${symbol}`,
     noExtraTaken:
       "Aucun montant du jeton payé n'est prélevé au-delà du coût de ce qui est livré.",
     shownAs: (symbol: string) => `Affiché comme ${symbol} dans les wallets.`,
@@ -94,17 +101,18 @@ export const BUY_PAGE_TEXT = defineDict({
     ackNoRights:
       "Je comprends que TTTI n'a aucun usage, aucune valeur intrinsèque et ne me confère aucun droit d'aucune sorte.",
     ackPriceZero:
-      "Je comprends que son prix peut tomber à zéro et que personne ne le soutiendra ni ne le rachètera.",
+      "Je comprends que son prix peut tomber à zéro et que personne n'est tenu de le soutenir ni de racheter mes TTTI-T.",
     ackIcpCreator:
       "L'ICP, le ckBTC, le ckUSDC ou le ckUSDT que je paie, frais de 1% inclus, va au créateur, à l'exception de la part des frais en ICP qui finance les cycles du canister.",
     ackNoProfit:
       "Je ne me fie à aucune promesse de profit, ni du créateur ni de quiconque.",
     ackAffordLoss:
       "Je ne dépense que ce que je peux me permettre de perdre entièrement.",
-    ackLegend: "Requis une seule fois, avant le premier achat",
+    ackLegend:
+      "Requis avant votre premier achat, puis de nouveau chaque fois que ces conditions changent.",
     ackWhitePaperLink: "Ouvrir la section « À lire en premier »",
     ackStatusUnavailable: "Statut des confirmations d'achat indisponible",
-    ackTickAll: "Cochez les six déclarations pour activer l'achat.",
+    ackTickAll: "Cochez les six déclarations pour activer la frappe.",
     retry: "Réessayer",
     invalidAmountTitle: "Montant invalide",
     invalidAmountMessage: (symbol: string, decimals: number) =>
@@ -131,15 +139,20 @@ export const BUY_PAGE_TEXT = defineDict({
     purchaseNotSubmitted: "L'achat n'a pas pu être soumis. Veuillez réessayer.",
     recordingAcks: "Enregistrement des confirmations d'achat…",
     approving: (symbol: string) => `Approbation ${symbol} en cours…`,
-    buying: "Achat en cours…",
+    buying: "Frappe en cours…",
     saleComplete: "Vente terminée",
     salesPaused: "Les ventes sont suspendues",
     tokenUnavailable: (symbol: string) => `${symbol} indisponible`,
-    buyWith: (symbol: string) => `Acheter avec ${symbol}`,
+    buyWith: (symbol: string) => `Frapper avec ${symbol}`,
     received: (amount: string, display: string) =>
       `Vous avez reçu ${amount} ${display}`,
-    buyTtti: "Acheter du TTTI-T",
-    buyHeading: "Acheter",
+    buyTtti: "Frapper du TTTI-T",
+    buyHeading: "Frapper",
+    mintInfoToggle: "Qu'est-ce que le buy-to-mint ?",
+    mintInfoBody1:
+      "Un TTTI-T n'est créé que lorsque quelqu'un paie en ICP, ckBTC, ckUSDC ou ckUSDT au taux affiché. Il n'existe aucune réserve préétablie. Personne, administrateur compris, ne peut créer de TTTI-T d'une autre manière.",
+    mintInfoBody2:
+      "Un bitcoin ne vient au monde que lorsqu'un mineur dépense une ressource réelle : de l'énergie et du matériel. Un TTTI-T ne vient au monde que lorsque quelqu'un apporte un jeton réel. Des deux côtés, c'est l'engagement réel (skin in the game).",
     walletPlug: "Plug",
     walletBuiltIn: "Wallet intégré",
     balanceLabel: (symbol: string) => `Solde ${symbol}`,
@@ -156,7 +169,7 @@ export const BUY_PAGE_TEXT = defineDict({
       `Les achats en ${symbol} sont indisponibles tant qu'aucun taux n'est fixé.`,
   },
   es: {
-    title: (symbol: string) => `Comprar ${symbol}`,
+    title: (symbol: string) => `Acuñar ${symbol}`,
     noExtraTaken:
       "No se toma ninguna cantidad del token pagado más allá del coste de lo que se entrega.",
     shownAs: (symbol: string) => `Se muestra como ${symbol} en los wallets.`,
@@ -164,17 +177,18 @@ export const BUY_PAGE_TEXT = defineDict({
     ackNoRights:
       "Entiendo que TTTI no tiene ningún uso, ningún valor intrínseco y no me otorga ningún derecho de ningún tipo.",
     ackPriceZero:
-      "Entiendo que su precio puede caer a cero y que nadie lo respaldará ni lo recomprará.",
+      "Entiendo que su precio puede caer a cero y que nadie está obligado a respaldarlo ni a recomprar mis TTTI-T.",
     ackIcpCreator:
       "El ICP, ckBTC, ckUSDC o ckUSDT que pago, comisión del 1% incluida, va al creador, excepto la parte de la comisión en ICP que financia los cycles del canister.",
     ackNoProfit:
       "No me baso en ninguna promesa de beneficio, ni del creador ni de nadie.",
     ackAffordLoss: "Solo gasto lo que puedo permitirme perder por completo.",
-    ackLegend: "Se requiere una sola vez, antes de la primera compra",
+    ackLegend:
+      "Se requiere antes de su primera compra y de nuevo cada vez que cambien estas condiciones.",
     ackWhitePaperLink: "Abrir la sección «Lea esto primero»",
     ackStatusUnavailable:
       "Estado de las confirmaciones de compra no disponible",
-    ackTickAll: "Marque las seis declaraciones para habilitar la compra.",
+    ackTickAll: "Marque las seis declaraciones para habilitar la acuñación.",
     retry: "Reintentar",
     invalidAmountTitle: "Importe no válido",
     invalidAmountMessage: (symbol: string, decimals: number) =>
@@ -201,15 +215,20 @@ export const BUY_PAGE_TEXT = defineDict({
     purchaseNotSubmitted: "No se pudo enviar la compra. Inténtelo de nuevo.",
     recordingAcks: "Registrando las confirmaciones de compra…",
     approving: (symbol: string) => `Aprobando ${symbol}…`,
-    buying: "Comprando…",
+    buying: "Acuñando…",
     saleComplete: "Venta finalizada",
     salesPaused: "Las ventas están en pausa",
     tokenUnavailable: (symbol: string) => `${symbol} no disponible`,
-    buyWith: (symbol: string) => `Comprar con ${symbol}`,
+    buyWith: (symbol: string) => `Acuñar con ${symbol}`,
     received: (amount: string, display: string) =>
       `Ha recibido ${amount} ${display}`,
-    buyTtti: "Comprar TTTI-T",
-    buyHeading: "Comprar",
+    buyTtti: "Acuñar TTTI-T",
+    buyHeading: "Acuñar",
+    mintInfoToggle: "¿Qué es buy-to-mint?",
+    mintInfoBody1:
+      "Un TTTI-T solo se crea cuando alguien paga en ICP, ckBTC, ckUSDC o ckUSDT al tipo mostrado. No existe ninguna reserva creada de antemano. Nadie, ni siquiera el administrador, puede crear TTTI-T de ninguna otra forma.",
+    mintInfoBody2:
+      "Un bitcoin solo llega a existir cuando un minero gasta un recurso real: energía y hardware. Un TTTI-T solo llega a existir cuando alguien aporta un token real. En ambos lados, ese es el compromiso real (skin in the game).",
     walletPlug: "Plug",
     walletBuiltIn: "Wallet integrado",
     balanceLabel: (symbol: string) => `Saldo de ${symbol}`,
@@ -226,21 +245,22 @@ export const BUY_PAGE_TEXT = defineDict({
       `Las compras en ${symbol} no están disponibles hasta que se fije un tipo.`,
   },
   "zh-Hans": {
-    title: (symbol: string) => `购买 ${symbol}`,
+    title: (symbol: string) => `铸造 ${symbol}`,
     noExtraTaken: "除所交付内容的成本外，不会收取任何额外的支付代币。",
     shownAs: (symbol: string) => `在钱包中显示为 ${symbol}。`,
     ackReadFirst: "我已阅读白皮书中的“请先阅读”部分。",
     ackNoRights:
       "我理解 TTTI 没有任何用途，没有内在价值，也不赋予我任何形式的权利。",
-    ackPriceZero: "我理解其价格可能跌至零，且没有人会为其提供支撑或回购。",
+    ackPriceZero:
+      "我理解其价格可能跌至零，且没有人有义务为其提供支撑或回购我的 TTTI-T。",
     ackIcpCreator:
       "我支付的 ICP、ckBTC、ckUSDC 或 ckUSDT（含 1% 手续费）归创建者所有，但用于支付 canister cycles 的 ICP 手续费部分除外。",
     ackNoProfit: "我不依赖任何来自创建者或任何其他人的盈利承诺。",
     ackAffordLoss: "我只花费我能够承受全部损失的金额。",
-    ackLegend: "仅需在首次购买前确认一次",
+    ackLegend: "首次购买前需确认，此后每当这些条款变更时需再次确认。",
     ackWhitePaperLink: "打开“请先阅读”部分",
     ackStatusUnavailable: "无法获取购买确认状态",
-    ackTickAll: "勾选全部六项声明以启用购买。",
+    ackTickAll: "勾选全部六项声明以启用铸造。",
     retry: "重试",
     invalidAmountTitle: "金额无效",
     invalidAmountMessage: (symbol: string, decimals: number) =>
@@ -267,15 +287,20 @@ export const BUY_PAGE_TEXT = defineDict({
     purchaseNotSubmitted: "无法提交购买。请重试。",
     recordingAcks: "正在记录购买确认…",
     approving: (symbol: string) => `正在授权 ${symbol}…`,
-    buying: "正在购买…",
+    buying: "正在铸造…",
     saleComplete: "销售已结束",
     salesPaused: "销售已暂停",
     tokenUnavailable: (symbol: string) => `${symbol} 不可用`,
-    buyWith: (symbol: string) => `使用 ${symbol} 购买`,
+    buyWith: (symbol: string) => `使用 ${symbol} 铸造`,
     received: (amount: string, display: string) =>
       `您已收到 ${amount} ${display}`,
-    buyTtti: "购买 TTTI-T",
-    buyHeading: "购买",
+    buyTtti: "铸造 TTTI-T",
+    buyHeading: "铸造",
+    mintInfoToggle: "什么是 buy-to-mint（买即铸造）？",
+    mintInfoBody1:
+      "只有当有人按显示的汇率以 ICP、ckBTC、ckUSDC 或 ckUSDT 付款时，才会创建 TTTI-T。不存在预先创建的储备。任何人，包括管理员，都无法以其他方式创建 TTTI-T。",
+    mintInfoBody2:
+      "只有当矿工投入真实资源（能源和硬件）时，比特币才会产生。只有当有人带来真实的代币时，TTTI-T 才会产生。双方都以此承担真实的投入（skin in the game）。",
     walletPlug: "Plug",
     walletBuiltIn: "内置钱包",
     balanceLabel: (symbol: string) => `${symbol} 余额`,
@@ -289,7 +314,7 @@ export const BUY_PAGE_TEXT = defineDict({
     noRateBody: (symbol: string) => `在设定汇率之前，无法使用 ${symbol} 购买。`,
   },
   "pt-BR": {
-    title: (symbol: string) => `Comprar ${symbol}`,
+    title: (symbol: string) => `Cunhar ${symbol}`,
     noExtraTaken:
       "Nenhum valor do token pago é cobrado além do custo do que é entregue.",
     shownAs: (symbol: string) => `Exibido como ${symbol} nas carteiras.`,
@@ -297,17 +322,18 @@ export const BUY_PAGE_TEXT = defineDict({
     ackNoRights:
       "Entendo que o TTTI não tem nenhum uso, nenhum valor intrínseco e não me confere nenhum direito de qualquer tipo.",
     ackPriceZero:
-      "Entendo que seu preço pode cair a zero e que ninguém o sustentará nem o recomprará.",
+      "Entendo que seu preço pode cair a zero e que ninguém é obrigado a sustentá-lo nem a recomprar meus TTTI-T.",
     ackIcpCreator:
       "O ICP, ckBTC, ckUSDC ou ckUSDT que eu pago, taxa de 1% incluída, vai para o criador, exceto a parte da taxa em ICP que financia os cycles do canister.",
     ackNoProfit:
       "Não estou me baseando em nenhuma promessa de lucro, nem do criador nem de qualquer outra pessoa.",
     ackAffordLoss:
       "Estou gastando apenas o que posso me permitir perder por completo.",
-    ackLegend: "Exigido uma única vez, antes da primeira compra",
+    ackLegend:
+      "Exigido antes da sua primeira compra e novamente sempre que estes termos mudarem.",
     ackWhitePaperLink: "Abrir a seção “Leia isto primeiro”",
     ackStatusUnavailable: "Status das confirmações de compra indisponível",
-    ackTickAll: "Marque as seis declarações para habilitar a compra.",
+    ackTickAll: "Marque as seis declarações para habilitar a cunhagem.",
     retry: "Tentar novamente",
     invalidAmountTitle: "Valor inválido",
     invalidAmountMessage: (symbol: string, decimals: number) =>
@@ -334,15 +360,20 @@ export const BUY_PAGE_TEXT = defineDict({
     purchaseNotSubmitted: "Não foi possível enviar a compra. Tente novamente.",
     recordingAcks: "Registrando as confirmações de compra…",
     approving: (symbol: string) => `Aprovando ${symbol}…`,
-    buying: "Comprando…",
+    buying: "Cunhando…",
     saleComplete: "Venda encerrada",
     salesPaused: "As vendas estão pausadas",
     tokenUnavailable: (symbol: string) => `${symbol} indisponível`,
-    buyWith: (symbol: string) => `Comprar com ${symbol}`,
+    buyWith: (symbol: string) => `Cunhar com ${symbol}`,
     received: (amount: string, display: string) =>
       `Você recebeu ${amount} ${display}`,
-    buyTtti: "Comprar TTTI-T",
-    buyHeading: "Comprar",
+    buyTtti: "Cunhar TTTI-T",
+    buyHeading: "Cunhar",
+    mintInfoToggle: "O que é buy-to-mint?",
+    mintInfoBody1:
+      "Um TTTI-T só é criado quando alguém paga em ICP, ckBTC, ckUSDC ou ckUSDT pela cotação exibida. Não existe nenhuma reserva criada previamente. Ninguém, nem mesmo o administrador, pode criar TTTI-T de outra forma.",
+    mintInfoBody2:
+      "Um bitcoin só passa a existir quando um minerador gasta um recurso real: energia e hardware. Um TTTI-T só passa a existir quando alguém traz um token real. Dos dois lados, esse é o compromisso real (skin in the game).",
     walletPlug: "Plug",
     walletBuiltIn: "Carteira integrada",
     balanceLabel: (symbol: string) => `Saldo de ${symbol}`,
@@ -359,7 +390,7 @@ export const BUY_PAGE_TEXT = defineDict({
       `As compras em ${symbol} ficam indisponíveis até que uma cotação seja definida.`,
   },
   ko: {
-    title: (symbol: string) => `${symbol} 구매`,
+    title: (symbol: string) => `${symbol} 발행`,
     noExtraTaken:
       "전달되는 항목의 비용을 초과하는 지불 토큰은 일절 가져가지 않습니다.",
     shownAs: (symbol: string) => `지갑에서는 ${symbol}(으)로 표시됩니다.`,
@@ -367,16 +398,17 @@ export const BUY_PAGE_TEXT = defineDict({
     ackNoRights:
       "TTTI는 아무런 용도도, 내재 가치도 없으며 저에게 어떠한 종류의 권리도 부여하지 않는다는 것을 이해합니다.",
     ackPriceZero:
-      "그 가격이 0까지 떨어질 수 있으며, 누구도 이를 지지하거나 되사지 않는다는 것을 이해합니다.",
+      "그 가격이 0까지 떨어질 수 있으며, 누구도 이를 지지하거나 제 TTTI-T를 되살 의무가 없다는 것을 이해합니다.",
     ackIcpCreator:
       "제가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT(1% 수수료 포함)는 제작자에게 귀속됩니다. 단, canister의 cycles 비용을 충당하는 ICP 수수료 부분은 제외됩니다.",
     ackNoProfit:
       "저는 제작자로부터든 다른 누구로부터든 어떠한 수익 약속에도 의존하지 않습니다.",
     ackAffordLoss: "저는 전부 잃어도 감당할 수 있는 금액만 사용합니다.",
-    ackLegend: "첫 구매 전에 한 번만 필요합니다",
+    ackLegend:
+      "첫 구매 전에 필요하며, 이 약관이 변경될 때마다 다시 필요합니다.",
     ackWhitePaperLink: "‘먼저 읽어 주세요’ 섹션 열기",
     ackStatusUnavailable: "구매 확인 상태를 확인할 수 없습니다",
-    ackTickAll: "구매를 활성화하려면 여섯 가지 진술을 모두 체크하세요.",
+    ackTickAll: "발행을 활성화하려면 여섯 가지 진술을 모두 체크하세요.",
     retry: "다시 시도",
     invalidAmountTitle: "잘못된 금액",
     invalidAmountMessage: (symbol: string, decimals: number) =>
@@ -403,15 +435,20 @@ export const BUY_PAGE_TEXT = defineDict({
     purchaseNotSubmitted: "구매를 제출할 수 없습니다. 다시 시도해 주세요.",
     recordingAcks: "구매 확인을 기록하는 중…",
     approving: (symbol: string) => `${symbol} 승인 중…`,
-    buying: "구매 중…",
+    buying: "발행 중…",
     saleComplete: "판매 종료",
     salesPaused: "판매가 일시 중지되었습니다",
     tokenUnavailable: (symbol: string) => `${symbol} 사용 불가`,
-    buyWith: (symbol: string) => `${symbol}(으)로 구매`,
+    buyWith: (symbol: string) => `${symbol}(으)로 발행`,
     received: (amount: string, display: string) =>
       `${amount} ${display}을(를) 받았습니다`,
-    buyTtti: "TTTI-T 구매",
-    buyHeading: "구매",
+    buyTtti: "TTTI-T 발행",
+    buyHeading: "발행",
+    mintInfoToggle: "buy-to-mint란 무엇인가요?",
+    mintInfoBody1:
+      "TTTI-T는 누군가가 표시된 환율로 ICP, ckBTC, ckUSDC 또는 ckUSDT를 지불할 때만 생성됩니다. 미리 만들어 둔 보유분은 없습니다. 관리자를 포함해 누구도 다른 방법으로 TTTI-T를 생성할 수 없습니다.",
+    mintInfoBody2:
+      "비트코인은 채굴자가 에너지와 하드웨어라는 실제 자원을 쓸 때만 생겨납니다. TTTI-T는 누군가가 실제 토큰을 가져올 때만 생겨납니다. 양쪽 모두 이것이 실제로 감수하는 몫(skin in the game)입니다.",
     walletPlug: "Plug",
     walletBuiltIn: "내장 지갑",
     balanceLabel: (symbol: string) => `${symbol} 잔액`,
@@ -428,7 +465,7 @@ export const BUY_PAGE_TEXT = defineDict({
       `환율이 설정될 때까지 ${symbol}(으)로 구매할 수 없습니다.`,
   },
   "pa-Guru": {
-    title: (symbol: string) => `${symbol} ਖਰੀਦੋ`,
+    title: (symbol: string) => `${symbol} ਮਿੰਟ ਕਰੋ`,
     noExtraTaken:
       "ਜੋ ਦਿੱਤਾ ਜਾਂਦਾ ਹੈ ਉਸਦੀ ਲਾਗਤ ਤੋਂ ਵੱਧ ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਦੀ ਕੋਈ ਵੀ ਰਕਮ ਨਹੀਂ ਲਈ ਜਾਂਦੀ।",
     shownAs: (symbol: string) => `ਵਾਲਿਟਾਂ ਵਿੱਚ ${symbol} ਵਜੋਂ ਦਿਖਾਇਆ ਜਾਂਦਾ ਹੈ।`,
@@ -436,16 +473,17 @@ export const BUY_PAGE_TEXT = defineDict({
     ackNoRights:
       "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ TTTI ਦੀ ਕੋਈ ਵਰਤੋਂ ਨਹੀਂ, ਕੋਈ ਅੰਦਰੂਨੀ ਮੁੱਲ ਨਹੀਂ ਅਤੇ ਇਹ ਮੈਨੂੰ ਕਿਸੇ ਵੀ ਕਿਸਮ ਦਾ ਕੋਈ ਅਧਿਕਾਰ ਨਹੀਂ ਦਿੰਦਾ।",
     ackPriceZero:
-      "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ ਇਸਦੀ ਕੀਮਤ ਸਿਫ਼ਰ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ ਅਤੇ ਕੋਈ ਵੀ ਇਸਨੂੰ ਸਹਾਰਾ ਨਹੀਂ ਦੇਵੇਗਾ ਜਾਂ ਵਾਪਸ ਨਹੀਂ ਖਰੀਦੇਗਾ।",
+      "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ ਇਸਦੀ ਕੀਮਤ ਸਿਫ਼ਰ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ ਅਤੇ ਕੋਈ ਵੀ ਇਸਨੂੰ ਸਹਾਰਾ ਦੇਣ ਜਾਂ ਮੇਰੇ TTTI-T ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਪਾਬੰਦ ਨਹੀਂ ਹੈ।",
     ackIcpCreator:
       "ਮੇਰੇ ਵੱਲੋਂ ਭੁਗਤਾਨ ਕੀਤਾ ਗਿਆ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT, 1% ਫੀਸ ਸਮੇਤ, ਨਿਰਮਾਤਾ ਨੂੰ ਜਾਂਦਾ ਹੈ, ਸਿਵਾਏ ICP ਫੀਸ ਦੇ ਉਸ ਹਿੱਸੇ ਦੇ ਜੋ canister ਦੇ cycles ਦਾ ਖਰਚਾ ਚੁੱਕਦਾ ਹੈ।",
     ackNoProfit: "ਮੈਂ ਨਿਰਮਾਤਾ ਜਾਂ ਕਿਸੇ ਹੋਰ ਵੱਲੋਂ ਮੁਨਾਫ਼ੇ ਦੇ ਕਿਸੇ ਵੀ ਵਾਅਦੇ 'ਤੇ ਨਿਰਭਰ ਨਹੀਂ ਹਾਂ।",
     ackAffordLoss:
       "ਮੇਰੇ ਵੱਲੋਂ ਖਰਚੀ ਜਾ ਰਹੀ ਰਕਮ ਸਿਰਫ਼ ਉਹੀ ਹੈ ਜਿਸਦਾ ਪੂਰਾ ਨੁਕਸਾਨ ਮੇਰੇ ਲਈ ਸਹਿਣਯੋਗ ਹੈ।",
-    ackLegend: "ਪਹਿਲੀ ਖਰੀਦ ਤੋਂ ਪਹਿਲਾਂ, ਸਿਰਫ਼ ਇੱਕ ਵਾਰ ਲੋੜੀਂਦਾ",
+    ackLegend:
+      "ਤੁਹਾਡੀ ਪਹਿਲੀ ਖਰੀਦ ਤੋਂ ਪਹਿਲਾਂ ਲੋੜੀਂਦਾ, ਅਤੇ ਜਦੋਂ ਵੀ ਇਹ ਸ਼ਰਤਾਂ ਬਦਲਦੀਆਂ ਹਨ ਤਾਂ ਦੁਬਾਰਾ।",
     ackWhitePaperLink: "“ਪਹਿਲਾਂ ਇਹ ਪੜ੍ਹੋ” ਭਾਗ ਖੋਲ੍ਹੋ",
     ackStatusUnavailable: "ਖਰੀਦ ਪੁਸ਼ਟੀਆਂ ਦੀ ਸਥਿਤੀ ਉਪਲਬਧ ਨਹੀਂ",
-    ackTickAll: "ਖਰੀਦ ਨੂੰ ਚਾਲੂ ਕਰਨ ਲਈ ਸਾਰੇ ਛੇ ਕਥਨਾਂ 'ਤੇ ਨਿਸ਼ਾਨ ਲਗਾਓ।",
+    ackTickAll: "ਮਿੰਟਿੰਗ ਨੂੰ ਚਾਲੂ ਕਰਨ ਲਈ ਸਾਰੇ ਛੇ ਕਥਨਾਂ 'ਤੇ ਨਿਸ਼ਾਨ ਲਗਾਓ।",
     retry: "ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ",
     invalidAmountTitle: "ਅਵੈਧ ਰਕਮ",
     invalidAmountMessage: (symbol: string, decimals: number) =>
@@ -472,15 +510,20 @@ export const BUY_PAGE_TEXT = defineDict({
     purchaseNotSubmitted: "ਖਰੀਦ ਜਮ੍ਹਾਂ ਨਹੀਂ ਕੀਤੀ ਜਾ ਸਕੀ। ਕਿਰਪਾ ਕਰਕੇ ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
     recordingAcks: "ਖਰੀਦ ਪੁਸ਼ਟੀਆਂ ਦਰਜ ਕੀਤੀਆਂ ਜਾ ਰਹੀਆਂ ਹਨ…",
     approving: (symbol: string) => `${symbol} ਦੀ ਮਨਜ਼ੂਰੀ ਦਿੱਤੀ ਜਾ ਰਹੀ ਹੈ…`,
-    buying: "ਖਰੀਦ ਜਾਰੀ ਹੈ…",
+    buying: "ਮਿੰਟਿੰਗ ਜਾਰੀ ਹੈ…",
     saleComplete: "ਵਿਕਰੀ ਪੂਰੀ ਹੋਈ",
     salesPaused: "ਵਿਕਰੀ ਰੋਕੀ ਗਈ ਹੈ",
     tokenUnavailable: (symbol: string) => `${symbol} ਉਪਲਬਧ ਨਹੀਂ`,
-    buyWith: (symbol: string) => `${symbol} ਨਾਲ ਖਰੀਦੋ`,
+    buyWith: (symbol: string) => `${symbol} ਨਾਲ ਮਿੰਟ ਕਰੋ`,
     received: (amount: string, display: string) =>
       `ਤੁਹਾਨੂੰ ${amount} ${display} ਪ੍ਰਾਪਤ ਹੋਏ`,
-    buyTtti: "TTTI-T ਖਰੀਦੋ",
-    buyHeading: "ਖਰੀਦੋ",
+    buyTtti: "TTTI-T ਮਿੰਟ ਕਰੋ",
+    buyHeading: "ਮਿੰਟ ਕਰੋ",
+    mintInfoToggle: "buy-to-mint ਕੀ ਹੈ?",
+    mintInfoBody1:
+      "TTTI-T ਸਿਰਫ਼ ਉਦੋਂ ਬਣਦਾ ਹੈ ਜਦੋਂ ਕੋਈ ਦਿਖਾਈ ਗਈ ਦਰ 'ਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚ ਭੁਗਤਾਨ ਕਰਦਾ ਹੈ। ਪਹਿਲਾਂ ਤੋਂ ਬਣਾਇਆ ਕੋਈ ਭੰਡਾਰ ਨਹੀਂ ਹੈ। ਕੋਈ ਵੀ, ਐਡਮਿਨ ਸਮੇਤ, ਕਿਸੇ ਹੋਰ ਤਰੀਕੇ ਨਾਲ TTTI-T ਨਹੀਂ ਬਣਾ ਸਕਦਾ।",
+    mintInfoBody2:
+      "ਇੱਕ ਬਿਟਕੋਇਨ ਸਿਰਫ਼ ਉਦੋਂ ਹੋਂਦ ਵਿੱਚ ਆਉਂਦਾ ਹੈ ਜਦੋਂ ਕੋਈ ਮਾਈਨਰ ਅਸਲ ਸਰੋਤ ਖਰਚਦਾ ਹੈ: ਊਰਜਾ ਅਤੇ ਹਾਰਡਵੇਅਰ। ਇੱਕ TTTI-T ਸਿਰਫ਼ ਉਦੋਂ ਹੋਂਦ ਵਿੱਚ ਆਉਂਦਾ ਹੈ ਜਦੋਂ ਕੋਈ ਅਸਲ ਟੋਕਨ ਲਿਆਉਂਦਾ ਹੈ। ਦੋਵੇਂ ਪਾਸੇ, ਇਹੀ ਅਸਲ ਦਾਅ (skin in the game) ਹੈ।",
     walletPlug: "Plug",
     walletBuiltIn: "ਬਿਲਟ-ਇਨ ਵਾਲਿਟ",
     balanceLabel: (symbol: string) => `${symbol} ਬਕਾਇਆ`,
@@ -495,6 +538,18 @@ export const BUY_PAGE_TEXT = defineDict({
       `ਦਰ ਨਿਰਧਾਰਤ ਹੋਣ ਤੱਕ ${symbol} ਵਿੱਚ ਖਰੀਦਾਂ ਉਪਲਬਧ ਨਹੀਂ ਹਨ।`,
   },
 });
+
+/**
+ * English buy-to-mint explanation, rendered as-is in the white paper so the
+ * mint page and the white paper share one text.
+ */
+export const MINT_INFO_EN = {
+  toggle: BUY_PAGE_TEXT.en.mintInfoToggle,
+  paragraphs: [
+    BUY_PAGE_TEXT.en.mintInfoBody1,
+    BUY_PAGE_TEXT.en.mintInfoBody2,
+  ] as const,
+};
 
 /**
  * components/exchange/purchaseOutcome.ts. Read with pickDict(BUY_OUTCOME_TEXT, lang).
@@ -566,8 +621,8 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `A purchase is already in progress for this account. Wait for it to finish, then try again. No ${symbol} was taken for this request.`,
     ledgerErrorTitle: (symbol: string) => `${symbol} ledger error`,
     ledgerErrorMessage: (server: string) => server,
-    signInTitle: "Sign in to buy",
-    signInMessage: (server: string) => server,
+    signInTitle: "Sign in to mint",
+    signInMessage: (_server: string) => "Please sign in to mint TTTI-T.",
     notCompletedTitle: "Purchase not completed",
     failedTitle: "Purchase failed",
   },
@@ -641,8 +696,8 @@ export const BUY_OUTCOME_TEXT = defineDict({
     ledgerErrorTitle: (symbol: string) => `Erreur du ledger ${symbol}`,
     ledgerErrorMessage: () =>
       "Le ledger n'a pas pu être joint ou l'opération a échoué. Réessayez.",
-    signInTitle: "Connectez-vous pour acheter",
-    signInMessage: () => "Veuillez vous connecter pour acheter du TTTI-T.",
+    signInTitle: "Connectez-vous pour frapper",
+    signInMessage: () => "Veuillez vous connecter pour frapper du TTTI-T.",
     notCompletedTitle: "Achat non effectué",
     failedTitle: "Échec de l'achat",
   },
@@ -718,8 +773,8 @@ export const BUY_OUTCOME_TEXT = defineDict({
     ledgerErrorTitle: (symbol: string) => `Error del ledger ${symbol}`,
     ledgerErrorMessage: () =>
       "No se pudo contactar con el ledger o la operación falló. Inténtelo de nuevo.",
-    signInTitle: "Inicie sesión para comprar",
-    signInMessage: () => "Inicie sesión para comprar TTTI-T.",
+    signInTitle: "Inicie sesión para acuñar",
+    signInMessage: () => "Inicie sesión para acuñar TTTI-T.",
     notCompletedTitle: "Compra no completada",
     failedTitle: "La compra falló",
   },
@@ -788,8 +843,8 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `此账户已有一笔购买正在进行。请等待其完成后重试。此请求未扣取任何 ${symbol}。`,
     ledgerErrorTitle: (symbol: string) => `${symbol} 账本错误`,
     ledgerErrorMessage: () => "无法连接账本或操作失败。请重试。",
-    signInTitle: "登录以购买",
-    signInMessage: () => "请登录以购买 TTTI-T。",
+    signInTitle: "登录以铸造",
+    signInMessage: () => "请登录以铸造 TTTI-T。",
     notCompletedTitle: "购买未完成",
     failedTitle: "购买失败",
   },
@@ -863,8 +918,8 @@ export const BUY_OUTCOME_TEXT = defineDict({
     ledgerErrorTitle: (symbol: string) => `Erro no ledger de ${symbol}`,
     ledgerErrorMessage: () =>
       "Não foi possível acessar o ledger ou a operação falhou. Tente novamente.",
-    signInTitle: "Entre para comprar",
-    signInMessage: () => "Entre na sua conta para comprar TTTI-T.",
+    signInTitle: "Entre para cunhar",
+    signInMessage: () => "Entre na sua conta para cunhar TTTI-T.",
     notCompletedTitle: "Compra não concluída",
     failedTitle: "A compra falhou",
   },
@@ -938,8 +993,8 @@ export const BUY_OUTCOME_TEXT = defineDict({
     ledgerErrorTitle: (symbol: string) => `${symbol} 원장 오류`,
     ledgerErrorMessage: () =>
       "원장에 연결할 수 없거나 작업이 실패했습니다. 다시 시도하세요.",
-    signInTitle: "구매하려면 로그인하세요",
-    signInMessage: () => "TTTI-T를 구매하려면 로그인하세요.",
+    signInTitle: "발행하려면 로그인하세요",
+    signInMessage: () => "TTTI-T를 발행하려면 로그인하세요.",
     notCompletedTitle: "구매가 완료되지 않았습니다",
     failedTitle: "구매 실패",
   },
@@ -1012,8 +1067,8 @@ export const BUY_OUTCOME_TEXT = defineDict({
     ledgerErrorTitle: (symbol: string) => `${symbol} ledger ਗੜਬੜ`,
     ledgerErrorMessage: () =>
       "ledger ਤੱਕ ਪਹੁੰਚ ਨਹੀਂ ਹੋ ਸਕੀ ਜਾਂ ਕਾਰਵਾਈ ਅਸਫਲ ਰਹੀ। ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
-    signInTitle: "ਖਰੀਦਣ ਲਈ ਸਾਈਨ ਇਨ ਕਰੋ",
-    signInMessage: () => "TTTI-T ਖਰੀਦਣ ਲਈ ਕਿਰਪਾ ਕਰਕੇ ਸਾਈਨ ਇਨ ਕਰੋ।",
+    signInTitle: "ਮਿੰਟ ਕਰਨ ਲਈ ਸਾਈਨ ਇਨ ਕਰੋ",
+    signInMessage: () => "TTTI-T ਮਿੰਟ ਕਰਨ ਲਈ ਕਿਰਪਾ ਕਰਕੇ ਸਾਈਨ ਇਨ ਕਰੋ।",
     notCompletedTitle: "ਖਰੀਦ ਪੂਰੀ ਨਹੀਂ ਹੋਈ",
     failedTitle: "ਖਰੀਦ ਅਸਫਲ ਰਹੀ",
   },
@@ -1034,7 +1089,7 @@ export const BUY_DELIVERY_TEXT = defineDict({
     descIi: (symbol: string) =>
       `Auto-filled with your principal. Your ${symbol} is credited here.`,
     descNone: (symbol: string) =>
-      `Not required to buy. Add the Principal ID of a wallet you control so your ${symbol} reaches it automatically at launch.`,
+      `Not required to mint. Add the Principal ID of a wallet you control so your ${symbol} reaches it automatically at launch.`,
     principalId: "Principal ID",
     placeholder: "e.g. abcde-fghij-…-cai",
     save: "Save address",
@@ -1059,7 +1114,7 @@ export const BUY_DELIVERY_TEXT = defineDict({
     descIi: (symbol: string) =>
       `Prérempli avec votre principal. Votre ${symbol} est crédité ici.`,
     descNone: (symbol: string) =>
-      `Non requis pour acheter. Ajoutez le Principal ID d'un wallet que vous contrôlez pour que votre ${symbol} y parvienne automatiquement au lancement.`,
+      `Non requis pour frapper. Ajoutez le Principal ID d'un wallet que vous contrôlez pour que votre ${symbol} y parvienne automatiquement au lancement.`,
     principalId: "Principal ID",
     placeholder: "ex. abcde-fghij-…-cai",
     save: "Enregistrer l'adresse",
@@ -1084,7 +1139,7 @@ export const BUY_DELIVERY_TEXT = defineDict({
     descIi: (symbol: string) =>
       `Rellenada automáticamente con su principal. Su ${symbol} se acredita aquí.`,
     descNone: (symbol: string) =>
-      `No es necesaria para comprar. Añada el Principal ID de un wallet que controle para que su ${symbol} llegue a él automáticamente en el lanzamiento.`,
+      `No es necesaria para acuñar. Añada el Principal ID de un wallet que controle para que su ${symbol} llegue a él automáticamente en el lanzamiento.`,
     principalId: "Principal ID",
     placeholder: "p. ej. abcde-fghij-…-cai",
     save: "Guardar dirección",
@@ -1109,7 +1164,7 @@ export const BUY_DELIVERY_TEXT = defineDict({
     descIi: (symbol: string) =>
       `已自动填入您的 principal。您的 ${symbol} 将存入此处。`,
     descNone: (symbol: string) =>
-      `购买时无需填写。添加您所控制钱包的 Principal ID，您的 ${symbol} 将在上线时自动转入该钱包。`,
+      `铸造时无需填写。添加您所控制钱包的 Principal ID，您的 ${symbol} 将在上线时自动转入该钱包。`,
     principalId: "Principal ID",
     placeholder: "例如 abcde-fghij-…-cai",
     save: "保存地址",
@@ -1132,7 +1187,7 @@ export const BUY_DELIVERY_TEXT = defineDict({
     descIi: (symbol: string) =>
       `Preenchido automaticamente com o seu principal. Seu ${symbol} é creditado aqui.`,
     descNone: (symbol: string) =>
-      `Não é necessário para comprar. Adicione o Principal ID de uma carteira que você controla para que seu ${symbol} chegue a ela automaticamente no lançamento.`,
+      `Não é necessário para cunhar. Adicione o Principal ID de uma carteira que você controla para que seu ${symbol} chegue a ela automaticamente no lançamento.`,
     principalId: "Principal ID",
     placeholder: "ex.: abcde-fghij-…-cai",
     save: "Salvar endereço",
@@ -1157,7 +1212,7 @@ export const BUY_DELIVERY_TEXT = defineDict({
     descIi: (symbol: string) =>
       `회원님의 principal로 자동 입력되었습니다. ${symbol}은(는) 여기에 입금됩니다.`,
     descNone: (symbol: string) =>
-      `구매에 필수는 아닙니다. 직접 관리하는 지갑의 Principal ID를 추가하면 출시 시 ${symbol}이(가) 해당 지갑으로 자동 전달됩니다.`,
+      `발행에 필수는 아닙니다. 직접 관리하는 지갑의 Principal ID를 추가하면 출시 시 ${symbol}이(가) 해당 지갑으로 자동 전달됩니다.`,
     principalId: "Principal ID",
     placeholder: "예: abcde-fghij-…-cai",
     save: "주소 저장",
@@ -1182,7 +1237,7 @@ export const BUY_DELIVERY_TEXT = defineDict({
     descIi: (symbol: string) =>
       `ਤੁਹਾਡੇ principal ਨਾਲ ਆਪਣੇ-ਆਪ ਭਰਿਆ ਗਿਆ। ਤੁਹਾਡਾ ${symbol} ਇੱਥੇ ਜਮ੍ਹਾਂ ਹੁੰਦਾ ਹੈ।`,
     descNone: (symbol: string) =>
-      `ਖਰੀਦਣ ਲਈ ਲੋੜੀਂਦਾ ਨਹੀਂ। ਆਪਣੇ ਕੰਟਰੋਲ ਵਾਲੇ ਵਾਲਿਟ ਦਾ Principal ID ਸ਼ਾਮਲ ਕਰੋ ਤਾਂ ਜੋ ਲਾਂਚ ਵੇਲੇ ਤੁਹਾਡਾ ${symbol} ਆਪਣੇ-ਆਪ ਉਸ ਤੱਕ ਪਹੁੰਚ ਜਾਵੇ।`,
+      `ਮਿੰਟ ਕਰਨ ਲਈ ਲੋੜੀਂਦਾ ਨਹੀਂ। ਆਪਣੇ ਕੰਟਰੋਲ ਵਾਲੇ ਵਾਲਿਟ ਦਾ Principal ID ਸ਼ਾਮਲ ਕਰੋ ਤਾਂ ਜੋ ਲਾਂਚ ਵੇਲੇ ਤੁਹਾਡਾ ${symbol} ਆਪਣੇ-ਆਪ ਉਸ ਤੱਕ ਪਹੁੰਚ ਜਾਵੇ।`,
     principalId: "Principal ID",
     placeholder: "ਜਿਵੇਂ abcde-fghij-…-cai",
     save: "ਪਤਾ ਸੰਭਾਲੋ",
@@ -1205,7 +1260,7 @@ export const BUY_PANELS_TEXT = defineDict({
     // GetIcpFirstPanel
     getIcpAria: "Add ICP",
     getIcpAdd: "Add",
-    getIcpAddToBuy: "Add ICP to buy",
+    getIcpAddToBuy: "Add ICP to mint",
     getIcpBuyAria:
       "Buy ICP on Onramper (copies your address, opens in a new tab)",
     getIcpBuy: "Buy ICP",
@@ -1284,7 +1339,7 @@ export const BUY_PANELS_TEXT = defineDict({
   fr: {
     getIcpAria: "Ajouter de l'ICP",
     getIcpAdd: "Ajoutez",
-    getIcpAddToBuy: "Ajoutez de l'ICP pour acheter",
+    getIcpAddToBuy: "Ajoutez de l'ICP pour frapper",
     getIcpBuyAria:
       "Acheter de l'ICP sur Onramper (copie votre adresse, s'ouvre dans un nouvel onglet)",
     getIcpBuy: "Acheter de l'ICP",
@@ -1361,7 +1416,7 @@ export const BUY_PANELS_TEXT = defineDict({
   es: {
     getIcpAria: "Añadir ICP",
     getIcpAdd: "Añada",
-    getIcpAddToBuy: "Añada ICP para comprar",
+    getIcpAddToBuy: "Añada ICP para acuñar",
     getIcpBuyAria:
       "Comprar ICP en Onramper (copia su dirección, se abre en una pestaña nueva)",
     getIcpBuy: "Comprar ICP",
@@ -1438,7 +1493,7 @@ export const BUY_PANELS_TEXT = defineDict({
   "zh-Hans": {
     getIcpAria: "添加 ICP",
     getIcpAdd: "请添加",
-    getIcpAddToBuy: "添加 ICP 以购买",
+    getIcpAddToBuy: "添加 ICP 以铸造",
     getIcpBuyAria: "在 Onramper 购买 ICP（复制您的地址，在新标签页中打开）",
     getIcpBuy: "购买 ICP",
     getIcpCopyAria: "复制钱包地址",
@@ -1503,7 +1558,7 @@ export const BUY_PANELS_TEXT = defineDict({
   "pt-BR": {
     getIcpAria: "Adicionar ICP",
     getIcpAdd: "Adicione",
-    getIcpAddToBuy: "Adicione ICP para comprar",
+    getIcpAddToBuy: "Adicione ICP para cunhar",
     getIcpBuyAria:
       "Comprar ICP na Onramper (copia seu endereço, abre em uma nova aba)",
     getIcpBuy: "Comprar ICP",
@@ -1578,7 +1633,7 @@ export const BUY_PANELS_TEXT = defineDict({
   ko: {
     getIcpAria: "ICP 추가",
     getIcpAdd: "추가하세요",
-    getIcpAddToBuy: "구매하려면 ICP를 추가하세요",
+    getIcpAddToBuy: "발행하려면 ICP를 추가하세요",
     getIcpBuyAria: "Onramper에서 ICP 구매 (주소를 복사하고 새 탭에서 열림)",
     getIcpBuy: "ICP 구매",
     getIcpCopyAria: "지갑 주소 복사",
@@ -1649,7 +1704,7 @@ export const BUY_PANELS_TEXT = defineDict({
   "pa-Guru": {
     getIcpAria: "ICP ਸ਼ਾਮਲ ਕਰੋ",
     getIcpAdd: "ਸ਼ਾਮਲ ਕਰੋ",
-    getIcpAddToBuy: "ਖਰੀਦਣ ਲਈ ICP ਸ਼ਾਮਲ ਕਰੋ",
+    getIcpAddToBuy: "ਮਿੰਟ ਕਰਨ ਲਈ ICP ਸ਼ਾਮਲ ਕਰੋ",
     getIcpBuyAria:
       "Onramper 'ਤੇ ICP ਖਰੀਦੋ (ਤੁਹਾਡਾ ਪਤਾ ਕਾਪੀ ਕਰਦਾ ਹੈ, ਨਵੀਂ ਟੈਬ ਵਿੱਚ ਖੁੱਲ੍ਹਦਾ ਹੈ)",
     getIcpBuy: "ICP ਖਰੀਦੋ",
@@ -1732,6 +1787,8 @@ export const BUY_BTC_TEXT = defineDict({
     tickAll: "Tick all six statements to get your address.",
     purchaseAddressLabel: "Your Bitcoin purchase address",
     sentToDelivery: "TTTI-T is sent to your delivery address below.",
+    keepPageOpen:
+      "Keep this page open until your deposit is detected. If you leave, your purchase will be completed when you come back to this page, at the exchange rate of that moment. If the sale has ended by then, you will be refunded in ckBTC.",
     delivered: (amount: string) => `${amount} TTTI-T delivered`,
     deliveredDetail: (fee: string) =>
       `At the hourly ckBTC rate, ${fee} fee included`,
@@ -1813,6 +1870,8 @@ export const BUY_BTC_TEXT = defineDict({
     purchaseAddressLabel: "Votre adresse Bitcoin d'achat",
     sentToDelivery:
       "Le TTTI-T est envoyé à votre adresse de livraison ci-dessous.",
+    keepPageOpen:
+      "Gardez cette page ouverte jusqu'à ce que votre dépôt soit détecté. Si vous la quittez, votre achat sera finalisé à votre retour sur cette page, au taux de change de ce moment-là. Si la vente est terminée d'ici là, vous serez remboursé en ckBTC.",
     delivered: (amount: string) => `${amount} TTTI-T livrés`,
     deliveredDetail: (fee: string) =>
       `Au taux horaire ckBTC, frais de ${fee} inclus`,
@@ -1890,6 +1949,8 @@ export const BUY_BTC_TEXT = defineDict({
     tickAll: "Marque las seis declaraciones para obtener su dirección.",
     purchaseAddressLabel: "Su dirección Bitcoin de compra",
     sentToDelivery: "El TTTI-T se envía a su dirección de entrega de abajo.",
+    keepPageOpen:
+      "Mantenga esta página abierta hasta que se detecte su depósito. Si sale de ella, su compra se completará cuando vuelva a esta página, al tipo de cambio de ese momento. Si para entonces la venta ha terminado, se le reembolsará en ckBTC.",
     delivered: (amount: string) => `${amount} TTTI-T entregados`,
     deliveredDetail: (fee: string) =>
       `Al tipo horario de ckBTC, comisión de ${fee} incluida`,
@@ -1971,6 +2032,8 @@ export const BUY_BTC_TEXT = defineDict({
     tickAll: "勾选全部六项声明以获取您的地址。",
     purchaseAddressLabel: "您的比特币购买地址",
     sentToDelivery: "TTTI-T 将发送到您下方的交付地址。",
+    keepPageOpen:
+      "请保持此页面打开，直到检测到您的充值。如果您离开，您的购买将在您返回此页面时完成，按届时的汇率计算。如果届时销售已结束，您将获得 ckBTC 退款。",
     delivered: (amount: string) => `已交付 ${amount} TTTI-T`,
     deliveredDetail: (fee: string) =>
       `按每小时 ckBTC 汇率计算，含 ${fee} 手续费`,
@@ -2042,6 +2105,8 @@ export const BUY_BTC_TEXT = defineDict({
     tickAll: "Marque as seis declarações para obter seu endereço.",
     purchaseAddressLabel: "Seu endereço Bitcoin de compra",
     sentToDelivery: "O TTTI-T é enviado ao seu endereço de entrega abaixo.",
+    keepPageOpen:
+      "Mantenha esta página aberta até que seu depósito seja detectado. Se você sair, sua compra será concluída quando você voltar a esta página, à taxa de câmbio daquele momento. Se a venda já tiver terminado até lá, você será reembolsado em ckBTC.",
     delivered: (amount: string) => `${amount} TTTI-T entregues`,
     deliveredDetail: (fee: string) =>
       `À cotação horária do ckBTC, taxa de ${fee} incluída`,
@@ -2120,6 +2185,8 @@ export const BUY_BTC_TEXT = defineDict({
     tickAll: "주소를 받으려면 여섯 가지 진술을 모두 체크하세요.",
     purchaseAddressLabel: "내 비트코인 구매 주소",
     sentToDelivery: "TTTI-T는 아래의 전달 주소로 전송됩니다.",
+    keepPageOpen:
+      "입금이 감지될 때까지 이 페이지를 열어 두세요. 페이지를 떠나면, 이 페이지로 돌아왔을 때 그 시점의 환율로 구매가 완료됩니다. 그때 판매가 이미 종료되었다면 ckBTC로 환불됩니다.",
     delivered: (amount: string) => `${amount} TTTI-T 전달됨`,
     deliveredDetail: (fee: string) =>
       `시간별 ckBTC 환율 적용, ${fee} 수수료 포함`,
@@ -2197,6 +2264,8 @@ export const BUY_BTC_TEXT = defineDict({
     tickAll: "ਆਪਣਾ ਪਤਾ ਪ੍ਰਾਪਤ ਕਰਨ ਲਈ ਸਾਰੇ ਛੇ ਕਥਨਾਂ 'ਤੇ ਨਿਸ਼ਾਨ ਲਗਾਓ।",
     purchaseAddressLabel: "ਤੁਹਾਡਾ Bitcoin ਖਰੀਦ ਪਤਾ",
     sentToDelivery: "TTTI-T ਹੇਠਾਂ ਦਿੱਤੇ ਤੁਹਾਡੇ ਡਿਲੀਵਰੀ ਪਤੇ 'ਤੇ ਭੇਜਿਆ ਜਾਂਦਾ ਹੈ।",
+    keepPageOpen:
+      "ਜਦੋਂ ਤੱਕ ਤੁਹਾਡੀ ਜਮ੍ਹਾਂ ਰਕਮ ਦਾ ਪਤਾ ਨਹੀਂ ਲੱਗ ਜਾਂਦਾ, ਇਸ ਪੰਨੇ ਨੂੰ ਖੁੱਲ੍ਹਾ ਰੱਖੋ। ਜੇਕਰ ਤੁਸੀਂ ਚਲੇ ਜਾਂਦੇ ਹੋ, ਤਾਂ ਤੁਹਾਡੀ ਖਰੀਦ ਉਦੋਂ ਪੂਰੀ ਹੋਵੇਗੀ ਜਦੋਂ ਤੁਸੀਂ ਇਸ ਪੰਨੇ 'ਤੇ ਵਾਪਸ ਆਓਗੇ, ਉਸ ਸਮੇਂ ਦੀ ਵਟਾਂਦਰਾ ਦਰ 'ਤੇ। ਜੇਕਰ ਉਦੋਂ ਤੱਕ ਵਿਕਰੀ ਖਤਮ ਹੋ ਚੁੱਕੀ ਹੈ, ਤਾਂ ਤੁਹਾਨੂੰ ckBTC ਵਿੱਚ ਰਕਮ ਵਾਪਸ ਕੀਤੀ ਜਾਵੇਗੀ।",
     delivered: (amount: string) => `${amount} TTTI-T ਡਿਲੀਵਰ ਕੀਤੇ ਗਏ`,
     deliveredDetail: (fee: string) => `ਘੰਟਾਵਾਰ ckBTC ਦਰ 'ਤੇ, ${fee} ਫੀਸ ਸਮੇਤ`,
     refunded: (amount: string) => `${amount} ਵਾਪਸ ਕੀਤੇ ਗਏ`,
@@ -2347,5 +2416,85 @@ export const BUY_EXPLORER_TEXT = defineDict({
     viewBlockInHistory: "ਇਤਿਹਾਸ ਵਿੱਚ ਬਲਾਕ ਵੇਖੋ",
     trackOnMempool: "mempool.space 'ਤੇ ਲਾਈਵ ਟ੍ਰੈਕ ਕਰੋ",
     addressOnMempool: "mempool.space 'ਤੇ ਜਮ੍ਹਾਂ ਪਤਾ",
+  },
+});
+
+/** components/exchange/ZeroBalanceTransferOffer.tsx */
+export const BUY_TRANSFER_OFFER_TEXT = defineDict({
+  en: {
+    aria: (symbol: string) => `Transfer ${symbol} to this wallet`,
+    zeroBalance: (symbol: string) => `Your ${symbol} balance is 0.`,
+    transferTo: (symbol: string) =>
+      `Transfer ${symbol} to this wallet address to mint.`,
+    transferOrBuy: (symbol: string) =>
+      `Transfer ${symbol} to the wallet address below, or buy ${symbol}.`,
+    copyAria: "Copy wallet address",
+    copied: "Address copied",
+    copyFailed: "Copy failed. Select the address and copy it.",
+  },
+  fr: {
+    aria: (symbol: string) => `Transférer du ${symbol} vers ce wallet`,
+    zeroBalance: (symbol: string) => `Votre solde ${symbol} est de 0.`,
+    transferTo: (symbol: string) =>
+      `Transférez du ${symbol} vers cette adresse de wallet pour frapper.`,
+    transferOrBuy: (symbol: string) =>
+      `Transférez du ${symbol} vers l'adresse de wallet ci-dessous, ou achetez du ${symbol}.`,
+    copyAria: "Copier l'adresse du wallet",
+    copied: "Adresse copiée",
+    copyFailed: "Échec de la copie. Sélectionnez l'adresse et copiez-la.",
+  },
+  es: {
+    aria: (symbol: string) => `Transferir ${symbol} a este wallet`,
+    zeroBalance: (symbol: string) => `Su saldo de ${symbol} es 0.`,
+    transferTo: (symbol: string) =>
+      `Transfiera ${symbol} a esta dirección de wallet para acuñar.`,
+    transferOrBuy: (symbol: string) =>
+      `Transfiera ${symbol} a la dirección de wallet de abajo, o compre ${symbol}.`,
+    copyAria: "Copiar la dirección del wallet",
+    copied: "Dirección copiada",
+    copyFailed: "Error al copiar. Seleccione la dirección y cópiela.",
+  },
+  "zh-Hans": {
+    aria: (symbol: string) => `将 ${symbol} 转入此钱包`,
+    zeroBalance: (symbol: string) => `您的 ${symbol} 余额为 0。`,
+    transferTo: (symbol: string) => `将 ${symbol} 转入此钱包地址即可铸造。`,
+    transferOrBuy: (symbol: string) =>
+      `将 ${symbol} 转入下方的钱包地址，或购买 ${symbol}。`,
+    copyAria: "复制钱包地址",
+    copied: "地址已复制",
+    copyFailed: "复制失败。请选中地址并复制。",
+  },
+  "pt-BR": {
+    aria: (symbol: string) => `Transferir ${symbol} para esta carteira`,
+    zeroBalance: (symbol: string) => `Seu saldo de ${symbol} é 0.`,
+    transferTo: (symbol: string) =>
+      `Transfira ${symbol} para este endereço de carteira para cunhar.`,
+    transferOrBuy: (symbol: string) =>
+      `Transfira ${symbol} para o endereço de carteira abaixo, ou compre ${symbol}.`,
+    copyAria: "Copiar o endereço da carteira",
+    copied: "Endereço copiado",
+    copyFailed: "Falha ao copiar. Selecione o endereço e copie-o.",
+  },
+  ko: {
+    aria: (symbol: string) => `이 지갑으로 ${symbol} 전송`,
+    zeroBalance: (symbol: string) => `${symbol} 잔액이 0입니다.`,
+    transferTo: (symbol: string) =>
+      `발행하려면 이 지갑 주소로 ${symbol}을(를) 전송하세요.`,
+    transferOrBuy: (symbol: string) =>
+      `아래 지갑 주소로 ${symbol}을(를) 전송하거나 ${symbol}을(를) 구매하세요.`,
+    copyAria: "지갑 주소 복사",
+    copied: "주소가 복사되었습니다",
+    copyFailed: "복사에 실패했습니다. 주소를 선택해 복사하세요.",
+  },
+  "pa-Guru": {
+    aria: (symbol: string) => `ਇਸ ਵਾਲਿਟ ਵਿੱਚ ${symbol} ਟ੍ਰਾਂਸਫਰ ਕਰੋ`,
+    zeroBalance: (symbol: string) => `ਤੁਹਾਡਾ ${symbol} ਬਕਾਇਆ 0 ਹੈ।`,
+    transferTo: (symbol: string) =>
+      `ਮਿੰਟ ਕਰਨ ਲਈ ਇਸ ਵਾਲਿਟ ਪਤੇ 'ਤੇ ${symbol} ਟ੍ਰਾਂਸਫਰ ਕਰੋ।`,
+    transferOrBuy: (symbol: string) =>
+      `ਹੇਠਾਂ ਦਿੱਤੇ ਵਾਲਿਟ ਪਤੇ 'ਤੇ ${symbol} ਟ੍ਰਾਂਸਫਰ ਕਰੋ, ਜਾਂ ${symbol} ਖਰੀਦੋ।`,
+    copyAria: "ਵਾਲਿਟ ਪਤਾ ਕਾਪੀ ਕਰੋ",
+    copied: "ਪਤਾ ਕਾਪੀ ਹੋ ਗਿਆ",
+    copyFailed: "ਕਾਪੀ ਅਸਫਲ ਰਹੀ। ਪਤਾ ਚੁਣੋ ਅਤੇ ਇਸਨੂੰ ਕਾਪੀ ਕਰੋ।",
   },
 });
