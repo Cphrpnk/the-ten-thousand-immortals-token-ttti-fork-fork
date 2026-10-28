@@ -1,4 +1,10 @@
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
 import { useId } from "react";
 import { toIntlLocale, useDict, useLanguage } from "../../i18n/core";
 import { SWAP_TEXT } from "../../i18n/pages/swap";
@@ -50,6 +56,34 @@ export function SwapNotice({
       />
       <div className="min-w-0 flex-1">{children}</div>
     </div>
+  );
+}
+
+/** « Add a token » entry of the swap token selector. */
+export function AddTokenTrigger({
+  open,
+  disabled,
+  onToggle,
+}: {
+  open: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const t = useDict(SWAP_TEXT);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="self-end rounded-lg text-muted-foreground hover:text-foreground"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-expanded={open}
+      data-ocid="wallet.swap.add_token.open_modal_button"
+    >
+      <Plus className="h-4 w-4" />
+      {t.addToken}
+    </Button>
   );
 }
 

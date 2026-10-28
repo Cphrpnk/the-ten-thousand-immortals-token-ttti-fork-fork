@@ -21,7 +21,7 @@ export const ICP_FEE_E8S = 10_000n;
 
 /** Base price: 1 TTTI-T = 10 000 USD (before the fee). */
 export const TOKEN_PRICE_USD = 10_000;
-/** Fixed fee on ICP purchases, funding the canister's cycles: 100 bps = 1%. */
+/** Fixed fee on ICP purchases (1/101 of the amount paid): 100 bps = 1%. */
 export const CYCLES_FEE_BPS = 100n;
 /** Fixed fee on ckBTC, ckUSDC and ckUSDT purchases: 100 bps = 1%. */
 export const CK_FEE_BPS = 100n;
@@ -34,6 +34,17 @@ export const MIN_PURCHASE = 10_000n;
 export const MIN_PURCHASE_USD = 1.01;
 /** Minimum ckBTC / ckUSDC / ckUSDT purchase, fee included: 1.01 USD. */
 export const CK_MIN_PURCHASE_USD = 1.01;
+/** Of every 101 paid: 100 to the owner's destination account, 1 as the mint fee. */
+export const MINT_PAID_UNITS = 101n;
+export const MINT_OWNER_UNITS = 100n;
+/** Mint fee halves are set aside until worth 0.001 TTTI-T (10 USD). */
+export const SET_ASIDE_THRESHOLD_TTTI = 100_000n;
+export const SET_ASIDE_THRESHOLD_USD = 10;
+/** Native swap fee split: 70% to liquidity providers, 30% permanent liquidity. */
+export const SWAP_FEE_LP_PERCENT = 70n;
+export const SWAP_FEE_PERMANENT_PERCENT = 30n;
+/** Cycles top-up through the CMC when the canister holds less than 20 T cycles. */
+export const CYCLES_TOP_UP_THRESHOLD = 20_000_000_000_000n;
 // --- Locale-aware number display ---------------------------------------------
 
 /**
@@ -114,7 +125,7 @@ export function cyclesFeeLabel(lang: Lang = defaultNumberLang()): string {
 }
 /** Public price sentence shared by the buy page, landing, FAQ and white paper (English). */
 export const PRICE_TEXT = FEE_TEXT.en.price;
-/** Public description of the purchase fees and the cycles reserve (English). */
+/** Public description of the mint revenue, mint fee and cycles reserve (English). */
 export const CYCLES_FEE_TEXT = FEE_TEXT.en.cyclesFee;
 
 /** Price sentence in `lang` (default: the active language). */

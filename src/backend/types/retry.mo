@@ -1,6 +1,7 @@
 import Map "mo:core/Map";
 import Result "mo:core/Result";
 import Common "common";
+import Dex "dex";
 import Pay "pay-token";
 import Treasury "treasury";
 
@@ -11,8 +12,15 @@ module {
   public type Account = Common.Account;
   public type PayToken = Pay.PayToken;
 
-  // Memo prefixes: PC, RF, FW (treasury forward), SH (reserve share), BB, BR.
-  public type TransferPrefix = { #PC; #RF; #FW; #SH; #BB; #BR };
+  public type DexToken = Dex.DexToken;
+
+  // Memo prefixes: PC, RF, FW (treasury forward), SH (reserve share), BB, BR,
+  // DD (DEX deposit), DW (DEX withdrawal), DQ (pair request deposit refund),
+  // DEX lot 4: DC (converted protocol fees to the cycles reserve) and DL
+  // (locked-LP bonus claim).
+  // Mint revenue correction: OW (owner revenue send), SR (one-time sweep top-up
+  // of the cycles reserve from MINT-TREASURY-ICP), MF (mint-fee LP claim).
+  public type TransferPrefix = { #PC; #RF; #FW; #SH; #BB; #BR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF };
 
   // Transfer types handled by the admin review ("To review"): forwards (FW),
   // reserve shares (SH), purchase refunds (RF, keyed by purchase id),
@@ -21,7 +29,12 @@ module {
   // treasury (BC, keyed by the trace number n of the TTTI-PC-<n> memo) and
   // BTC costs of a delivery-and-refund failure to refund by hand (BM, keyed
   // by the conversion id) and buyback payouts (BB, keyed by the buyback id).
-  public type TransferKind = { #FW; #SH; #RF; #PC; #BR; #BC; #BM; #BB };
+  // DEX lot 2: DEX deposits (DD, keyed by n), DEX withdrawals (DW, keyed by
+  // n) and pair request deposit refunds (DQ, keyed by the request id).
+  // DEX lot 4: DC sends and DL claims, both keyed by n.
+  // Mint revenue correction: OW (keyed by owner send id), SR (keyed by 0, the
+  // one-time sweep) and MF (keyed by claim n).
+  public type TransferKind = { #FW; #SH; #RF; #PC; #BR; #BC; #BM; #BB; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF };
 
   // Why a BTC (ckBTC) refund is sent from the buyer's deposit subaccount:
   // #excess       = R1, the excess above the delivered cost;
@@ -121,6 +134,47 @@ module {
     btcCosts : Map.Map<Nat, BtcCostSend>; // keyed by the trace number n
   };
 
+  // --- DEX transfers (DD, DW, DQ): TTTI-T (internal, synchronous) or a pay
+  // token (external, async). Recorded before the first await, sent as recorded.
+
+  // DD: `from` = the user's account (ICRC-2 transfer_from by the canister),
+  // `to` = the user's DEX deposit subaccount. DW / DQ: `from` = the canister
+  // subaccount sending, `to` = the user's default account.
+  public type DexTransferRequest = {
+    token : DexToken;
+    from : Account;
+    to : Account;
+    amount : Nat;
+    fee : ?Nat;
+  };
+
+  public type DexTransferAttempt = {
+    n : Nat; // global number (RetryStore.nextN)
+    attempt : Nat; // m: 1 for the first attempt
+    memo : Blob; // "TTTI-DD-<n>", "TTTI-DW-<n>", "TTTI-DQ-<n>" (or "-<m>")
+    created_at_time : Nat64; // ns, never null
+    request : DexTransferRequest;
+    sends : Nat;
+    lastError : ?Text;
+    outcome : AttemptOutcome;
+  };
+
+  // A DEX deposit or withdrawal of `owner`; `amount` = internal balance amount.
+  public type DexTransfer = {
+    n : Nat;
+    owner : Principal;
+    token : DexToken;
+    amount : Nat;
+    attempt : DexTransferAttempt;
+    status : Dex.DexTransferStatus;
+  };
+
+  public type DexTransferStore = {
+    deposits : Map.Map<Nat, DexTransfer>; // DD, keyed by n
+    withdrawals : Map.Map<Nat, DexTransfer>; // DW, keyed by n
+    pairRefunds : Map.Map<Nat, DexTransferAttempt>; // DQ, keyed by request id
+  };
+
   // The ICRC-1 transfer method every pay-token ledger provides.
   public type TransferLedger = actor {
     icrc1_transfer : shared Treasury.IcpTransferArgs -> async Treasury.IcpTransferResult;
@@ -141,12 +195,14 @@ module {
   // `buyer`, `depositIndex`, `conversionId` when known and `outcome`; #BR rows
   // also `refundPurpose`; #BM rows have no memo nor created_at_time and
   // `amount` is the cost to refund by hand. Non-BTC rows leave these null.
+  // DEX rows (#DD / #DW keyed by n, #DQ keyed by request id) carry `buyer` =
+  // the owner / requester and `outcome`; `token` may be #tttiT.
   public type TransferReview = {
     kind : TransferKind;
     purchaseId : Nat;
     block : ?Nat;
     collect : ?CollectState;
-    token : PayToken;
+    token : DexToken;
     memoText : ?Text; // null for a legacy transfer sent without memo
     memoHex : ?Text;
     createdAtTimeNs : ?Nat64; // null for a legacy transfer sent without created_at_time

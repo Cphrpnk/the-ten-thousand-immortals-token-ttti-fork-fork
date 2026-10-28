@@ -31,7 +31,7 @@ export const Error = IDL.Variant({
     'expected' : IDL.Vec(IDL.Text),
   }),
 });
-export const Result_8 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
+export const Result_21 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
 export const AcknowledgedAt = IDL.Int;
 export const PurchaseAcknowledgement = IDL.Record({
   'accepted' : IDL.Bool,
@@ -67,7 +67,169 @@ export const AddressBookError = IDL.Variant({
   'duplicateNickname' : IDL.Null,
   'limitReached' : IDL.Record({ 'max' : IDL.Nat }),
 });
-export const Result = IDL.Variant({ 'ok' : Contact, 'err' : AddressBookError });
+export const Result_1 = IDL.Variant({
+  'ok' : Contact,
+  'err' : AddressBookError,
+});
+export const PoolSide = IDL.Variant({
+  'token0' : IDL.Null,
+  'token1' : IDL.Null,
+});
+export const PoolId = IDL.Nat;
+export const AddLiquidityArgs = IDL.Record({
+  'side' : PoolSide,
+  'lockDurationNs' : IDL.Nat,
+  'counterAmount' : IDL.Opt(IDL.Nat),
+  'amount' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const PoolStatus = IDL.Variant({
+  'filling' : IDL.Null,
+  'active' : IDL.Null,
+  'removed' : IDL.Null,
+});
+export const RequestId = IDL.Nat;
+export const PoolMinimums = IDL.Record({
+  'token0' : IDL.Opt(IDL.Nat),
+  'token1' : IDL.Opt(IDL.Nat),
+});
+export const PoolKind = IDL.Variant({
+  'tttiPair' : IDL.Null,
+  'utilityPair' : IDL.Null,
+});
+export const Timestamp = IDL.Int;
+export const FeeTier = IDL.Variant({
+  'bps5' : IDL.Null,
+  'bps30' : IDL.Null,
+  'bps100' : IDL.Null,
+});
+export const UsdGauge = IDL.Record({
+  'targetUsdE8' : IDL.Nat,
+  'remainingUsdE8' : IDL.Opt(IDL.Nat),
+  'missingRate' : IDL.Record({ 'token0' : IDL.Bool, 'token1' : IDL.Bool }),
+  'valueAvailable' : IDL.Bool,
+  'currentUsdE8' : IDL.Opt(IDL.Nat),
+});
+export const PoolTokenView = IDL.Record({
+  'decimals' : IDL.Nat8,
+  'ledgerId' : IDL.Principal,
+  'isTttiT' : IDL.Bool,
+  'symbol' : IDL.Text,
+});
+export const DexAccount = IDL.Record({
+  'owner' : IDL.Principal,
+  'subaccount' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+});
+export const PoolView = IDL.Record({
+  'id' : PoolId,
+  'approvalStatement' : IDL.Opt(IDL.Text),
+  'status' : PoolStatus,
+  'subaccountText' : IDL.Text,
+  'requestId' : IDL.Opt(RequestId),
+  'minimumLocked' : PoolMinimums,
+  'feeBps' : IDL.Nat,
+  'acceptsWithdrawals' : IDL.Bool,
+  'lockedShares' : IDL.Nat,
+  'kind' : PoolKind,
+  'acceptsSwaps' : IDL.Bool,
+  'createdAt' : Timestamp,
+  'reserve0' : IDL.Nat,
+  'reserve1' : IDL.Nat,
+  'launchMinimumTotalUsdE8' : IDL.Nat,
+  'subaccount' : IDL.Vec(IDL.Nat8),
+  'feeTier' : FeeTier,
+  'minimumsSet' : IDL.Bool,
+  'acceptsDeposits' : IDL.Bool,
+  'gauge' : UsdGauge,
+  'newPairBadgeActive' : IDL.Bool,
+  'token0' : PoolTokenView,
+  'token1' : PoolTokenView,
+  'firstDepositMinimum' : PoolMinimums,
+  'lockedSharesStatement' : IDL.Text,
+  'protocolFee0' : IDL.Nat,
+  'protocolFee1' : IDL.Nat,
+  'poolAccount' : DexAccount,
+  'removedAt' : IDL.Opt(Timestamp),
+  'totalShares' : IDL.Nat,
+  'newPairBadgeUntil' : IDL.Opt(Timestamp),
+});
+export const PositionId = IDL.Nat;
+export const PositionView = IDL.Record({
+  'id' : PositionId,
+  'isCreator' : IDL.Bool,
+  'shares' : IDL.Nat,
+  'owner' : IDL.Principal,
+  'createdAt' : Timestamp,
+  'unlockAt' : Timestamp,
+  'unlocked' : IDL.Bool,
+  'lockDurationNs' : IDL.Nat,
+  'amount0' : IDL.Nat,
+  'amount1' : IDL.Nat,
+  'withdrawable' : IDL.Bool,
+  'token0Symbol' : IDL.Text,
+  'token1Symbol' : IDL.Text,
+  'poolId' : PoolId,
+});
+export const AddLiquidityResult = IDL.Record({
+  'shares' : IDL.Nat,
+  'lockedShares' : IDL.Nat,
+  'pool' : PoolView,
+  'amount0' : IDL.Nat,
+  'amount1' : IDL.Nat,
+  'position' : PositionView,
+});
+export const DexToken = IDL.Variant({
+  'icp' : IDL.Null,
+  'tttiT' : IDL.Null,
+  'ckbtc' : IDL.Null,
+  'ckusdc' : IDL.Null,
+  'ckusdt' : IDL.Null,
+});
+export const AddLiquidityError = IDL.Variant({
+  'insufficientBalance' : IDL.Record({
+    'token' : DexToken,
+    'available' : IDL.Nat,
+    'required' : IDL.Nat,
+  }),
+  'poolRemoved' : IDL.Null,
+  'belowMinimum' : IDL.Record({
+    'token0Minimum' : IDL.Opt(IDL.Nat),
+    'token1Minimum' : IDL.Opt(IDL.Nat),
+  }),
+  'minimumsNotSet' : IDL.Null,
+  'lockTooLong' : IDL.Record({ 'maximumNs' : IDL.Nat }),
+  'counterAmountRequired' : IDL.Null,
+  'lockTooShort' : IDL.Record({ 'minimumNs' : IDL.Nat }),
+  'zeroAmount' : IDL.Null,
+  'poolNotFound' : IDL.Null,
+  'anonymous' : IDL.Null,
+  'operationInProgress' : IDL.Null,
+  'zeroShares' : IDL.Null,
+  'unsupportedToken' : IDL.Null,
+  'ratioMismatch' : IDL.Record({ 'requiredCounterAmount' : IDL.Nat }),
+});
+export const Result_20 = IDL.Variant({
+  'ok' : AddLiquidityResult,
+  'err' : AddLiquidityError,
+});
+export const TokenMinimums = IDL.Record({
+  'token0' : IDL.Nat,
+  'token1' : IDL.Nat,
+});
+export const ApprovePairError = IDL.Variant({
+  'minimumsNotAllowed' : IDL.Null,
+  'refundFailed' : IDL.Text,
+  'notAuthorized' : IDL.Null,
+  'requestNotFound' : IDL.Null,
+  'minimumsRequired' : IDL.Null,
+  'invalidMinimums' : IDL.Null,
+  'notPending' : IDL.Null,
+  'pairExists' : IDL.Record({ 'poolId' : PoolId }),
+});
+export const Result_19 = IDL.Variant({
+  'ok' : PoolView,
+  'err' : ApprovePairError,
+});
 export const UserRole = IDL.Variant({
   'admin' : IDL.Null,
   'user' : IDL.Null,
@@ -122,7 +284,6 @@ export const BuybackRule = IDL.Variant({
   'originalNet' : IDL.Null,
   'dayRate' : IDL.Null,
 });
-export const Timestamp = IDL.Int;
 export const PurchaseId = IDL.Nat;
 export const Buyback = IDL.Record({
   'id' : BuybackId,
@@ -198,7 +359,7 @@ export const BuybackError = IDL.Variant({
   }),
   'buybackNotFound' : IDL.Null,
 });
-export const Result_1 = IDL.Variant({ 'ok' : Buyback, 'err' : BuybackError });
+export const Result_4 = IDL.Variant({ 'ok' : Buyback, 'err' : BuybackError });
 export const DepositKind = IDL.Variant({
   'wallet' : IDL.Null,
   'purchase' : IDL.Null,
@@ -278,6 +439,70 @@ export const BtcDepositResult = IDL.Variant({
   'Ok' : DepositTracking,
   'Err' : BtcDepositError,
 });
+export const DexTransferStatus = IDL.Variant({
+  'completed' : IDL.Nat,
+  'needsReview' : IDL.Null,
+  'inProgress' : IDL.Null,
+  'failed' : IDL.Text,
+});
+export const BonusClaimView = IDL.Record({
+  'n' : IDL.Nat,
+  'status' : DexTransferStatus,
+  'createdAt' : Timestamp,
+  'memoText' : IDL.Text,
+  'amountE8s' : IDL.Nat,
+});
+export const ClaimBonusError = IDL.Variant({
+  'belowMinimum' : IDL.Record({ 'minimumE8s' : IDL.Nat }),
+  'nothingToClaim' : IDL.Null,
+  'anonymous' : IDL.Null,
+  'claimInProgress' : IDL.Null,
+});
+export const ClaimBonusResult = IDL.Variant({
+  'ok' : BonusClaimView,
+  'err' : ClaimBonusError,
+});
+export const MintFeeClaimStatus = IDL.Variant({
+  'completed' : IDL.Nat,
+  'needsReview' : IDL.Null,
+  'inProgress' : IDL.Null,
+  'failed' : IDL.Text,
+});
+export const MintFeeClaimView = IDL.Record({
+  'n' : IDL.Nat,
+  'status' : MintFeeClaimStatus,
+  'token' : PayToken,
+  'createdAt' : Timestamp,
+  'memoText' : IDL.Text,
+  'amount' : IDL.Nat,
+});
+export const ClaimMintFeeError = IDL.Variant({
+  'belowLedgerFee' : IDL.Record({ 'fee' : IDL.Nat }),
+  'nothingToClaim' : IDL.Null,
+  'anonymous' : IDL.Null,
+  'claimInProgress' : IDL.Null,
+});
+export const ClaimMintFeeResult = IDL.Variant({
+  'ok' : MintFeeClaimView,
+  'err' : ClaimMintFeeError,
+});
+export const OwnerDestinationView = IDL.Record({
+  'token' : PayToken,
+  'setAt' : IDL.Opt(Timestamp),
+  'account' : IDL.Opt(Account),
+  'accumulated' : IDL.Nat,
+});
+export const OwnerRevenueError = IDL.Variant({
+  'notConfigured' : IDL.Null,
+  'notAdmin' : IDL.Null,
+  'invalidSubaccount' : IDL.Null,
+  'anonymousOwner' : IDL.Null,
+  'contractAccount' : IDL.Null,
+});
+export const OwnerDestinationResult = IDL.Variant({
+  'ok' : OwnerDestinationView,
+  'err' : OwnerRevenueError,
+});
 export const ConversionStatus = IDL.Variant({
   'refundFailed' : IDL.Null,
   'refundReview' : IDL.Null,
@@ -285,7 +510,7 @@ export const ConversionStatus = IDL.Variant({
   'refunded' : IDL.Null,
   'failed' : IDL.Null,
 });
-export const Timestamp__2 = IDL.Nat64;
+export const Timestamp__6 = IDL.Nat64;
 export const ForwardStatus = IDL.Variant({
   'forwarded' : IDL.Nat,
   'pending' : IDL.Null,
@@ -306,7 +531,7 @@ export const Conversion = IDL.Record({
   'recipient' : Account,
   'paymentBlock' : IDL.Opt(IDL.Nat),
   'message' : IDL.Opt(IDL.Text),
-  'timestamp' : Timestamp__2,
+  'timestamp' : Timestamp__6,
   'payAmount' : IDL.Nat,
   'tttiAmount' : IDL.Nat,
   'mintBlock' : IDL.Opt(IDL.Nat),
@@ -360,9 +585,49 @@ export const PurchaseResult = IDL.Variant({
   'Ok' : Conversion,
   'Err' : PurchaseError,
 });
-export const Result_7 = IDL.Variant({
+export const Result_18 = IDL.Variant({
   'ok' : IDL.Null,
   'err' : AddressBookError,
+});
+export const DexAmountArgs = IDL.Record({
+  'token' : DexToken,
+  'amount' : IDL.Nat,
+});
+export const DexTransferDirection = IDL.Variant({
+  'deposit' : IDL.Null,
+  'withdrawal' : IDL.Null,
+});
+export const DexTransferView = IDL.Record({
+  'n' : IDL.Nat,
+  'to' : DexAccount,
+  'fee' : IDL.Nat,
+  'status' : DexTransferStatus,
+  'direction' : DexTransferDirection,
+  'token' : DexToken,
+  'createdAtTimeNs' : IDL.Nat64,
+  'attempt' : IDL.Nat,
+  'owner' : IDL.Principal,
+  'from' : DexAccount,
+  'memoText' : IDL.Text,
+  'sends' : IDL.Nat,
+  'ledgerAmount' : IDL.Nat,
+  'lastError' : IDL.Opt(IDL.Text),
+  'amount' : IDL.Nat,
+});
+export const DexDepositError = IDL.Variant({
+  'amountTooSmall' : IDL.Record({ 'minimum' : IDL.Nat }),
+  'insufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
+  'insufficientAllowance' : IDL.Record({
+    'required' : IDL.Nat,
+    'allowance' : IDL.Nat,
+  }),
+  'anonymous' : IDL.Null,
+  'transferInProgress' : IDL.Null,
+  'ledgerError' : IDL.Text,
+});
+export const Result_17 = IDL.Variant({
+  'ok' : DexTransferView,
+  'err' : DexDepositError,
 });
 export const Value__2 = IDL.Variant({
   'int' : IDL.Int,
@@ -391,8 +656,20 @@ export const SnapshotEntry = IDL.Record({
 export const BalanceSnapshot = IDL.Record({
   'decimals' : IDL.Nat8,
   'totalSupply' : IDL.Nat,
-  'exportedAt' : Timestamp__2,
+  'exportedAt' : Timestamp__6,
   'holders' : IDL.Vec(SnapshotEntry),
+});
+export const ExtendLockError = IDL.Variant({
+  'notPositionOwner' : IDL.Null,
+  'lockTooLong' : IDL.Record({ 'maximumUnlockAt' : Timestamp }),
+  'cannotShortenLock' : IDL.Record({ 'unlockAt' : Timestamp }),
+  'anonymous' : IDL.Null,
+  'operationInProgress' : IDL.Null,
+  'positionNotFound' : IDL.Null,
+});
+export const Result_16 = IDL.Variant({
+  'ok' : PositionView,
+  'err' : ExtendLockError,
 });
 export const BtcDepositInfo = IDL.Record({
   'depositMinSats' : IDL.Nat,
@@ -422,6 +699,38 @@ export const BuybackFunding = IDL.Record({
   'error' : IDL.Opt(IDL.Text),
   'allowance' : IDL.Nat,
 });
+export const AutonomyView = IDL.Record({
+  'avg30dCyclesPerDay' : IDL.Opt(IDL.Nat),
+  'computedAt' : Timestamp,
+  'totalCycles' : IDL.Nat,
+  'sampleCount' : IDL.Nat,
+  'autonomyDays' : IDL.Opt(IDL.Nat),
+  'reserveBalanceE8s' : IDL.Nat,
+  'reserveCyclesEstimate' : IDL.Opt(IDL.Nat),
+  'avg7dCyclesPerDay' : IDL.Opt(IDL.Nat),
+  'targetDays' : IDL.Nat,
+  'cyclesBalance' : IDL.Nat,
+  'oldestSampleAt' : IDL.Opt(Timestamp),
+});
+export const CyclesShareView = IDL.Record({
+  'shareBps' : IDL.Nat,
+  'targetShareBps' : IDL.Nat,
+  'lastAdjustAt' : IDL.Opt(Timestamp),
+  'nextAdjustAfter' : IDL.Opt(Timestamp),
+  'autonomyDays' : IDL.Opt(IDL.Nat),
+  'minShareBps' : IDL.Nat,
+  'minAdjustIntervalNs' : IDL.Nat,
+  'maxShareBps' : IDL.Nat,
+  'lowAutonomyDays' : IDL.Nat,
+  'highAutonomyDays' : IDL.Nat,
+  'maxStepBps' : IDL.Nat,
+});
+export const ShareChange = IDL.Record({
+  'at' : Timestamp,
+  'newShareBps' : IDL.Nat,
+  'autonomyDays' : IDL.Opt(IDL.Nat),
+  'oldShareBps' : IDL.Nat,
+});
 export const TopUpStatus = IDL.Variant({
   'transferred' : IDL.Null,
   'notified' : IDL.Record({ 'cycles' : IDL.Nat }),
@@ -439,22 +748,56 @@ export const ReserveWithdrawal = IDL.Record({
   'timestamp' : Timestamp,
   'amountE8s' : IDL.Nat,
 });
-export const WithdrawalBlockedReason = IDL.Variant({
-  'cyclesBelowThreshold' : IDL.Null,
-  'topUpRunning' : IDL.Null,
-  'topUpAwaitingConfirmation' : IDL.Null,
-});
 export const CyclesStatus = IDL.Record({
-  'withdrawableExcessE8s' : IDL.Nat,
-  'withdrawalAllowed' : IDL.Bool,
   'lastTopUp' : IDL.Opt(TopUpRecord),
   'reserveFloorE8s' : IDL.Nat,
   'reserveAccount' : Account,
   'reserveBalanceE8s' : IDL.Nat,
   'withdrawals' : IDL.Vec(ReserveWithdrawal),
-  'withdrawalBlockedReason' : IDL.Opt(WithdrawalBlockedReason),
   'cyclesBalance' : IDL.Nat,
   'topUpThreshold' : IDL.Nat,
+});
+export const DexBalanceView = IDL.Record({
+  'token' : DexToken,
+  'ledgerId' : IDL.Principal,
+  'reserved' : IDL.Nat,
+  'available' : IDL.Nat,
+  'symbol' : IDL.Text,
+});
+export const DexConfig = IDL.Record({
+  'approvalStatement' : IDL.Text,
+  'rateValidForNs' : IDL.Nat,
+  'refusalCooldownNs' : IDL.Int,
+  'newPairBadgeNs' : IDL.Int,
+  'feeTiers' : IDL.Vec(FeeTier),
+  'launchMinimumTotalUsdE8' : IDL.Nat,
+  'messageMaxChars' : IDL.Nat,
+  'protocolStatement' : IDL.Text,
+  'tttiMinimumLocked' : IDL.Nat,
+  'firstDepositMultiplier' : IDL.Nat,
+  'depositAccount' : DexAccount,
+  'tttiTUsdE8' : IDL.Nat,
+  'maxLockNs' : IDL.Nat,
+  'usdRateScale' : IDL.Nat,
+  'rateGraceNs' : IDL.Nat,
+  'lockedSharesStatement' : IDL.Text,
+  'minLockNs' : IDL.Nat,
+  'launchDepthStatement' : IDL.Text,
+  'swapDeadlineMaxNs' : IDL.Nat,
+  'lpFeeSharePercent' : IDL.Nat,
+  'maxPendingPerUser' : IDL.Nat,
+  'reasonMaxChars' : IDL.Nat,
+  'requestDeposit' : IDL.Nat,
+  'protocolFeeSharePercent' : IDL.Nat,
+});
+export const DexTokenInfo = IDL.Record({
+  'fee' : IDL.Nat,
+  'decimals' : IDL.Nat8,
+  'token' : DexToken,
+  'ledgerId' : IDL.Principal,
+  'minimumDeposit' : IDL.Nat,
+  'minimumWithdrawal' : IDL.Nat,
+  'symbol' : IDL.Text,
 });
 export const FeeCollectorInfo = IDL.Record({
   'balance' : IDL.Nat,
@@ -473,14 +816,134 @@ export const IcpPrice = IDL.Record({
   'lastError' : IDL.Opt(PriceError),
   'validUntil' : Timestamp,
 });
+export const TokenAmounts = IDL.Record({
+  'icp' : IDL.Nat,
+  'ckbtc' : IDL.Nat,
+  'ckusdc' : IDL.Nat,
+  'ckusdt' : IDL.Nat,
+});
+export const AllocationSkip = IDL.Record({
+  'poolId' : IDL.Nat,
+  'reason' : IDL.Text,
+});
+export const AllocationPoolAdd = IDL.Record({
+  'shares' : IDL.Nat,
+  'amount0' : IDL.Nat,
+  'amount1' : IDL.Nat,
+  'poolId' : IDL.Nat,
+});
+export const WeeklyAllocation = IDL.Record({
+  'at' : IDL.Int,
+  'id' : IDL.Nat,
+  'toBonusE8s' : IDL.Nat,
+  'stockPayoutCap' : TokenAmounts,
+  'skipped' : IDL.Vec(AllocationSkip),
+  'note' : IDL.Text,
+  'surplusE8s' : IDL.Nat,
+  'treasuryBalances' : TokenAmounts,
+  'autonomyDays' : IDL.Opt(IDL.Nat),
+  'toLiquidity' : TokenAmounts,
+  'poolAdds' : IDL.Vec(AllocationPoolAdd),
+  'waiting' : TokenAmounts,
+  'toCyclesReserveE8s' : IDL.Nat,
+});
 export const LegacyBlockInfo = IDL.Record({
   'boundaryIndex' : IDL.Nat,
   'currentDecimals' : IDL.Nat8,
   'legacyDecimals' : IDL.Nat8,
 });
+export const MintTreasuryAccount = IDL.Record({
+  'token' : PayToken,
+  'balance' : IDL.Opt(IDL.Nat),
+  'legacyExternalAccount' : IDL.Opt(Account),
+  'account' : Account,
+});
 export const MyBtcDeposits = IDL.Record({
   'wallet' : IDL.Opt(DepositTracking),
   'purchase' : IDL.Opt(DepositTracking),
+});
+export const PositionBonusWeight = IDL.Record({
+  'weight' : IDL.Nat,
+  'valueIcpE8s' : IDL.Nat,
+  'positionId' : IDL.Nat,
+  'remainingLockNs' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const LpBonusView = IDL.Record({
+  'claims' : IDL.Vec(BonusClaimView),
+  'claimedE8s' : IDL.Nat,
+  'positions' : IDL.Vec(PositionBonusWeight),
+  'claimableE8s' : IDL.Nat,
+});
+export const MintFeeBalance = IDL.Record({
+  'token' : PayToken,
+  'claimed' : IDL.Nat,
+  'claimable' : IDL.Nat,
+});
+export const MintFeeLpView = IDL.Record({
+  'claims' : IDL.Vec(MintFeeClaimView),
+  'balances' : IDL.Vec(MintFeeBalance),
+});
+export const RequestStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'approved' : IDL.Record({ 'at' : Timestamp, 'poolId' : PoolId }),
+  'refused' : IDL.Record({ 'at' : Timestamp, 'reason' : IDL.Text }),
+});
+export const RequestedToken = IDL.Record({
+  'fee' : IDL.Nat,
+  'decimals' : IDL.Nat8,
+  'ledgerId' : IDL.Principal,
+  'name' : IDL.Text,
+  'symbol' : IDL.Text,
+});
+export const PairRefundStatus = IDL.Variant({
+  'none' : IDL.Null,
+  'refunded' : IDL.Nat,
+  'needsReview' : IDL.Null,
+  'inProgress' : IDL.Null,
+});
+export const RequestChecks = IDL.Record({
+  'metadataRead' : IDL.Bool,
+  'pairUnique' : IDL.Bool,
+  'icrc1' : IDL.Bool,
+  'icrc2' : IDL.Bool,
+  'copiedSymbolOf' : IDL.Opt(IDL.Text),
+});
+export const PairRequestView = IDL.Record({
+  'id' : RequestId,
+  'status' : RequestStatus,
+  'depositAmount' : IDL.Nat,
+  'token' : RequestedToken,
+  'requester' : IDL.Principal,
+  'counter' : PoolTokenView,
+  'refundStatus' : PairRefundStatus,
+  'feeBps' : IDL.Nat,
+  'kind' : PoolKind,
+  'createdAt' : Timestamp,
+  'feeTier' : FeeTier,
+  'depositBlock' : IDL.Nat,
+  'refundBlock' : IDL.Opt(IDL.Nat),
+  'message' : IDL.Text,
+  'checks' : RequestChecks,
+  'copiedSymbol' : IDL.Bool,
+});
+export const OwnerAccumulated = IDL.Record({
+  'token' : PayToken,
+  'amount' : IDL.Nat,
+});
+export const ProtocolLiquidityView = IDL.Record({
+  'shares' : IDL.Nat,
+  'fromTreasury0' : IDL.Nat,
+  'fromTreasury1' : IDL.Nat,
+  'lastAddedAt' : IDL.Opt(Timestamp),
+  'amount0' : IDL.Nat,
+  'amount1' : IDL.Nat,
+  'fromFees0' : IDL.Nat,
+  'fromFees1' : IDL.Nat,
+  'token0Symbol' : IDL.Text,
+  'totalShares' : IDL.Nat,
+  'token1Symbol' : IDL.Text,
+  'poolId' : PoolId,
 });
 export const TokenAccountInfo = IDL.Record({
   'token' : PayToken,
@@ -530,6 +993,16 @@ export const SaleStatus = IDL.Record({
   'maxSupply' : IDL.Nat,
   'mintableRemaining' : IDL.Nat,
 });
+export const SetAsideView = IDL.Record({
+  'token' : PayToken,
+  'totalReceived' : IDL.Nat,
+  'lastInjectionAt' : IDL.Opt(Timestamp),
+  'thresholdUsdE8' : IDL.Nat,
+  'valueUsdE8' : IDL.Opt(IDL.Nat),
+  'totalInjected' : IDL.Nat,
+  'targetPoolId' : IDL.Opt(PoolId),
+  'amount' : IDL.Nat,
+});
 export const TechnicalDetails = IDL.Record({
   'decimals' : IDL.Nat8,
   'buyerPriceUsd' : IDL.Nat,
@@ -575,6 +1048,33 @@ export const TokenPrice = IDL.Record({
   'validUntil' : Timestamp,
 });
 export const TreasuryConfig = IDL.Record({ 'icpAccount' : Account });
+export const SweepStatus = IDL.Variant({
+  'notStarted' : IDL.Null,
+  'completed' : IDL.Null,
+  'toppingUpReserve' : IDL.Null,
+  'sending' : IDL.Null,
+});
+export const SweepTokenStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'sent' : IDL.Nat,
+  'nothingToSend' : IDL.Null,
+  'waitingDestination' : IDL.Null,
+  'sending' : IDL.Nat,
+});
+export const SweepToken = IDL.Record({
+  'status' : SweepTokenStatus,
+  'token' : PayToken,
+  'balance' : IDL.Opt(IDL.Nat),
+});
+export const TreasurySweepView = IDL.Record({
+  'status' : SweepStatus,
+  'completedAt' : IDL.Opt(Timestamp),
+  'startedAt' : IDL.Opt(Timestamp),
+  'reserveTopUpBlock' : IDL.Opt(IDL.Nat),
+  'reserveTopUpE8s' : IDL.Nat,
+  'tokens' : IDL.Vec(SweepToken),
+  'reserveTopUpMemo' : IDL.Opt(IDL.Text),
+});
 export const PurchaseTrace = IDL.Record({
   'n' : IDL.Nat,
   'token' : PayToken,
@@ -617,15 +1117,22 @@ export const UpgradeReadiness = IDL.Record({
   'reserveLockBusy' : IDL.Bool,
   'purchasesInFlightCount' : IDL.Nat,
   'salesPaused' : IDL.Bool,
+  'mintFeeClaimsInFlight' : IDL.Vec(IDL.Nat),
   'openTraceCount' : IDL.Nat,
   'reserved' : IDL.Nat,
+  'ownerSendsInFlight' : IDL.Vec(IDL.Nat),
   'purchasesInFlight' : IDL.Vec(IDL.Principal),
   'btcLockHeld' : IDL.Bool,
+  'sweepStatus' : SweepStatus,
+  'bonusClaimsInFlight' : IDL.Vec(IDL.Nat),
   'buybacksInFlight' : IDL.Vec(IDL.Text),
   'openTraces' : IDL.Vec(PurchaseTrace),
+  'protocolFeeLocks' : IDL.Vec(IDL.Text),
   'buybacksInFlightCount' : IDL.Nat,
   'pendingTopUp' : IDL.Opt(TopUpAttempt),
+  'injectionsInFlight' : IDL.Vec(IDL.Nat),
   'lastReconciliation' : IDL.Opt(ReservedReconciliation),
+  'dcSendsInFlight' : IDL.Vec(IDL.Nat),
 });
 export const BlockIndex = IDL.Nat;
 export const GetAccountTransactionsArgs = IDL.Record({
@@ -731,7 +1238,7 @@ export const TransferArgs = IDL.Record({
   'fee' : IDL.Opt(IDL.Nat),
   'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
   'from_subaccount' : IDL.Opt(Subaccount),
-  'created_at_time' : IDL.Opt(Timestamp__2),
+  'created_at_time' : IDL.Opt(Timestamp__6),
   'amount' : IDL.Nat,
 });
 export const TransferError = IDL.Variant({
@@ -740,7 +1247,7 @@ export const TransferError = IDL.Variant({
   'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
   'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
   'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
   'TooOld' : IDL.Null,
   'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
 });
@@ -754,28 +1261,28 @@ export const AllowanceArgs = IDL.Record({
 });
 export const Allowance = IDL.Record({
   'allowance' : IDL.Nat,
-  'expires_at' : IDL.Opt(Timestamp__2),
+  'expires_at' : IDL.Opt(Timestamp__6),
 });
 export const ApproveArgs = IDL.Record({
   'fee' : IDL.Opt(IDL.Nat),
   'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
   'from_subaccount' : IDL.Opt(Subaccount),
-  'created_at_time' : IDL.Opt(Timestamp__2),
+  'created_at_time' : IDL.Opt(Timestamp__6),
   'amount' : IDL.Nat,
   'expected_allowance' : IDL.Opt(IDL.Nat),
-  'expires_at' : IDL.Opt(Timestamp__2),
+  'expires_at' : IDL.Opt(Timestamp__6),
   'spender' : Account,
 });
 export const ApproveError = IDL.Variant({
   'GenericError' : IDL.Record({ 'message' : IDL.Text, 'error_code' : IDL.Nat }),
   'TemporarilyUnavailable' : IDL.Null,
   'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
-  'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+  'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
   'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
   'AllowanceChanged' : IDL.Record({ 'current_allowance' : IDL.Nat }),
-  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
   'TooOld' : IDL.Null,
-  'Expired' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+  'Expired' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
   'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
 });
 export const ApproveResult = IDL.Variant({
@@ -788,7 +1295,7 @@ export const TransferFromArgs = IDL.Record({
   'spender_subaccount' : IDL.Opt(Subaccount),
   'from' : Account,
   'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
-  'created_at_time' : IDL.Opt(Timestamp__2),
+  'created_at_time' : IDL.Opt(Timestamp__6),
   'amount' : IDL.Nat,
 });
 export const TransferFromError = IDL.Variant({
@@ -798,7 +1305,7 @@ export const TransferFromError = IDL.Variant({
   'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
   'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
   'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+  'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
   'TooOld' : IDL.Null,
   'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
 });
@@ -863,27 +1370,132 @@ export const BuybackMass = IDL.Record({
   'boughtBackNet' : IDL.Nat,
   'inProgress' : IDL.Bool,
 });
-export const Result_6 = IDL.Variant({
+export const DcBatchStatus = IDL.Variant({
+  'sent' : IDL.Nat,
+  'nothingToConvert' : IDL.Null,
+  'sending' : IDL.Null,
+  'needsReview' : IDL.Null,
+  'failed' : IDL.Text,
+  'waitingPriceDeviation' : IDL.Null,
+});
+export const DcTrigger = IDL.Variant({
+  'threshold' : IDL.Null,
+  'daily' : IDL.Null,
+});
+export const DcLeg = IDL.Record({
+  'deviationBps' : IDL.Nat,
+  'amountIn' : IDL.Nat,
+  'tokenSymbol' : IDL.Text,
+  'executionIcpOutE8s' : IDL.Nat,
+  'converted' : IDL.Bool,
+  'referenceIcpOutE8s' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const DcBatch = IDL.Record({
+  'at' : Timestamp,
+  'id' : IDL.Nat,
+  'toBonusE8s' : IDL.Nat,
+  'status' : DcBatchStatus,
+  'trigger' : DcTrigger,
+  'legs' : IDL.Vec(DcLeg),
+  'toCyclesE8s' : IDL.Nat,
+});
+export const InjectionStatus = IDL.Variant({
+  'completed' : IDL.Null,
+  'addingLiquidity' : IDL.Null,
+  'swapping' : IDL.Null,
+  'needsReview' : IDL.Null,
+  'failed' : IDL.Text,
+});
+export const SwapVenue = IDL.Variant({
+  'native' : PoolId,
+  'icpswap' : IDL.Principal,
+});
+export const LiquidityInjection = IDL.Record({
+  'id' : IDL.Nat,
+  'status' : InjectionStatus,
+  'minTttiOut' : IDL.Nat,
+  'startedAt' : Timestamp,
+  'token' : PayToken,
+  'venue' : SwapVenue,
+  'amountIn' : IDL.Nat,
+  'error' : IDL.Opt(IDL.Text),
+  'updatedAt' : Timestamp,
+  'tttiReceived' : IDL.Nat,
+  'pairAmountIn' : IDL.Nat,
+  'used0' : IDL.Nat,
+  'used1' : IDL.Nat,
+  'swapAmountIn' : IDL.Nat,
+  'liquidityShares' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const InjectionPage = IDL.Record({
+  'total' : IDL.Nat,
+  'offset' : IDL.Nat,
+  'items' : IDL.Vec(LiquidityInjection),
+});
+export const Result_15 = IDL.Variant({
   'ok' : IDL.Vec(BuybackMass),
   'err' : BuybackError,
 });
-export const Result_5 = IDL.Variant({
+export const Result_14 = IDL.Variant({
   'ok' : IDL.Vec(Buyback),
   'err' : BuybackError,
 });
-export const Result_4 = IDL.Variant({
+export const Result_13 = IDL.Variant({
   'ok' : IDL.Vec(Contact),
   'err' : AddressBookError,
+});
+export const OwnerSendStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'sent' : IDL.Nat,
+  'needsReview' : IDL.Null,
+  'failed' : IDL.Text,
+});
+export const OwnerSendSource = IDL.Variant({
+  'mint' : IDL.Nat,
+  'treasurySweep' : IDL.Null,
+  'accumulated' : IDL.Null,
+});
+export const OwnerSendView = IDL.Record({
+  'id' : IDL.Nat,
+  'fee' : IDL.Opt(IDL.Nat),
+  'status' : OwnerSendStatus,
+  'destination' : Account,
+  'token' : PayToken,
+  'createdAtTimeNs' : IDL.Nat64,
+  'attempt' : IDL.Nat,
+  'source' : OwnerSendSource,
+  'createdAt' : Timestamp,
+  'memoText' : IDL.Text,
+  'sends' : IDL.Nat,
+  'updatedAt' : Timestamp,
+  'block' : IDL.Opt(IDL.Nat),
+  'lastError' : IDL.Opt(IDL.Text),
+  'amount' : IDL.Nat,
+});
+export const OwnerSendPage = IDL.Record({
+  'total' : IDL.Nat,
+  'offset' : IDL.Nat,
+  'items' : IDL.Vec(OwnerSendView),
 });
 export const TransferKind = IDL.Variant({
   'BB' : IDL.Null,
   'BC' : IDL.Null,
   'BM' : IDL.Null,
   'BR' : IDL.Null,
+  'DC' : IDL.Null,
+  'DD' : IDL.Null,
+  'DL' : IDL.Null,
+  'DQ' : IDL.Null,
+  'DW' : IDL.Null,
   'FW' : IDL.Null,
+  'MF' : IDL.Null,
+  'OW' : IDL.Null,
   'PC' : IDL.Null,
   'RF' : IDL.Null,
   'SH' : IDL.Null,
+  'SR' : IDL.Null,
 });
 export const CollectState = IDL.Variant({
   'confirmed' : IDL.Null,
@@ -892,7 +1504,7 @@ export const CollectState = IDL.Variant({
 export const TransferReview = IDL.Record({
   'fee' : IDL.Opt(IDL.Nat),
   'destination' : IDL.Opt(Account),
-  'token' : PayToken,
+  'token' : DexToken,
   'createdAtTimeNs' : IDL.Opt(IDL.Nat64),
   'memoHex' : IDL.Opt(IDL.Text),
   'kind' : TransferKind,
@@ -923,6 +1535,27 @@ export const ReviewResult = IDL.Variant({
   'ok' : IDL.Null,
   'err' : ReviewError,
 });
+export const AddLiquidityQuoteArgs = IDL.Record({
+  'side' : PoolSide,
+  'counterAmount' : IDL.Opt(IDL.Nat),
+  'amount' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const AddLiquidityQuote = IDL.Record({
+  'shares' : IDL.Nat,
+  'gaugeAfter' : UsdGauge,
+  'lockedShares' : IDL.Nat,
+  'opensPool' : IDL.Bool,
+  'isFirstDeposit' : IDL.Bool,
+  'amount0' : IDL.Nat,
+  'amount1' : IDL.Nat,
+  'totalSharesAfter' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const Result_12 = IDL.Variant({
+  'ok' : AddLiquidityQuote,
+  'err' : AddLiquidityError,
+});
 export const BuybackQuote = IDL.Record({
   'buybackFee' : IDL.Nat,
   'tttiEscrowFee' : IDL.Nat,
@@ -945,17 +1578,57 @@ export const BuybackQuote = IDL.Record({
   'amountReturned' : IDL.Nat,
   'massTotalTtti' : IDL.Nat,
 });
-export const Result_3 = IDL.Variant({
+export const Result_11 = IDL.Variant({
   'ok' : BuybackQuote,
   'err' : BuybackError,
 });
+export const SwapQuote = IDL.Record({
+  'fee' : IDL.Nat,
+  'tokenIn' : DexToken,
+  'slippageBps' : IDL.Nat,
+  'maxDeadlineNs' : IDL.Nat,
+  'tokenOut' : DexToken,
+  'protocolFee' : IDL.Nat,
+  'feeBps' : IDL.Nat,
+  'amountIn' : IDL.Nat,
+  'lpFee' : IDL.Nat,
+  'minimumReceived' : IDL.Nat,
+  'priceImpactBps' : IDL.Nat,
+  'amountOut' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const SwapError = IDL.Variant({
+  'insufficientBalance' : IDL.Record({ 'available' : IDL.Nat }),
+  'tokenNotInPool' : IDL.Null,
+  'poolRemoved' : IDL.Null,
+  'poolFilling' : IDL.Record({ 'gauge' : UsdGauge }),
+  'deadlineTooFar' : IDL.Record({ 'maximum' : Timestamp }),
+  'invalidSlippage' : IDL.Record({ 'maximumBps' : IDL.Nat }),
+  'poolNotOpen' : IDL.Null,
+  'zeroAmount' : IDL.Null,
+  'poolNotFound' : IDL.Null,
+  'anonymous' : IDL.Null,
+  'rateUnavailable' : IDL.Null,
+  'operationInProgress' : IDL.Null,
+  'slippageExceeded' : IDL.Record({
+    'amountOut' : IDL.Nat,
+    'minAmountOut' : IDL.Nat,
+  }),
+  'unsupportedToken' : IDL.Null,
+  'deadlineExceeded' : IDL.Record({
+    'now' : Timestamp,
+    'deadline' : Timestamp,
+  }),
+  'insufficientLiquidity' : IDL.Null,
+});
+export const Result_10 = IDL.Variant({ 'ok' : SwapQuote, 'err' : SwapError });
 export const ReconcileError = IDL.Variant({
   'notPaused' : IDL.Null,
   'openTraces' : IDL.Null,
   'purchaseInFlight' : IDL.Null,
   'notAdmin' : IDL.Null,
 });
-export const Result_2 = IDL.Variant({
+export const Result_9 = IDL.Variant({
   'ok' : ReservedReconciliation,
   'err' : ReconcileError,
 });
@@ -963,6 +1636,85 @@ export const PriceResult = IDL.Variant({ 'Ok' : IcpPrice, 'Err' : IDL.Text });
 export const TokenPriceResult = IDL.Variant({
   'Ok' : TokenPrice,
   'Err' : IDL.Text,
+});
+export const RefusePairError = IDL.Variant({
+  'notAuthorized' : IDL.Null,
+  'requestNotFound' : IDL.Null,
+  'reasonTooLong' : IDL.Record({ 'max' : IDL.Nat }),
+  'reasonRequired' : IDL.Null,
+  'notPending' : IDL.Null,
+});
+export const Result_8 = IDL.Variant({
+  'ok' : PairRequestView,
+  'err' : RefusePairError,
+});
+export const RemoveLiquidityResult = IDL.Record({
+  'shares' : IDL.Nat,
+  'pool' : PoolView,
+  'positionId' : PositionId,
+  'amount0' : IDL.Nat,
+  'amount1' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const RemoveLiquidityError = IDL.Variant({
+  'notPositionOwner' : IDL.Null,
+  'poolNotFound' : IDL.Null,
+  'anonymous' : IDL.Null,
+  'operationInProgress' : IDL.Null,
+  'positionLocked' : IDL.Record({ 'unlockAt' : Timestamp }),
+  'positionNotFound' : IDL.Null,
+});
+export const Result_7 = IDL.Variant({
+  'ok' : RemoveLiquidityResult,
+  'err' : RemoveLiquidityError,
+});
+export const RemovePairError = IDL.Variant({
+  'notAuthorized' : IDL.Null,
+  'alreadyRemoved' : IDL.Null,
+  'poolNotFound' : IDL.Null,
+});
+export const Result_6 = IDL.Variant({
+  'ok' : PoolView,
+  'err' : RemovePairError,
+});
+export const CounterToken = IDL.Variant({
+  'icp' : IDL.Null,
+  'tttiT' : IDL.Null,
+  'ckbtc' : IDL.Null,
+  'ckusdc' : IDL.Null,
+  'ckusdt' : IDL.Null,
+  'poolToken' : IDL.Principal,
+});
+export const RequestPairArgs = IDL.Record({
+  'ledgerId' : IDL.Principal,
+  'counter' : CounterToken,
+  'feeTier' : FeeTier,
+  'message' : IDL.Text,
+});
+export const RequestPairError = IDL.Variant({
+  'depositFailed' : IDL.Text,
+  'tooManyPending' : IDL.Record({ 'max' : IDL.Nat }),
+  'messageTooLong' : IDL.Record({ 'max' : IDL.Nat }),
+  'missingStandards' : IDL.Record({ 'icrc1' : IDL.Bool, 'icrc2' : IDL.Bool }),
+  'insufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
+  'insufficientAllowance' : IDL.Record({
+    'required' : IDL.Nat,
+    'allowance' : IDL.Nat,
+  }),
+  'anonymous' : IDL.Null,
+  'ledgerUnreachable' : IDL.Text,
+  'metadataUnavailable' : IDL.Text,
+  'invalidToken' : IDL.Text,
+  'unknownCounterToken' : IDL.Null,
+  'cooldown' : IDL.Record({ 'until' : Timestamp }),
+  'pairExists' : IDL.Record({
+    'requestId' : IDL.Opt(RequestId),
+    'poolId' : IDL.Opt(PoolId),
+  }),
+});
+export const Result_5 = IDL.Variant({
+  'ok' : PairRequestView,
+  'err' : RequestPairError,
 });
 export const DeliveryAddressErrorCode = IDL.Variant({
   'invalidPrincipal' : IDL.Null,
@@ -979,16 +1731,32 @@ export const DeliveryAddressResult = IDL.Variant({
   'Ok' : Account,
   'Err' : DeliveryAddressError,
 });
-export const TokenAccountResult = IDL.Variant({
-  'Ok' : TokenAccountInfo,
-  'Err' : IDL.Text,
+export const SetMinimumsError = IDL.Variant({
+  'poolRemoved' : IDL.Null,
+  'notAuthorized' : IDL.Null,
+  'liquidityAlreadyAdded' : IDL.Null,
+  'invalidMinimums' : IDL.Null,
+  'poolNotFound' : IDL.Null,
+  'notUtilityPair' : IDL.Null,
 });
-export const TreasuryConfigResult = IDL.Variant({
-  'Ok' : TreasuryConfig,
-  'Err' : IDL.Text,
+export const Result_3 = IDL.Variant({
+  'ok' : PoolView,
+  'err' : SetMinimumsError,
 });
 export const SetFeeResult = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
 export const IndexStatus = IDL.Record({ 'num_blocks_synced' : BlockIndex });
+export const SwapResult = IDL.Record({
+  'fee' : IDL.Nat,
+  'tokenIn' : DexToken,
+  'tokenOut' : DexToken,
+  'protocolFee' : IDL.Nat,
+  'pool' : PoolView,
+  'amountIn' : IDL.Nat,
+  'lpFee' : IDL.Nat,
+  'amountOut' : IDL.Nat,
+  'poolId' : PoolId,
+});
+export const Result_2 = IDL.Variant({ 'ok' : SwapResult, 'err' : SwapError });
 export const HttpHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
 export const HttpRequestResult = IDL.Record({
   'status' : IDL.Nat,
@@ -1004,23 +1772,21 @@ export const TransformationOutput = IDL.Record({
   'body' : IDL.Vec(IDL.Nat8),
   'headers' : IDL.Vec(HttpHeader),
 });
-export const WithdrawReserveResult = IDL.Variant({
-  'ok' : IDL.Nat,
-  'busy' : IDL.Null,
-  'amountExceedsExcess' : IDL.Record({ 'withdrawableE8s' : IDL.Nat }),
-  'topUpPendingNotify' : IDL.Null,
-  'cyclesBelowThreshold' : IDL.Record({
-    'cyclesBalance' : IDL.Nat,
-    'topUpThreshold' : IDL.Nat,
-  }),
-  'noExcess' : IDL.Null,
+export const DexWithdrawError = IDL.Variant({
+  'insufficientBalance' : IDL.Record({ 'available' : IDL.Nat }),
+  'amountTooSmall' : IDL.Record({ 'minimum' : IDL.Nat }),
+  'anonymous' : IDL.Null,
+  'transferInProgress' : IDL.Null,
   'ledgerError' : IDL.Text,
-  'treasuryNotConfigured' : IDL.Null,
+});
+export const Result = IDL.Variant({
+  'ok' : DexTransferView,
+  'err' : DexWithdrawError,
 });
 
 export const idlService = IDL.Service({
   '_initialize_access_control' : IDL.Func([], [], []),
-  '_internet_identity_sign_in_finish' : IDL.Func([], [Result_8], []),
+  '_internet_identity_sign_in_finish' : IDL.Func([], [Result_21], []),
   '_internet_identity_sign_in_start' : IDL.Func([], [IDL.Vec(IDL.Nat8)], []),
   'acceptPurchaseAcknowledgements' : IDL.Func(
       [],
@@ -1032,9 +1798,11 @@ export const idlService = IDL.Service({
       ],
       [],
     ),
-  'addContact' : IDL.Func([ContactInput], [Result], []),
+  'addContact' : IDL.Func([ContactInput], [Result_1], []),
+  'addLiquidity' : IDL.Func([AddLiquidityArgs], [Result_20], []),
+  'approvePair' : IDL.Func([IDL.Nat, IDL.Opt(TokenMinimums)], [Result_19], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-  'cancelBuyback' : IDL.Func([BuybackId], [Result_1], []),
+  'cancelBuyback' : IDL.Func([BuybackId], [Result_4], []),
   'checkBtcPurchaseDeposit' : IDL.Func([], [BtcDepositResult], []),
   'checkBtcWalletDeposit' : IDL.Func([], [BtcDepositResult], []),
   'checkBtcWalletDepositFor' : IDL.Func(
@@ -1042,7 +1810,10 @@ export const idlService = IDL.Service({
       [BtcDepositResult],
       [],
     ),
+  'claimLpBonus' : IDL.Func([], [ClaimBonusResult], []),
+  'claimMintFee' : IDL.Func([PayToken], [ClaimMintFeeResult], []),
   'clearDeliveryAddress' : IDL.Func([], [IDL.Bool], []),
+  'clearOwnerDestination' : IDL.Func([PayToken], [OwnerDestinationResult], []),
   'convertDeposit' : IDL.Func(
       [IDL.Opt(Account), IDL.Nat],
       [PurchaseResult],
@@ -1053,9 +1824,11 @@ export const idlService = IDL.Service({
       [PurchaseResult],
       [],
     ),
-  'deleteContact' : IDL.Func([ContactId], [Result_7], []),
+  'deleteContact' : IDL.Func([ContactId], [Result_18], []),
+  'depositToDex' : IDL.Func([DexAmountArgs], [Result_17], []),
   'execute' : IDL.Func([IDL.Text], [Result__1], ['query']),
   'exportBalanceSnapshot' : IDL.Func([], [BalanceSnapshot], ['query']),
+  'extendLock' : IDL.Func([IDL.Nat, IDL.Int], [Result_16], []),
   'getApiDoc' : IDL.Func([], [IDL.Text], ['query']),
   'getBtcDepositInfo' : IDL.Func([], [BtcDepositInfo], ['query']),
   'getBtcPurchaseAddress' : IDL.Func([], [BtcDepositResult], []),
@@ -1073,16 +1846,54 @@ export const idlService = IDL.Service({
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getCanisterPrincipal' : IDL.Func([], [IDL.Principal], ['query']),
   'getConversions' : IDL.Func([], [IDL.Vec(Conversion)], ['query']),
+  'getCyclesAutonomy' : IDL.Func([], [AutonomyView], ['query']),
+  'getCyclesShare' : IDL.Func([], [CyclesShareView], ['query']),
+  'getCyclesShareHistory' : IDL.Func([], [IDL.Vec(ShareChange)], ['query']),
   'getCyclesStatus' : IDL.Func([], [CyclesStatus], ['query']),
   'getDeliveryAddress' : IDL.Func([], [IDL.Opt(Account)], ['query']),
+  'getDexBalances' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Vec(DexBalanceView)],
+      ['query'],
+    ),
+  'getDexConfig' : IDL.Func([], [DexConfig], ['query']),
+  'getDexDepositAccount' : IDL.Func([IDL.Principal], [DexAccount], ['query']),
+  'getDexPool' : IDL.Func([IDL.Nat], [IDL.Opt(PoolView)], ['query']),
+  'getDexPoolAccount' : IDL.Func([IDL.Nat], [IDL.Opt(DexAccount)], ['query']),
+  'getDexPosition' : IDL.Func([IDL.Nat], [IDL.Opt(PositionView)], ['query']),
+  'getDexTokens' : IDL.Func([], [IDL.Vec(DexTokenInfo)], ['query']),
+  'getDexTransfers' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Vec(DexTransferView)],
+      ['query'],
+    ),
   'getFeeCollector' : IDL.Func([], [FeeCollectorInfo], ['query']),
   'getIcpPrice' : IDL.Func([], [IcpPrice], ['query']),
+  'getLastWeeklyAllocation' : IDL.Func(
+      [],
+      [IDL.Opt(WeeklyAllocation)],
+      ['query'],
+    ),
   'getLegacyBlockInfo' : IDL.Func([], [LegacyBlockInfo], ['query']),
+  'getMintTreasuryAccounts' : IDL.Func(
+      [],
+      [IDL.Vec(MintTreasuryAccount)],
+      ['query'],
+    ),
   'getMyBtcDeposits' : IDL.Func([], [MyBtcDeposits], ['query']),
   'getMyConversions' : IDL.Func([], [IDL.Vec(Conversion)], ['query']),
+  'getMyLpBonus' : IDL.Func([], [LpBonusView], ['query']),
+  'getMyMintFees' : IDL.Func([], [MintFeeLpView], ['query']),
+  'getMyPairRequests' : IDL.Func([], [IDL.Vec(PairRequestView)], ['query']),
   'getMyPurchaseAcknowledgement' : IDL.Func(
       [],
       [PurchaseAcknowledgement],
+      ['query'],
+    ),
+  'getOwnerAccumulated' : IDL.Func([], [IDL.Vec(OwnerAccumulated)], ['query']),
+  'getProtocolLiquidity' : IDL.Func(
+      [],
+      [IDL.Vec(ProtocolLiquidityView)],
       ['query'],
     ),
   'getPublicTreasuryInfo' : IDL.Func(
@@ -1091,9 +1902,11 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getSaleStatus' : IDL.Func([], [SaleStatus], ['query']),
+  'getSetAsideAmounts' : IDL.Func([], [IDL.Vec(SetAsideView)], ['query']),
   'getTechnicalDetails' : IDL.Func([], [TechnicalDetails], ['query']),
   'getTokenPrices' : IDL.Func([], [IDL.Vec(TokenPrice)], ['query']),
   'getTreasuryConfig' : IDL.Func([], [IDL.Opt(TreasuryConfig)], ['query']),
+  'getTreasurySweepStatus' : IDL.Func([], [TreasurySweepView], ['query']),
   'getUpgradeReadiness' : IDL.Func([], [UpgradeReadiness], ['query']),
   'get_account_transactions' : IDL.Func(
       [GetAccountTransactionsArgs],
@@ -1157,16 +1970,41 @@ export const idlService = IDL.Service({
   'ledger_id' : IDL.Func([], [IDL.Principal], ['query']),
   'listAllBuybackMasses' : IDL.Func([], [IDL.Vec(BuybackMass)], ['query']),
   'listAllBuybacks' : IDL.Func([], [IDL.Vec(Buyback)], ['query']),
-  'listMyBuybackMasses' : IDL.Func([], [Result_6], ['query']),
-  'listMyBuybacks' : IDL.Func([], [Result_5], ['query']),
-  'listMyContacts' : IDL.Func([], [Result_4], ['query']),
+  'listDcBatches' : IDL.Func([], [IDL.Vec(DcBatch)], ['query']),
+  'listDexPools' : IDL.Func([], [IDL.Vec(PoolView)], ['query']),
+  'listDexPositionsOf' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Vec(PositionView)],
+      ['query'],
+    ),
+  'listLiquidityInjections' : IDL.Func(
+      [IDL.Nat, IDL.Nat],
+      [InjectionPage],
+      ['query'],
+    ),
+  'listMyBuybackMasses' : IDL.Func([], [Result_15], ['query']),
+  'listMyBuybacks' : IDL.Func([], [Result_14], ['query']),
+  'listMyContacts' : IDL.Func([], [Result_13], ['query']),
+  'listOwnerDestinations' : IDL.Func(
+      [],
+      [IDL.Vec(OwnerDestinationView)],
+      ['query'],
+    ),
+  'listOwnerSends' : IDL.Func([IDL.Nat, IDL.Nat], [OwnerSendPage], ['query']),
+  'listPairRequests' : IDL.Func([], [IDL.Vec(PairRequestView)], ['query']),
+  'listPoolPositions' : IDL.Func([IDL.Nat], [IDL.Vec(PositionView)], ['query']),
   'listTransfersToReview' : IDL.Func([], [IDL.Vec(TransferReview)], ['query']),
+  'listWeeklyAllocations' : IDL.Func(
+      [],
+      [IDL.Vec(WeeklyAllocation)],
+      ['query'],
+    ),
   'list_subaccounts' : IDL.Func(
       [ListSubaccountsArgs],
       [IDL.Vec(Subaccount)],
       ['query'],
     ),
-  'markBuybackCancelled' : IDL.Func([BuybackId, IDL.Nat], [Result_1], []),
+  'markBuybackCancelled' : IDL.Func([BuybackId, IDL.Nat], [Result_4], []),
   'markRefundedManually' : IDL.Func(
       [TransferKind, IDL.Nat, IDL.Nat],
       [ReviewResult],
@@ -1182,39 +2020,58 @@ export const idlService = IDL.Service({
       [ReviewResult],
       [],
     ),
-  'quoteBuyback' : IDL.Func(
-      [PayToken, IDL.Nat, PayToken],
-      [Result_3],
+  'quoteAddLiquidity' : IDL.Func(
+      [AddLiquidityQuoteArgs],
+      [Result_12],
       ['query'],
     ),
-  'reconcileReserved' : IDL.Func([], [Result_2], []),
+  'quoteBuyback' : IDL.Func(
+      [PayToken, IDL.Nat, PayToken],
+      [Result_11],
+      ['query'],
+    ),
+  'quoteSwap' : IDL.Func(
+      [IDL.Nat, DexToken, IDL.Nat, IDL.Nat],
+      [Result_10],
+      ['query'],
+    ),
+  'reconcileReserved' : IDL.Func([], [Result_9], []),
   'refreshIcpPrice' : IDL.Func([], [PriceResult], []),
   'refreshTokenPrice' : IDL.Func([PayToken], [TokenPriceResult], []),
+  'refusePair' : IDL.Func([IDL.Nat, IDL.Text], [Result_8], []),
+  'removeLiquidity' : IDL.Func([IDL.Nat], [Result_7], []),
+  'removePair' : IDL.Func([IDL.Nat], [Result_6], []),
   'requestBuyback' : IDL.Func(
       [PayToken, IDL.Nat, PayToken, IDL.Opt(IDL.Vec(IDL.Nat8))],
-      [Result_1],
+      [Result_4],
       [],
     ),
-  'retryBuybackPayout' : IDL.Func([BuybackId], [Result_1], []),
+  'requestPair' : IDL.Func([RequestPairArgs], [Result_5], []),
+  'retryBuybackPayout' : IDL.Func([BuybackId], [Result_4], []),
   'schema' : IDL.Func([], [IDL.Text], ['query']),
   'setBuybackAdminAccount' : IDL.Func([Account], [], []),
   'setDeliveryAddress' : IDL.Func([IDL.Text], [DeliveryAddressResult], []),
-  'setPayTokenAccount' : IDL.Func(
+  'setOwnerDestination' : IDL.Func(
       [PayToken, Account],
-      [TokenAccountResult],
+      [OwnerDestinationResult],
       [],
     ),
   'setSalesPaused' : IDL.Func([IDL.Bool], [], []),
-  'setTreasuryConfig' : IDL.Func([TreasuryConfig], [TreasuryConfigResult], []),
+  'setUtilityPairMinimums' : IDL.Func([IDL.Nat, TokenMinimums], [Result_3], []),
   'set_fee' : IDL.Func([IDL.Nat], [SetFeeResult], []),
   'status' : IDL.Func([], [IndexStatus], ['query']),
+  'swap' : IDL.Func(
+      [IDL.Nat, DexToken, IDL.Nat, IDL.Nat, IDL.Int],
+      [Result_2],
+      [],
+    ),
   'transform' : IDL.Func(
       [TransformationInput],
       [TransformationOutput],
       ['query'],
     ),
-  'updateContact' : IDL.Func([ContactId, ContactInput], [Result], []),
-  'withdrawReserveExcess' : IDL.Func([IDL.Nat], [WithdrawReserveResult], []),
+  'updateContact' : IDL.Func([ContactId, ContactInput], [Result_1], []),
+  'withdrawFromDex' : IDL.Func([DexAmountArgs], [Result], []),
 });
 
 export const idlInitArgs = [];
@@ -1243,7 +2100,7 @@ export const idlFactory = ({ IDL }) => {
       'expected' : IDL.Vec(IDL.Text),
     }),
   });
-  const Result_8 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
+  const Result_21 = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
   const AcknowledgedAt = IDL.Int;
   const PurchaseAcknowledgement = IDL.Record({
     'accepted' : IDL.Bool,
@@ -1277,7 +2134,157 @@ export const idlFactory = ({ IDL }) => {
     'duplicateNickname' : IDL.Null,
     'limitReached' : IDL.Record({ 'max' : IDL.Nat }),
   });
-  const Result = IDL.Variant({ 'ok' : Contact, 'err' : AddressBookError });
+  const Result_1 = IDL.Variant({ 'ok' : Contact, 'err' : AddressBookError });
+  const PoolSide = IDL.Variant({ 'token0' : IDL.Null, 'token1' : IDL.Null });
+  const PoolId = IDL.Nat;
+  const AddLiquidityArgs = IDL.Record({
+    'side' : PoolSide,
+    'lockDurationNs' : IDL.Nat,
+    'counterAmount' : IDL.Opt(IDL.Nat),
+    'amount' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const PoolStatus = IDL.Variant({
+    'filling' : IDL.Null,
+    'active' : IDL.Null,
+    'removed' : IDL.Null,
+  });
+  const RequestId = IDL.Nat;
+  const PoolMinimums = IDL.Record({
+    'token0' : IDL.Opt(IDL.Nat),
+    'token1' : IDL.Opt(IDL.Nat),
+  });
+  const PoolKind = IDL.Variant({
+    'tttiPair' : IDL.Null,
+    'utilityPair' : IDL.Null,
+  });
+  const Timestamp = IDL.Int;
+  const FeeTier = IDL.Variant({
+    'bps5' : IDL.Null,
+    'bps30' : IDL.Null,
+    'bps100' : IDL.Null,
+  });
+  const UsdGauge = IDL.Record({
+    'targetUsdE8' : IDL.Nat,
+    'remainingUsdE8' : IDL.Opt(IDL.Nat),
+    'missingRate' : IDL.Record({ 'token0' : IDL.Bool, 'token1' : IDL.Bool }),
+    'valueAvailable' : IDL.Bool,
+    'currentUsdE8' : IDL.Opt(IDL.Nat),
+  });
+  const PoolTokenView = IDL.Record({
+    'decimals' : IDL.Nat8,
+    'ledgerId' : IDL.Principal,
+    'isTttiT' : IDL.Bool,
+    'symbol' : IDL.Text,
+  });
+  const DexAccount = IDL.Record({
+    'owner' : IDL.Principal,
+    'subaccount' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+  });
+  const PoolView = IDL.Record({
+    'id' : PoolId,
+    'approvalStatement' : IDL.Opt(IDL.Text),
+    'status' : PoolStatus,
+    'subaccountText' : IDL.Text,
+    'requestId' : IDL.Opt(RequestId),
+    'minimumLocked' : PoolMinimums,
+    'feeBps' : IDL.Nat,
+    'acceptsWithdrawals' : IDL.Bool,
+    'lockedShares' : IDL.Nat,
+    'kind' : PoolKind,
+    'acceptsSwaps' : IDL.Bool,
+    'createdAt' : Timestamp,
+    'reserve0' : IDL.Nat,
+    'reserve1' : IDL.Nat,
+    'launchMinimumTotalUsdE8' : IDL.Nat,
+    'subaccount' : IDL.Vec(IDL.Nat8),
+    'feeTier' : FeeTier,
+    'minimumsSet' : IDL.Bool,
+    'acceptsDeposits' : IDL.Bool,
+    'gauge' : UsdGauge,
+    'newPairBadgeActive' : IDL.Bool,
+    'token0' : PoolTokenView,
+    'token1' : PoolTokenView,
+    'firstDepositMinimum' : PoolMinimums,
+    'lockedSharesStatement' : IDL.Text,
+    'protocolFee0' : IDL.Nat,
+    'protocolFee1' : IDL.Nat,
+    'poolAccount' : DexAccount,
+    'removedAt' : IDL.Opt(Timestamp),
+    'totalShares' : IDL.Nat,
+    'newPairBadgeUntil' : IDL.Opt(Timestamp),
+  });
+  const PositionId = IDL.Nat;
+  const PositionView = IDL.Record({
+    'id' : PositionId,
+    'isCreator' : IDL.Bool,
+    'shares' : IDL.Nat,
+    'owner' : IDL.Principal,
+    'createdAt' : Timestamp,
+    'unlockAt' : Timestamp,
+    'unlocked' : IDL.Bool,
+    'lockDurationNs' : IDL.Nat,
+    'amount0' : IDL.Nat,
+    'amount1' : IDL.Nat,
+    'withdrawable' : IDL.Bool,
+    'token0Symbol' : IDL.Text,
+    'token1Symbol' : IDL.Text,
+    'poolId' : PoolId,
+  });
+  const AddLiquidityResult = IDL.Record({
+    'shares' : IDL.Nat,
+    'lockedShares' : IDL.Nat,
+    'pool' : PoolView,
+    'amount0' : IDL.Nat,
+    'amount1' : IDL.Nat,
+    'position' : PositionView,
+  });
+  const DexToken = IDL.Variant({
+    'icp' : IDL.Null,
+    'tttiT' : IDL.Null,
+    'ckbtc' : IDL.Null,
+    'ckusdc' : IDL.Null,
+    'ckusdt' : IDL.Null,
+  });
+  const AddLiquidityError = IDL.Variant({
+    'insufficientBalance' : IDL.Record({
+      'token' : DexToken,
+      'available' : IDL.Nat,
+      'required' : IDL.Nat,
+    }),
+    'poolRemoved' : IDL.Null,
+    'belowMinimum' : IDL.Record({
+      'token0Minimum' : IDL.Opt(IDL.Nat),
+      'token1Minimum' : IDL.Opt(IDL.Nat),
+    }),
+    'minimumsNotSet' : IDL.Null,
+    'lockTooLong' : IDL.Record({ 'maximumNs' : IDL.Nat }),
+    'counterAmountRequired' : IDL.Null,
+    'lockTooShort' : IDL.Record({ 'minimumNs' : IDL.Nat }),
+    'zeroAmount' : IDL.Null,
+    'poolNotFound' : IDL.Null,
+    'anonymous' : IDL.Null,
+    'operationInProgress' : IDL.Null,
+    'zeroShares' : IDL.Null,
+    'unsupportedToken' : IDL.Null,
+    'ratioMismatch' : IDL.Record({ 'requiredCounterAmount' : IDL.Nat }),
+  });
+  const Result_20 = IDL.Variant({
+    'ok' : AddLiquidityResult,
+    'err' : AddLiquidityError,
+  });
+  const TokenMinimums = IDL.Record({ 'token0' : IDL.Nat, 'token1' : IDL.Nat });
+  const ApprovePairError = IDL.Variant({
+    'minimumsNotAllowed' : IDL.Null,
+    'refundFailed' : IDL.Text,
+    'notAuthorized' : IDL.Null,
+    'requestNotFound' : IDL.Null,
+    'minimumsRequired' : IDL.Null,
+    'invalidMinimums' : IDL.Null,
+    'notPending' : IDL.Null,
+    'pairExists' : IDL.Record({ 'poolId' : PoolId }),
+  });
+  const Result_19 = IDL.Variant({ 'ok' : PoolView, 'err' : ApprovePairError });
   const UserRole = IDL.Variant({
     'admin' : IDL.Null,
     'user' : IDL.Null,
@@ -1332,7 +2339,6 @@ export const idlFactory = ({ IDL }) => {
     'originalNet' : IDL.Null,
     'dayRate' : IDL.Null,
   });
-  const Timestamp = IDL.Int;
   const PurchaseId = IDL.Nat;
   const Buyback = IDL.Record({
     'id' : BuybackId,
@@ -1408,7 +2414,7 @@ export const idlFactory = ({ IDL }) => {
     }),
     'buybackNotFound' : IDL.Null,
   });
-  const Result_1 = IDL.Variant({ 'ok' : Buyback, 'err' : BuybackError });
+  const Result_4 = IDL.Variant({ 'ok' : Buyback, 'err' : BuybackError });
   const DepositKind = IDL.Variant({
     'wallet' : IDL.Null,
     'purchase' : IDL.Null,
@@ -1488,6 +2494,70 @@ export const idlFactory = ({ IDL }) => {
     'Ok' : DepositTracking,
     'Err' : BtcDepositError,
   });
+  const DexTransferStatus = IDL.Variant({
+    'completed' : IDL.Nat,
+    'needsReview' : IDL.Null,
+    'inProgress' : IDL.Null,
+    'failed' : IDL.Text,
+  });
+  const BonusClaimView = IDL.Record({
+    'n' : IDL.Nat,
+    'status' : DexTransferStatus,
+    'createdAt' : Timestamp,
+    'memoText' : IDL.Text,
+    'amountE8s' : IDL.Nat,
+  });
+  const ClaimBonusError = IDL.Variant({
+    'belowMinimum' : IDL.Record({ 'minimumE8s' : IDL.Nat }),
+    'nothingToClaim' : IDL.Null,
+    'anonymous' : IDL.Null,
+    'claimInProgress' : IDL.Null,
+  });
+  const ClaimBonusResult = IDL.Variant({
+    'ok' : BonusClaimView,
+    'err' : ClaimBonusError,
+  });
+  const MintFeeClaimStatus = IDL.Variant({
+    'completed' : IDL.Nat,
+    'needsReview' : IDL.Null,
+    'inProgress' : IDL.Null,
+    'failed' : IDL.Text,
+  });
+  const MintFeeClaimView = IDL.Record({
+    'n' : IDL.Nat,
+    'status' : MintFeeClaimStatus,
+    'token' : PayToken,
+    'createdAt' : Timestamp,
+    'memoText' : IDL.Text,
+    'amount' : IDL.Nat,
+  });
+  const ClaimMintFeeError = IDL.Variant({
+    'belowLedgerFee' : IDL.Record({ 'fee' : IDL.Nat }),
+    'nothingToClaim' : IDL.Null,
+    'anonymous' : IDL.Null,
+    'claimInProgress' : IDL.Null,
+  });
+  const ClaimMintFeeResult = IDL.Variant({
+    'ok' : MintFeeClaimView,
+    'err' : ClaimMintFeeError,
+  });
+  const OwnerDestinationView = IDL.Record({
+    'token' : PayToken,
+    'setAt' : IDL.Opt(Timestamp),
+    'account' : IDL.Opt(Account),
+    'accumulated' : IDL.Nat,
+  });
+  const OwnerRevenueError = IDL.Variant({
+    'notConfigured' : IDL.Null,
+    'notAdmin' : IDL.Null,
+    'invalidSubaccount' : IDL.Null,
+    'anonymousOwner' : IDL.Null,
+    'contractAccount' : IDL.Null,
+  });
+  const OwnerDestinationResult = IDL.Variant({
+    'ok' : OwnerDestinationView,
+    'err' : OwnerRevenueError,
+  });
   const ConversionStatus = IDL.Variant({
     'refundFailed' : IDL.Null,
     'refundReview' : IDL.Null,
@@ -1495,7 +2565,7 @@ export const idlFactory = ({ IDL }) => {
     'refunded' : IDL.Null,
     'failed' : IDL.Null,
   });
-  const Timestamp__2 = IDL.Nat64;
+  const Timestamp__6 = IDL.Nat64;
   const ForwardStatus = IDL.Variant({
     'forwarded' : IDL.Nat,
     'pending' : IDL.Null,
@@ -1516,7 +2586,7 @@ export const idlFactory = ({ IDL }) => {
     'recipient' : Account,
     'paymentBlock' : IDL.Opt(IDL.Nat),
     'message' : IDL.Opt(IDL.Text),
-    'timestamp' : Timestamp__2,
+    'timestamp' : Timestamp__6,
     'payAmount' : IDL.Nat,
     'tttiAmount' : IDL.Nat,
     'mintBlock' : IDL.Opt(IDL.Nat),
@@ -1573,7 +2643,44 @@ export const idlFactory = ({ IDL }) => {
     'Ok' : Conversion,
     'Err' : PurchaseError,
   });
-  const Result_7 = IDL.Variant({ 'ok' : IDL.Null, 'err' : AddressBookError });
+  const Result_18 = IDL.Variant({ 'ok' : IDL.Null, 'err' : AddressBookError });
+  const DexAmountArgs = IDL.Record({ 'token' : DexToken, 'amount' : IDL.Nat });
+  const DexTransferDirection = IDL.Variant({
+    'deposit' : IDL.Null,
+    'withdrawal' : IDL.Null,
+  });
+  const DexTransferView = IDL.Record({
+    'n' : IDL.Nat,
+    'to' : DexAccount,
+    'fee' : IDL.Nat,
+    'status' : DexTransferStatus,
+    'direction' : DexTransferDirection,
+    'token' : DexToken,
+    'createdAtTimeNs' : IDL.Nat64,
+    'attempt' : IDL.Nat,
+    'owner' : IDL.Principal,
+    'from' : DexAccount,
+    'memoText' : IDL.Text,
+    'sends' : IDL.Nat,
+    'ledgerAmount' : IDL.Nat,
+    'lastError' : IDL.Opt(IDL.Text),
+    'amount' : IDL.Nat,
+  });
+  const DexDepositError = IDL.Variant({
+    'amountTooSmall' : IDL.Record({ 'minimum' : IDL.Nat }),
+    'insufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
+    'insufficientAllowance' : IDL.Record({
+      'required' : IDL.Nat,
+      'allowance' : IDL.Nat,
+    }),
+    'anonymous' : IDL.Null,
+    'transferInProgress' : IDL.Null,
+    'ledgerError' : IDL.Text,
+  });
+  const Result_17 = IDL.Variant({
+    'ok' : DexTransferView,
+    'err' : DexDepositError,
+  });
   const Value__2 = IDL.Variant({
     'int' : IDL.Int,
     'nat' : IDL.Nat,
@@ -1601,8 +2708,20 @@ export const idlFactory = ({ IDL }) => {
   const BalanceSnapshot = IDL.Record({
     'decimals' : IDL.Nat8,
     'totalSupply' : IDL.Nat,
-    'exportedAt' : Timestamp__2,
+    'exportedAt' : Timestamp__6,
     'holders' : IDL.Vec(SnapshotEntry),
+  });
+  const ExtendLockError = IDL.Variant({
+    'notPositionOwner' : IDL.Null,
+    'lockTooLong' : IDL.Record({ 'maximumUnlockAt' : Timestamp }),
+    'cannotShortenLock' : IDL.Record({ 'unlockAt' : Timestamp }),
+    'anonymous' : IDL.Null,
+    'operationInProgress' : IDL.Null,
+    'positionNotFound' : IDL.Null,
+  });
+  const Result_16 = IDL.Variant({
+    'ok' : PositionView,
+    'err' : ExtendLockError,
   });
   const BtcDepositInfo = IDL.Record({
     'depositMinSats' : IDL.Nat,
@@ -1632,6 +2751,38 @@ export const idlFactory = ({ IDL }) => {
     'error' : IDL.Opt(IDL.Text),
     'allowance' : IDL.Nat,
   });
+  const AutonomyView = IDL.Record({
+    'avg30dCyclesPerDay' : IDL.Opt(IDL.Nat),
+    'computedAt' : Timestamp,
+    'totalCycles' : IDL.Nat,
+    'sampleCount' : IDL.Nat,
+    'autonomyDays' : IDL.Opt(IDL.Nat),
+    'reserveBalanceE8s' : IDL.Nat,
+    'reserveCyclesEstimate' : IDL.Opt(IDL.Nat),
+    'avg7dCyclesPerDay' : IDL.Opt(IDL.Nat),
+    'targetDays' : IDL.Nat,
+    'cyclesBalance' : IDL.Nat,
+    'oldestSampleAt' : IDL.Opt(Timestamp),
+  });
+  const CyclesShareView = IDL.Record({
+    'shareBps' : IDL.Nat,
+    'targetShareBps' : IDL.Nat,
+    'lastAdjustAt' : IDL.Opt(Timestamp),
+    'nextAdjustAfter' : IDL.Opt(Timestamp),
+    'autonomyDays' : IDL.Opt(IDL.Nat),
+    'minShareBps' : IDL.Nat,
+    'minAdjustIntervalNs' : IDL.Nat,
+    'maxShareBps' : IDL.Nat,
+    'lowAutonomyDays' : IDL.Nat,
+    'highAutonomyDays' : IDL.Nat,
+    'maxStepBps' : IDL.Nat,
+  });
+  const ShareChange = IDL.Record({
+    'at' : Timestamp,
+    'newShareBps' : IDL.Nat,
+    'autonomyDays' : IDL.Opt(IDL.Nat),
+    'oldShareBps' : IDL.Nat,
+  });
   const TopUpStatus = IDL.Variant({
     'transferred' : IDL.Null,
     'notified' : IDL.Record({ 'cycles' : IDL.Nat }),
@@ -1649,22 +2800,56 @@ export const idlFactory = ({ IDL }) => {
     'timestamp' : Timestamp,
     'amountE8s' : IDL.Nat,
   });
-  const WithdrawalBlockedReason = IDL.Variant({
-    'cyclesBelowThreshold' : IDL.Null,
-    'topUpRunning' : IDL.Null,
-    'topUpAwaitingConfirmation' : IDL.Null,
-  });
   const CyclesStatus = IDL.Record({
-    'withdrawableExcessE8s' : IDL.Nat,
-    'withdrawalAllowed' : IDL.Bool,
     'lastTopUp' : IDL.Opt(TopUpRecord),
     'reserveFloorE8s' : IDL.Nat,
     'reserveAccount' : Account,
     'reserveBalanceE8s' : IDL.Nat,
     'withdrawals' : IDL.Vec(ReserveWithdrawal),
-    'withdrawalBlockedReason' : IDL.Opt(WithdrawalBlockedReason),
     'cyclesBalance' : IDL.Nat,
     'topUpThreshold' : IDL.Nat,
+  });
+  const DexBalanceView = IDL.Record({
+    'token' : DexToken,
+    'ledgerId' : IDL.Principal,
+    'reserved' : IDL.Nat,
+    'available' : IDL.Nat,
+    'symbol' : IDL.Text,
+  });
+  const DexConfig = IDL.Record({
+    'approvalStatement' : IDL.Text,
+    'rateValidForNs' : IDL.Nat,
+    'refusalCooldownNs' : IDL.Int,
+    'newPairBadgeNs' : IDL.Int,
+    'feeTiers' : IDL.Vec(FeeTier),
+    'launchMinimumTotalUsdE8' : IDL.Nat,
+    'messageMaxChars' : IDL.Nat,
+    'protocolStatement' : IDL.Text,
+    'tttiMinimumLocked' : IDL.Nat,
+    'firstDepositMultiplier' : IDL.Nat,
+    'depositAccount' : DexAccount,
+    'tttiTUsdE8' : IDL.Nat,
+    'maxLockNs' : IDL.Nat,
+    'usdRateScale' : IDL.Nat,
+    'rateGraceNs' : IDL.Nat,
+    'lockedSharesStatement' : IDL.Text,
+    'minLockNs' : IDL.Nat,
+    'launchDepthStatement' : IDL.Text,
+    'swapDeadlineMaxNs' : IDL.Nat,
+    'lpFeeSharePercent' : IDL.Nat,
+    'maxPendingPerUser' : IDL.Nat,
+    'reasonMaxChars' : IDL.Nat,
+    'requestDeposit' : IDL.Nat,
+    'protocolFeeSharePercent' : IDL.Nat,
+  });
+  const DexTokenInfo = IDL.Record({
+    'fee' : IDL.Nat,
+    'decimals' : IDL.Nat8,
+    'token' : DexToken,
+    'ledgerId' : IDL.Principal,
+    'minimumDeposit' : IDL.Nat,
+    'minimumWithdrawal' : IDL.Nat,
+    'symbol' : IDL.Text,
   });
   const FeeCollectorInfo = IDL.Record({
     'balance' : IDL.Nat,
@@ -1680,14 +2865,134 @@ export const idlFactory = ({ IDL }) => {
     'lastError' : IDL.Opt(PriceError),
     'validUntil' : Timestamp,
   });
+  const TokenAmounts = IDL.Record({
+    'icp' : IDL.Nat,
+    'ckbtc' : IDL.Nat,
+    'ckusdc' : IDL.Nat,
+    'ckusdt' : IDL.Nat,
+  });
+  const AllocationSkip = IDL.Record({
+    'poolId' : IDL.Nat,
+    'reason' : IDL.Text,
+  });
+  const AllocationPoolAdd = IDL.Record({
+    'shares' : IDL.Nat,
+    'amount0' : IDL.Nat,
+    'amount1' : IDL.Nat,
+    'poolId' : IDL.Nat,
+  });
+  const WeeklyAllocation = IDL.Record({
+    'at' : IDL.Int,
+    'id' : IDL.Nat,
+    'toBonusE8s' : IDL.Nat,
+    'stockPayoutCap' : TokenAmounts,
+    'skipped' : IDL.Vec(AllocationSkip),
+    'note' : IDL.Text,
+    'surplusE8s' : IDL.Nat,
+    'treasuryBalances' : TokenAmounts,
+    'autonomyDays' : IDL.Opt(IDL.Nat),
+    'toLiquidity' : TokenAmounts,
+    'poolAdds' : IDL.Vec(AllocationPoolAdd),
+    'waiting' : TokenAmounts,
+    'toCyclesReserveE8s' : IDL.Nat,
+  });
   const LegacyBlockInfo = IDL.Record({
     'boundaryIndex' : IDL.Nat,
     'currentDecimals' : IDL.Nat8,
     'legacyDecimals' : IDL.Nat8,
   });
+  const MintTreasuryAccount = IDL.Record({
+    'token' : PayToken,
+    'balance' : IDL.Opt(IDL.Nat),
+    'legacyExternalAccount' : IDL.Opt(Account),
+    'account' : Account,
+  });
   const MyBtcDeposits = IDL.Record({
     'wallet' : IDL.Opt(DepositTracking),
     'purchase' : IDL.Opt(DepositTracking),
+  });
+  const PositionBonusWeight = IDL.Record({
+    'weight' : IDL.Nat,
+    'valueIcpE8s' : IDL.Nat,
+    'positionId' : IDL.Nat,
+    'remainingLockNs' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const LpBonusView = IDL.Record({
+    'claims' : IDL.Vec(BonusClaimView),
+    'claimedE8s' : IDL.Nat,
+    'positions' : IDL.Vec(PositionBonusWeight),
+    'claimableE8s' : IDL.Nat,
+  });
+  const MintFeeBalance = IDL.Record({
+    'token' : PayToken,
+    'claimed' : IDL.Nat,
+    'claimable' : IDL.Nat,
+  });
+  const MintFeeLpView = IDL.Record({
+    'claims' : IDL.Vec(MintFeeClaimView),
+    'balances' : IDL.Vec(MintFeeBalance),
+  });
+  const RequestStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'approved' : IDL.Record({ 'at' : Timestamp, 'poolId' : PoolId }),
+    'refused' : IDL.Record({ 'at' : Timestamp, 'reason' : IDL.Text }),
+  });
+  const RequestedToken = IDL.Record({
+    'fee' : IDL.Nat,
+    'decimals' : IDL.Nat8,
+    'ledgerId' : IDL.Principal,
+    'name' : IDL.Text,
+    'symbol' : IDL.Text,
+  });
+  const PairRefundStatus = IDL.Variant({
+    'none' : IDL.Null,
+    'refunded' : IDL.Nat,
+    'needsReview' : IDL.Null,
+    'inProgress' : IDL.Null,
+  });
+  const RequestChecks = IDL.Record({
+    'metadataRead' : IDL.Bool,
+    'pairUnique' : IDL.Bool,
+    'icrc1' : IDL.Bool,
+    'icrc2' : IDL.Bool,
+    'copiedSymbolOf' : IDL.Opt(IDL.Text),
+  });
+  const PairRequestView = IDL.Record({
+    'id' : RequestId,
+    'status' : RequestStatus,
+    'depositAmount' : IDL.Nat,
+    'token' : RequestedToken,
+    'requester' : IDL.Principal,
+    'counter' : PoolTokenView,
+    'refundStatus' : PairRefundStatus,
+    'feeBps' : IDL.Nat,
+    'kind' : PoolKind,
+    'createdAt' : Timestamp,
+    'feeTier' : FeeTier,
+    'depositBlock' : IDL.Nat,
+    'refundBlock' : IDL.Opt(IDL.Nat),
+    'message' : IDL.Text,
+    'checks' : RequestChecks,
+    'copiedSymbol' : IDL.Bool,
+  });
+  const OwnerAccumulated = IDL.Record({
+    'token' : PayToken,
+    'amount' : IDL.Nat,
+  });
+  const ProtocolLiquidityView = IDL.Record({
+    'shares' : IDL.Nat,
+    'fromTreasury0' : IDL.Nat,
+    'fromTreasury1' : IDL.Nat,
+    'lastAddedAt' : IDL.Opt(Timestamp),
+    'amount0' : IDL.Nat,
+    'amount1' : IDL.Nat,
+    'fromFees0' : IDL.Nat,
+    'fromFees1' : IDL.Nat,
+    'token0Symbol' : IDL.Text,
+    'totalShares' : IDL.Nat,
+    'token1Symbol' : IDL.Text,
+    'poolId' : PoolId,
   });
   const TokenAccountInfo = IDL.Record({
     'token' : PayToken,
@@ -1737,6 +3042,16 @@ export const idlFactory = ({ IDL }) => {
     'maxSupply' : IDL.Nat,
     'mintableRemaining' : IDL.Nat,
   });
+  const SetAsideView = IDL.Record({
+    'token' : PayToken,
+    'totalReceived' : IDL.Nat,
+    'lastInjectionAt' : IDL.Opt(Timestamp),
+    'thresholdUsdE8' : IDL.Nat,
+    'valueUsdE8' : IDL.Opt(IDL.Nat),
+    'totalInjected' : IDL.Nat,
+    'targetPoolId' : IDL.Opt(PoolId),
+    'amount' : IDL.Nat,
+  });
   const TechnicalDetails = IDL.Record({
     'decimals' : IDL.Nat8,
     'buyerPriceUsd' : IDL.Nat,
@@ -1782,6 +3097,33 @@ export const idlFactory = ({ IDL }) => {
     'validUntil' : Timestamp,
   });
   const TreasuryConfig = IDL.Record({ 'icpAccount' : Account });
+  const SweepStatus = IDL.Variant({
+    'notStarted' : IDL.Null,
+    'completed' : IDL.Null,
+    'toppingUpReserve' : IDL.Null,
+    'sending' : IDL.Null,
+  });
+  const SweepTokenStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'sent' : IDL.Nat,
+    'nothingToSend' : IDL.Null,
+    'waitingDestination' : IDL.Null,
+    'sending' : IDL.Nat,
+  });
+  const SweepToken = IDL.Record({
+    'status' : SweepTokenStatus,
+    'token' : PayToken,
+    'balance' : IDL.Opt(IDL.Nat),
+  });
+  const TreasurySweepView = IDL.Record({
+    'status' : SweepStatus,
+    'completedAt' : IDL.Opt(Timestamp),
+    'startedAt' : IDL.Opt(Timestamp),
+    'reserveTopUpBlock' : IDL.Opt(IDL.Nat),
+    'reserveTopUpE8s' : IDL.Nat,
+    'tokens' : IDL.Vec(SweepToken),
+    'reserveTopUpMemo' : IDL.Opt(IDL.Text),
+  });
   const PurchaseTrace = IDL.Record({
     'n' : IDL.Nat,
     'token' : PayToken,
@@ -1824,15 +3166,22 @@ export const idlFactory = ({ IDL }) => {
     'reserveLockBusy' : IDL.Bool,
     'purchasesInFlightCount' : IDL.Nat,
     'salesPaused' : IDL.Bool,
+    'mintFeeClaimsInFlight' : IDL.Vec(IDL.Nat),
     'openTraceCount' : IDL.Nat,
     'reserved' : IDL.Nat,
+    'ownerSendsInFlight' : IDL.Vec(IDL.Nat),
     'purchasesInFlight' : IDL.Vec(IDL.Principal),
     'btcLockHeld' : IDL.Bool,
+    'sweepStatus' : SweepStatus,
+    'bonusClaimsInFlight' : IDL.Vec(IDL.Nat),
     'buybacksInFlight' : IDL.Vec(IDL.Text),
     'openTraces' : IDL.Vec(PurchaseTrace),
+    'protocolFeeLocks' : IDL.Vec(IDL.Text),
     'buybacksInFlightCount' : IDL.Nat,
     'pendingTopUp' : IDL.Opt(TopUpAttempt),
+    'injectionsInFlight' : IDL.Vec(IDL.Nat),
     'lastReconciliation' : IDL.Opt(ReservedReconciliation),
+    'dcSendsInFlight' : IDL.Vec(IDL.Nat),
   });
   const BlockIndex = IDL.Nat;
   const GetAccountTransactionsArgs = IDL.Record({
@@ -1935,7 +3284,7 @@ export const idlFactory = ({ IDL }) => {
     'fee' : IDL.Opt(IDL.Nat),
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
     'from_subaccount' : IDL.Opt(Subaccount),
-    'created_at_time' : IDL.Opt(Timestamp__2),
+    'created_at_time' : IDL.Opt(Timestamp__6),
     'amount' : IDL.Nat,
   });
   const TransferError = IDL.Variant({
@@ -1947,7 +3296,7 @@ export const idlFactory = ({ IDL }) => {
     'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
     'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
     'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
     'TooOld' : IDL.Null,
     'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
   });
@@ -1958,16 +3307,16 @@ export const idlFactory = ({ IDL }) => {
   });
   const Allowance = IDL.Record({
     'allowance' : IDL.Nat,
-    'expires_at' : IDL.Opt(Timestamp__2),
+    'expires_at' : IDL.Opt(Timestamp__6),
   });
   const ApproveArgs = IDL.Record({
     'fee' : IDL.Opt(IDL.Nat),
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
     'from_subaccount' : IDL.Opt(Subaccount),
-    'created_at_time' : IDL.Opt(Timestamp__2),
+    'created_at_time' : IDL.Opt(Timestamp__6),
     'amount' : IDL.Nat,
     'expected_allowance' : IDL.Opt(IDL.Nat),
-    'expires_at' : IDL.Opt(Timestamp__2),
+    'expires_at' : IDL.Opt(Timestamp__6),
     'spender' : Account,
   });
   const ApproveError = IDL.Variant({
@@ -1977,12 +3326,12 @@ export const idlFactory = ({ IDL }) => {
     }),
     'TemporarilyUnavailable' : IDL.Null,
     'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
-    'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+    'ExpiredFrom' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
     'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
     'AllowanceChanged' : IDL.Record({ 'current_allowance' : IDL.Nat }),
-    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
     'TooOld' : IDL.Null,
-    'Expired' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+    'Expired' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
     'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
   });
   const ApproveResult = IDL.Variant({ 'Ok' : IDL.Nat, 'Err' : ApproveError });
@@ -1992,7 +3341,7 @@ export const idlFactory = ({ IDL }) => {
     'spender_subaccount' : IDL.Opt(Subaccount),
     'from' : Account,
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
-    'created_at_time' : IDL.Opt(Timestamp__2),
+    'created_at_time' : IDL.Opt(Timestamp__6),
     'amount' : IDL.Nat,
   });
   const TransferFromError = IDL.Variant({
@@ -2005,7 +3354,7 @@ export const idlFactory = ({ IDL }) => {
     'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
     'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
     'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
-    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__2 }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : Timestamp__6 }),
     'TooOld' : IDL.Null,
     'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
   });
@@ -2067,27 +3416,129 @@ export const idlFactory = ({ IDL }) => {
     'boughtBackNet' : IDL.Nat,
     'inProgress' : IDL.Bool,
   });
-  const Result_6 = IDL.Variant({
+  const DcBatchStatus = IDL.Variant({
+    'sent' : IDL.Nat,
+    'nothingToConvert' : IDL.Null,
+    'sending' : IDL.Null,
+    'needsReview' : IDL.Null,
+    'failed' : IDL.Text,
+    'waitingPriceDeviation' : IDL.Null,
+  });
+  const DcTrigger = IDL.Variant({ 'threshold' : IDL.Null, 'daily' : IDL.Null });
+  const DcLeg = IDL.Record({
+    'deviationBps' : IDL.Nat,
+    'amountIn' : IDL.Nat,
+    'tokenSymbol' : IDL.Text,
+    'executionIcpOutE8s' : IDL.Nat,
+    'converted' : IDL.Bool,
+    'referenceIcpOutE8s' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const DcBatch = IDL.Record({
+    'at' : Timestamp,
+    'id' : IDL.Nat,
+    'toBonusE8s' : IDL.Nat,
+    'status' : DcBatchStatus,
+    'trigger' : DcTrigger,
+    'legs' : IDL.Vec(DcLeg),
+    'toCyclesE8s' : IDL.Nat,
+  });
+  const InjectionStatus = IDL.Variant({
+    'completed' : IDL.Null,
+    'addingLiquidity' : IDL.Null,
+    'swapping' : IDL.Null,
+    'needsReview' : IDL.Null,
+    'failed' : IDL.Text,
+  });
+  const SwapVenue = IDL.Variant({
+    'native' : PoolId,
+    'icpswap' : IDL.Principal,
+  });
+  const LiquidityInjection = IDL.Record({
+    'id' : IDL.Nat,
+    'status' : InjectionStatus,
+    'minTttiOut' : IDL.Nat,
+    'startedAt' : Timestamp,
+    'token' : PayToken,
+    'venue' : SwapVenue,
+    'amountIn' : IDL.Nat,
+    'error' : IDL.Opt(IDL.Text),
+    'updatedAt' : Timestamp,
+    'tttiReceived' : IDL.Nat,
+    'pairAmountIn' : IDL.Nat,
+    'used0' : IDL.Nat,
+    'used1' : IDL.Nat,
+    'swapAmountIn' : IDL.Nat,
+    'liquidityShares' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const InjectionPage = IDL.Record({
+    'total' : IDL.Nat,
+    'offset' : IDL.Nat,
+    'items' : IDL.Vec(LiquidityInjection),
+  });
+  const Result_15 = IDL.Variant({
     'ok' : IDL.Vec(BuybackMass),
     'err' : BuybackError,
   });
-  const Result_5 = IDL.Variant({
+  const Result_14 = IDL.Variant({
     'ok' : IDL.Vec(Buyback),
     'err' : BuybackError,
   });
-  const Result_4 = IDL.Variant({
+  const Result_13 = IDL.Variant({
     'ok' : IDL.Vec(Contact),
     'err' : AddressBookError,
+  });
+  const OwnerSendStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'sent' : IDL.Nat,
+    'needsReview' : IDL.Null,
+    'failed' : IDL.Text,
+  });
+  const OwnerSendSource = IDL.Variant({
+    'mint' : IDL.Nat,
+    'treasurySweep' : IDL.Null,
+    'accumulated' : IDL.Null,
+  });
+  const OwnerSendView = IDL.Record({
+    'id' : IDL.Nat,
+    'fee' : IDL.Opt(IDL.Nat),
+    'status' : OwnerSendStatus,
+    'destination' : Account,
+    'token' : PayToken,
+    'createdAtTimeNs' : IDL.Nat64,
+    'attempt' : IDL.Nat,
+    'source' : OwnerSendSource,
+    'createdAt' : Timestamp,
+    'memoText' : IDL.Text,
+    'sends' : IDL.Nat,
+    'updatedAt' : Timestamp,
+    'block' : IDL.Opt(IDL.Nat),
+    'lastError' : IDL.Opt(IDL.Text),
+    'amount' : IDL.Nat,
+  });
+  const OwnerSendPage = IDL.Record({
+    'total' : IDL.Nat,
+    'offset' : IDL.Nat,
+    'items' : IDL.Vec(OwnerSendView),
   });
   const TransferKind = IDL.Variant({
     'BB' : IDL.Null,
     'BC' : IDL.Null,
     'BM' : IDL.Null,
     'BR' : IDL.Null,
+    'DC' : IDL.Null,
+    'DD' : IDL.Null,
+    'DL' : IDL.Null,
+    'DQ' : IDL.Null,
+    'DW' : IDL.Null,
     'FW' : IDL.Null,
+    'MF' : IDL.Null,
+    'OW' : IDL.Null,
     'PC' : IDL.Null,
     'RF' : IDL.Null,
     'SH' : IDL.Null,
+    'SR' : IDL.Null,
   });
   const CollectState = IDL.Variant({
     'confirmed' : IDL.Null,
@@ -2096,7 +3547,7 @@ export const idlFactory = ({ IDL }) => {
   const TransferReview = IDL.Record({
     'fee' : IDL.Opt(IDL.Nat),
     'destination' : IDL.Opt(Account),
-    'token' : PayToken,
+    'token' : DexToken,
     'createdAtTimeNs' : IDL.Opt(IDL.Nat64),
     'memoHex' : IDL.Opt(IDL.Text),
     'kind' : TransferKind,
@@ -2124,6 +3575,27 @@ export const idlFactory = ({ IDL }) => {
     'notUnderReview' : IDL.Null,
   });
   const ReviewResult = IDL.Variant({ 'ok' : IDL.Null, 'err' : ReviewError });
+  const AddLiquidityQuoteArgs = IDL.Record({
+    'side' : PoolSide,
+    'counterAmount' : IDL.Opt(IDL.Nat),
+    'amount' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const AddLiquidityQuote = IDL.Record({
+    'shares' : IDL.Nat,
+    'gaugeAfter' : UsdGauge,
+    'lockedShares' : IDL.Nat,
+    'opensPool' : IDL.Bool,
+    'isFirstDeposit' : IDL.Bool,
+    'amount0' : IDL.Nat,
+    'amount1' : IDL.Nat,
+    'totalSharesAfter' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const Result_12 = IDL.Variant({
+    'ok' : AddLiquidityQuote,
+    'err' : AddLiquidityError,
+  });
   const BuybackQuote = IDL.Record({
     'buybackFee' : IDL.Nat,
     'tttiEscrowFee' : IDL.Nat,
@@ -2146,19 +3618,135 @@ export const idlFactory = ({ IDL }) => {
     'amountReturned' : IDL.Nat,
     'massTotalTtti' : IDL.Nat,
   });
-  const Result_3 = IDL.Variant({ 'ok' : BuybackQuote, 'err' : BuybackError });
+  const Result_11 = IDL.Variant({ 'ok' : BuybackQuote, 'err' : BuybackError });
+  const SwapQuote = IDL.Record({
+    'fee' : IDL.Nat,
+    'tokenIn' : DexToken,
+    'slippageBps' : IDL.Nat,
+    'maxDeadlineNs' : IDL.Nat,
+    'tokenOut' : DexToken,
+    'protocolFee' : IDL.Nat,
+    'feeBps' : IDL.Nat,
+    'amountIn' : IDL.Nat,
+    'lpFee' : IDL.Nat,
+    'minimumReceived' : IDL.Nat,
+    'priceImpactBps' : IDL.Nat,
+    'amountOut' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const SwapError = IDL.Variant({
+    'insufficientBalance' : IDL.Record({ 'available' : IDL.Nat }),
+    'tokenNotInPool' : IDL.Null,
+    'poolRemoved' : IDL.Null,
+    'poolFilling' : IDL.Record({ 'gauge' : UsdGauge }),
+    'deadlineTooFar' : IDL.Record({ 'maximum' : Timestamp }),
+    'invalidSlippage' : IDL.Record({ 'maximumBps' : IDL.Nat }),
+    'poolNotOpen' : IDL.Null,
+    'zeroAmount' : IDL.Null,
+    'poolNotFound' : IDL.Null,
+    'anonymous' : IDL.Null,
+    'rateUnavailable' : IDL.Null,
+    'operationInProgress' : IDL.Null,
+    'slippageExceeded' : IDL.Record({
+      'amountOut' : IDL.Nat,
+      'minAmountOut' : IDL.Nat,
+    }),
+    'unsupportedToken' : IDL.Null,
+    'deadlineExceeded' : IDL.Record({
+      'now' : Timestamp,
+      'deadline' : Timestamp,
+    }),
+    'insufficientLiquidity' : IDL.Null,
+  });
+  const Result_10 = IDL.Variant({ 'ok' : SwapQuote, 'err' : SwapError });
   const ReconcileError = IDL.Variant({
     'notPaused' : IDL.Null,
     'openTraces' : IDL.Null,
     'purchaseInFlight' : IDL.Null,
     'notAdmin' : IDL.Null,
   });
-  const Result_2 = IDL.Variant({
+  const Result_9 = IDL.Variant({
     'ok' : ReservedReconciliation,
     'err' : ReconcileError,
   });
   const PriceResult = IDL.Variant({ 'Ok' : IcpPrice, 'Err' : IDL.Text });
   const TokenPriceResult = IDL.Variant({ 'Ok' : TokenPrice, 'Err' : IDL.Text });
+  const RefusePairError = IDL.Variant({
+    'notAuthorized' : IDL.Null,
+    'requestNotFound' : IDL.Null,
+    'reasonTooLong' : IDL.Record({ 'max' : IDL.Nat }),
+    'reasonRequired' : IDL.Null,
+    'notPending' : IDL.Null,
+  });
+  const Result_8 = IDL.Variant({
+    'ok' : PairRequestView,
+    'err' : RefusePairError,
+  });
+  const RemoveLiquidityResult = IDL.Record({
+    'shares' : IDL.Nat,
+    'pool' : PoolView,
+    'positionId' : PositionId,
+    'amount0' : IDL.Nat,
+    'amount1' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const RemoveLiquidityError = IDL.Variant({
+    'notPositionOwner' : IDL.Null,
+    'poolNotFound' : IDL.Null,
+    'anonymous' : IDL.Null,
+    'operationInProgress' : IDL.Null,
+    'positionLocked' : IDL.Record({ 'unlockAt' : Timestamp }),
+    'positionNotFound' : IDL.Null,
+  });
+  const Result_7 = IDL.Variant({
+    'ok' : RemoveLiquidityResult,
+    'err' : RemoveLiquidityError,
+  });
+  const RemovePairError = IDL.Variant({
+    'notAuthorized' : IDL.Null,
+    'alreadyRemoved' : IDL.Null,
+    'poolNotFound' : IDL.Null,
+  });
+  const Result_6 = IDL.Variant({ 'ok' : PoolView, 'err' : RemovePairError });
+  const CounterToken = IDL.Variant({
+    'icp' : IDL.Null,
+    'tttiT' : IDL.Null,
+    'ckbtc' : IDL.Null,
+    'ckusdc' : IDL.Null,
+    'ckusdt' : IDL.Null,
+    'poolToken' : IDL.Principal,
+  });
+  const RequestPairArgs = IDL.Record({
+    'ledgerId' : IDL.Principal,
+    'counter' : CounterToken,
+    'feeTier' : FeeTier,
+    'message' : IDL.Text,
+  });
+  const RequestPairError = IDL.Variant({
+    'depositFailed' : IDL.Text,
+    'tooManyPending' : IDL.Record({ 'max' : IDL.Nat }),
+    'messageTooLong' : IDL.Record({ 'max' : IDL.Nat }),
+    'missingStandards' : IDL.Record({ 'icrc1' : IDL.Bool, 'icrc2' : IDL.Bool }),
+    'insufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
+    'insufficientAllowance' : IDL.Record({
+      'required' : IDL.Nat,
+      'allowance' : IDL.Nat,
+    }),
+    'anonymous' : IDL.Null,
+    'ledgerUnreachable' : IDL.Text,
+    'metadataUnavailable' : IDL.Text,
+    'invalidToken' : IDL.Text,
+    'unknownCounterToken' : IDL.Null,
+    'cooldown' : IDL.Record({ 'until' : Timestamp }),
+    'pairExists' : IDL.Record({
+      'requestId' : IDL.Opt(RequestId),
+      'poolId' : IDL.Opt(PoolId),
+    }),
+  });
+  const Result_5 = IDL.Variant({
+    'ok' : PairRequestView,
+    'err' : RequestPairError,
+  });
   const DeliveryAddressErrorCode = IDL.Variant({
     'invalidPrincipal' : IDL.Null,
     'empty' : IDL.Null,
@@ -2174,16 +3762,29 @@ export const idlFactory = ({ IDL }) => {
     'Ok' : Account,
     'Err' : DeliveryAddressError,
   });
-  const TokenAccountResult = IDL.Variant({
-    'Ok' : TokenAccountInfo,
-    'Err' : IDL.Text,
+  const SetMinimumsError = IDL.Variant({
+    'poolRemoved' : IDL.Null,
+    'notAuthorized' : IDL.Null,
+    'liquidityAlreadyAdded' : IDL.Null,
+    'invalidMinimums' : IDL.Null,
+    'poolNotFound' : IDL.Null,
+    'notUtilityPair' : IDL.Null,
   });
-  const TreasuryConfigResult = IDL.Variant({
-    'Ok' : TreasuryConfig,
-    'Err' : IDL.Text,
-  });
+  const Result_3 = IDL.Variant({ 'ok' : PoolView, 'err' : SetMinimumsError });
   const SetFeeResult = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
   const IndexStatus = IDL.Record({ 'num_blocks_synced' : BlockIndex });
+  const SwapResult = IDL.Record({
+    'fee' : IDL.Nat,
+    'tokenIn' : DexToken,
+    'tokenOut' : DexToken,
+    'protocolFee' : IDL.Nat,
+    'pool' : PoolView,
+    'amountIn' : IDL.Nat,
+    'lpFee' : IDL.Nat,
+    'amountOut' : IDL.Nat,
+    'poolId' : PoolId,
+  });
+  const Result_2 = IDL.Variant({ 'ok' : SwapResult, 'err' : SwapError });
   const HttpHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const HttpRequestResult = IDL.Record({
     'status' : IDL.Nat,
@@ -2199,23 +3800,21 @@ export const idlFactory = ({ IDL }) => {
     'body' : IDL.Vec(IDL.Nat8),
     'headers' : IDL.Vec(HttpHeader),
   });
-  const WithdrawReserveResult = IDL.Variant({
-    'ok' : IDL.Nat,
-    'busy' : IDL.Null,
-    'amountExceedsExcess' : IDL.Record({ 'withdrawableE8s' : IDL.Nat }),
-    'topUpPendingNotify' : IDL.Null,
-    'cyclesBelowThreshold' : IDL.Record({
-      'cyclesBalance' : IDL.Nat,
-      'topUpThreshold' : IDL.Nat,
-    }),
-    'noExcess' : IDL.Null,
+  const DexWithdrawError = IDL.Variant({
+    'insufficientBalance' : IDL.Record({ 'available' : IDL.Nat }),
+    'amountTooSmall' : IDL.Record({ 'minimum' : IDL.Nat }),
+    'anonymous' : IDL.Null,
+    'transferInProgress' : IDL.Null,
     'ledgerError' : IDL.Text,
-    'treasuryNotConfigured' : IDL.Null,
+  });
+  const Result = IDL.Variant({
+    'ok' : DexTransferView,
+    'err' : DexWithdrawError,
   });
   
   return IDL.Service({
     '_initialize_access_control' : IDL.Func([], [], []),
-    '_internet_identity_sign_in_finish' : IDL.Func([], [Result_8], []),
+    '_internet_identity_sign_in_finish' : IDL.Func([], [Result_21], []),
     '_internet_identity_sign_in_start' : IDL.Func([], [IDL.Vec(IDL.Nat8)], []),
     'acceptPurchaseAcknowledgements' : IDL.Func(
         [],
@@ -2227,9 +3826,15 @@ export const idlFactory = ({ IDL }) => {
         ],
         [],
       ),
-    'addContact' : IDL.Func([ContactInput], [Result], []),
+    'addContact' : IDL.Func([ContactInput], [Result_1], []),
+    'addLiquidity' : IDL.Func([AddLiquidityArgs], [Result_20], []),
+    'approvePair' : IDL.Func(
+        [IDL.Nat, IDL.Opt(TokenMinimums)],
+        [Result_19],
+        [],
+      ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-    'cancelBuyback' : IDL.Func([BuybackId], [Result_1], []),
+    'cancelBuyback' : IDL.Func([BuybackId], [Result_4], []),
     'checkBtcPurchaseDeposit' : IDL.Func([], [BtcDepositResult], []),
     'checkBtcWalletDeposit' : IDL.Func([], [BtcDepositResult], []),
     'checkBtcWalletDepositFor' : IDL.Func(
@@ -2237,7 +3842,14 @@ export const idlFactory = ({ IDL }) => {
         [BtcDepositResult],
         [],
       ),
+    'claimLpBonus' : IDL.Func([], [ClaimBonusResult], []),
+    'claimMintFee' : IDL.Func([PayToken], [ClaimMintFeeResult], []),
     'clearDeliveryAddress' : IDL.Func([], [IDL.Bool], []),
+    'clearOwnerDestination' : IDL.Func(
+        [PayToken],
+        [OwnerDestinationResult],
+        [],
+      ),
     'convertDeposit' : IDL.Func(
         [IDL.Opt(Account), IDL.Nat],
         [PurchaseResult],
@@ -2248,9 +3860,11 @@ export const idlFactory = ({ IDL }) => {
         [PurchaseResult],
         [],
       ),
-    'deleteContact' : IDL.Func([ContactId], [Result_7], []),
+    'deleteContact' : IDL.Func([ContactId], [Result_18], []),
+    'depositToDex' : IDL.Func([DexAmountArgs], [Result_17], []),
     'execute' : IDL.Func([IDL.Text], [Result__1], ['query']),
     'exportBalanceSnapshot' : IDL.Func([], [BalanceSnapshot], ['query']),
+    'extendLock' : IDL.Func([IDL.Nat, IDL.Int], [Result_16], []),
     'getApiDoc' : IDL.Func([], [IDL.Text], ['query']),
     'getBtcDepositInfo' : IDL.Func([], [BtcDepositInfo], ['query']),
     'getBtcPurchaseAddress' : IDL.Func([], [BtcDepositResult], []),
@@ -2272,16 +3886,58 @@ export const idlFactory = ({ IDL }) => {
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getCanisterPrincipal' : IDL.Func([], [IDL.Principal], ['query']),
     'getConversions' : IDL.Func([], [IDL.Vec(Conversion)], ['query']),
+    'getCyclesAutonomy' : IDL.Func([], [AutonomyView], ['query']),
+    'getCyclesShare' : IDL.Func([], [CyclesShareView], ['query']),
+    'getCyclesShareHistory' : IDL.Func([], [IDL.Vec(ShareChange)], ['query']),
     'getCyclesStatus' : IDL.Func([], [CyclesStatus], ['query']),
     'getDeliveryAddress' : IDL.Func([], [IDL.Opt(Account)], ['query']),
+    'getDexBalances' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Vec(DexBalanceView)],
+        ['query'],
+      ),
+    'getDexConfig' : IDL.Func([], [DexConfig], ['query']),
+    'getDexDepositAccount' : IDL.Func([IDL.Principal], [DexAccount], ['query']),
+    'getDexPool' : IDL.Func([IDL.Nat], [IDL.Opt(PoolView)], ['query']),
+    'getDexPoolAccount' : IDL.Func([IDL.Nat], [IDL.Opt(DexAccount)], ['query']),
+    'getDexPosition' : IDL.Func([IDL.Nat], [IDL.Opt(PositionView)], ['query']),
+    'getDexTokens' : IDL.Func([], [IDL.Vec(DexTokenInfo)], ['query']),
+    'getDexTransfers' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Vec(DexTransferView)],
+        ['query'],
+      ),
     'getFeeCollector' : IDL.Func([], [FeeCollectorInfo], ['query']),
     'getIcpPrice' : IDL.Func([], [IcpPrice], ['query']),
+    'getLastWeeklyAllocation' : IDL.Func(
+        [],
+        [IDL.Opt(WeeklyAllocation)],
+        ['query'],
+      ),
     'getLegacyBlockInfo' : IDL.Func([], [LegacyBlockInfo], ['query']),
+    'getMintTreasuryAccounts' : IDL.Func(
+        [],
+        [IDL.Vec(MintTreasuryAccount)],
+        ['query'],
+      ),
     'getMyBtcDeposits' : IDL.Func([], [MyBtcDeposits], ['query']),
     'getMyConversions' : IDL.Func([], [IDL.Vec(Conversion)], ['query']),
+    'getMyLpBonus' : IDL.Func([], [LpBonusView], ['query']),
+    'getMyMintFees' : IDL.Func([], [MintFeeLpView], ['query']),
+    'getMyPairRequests' : IDL.Func([], [IDL.Vec(PairRequestView)], ['query']),
     'getMyPurchaseAcknowledgement' : IDL.Func(
         [],
         [PurchaseAcknowledgement],
+        ['query'],
+      ),
+    'getOwnerAccumulated' : IDL.Func(
+        [],
+        [IDL.Vec(OwnerAccumulated)],
+        ['query'],
+      ),
+    'getProtocolLiquidity' : IDL.Func(
+        [],
+        [IDL.Vec(ProtocolLiquidityView)],
         ['query'],
       ),
     'getPublicTreasuryInfo' : IDL.Func(
@@ -2290,9 +3946,11 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getSaleStatus' : IDL.Func([], [SaleStatus], ['query']),
+    'getSetAsideAmounts' : IDL.Func([], [IDL.Vec(SetAsideView)], ['query']),
     'getTechnicalDetails' : IDL.Func([], [TechnicalDetails], ['query']),
     'getTokenPrices' : IDL.Func([], [IDL.Vec(TokenPrice)], ['query']),
     'getTreasuryConfig' : IDL.Func([], [IDL.Opt(TreasuryConfig)], ['query']),
+    'getTreasurySweepStatus' : IDL.Func([], [TreasurySweepView], ['query']),
     'getUpgradeReadiness' : IDL.Func([], [UpgradeReadiness], ['query']),
     'get_account_transactions' : IDL.Func(
         [GetAccountTransactionsArgs],
@@ -2356,12 +4014,41 @@ export const idlFactory = ({ IDL }) => {
     'ledger_id' : IDL.Func([], [IDL.Principal], ['query']),
     'listAllBuybackMasses' : IDL.Func([], [IDL.Vec(BuybackMass)], ['query']),
     'listAllBuybacks' : IDL.Func([], [IDL.Vec(Buyback)], ['query']),
-    'listMyBuybackMasses' : IDL.Func([], [Result_6], ['query']),
-    'listMyBuybacks' : IDL.Func([], [Result_5], ['query']),
-    'listMyContacts' : IDL.Func([], [Result_4], ['query']),
+    'listDcBatches' : IDL.Func([], [IDL.Vec(DcBatch)], ['query']),
+    'listDexPools' : IDL.Func([], [IDL.Vec(PoolView)], ['query']),
+    'listDexPositionsOf' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Vec(PositionView)],
+        ['query'],
+      ),
+    'listLiquidityInjections' : IDL.Func(
+        [IDL.Nat, IDL.Nat],
+        [InjectionPage],
+        ['query'],
+      ),
+    'listMyBuybackMasses' : IDL.Func([], [Result_15], ['query']),
+    'listMyBuybacks' : IDL.Func([], [Result_14], ['query']),
+    'listMyContacts' : IDL.Func([], [Result_13], ['query']),
+    'listOwnerDestinations' : IDL.Func(
+        [],
+        [IDL.Vec(OwnerDestinationView)],
+        ['query'],
+      ),
+    'listOwnerSends' : IDL.Func([IDL.Nat, IDL.Nat], [OwnerSendPage], ['query']),
+    'listPairRequests' : IDL.Func([], [IDL.Vec(PairRequestView)], ['query']),
+    'listPoolPositions' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Vec(PositionView)],
+        ['query'],
+      ),
     'listTransfersToReview' : IDL.Func(
         [],
         [IDL.Vec(TransferReview)],
+        ['query'],
+      ),
+    'listWeeklyAllocations' : IDL.Func(
+        [],
+        [IDL.Vec(WeeklyAllocation)],
         ['query'],
       ),
     'list_subaccounts' : IDL.Func(
@@ -2369,7 +4056,7 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(Subaccount)],
         ['query'],
       ),
-    'markBuybackCancelled' : IDL.Func([BuybackId, IDL.Nat], [Result_1], []),
+    'markBuybackCancelled' : IDL.Func([BuybackId, IDL.Nat], [Result_4], []),
     'markRefundedManually' : IDL.Func(
         [TransferKind, IDL.Nat, IDL.Nat],
         [ReviewResult],
@@ -2385,43 +4072,62 @@ export const idlFactory = ({ IDL }) => {
         [ReviewResult],
         [],
       ),
-    'quoteBuyback' : IDL.Func(
-        [PayToken, IDL.Nat, PayToken],
-        [Result_3],
+    'quoteAddLiquidity' : IDL.Func(
+        [AddLiquidityQuoteArgs],
+        [Result_12],
         ['query'],
       ),
-    'reconcileReserved' : IDL.Func([], [Result_2], []),
+    'quoteBuyback' : IDL.Func(
+        [PayToken, IDL.Nat, PayToken],
+        [Result_11],
+        ['query'],
+      ),
+    'quoteSwap' : IDL.Func(
+        [IDL.Nat, DexToken, IDL.Nat, IDL.Nat],
+        [Result_10],
+        ['query'],
+      ),
+    'reconcileReserved' : IDL.Func([], [Result_9], []),
     'refreshIcpPrice' : IDL.Func([], [PriceResult], []),
     'refreshTokenPrice' : IDL.Func([PayToken], [TokenPriceResult], []),
+    'refusePair' : IDL.Func([IDL.Nat, IDL.Text], [Result_8], []),
+    'removeLiquidity' : IDL.Func([IDL.Nat], [Result_7], []),
+    'removePair' : IDL.Func([IDL.Nat], [Result_6], []),
     'requestBuyback' : IDL.Func(
         [PayToken, IDL.Nat, PayToken, IDL.Opt(IDL.Vec(IDL.Nat8))],
-        [Result_1],
+        [Result_4],
         [],
       ),
-    'retryBuybackPayout' : IDL.Func([BuybackId], [Result_1], []),
+    'requestPair' : IDL.Func([RequestPairArgs], [Result_5], []),
+    'retryBuybackPayout' : IDL.Func([BuybackId], [Result_4], []),
     'schema' : IDL.Func([], [IDL.Text], ['query']),
     'setBuybackAdminAccount' : IDL.Func([Account], [], []),
     'setDeliveryAddress' : IDL.Func([IDL.Text], [DeliveryAddressResult], []),
-    'setPayTokenAccount' : IDL.Func(
+    'setOwnerDestination' : IDL.Func(
         [PayToken, Account],
-        [TokenAccountResult],
+        [OwnerDestinationResult],
         [],
       ),
     'setSalesPaused' : IDL.Func([IDL.Bool], [], []),
-    'setTreasuryConfig' : IDL.Func(
-        [TreasuryConfig],
-        [TreasuryConfigResult],
+    'setUtilityPairMinimums' : IDL.Func(
+        [IDL.Nat, TokenMinimums],
+        [Result_3],
         [],
       ),
     'set_fee' : IDL.Func([IDL.Nat], [SetFeeResult], []),
     'status' : IDL.Func([], [IndexStatus], ['query']),
+    'swap' : IDL.Func(
+        [IDL.Nat, DexToken, IDL.Nat, IDL.Nat, IDL.Int],
+        [Result_2],
+        [],
+      ),
     'transform' : IDL.Func(
         [TransformationInput],
         [TransformationOutput],
         ['query'],
       ),
-    'updateContact' : IDL.Func([ContactId, ContactInput], [Result], []),
-    'withdrawReserveExcess' : IDL.Func([IDL.Nat], [WithdrawReserveResult], []),
+    'updateContact' : IDL.Func([ContactId, ContactInput], [Result_1], []),
+    'withdrawFromDex' : IDL.Func([DexAmountArgs], [Result], []),
   });
 };
 

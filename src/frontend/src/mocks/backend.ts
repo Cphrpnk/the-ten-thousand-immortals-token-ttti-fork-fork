@@ -1,6 +1,12 @@
 import { Principal } from "@icp-sdk/core/principal";
 import type {
   Account,
+  AddLiquidityArgs,
+  AddLiquidityError,
+  AddLiquidityQuote,
+  AddLiquidityQuoteArgs,
+  ApprovePairError,
+  AutonomyView,
   Block,
   BtcDepositResult,
   Buyback,
@@ -9,27 +15,66 @@ import type {
   BuybackMass,
   BuybackPayoutAttempt,
   BuybackQuote,
+  BonusClaimView,
   Contact,
   Conversion,
+  CounterToken,
+  CyclesShareView,
+  DcBatch,
   DepositEntry,
   DepositTracking,
+  DexAccount,
+  DexBalanceView,
+  DexConfig,
+  DexDepositError,
+  DexTokenInfo,
+  DexTransferView,
+  DexWithdrawError,
+  ExtendLockError,
   GetBlocksArgs,
   IcpPrice,
+  LiquidityInjection,
+  LpBonusView,
+  MintFeeClaimView,
+  MintFeeLpView,
+  MintTreasuryAccount,
+  OwnerDestinationView,
+  OwnerSendView,
+  PairRequestView,
   PayTokenStatus,
+  PoolMinimums,
+  PoolTokenView,
+  PoolView,
+  PositionBonusWeight,
+  PositionView,
+  ProtocolLiquidityView,
   PurchaseAcknowledgement,
   PurchaseResult,
   PurchaseTrace,
+  RefusePairError,
+  RemoveLiquidityError,
+  RequestPairArgs,
+  RequestPairError,
+  RequestedToken,
   ReserveWithdrawal,
+  SetAsideView,
+  ShareChange,
   ReservedReconciliation,
-  Result_2,
   ReviewResult,
+  SwapError,
+  SwapQuote,
+  SweepToken,
+  TokenMinimums,
   TokenPrice,
   TopUpAttempt,
   TopUpRecord,
   TransferReview,
   TreasuryConfig,
+  TreasurySweepView,
   UpgradeReadiness,
+  UsdGauge,
   Value__1,
+  WeeklyAllocation,
   backendInterface,
 } from "../backend";
 import {
@@ -41,11 +86,22 @@ import {
   ConversionStatus,
   DepositErrorKind,
   DepositKind,
+  DexToken,
+  DcTrigger,
+  DexTransferDirection,
+  FeeTier,
   HolderKind,
+  OwnerRevenueError,
   PayToken,
+  PoolKind,
+  PoolSide,
+  PoolStatus,
   PriceSource,
   ReconcileError,
+  RemovePairError,
   ReviewError,
+  SetMinimumsError,
+  SweepStatus,
   TransferKind,
   UserRole,
 } from "../backend";
@@ -54,16 +110,22 @@ import {
   BTC_DEFAULT_DEPOSIT_MIN_SATS,
   BTC_DEFAULT_MIN_CONFIRMATIONS,
   BUYER_PRICE_USD,
+  CKBTC_LEDGER_CANISTER_ID,
   CKBTC_MINTER_CANISTER_ID,
+  CKUSDC_LEDGER_CANISTER_ID,
+  CKUSDT_LEDGER_CANISTER_ID,
   CK_FEE_BPS,
   CYCLES_FEE_BPS,
   CYCLES_FEE_TEXT,
+  CYCLES_TOP_UP_THRESHOLD,
   ICP_DIVISOR,
   LEGACY_TTTI_DECIMALS,
   MIN_PURCHASE,
   PAY_TOKENS,
   PAY_TOKEN_ORDER,
   RESERVE_FLOOR_E8S,
+  SWAP_FEE_LP_PERCENT,
+  SWAP_FEE_PERMANENT_PERCENT,
   TOKEN_NAME,
   TOKEN_PRICE_USD,
   TTTI_DECIMALS,
@@ -79,6 +141,17 @@ const FEE = 100n;
 const FEE_BOUNDS = { min: 0n, max: 10_000n };
 const MAX_SUPPLY = TTTI_DIVISOR;
 const ICP_LEDGER_FEE = 10_000n;
+
+/** Result type of a backend method; generated Result_N names get renumbered. */
+type Outcome<K extends keyof backendInterface> = Awaited<ReturnType<backendInterface[K]>>;
+
+/** TransferReview.token is a DexToken; payment tokens map onto it. */
+const DEX_OF_PAY: Record<PayToken, DexToken> = {
+  [PayToken.icp]: DexToken.icp,
+  [PayToken.ckbtc]: DexToken.ckbtc,
+  [PayToken.ckusdc]: DexToken.ckusdc,
+  [PayToken.ckusdt]: DexToken.ckusdt,
+};
 
 // Mock oracle price: ICP = $12.50 (usdE8 = USD * 10^8).
 const MOCK_USD_E8 = 1_250_000_000n;
@@ -133,7 +206,7 @@ const CYCLES_RESERVE_ACCOUNT: Account = {
   owner: TTTI_CANISTER,
   subaccount: new TextEncoder().encode("CYCLES-RESERVE-TTTI-T-0000000001"),
 };
-const TOP_UP_THRESHOLD = 3_000_000_000_000n;
+const TOP_UP_THRESHOLD = CYCLES_TOP_UP_THRESHOLD;
 /** The backend publishes the same rule text as CYCLES_FEE_TEXT. */
 const RESERVE_RULE = CYCLES_FEE_TEXT;
 const TREASURY_ACCOUNT: Account = {
@@ -166,8 +239,8 @@ const state = {
   treasuryConfig: {
     icpAccount: TREASURY_ACCOUNT,
   } as TreasuryConfig,
-  cyclesBalance: 4_820_000_000_000n,
-  reserveBalanceE8s: 345_670_000n,
+  cyclesBalance: 24_820_000_000_000n,
+  reserveBalanceE8s: 200_000_000n,
   lastTopUp: {
     timestamp: nowNs() - 3n * 24n * HOUR_NS,
     icpE8s: 50_000_000n,
@@ -239,11 +312,18 @@ function mockUpgradeReadiness(): UpgradeReadiness {
     openTraces: traces,
     reserved: state.reserved,
     lastReconciliation: state.lastReconciliation,
+    bonusClaimsInFlight: [],
+    protocolFeeLocks: [],
+    dcSendsInFlight: [],
+    ownerSendsInFlight: [],
+    sweepStatus: mockSweep.status,
+    mintFeeClaimsInFlight: [],
+    injectionsInFlight: [],
   };
 }
 
 /** Same refusal order as the backend: paused, no purchase in flight, no open trace. */
-function mockReconcileReserved(): Result_2 {
+function mockReconcileReserved(): Outcome<"reconcileReserved"> {
   const readiness = mockUpgradeReadiness();
   if (!readiness.salesPaused) return { __kind__: "err", err: ReconcileError.notPaused };
   if (readiness.purchasesInFlightCount > 0n) {
@@ -506,12 +586,6 @@ const btcAckRequired = (): BtcDepositResult => ({
   },
 });
 
-/** Reserve minus the floor minus the ICP ledger fee, never negative. */
-const withdrawableExcess = () => {
-  const excess = state.reserveBalanceE8s - RESERVE_FLOOR_E8S - ICP_LEDGER_FEE;
-  return excess > 0n ? excess : 0n;
-};
-
 /** Live conversion at the buyer price (1% cycles fee included), floored. */
 function liveTtti(icpAmount: bigint): bigint {
   return tttiFromIcp(icpAmount, MOCK_USD_E8);
@@ -650,7 +724,7 @@ function reviewEntry(
   return {
     kind,
     purchaseId,
-    token: PayToken.icp,
+    token: DexToken.icp,
     memoText,
     memoHex: memoHexOf(memoText),
     createdAtTimeNs: nowNs() - 24n * HOUR_NS,
@@ -709,7 +783,7 @@ const mockReviews: Array<TransferReview> = [
   {
     kind: TransferKind.BR,
     purchaseId: 12n,
-    token: PayToken.ckbtc,
+    token: DexToken.ckbtc,
     memoText: "TTTI-BR-12-1",
     memoHex: memoHexOf("TTTI-BR-12-1"),
     createdAtTimeNs: nowNs() - 24n * HOUR_NS,
@@ -727,7 +801,7 @@ const mockReviews: Array<TransferReview> = [
   {
     kind: TransferKind.BC,
     purchaseId: 9n,
-    token: PayToken.ckbtc,
+    token: DexToken.ckbtc,
     memoText: "TTTI-PC-9",
     memoHex: memoHexOf("TTTI-PC-9"),
     createdAtTimeNs: nowNs() - 25n * HOUR_NS,
@@ -744,7 +818,7 @@ const mockReviews: Array<TransferReview> = [
   {
     kind: TransferKind.BM,
     purchaseId: 3n,
-    token: PayToken.ckbtc,
+    token: DexToken.ckbtc,
     amount: 600n,
     sends: 0n,
     depositIndex: 2n,
@@ -770,7 +844,16 @@ function takeReview(kind: TransferKind, purchaseId: bigint): TransferReview | Re
       state.conversions.some((c) => c.id === purchaseId)) ||
     (kind === TransferKind.SH &&
       state.conversions.some((c) => c.id === purchaseId && c.payToken === PayToken.icp)) ||
-    (kind === TransferKind.BB && mockBuybacks.some((b) => b.id === purchaseId));
+    (kind === TransferKind.BB && mockBuybacks.some((b) => b.id === purchaseId)) ||
+    ((kind === TransferKind.DD || kind === TransferKind.DW) &&
+      mockDexTransfers.some((t) => t.n === purchaseId)) ||
+    (kind === TransferKind.DQ &&
+      mockPairRequests.some((r) => r.id === purchaseId && r.status.__kind__ === "approved")) ||
+    (kind === TransferKind.DC && mockDcSends.some((d) => d.n === purchaseId)) ||
+    (kind === TransferKind.DL && mockBonusClaims.some((c) => c.n === purchaseId)) ||
+    ((kind === TransferKind.OW || kind === TransferKind.SR) &&
+      mockOwnerSends.some((s) => s.id === purchaseId)) ||
+    (kind === TransferKind.MF && mockMintFeeClaims.some((c) => c.n === purchaseId));
   return { __kind__: "err", err: known ? ReviewError.notUnderReview : ReviewError.notFound };
 }
 
@@ -792,6 +875,12 @@ function mockMarkArrived(kind: TransferKind, purchaseId: bigint, block: bigint):
   if (kind === TransferKind.FW) setForward(purchaseId, { __kind__: "forwarded", forwarded: block });
   if (kind === TransferKind.RF) setStatus(purchaseId, ConversionStatus.refunded);
   if (kind === TransferKind.BB) mockBuybackArrived(purchaseId, block);
+  if (kind === TransferKind.DD || kind === TransferKind.DW || kind === TransferKind.DQ) {
+    dexMarkArrived(kind, purchaseId, block);
+  }
+  if (kind === TransferKind.DC || kind === TransferKind.DL) protocolFeeArrived(kind, purchaseId, block);
+  if (kind === TransferKind.OW || kind === TransferKind.SR) ownerSendReviewed(purchaseId, block);
+  if (kind === TransferKind.MF) mintFeeReviewed(purchaseId, block);
   return { __kind__: "ok", ok: null };
 }
 
@@ -818,6 +907,11 @@ function mockMarkNotArrived(kind: TransferKind, purchaseId: bigint): ReviewResul
     mockBuybackNotArrived(purchaseId);
     return { __kind__: "ok", ok: null };
   }
+  if (kind === TransferKind.DD || kind === TransferKind.DW) {
+    // DD: nothing credited; DW: the reserved amount goes back to available.
+    dexMarkNotArrived(kind, purchaseId);
+    return { __kind__: "ok", ok: null };
+  }
   // New attempt: new memo (-<m>) and new created_at_time, sent by the timer.
   const attempt = mockPendingAttempts.filter((a) => a.kind === kind && a.purchaseId === purchaseId).length + 2;
   mockPendingAttempts.push({
@@ -827,6 +921,10 @@ function mockMarkNotArrived(kind: TransferKind, purchaseId: bigint): ReviewResul
     createdAtTimeNs: nowNs(),
   });
   if (kind === TransferKind.FW) setForward(purchaseId, { __kind__: "pending", pending: null });
+  if (kind === TransferKind.DQ) dexMarkNotArrived(kind, purchaseId);
+  if (kind === TransferKind.DC || kind === TransferKind.DL) protocolFeeNotArrived(kind, purchaseId);
+  if (kind === TransferKind.OW || kind === TransferKind.SR) ownerSendReviewed(purchaseId, null);
+  if (kind === TransferKind.MF) mintFeeReviewed(purchaseId, null);
   return { __kind__: "ok", ok: null };
 }
 
@@ -891,6 +989,56 @@ const MOCK_API_DOC = [
   "- markRefundedManually(kind, purchaseId, block) -> ReviewResult — RF, PC or BM only: records the item as refunded with the block and removes it from the list; FW, SH, BR and BC return #notApplicable.",
   "- ReviewError: #notAdmin, #notFound, #notUnderReview, #notApplicable.",
   "- ConversionStatus adds #refundReview: refund outcome unknown after 23 h.",
+  "",
+  "## DEX balances (lot 2)",
+  "- Per-user deposit subaccount: [0xDD, principal length, principal bytes, zero padding] (32 bytes), recomputable by anyone, no secret.",
+  "- getDexTokens() : [DexTokenInfo] — TTTI-T, ICP, ckBTC, ckUSDC, ckUSDT with ledger, decimals, fee, minimumDeposit and minimumWithdrawal.",
+  "- getDexDepositAccount(owner) : DexAccount; getDexPoolAccount(poolId) : ?DexAccount.",
+  "- getDexBalances(owner) : [DexBalanceView] — public, one row per token with available and reserved; getDexTransfers(owner) : [DexTransferView] — public.",
+  "- depositToDex({ token; amount }) — DD: icrc2_transfer_from of amount (the user approves amount plus the ledger fee), memo TTTI-DD-<n> with created_at_time; credits available. Errors: #anonymous, #amountTooSmall, #transferInProgress, #insufficientAllowance, #insufficientFunds, #ledgerError.",
+  "- withdrawFromDex({ token; amount }) — DW: available -> reserved, transfer of amount minus the ledger fee to the owner, memo TTTI-DW-<n>; Ok: final debit, Err: given back. Errors: #anonymous, #amountTooSmall, #insufficientBalance, #transferInProgress, #ledgerError.",
+  "- PairRequestView.refundStatus: #none, #inProgress, #needsReview or #refunded(block); the DQ refund of an approved request uses memo TTTI-DQ-<request id>.",
+  "- To review adds DD, DW (id = transfer n) and DQ (id = request id). Arrived: DD credits, DW final debit, DQ #refunded. Not arrived: DD nothing credited, DW given back, DQ new attempt.",
+  "",
+  "## DEX liquidity and swaps (lot 3)",
+  "- PoolStatus: #filling, #active or #removed. An approved pool starts #filling with zero reserves and shares; several users add liquidity while it fills. Swaps stay closed until the reserves total 100 USD, both sides combined; the pool opens (#active) as soon as that value is reached.",
+  "- USD value: TTTI-T at a fixed 10,000 USD; ICP, ckBTC, ckUSDC and ckUSDT at the hourly stored rate, valid 1 h plus 5 minutes. Missing or expired rate: no opening, gauge valueAvailable = false (value momentarily unavailable).",
+  "- PoolView adds reserve0, reserve1, totalShares, lockedShares, protocolFee0, protocolFee1 and gauge : UsdGauge { currentUsdE8; targetUsdE8; remainingUsdE8; valueAvailable; missingRate }.",
+  "- quoteAddLiquidity({ poolId; side; amount; counterAmount }) -> AddLiquidityQuote — first deposit: counterAmount required, fixes the ratio, at least 10 times the minimum locked liquidity; shares = floor(sqrt(A x B)) minus the minimum shares locked to the contract forever. Later deposits follow the reserve ratio (counter amount rounded up); counterAmount, when given, is the maximum accepted.",
+  "- addLiquidity({ poolId; side; amount; counterAmount; lockDurationNs }) -> AddLiquidityResult — from internal balances; one position per add, locked 24 h minimum, 5 years maximum. Errors: #anonymous, #poolNotFound, #poolRemoved, #minimumsNotSet, #unsupportedToken, #zeroAmount, #counterAmountRequired, #insufficientBalance, #belowMinimum, #ratioMismatch, #lockTooShort, #lockTooLong, #zeroShares, #operationInProgress.",
+  "- removeLiquidity(positionId) -> RemoveLiquidityResult — owner only, after unlockAt, or at any time on a removed pair; pro rata amounts (rounded down) credited to internal balances.",
+  "- extendLock(positionId, newUnlockAt) -> PositionView — owner only; never shorter, at most now + 5 years.",
+  "- getDexPosition(positionId) : ?PositionView; listPoolPositions(poolId) and listDexPositionsOf(owner) : [PositionView] — public (principal, shares, amounts, lock, unlockAt, isCreator). Creator/admin positions follow the same rules; no admin function acts on other positions.",
+  "- quoteSwap(poolId, tokenIn, amountIn, slippageBps) -> SwapQuote and swap(poolId, tokenIn, amountIn, minAmountOut, deadline) -> SwapResult — constant product on an open pool, from internal balances; fee 0.3 % for the 7 starting pairs (0.05 / 0.3 / 1 % tiers for added pairs), rounded up; 70 % stays in the reserves for LPs, 30 % becomes permanent liquidity in the same pool (counted in protocolFee0/1). Deadline at most 5 minutes after the call. Errors: #poolFilling (with the gauge), #poolRemoved, #slippageExceeded, #deadlineExceeded, #deadlineTooFar, #invalidSlippage, #insufficientBalance, #insufficientLiquidity, #tokenNotInPool, #zeroAmount.",
+  "",
+  "## Cycles autonomy and protocol liquidity (lot 4)",
+  "- The cycles reserve has no withdrawal path. CyclesStatus has no excess or withdrawal fields. setTreasuryConfig and setPayTokenAccount are removed.",
+  "- getCyclesStatus() : CyclesStatus (public) — topUpThreshold is 20 T cycles: below it, reserve ICP is converted into cycles through the Cycles Minting Canister; the reserve is kept at 2 ICP.",
+  "- getCyclesAutonomy() : AutonomyView (admin) — cycles balance, reserve ICP and its cycles estimate at the CMC rate, 7- and 30-day average consumption per day, autonomy in days (target 90), sample count and oldest sample.",
+  "- Read-only history: getCyclesShare(), getCyclesShareHistory(), getLastWeeklyAllocation(), listWeeklyAllocations() and listDcBatches() keep past records; no new share change, weekly allocation or DC batch is created.",
+  "- getMintTreasuryAccounts() : [MintTreasuryAccount] (admin) — the former internal MINT-TREASURY-<token> subaccounts, emptied once by the treasury sweep; legacyExternalAccount is the old admin-set account.",
+  "- Native swap fees: 70 % stays in the reserves for liquidity providers, 30 % is added as permanent liquidity in the same pool; nothing goes to cycles and nothing is converted to ICP.",
+  "- getProtocolLiquidity() : [ProtocolLiquidityView] (public) — protocol-owned shares per pool, counted in totalShares with no position and locked forever: current amounts, the parts from fees and from the treasury, last addition.",
+  "- getMyLpBonus() : LpBonusView (caller) and claimLpBonus() -> ClaimBonusResult — bonuses already earned stay claimable (memo TTTI-DL-<n>); swap fees credit no new bonus. Errors: #anonymous, #nothingToClaim, #belowMinimum { minimumE8s }, #claimInProgress.",
+  "",
+  "## Mint revenue (owner destinations, OW / SR)",
+  "- A mint is paid 101 for 100: 100/101 of the paid amount goes, in the paid token, to the owner destination account set for that token; 1/101 is the mint fee.",
+  "- setOwnerDestination(token, account) -> OwnerDestinationResult (admin) — errors #notAdmin, #anonymousOwner, #invalidSubaccount, #contractAccount; an accumulated amount is sent as soon as a destination is set (source #accumulated).",
+  "- clearOwnerDestination(token) -> OwnerDestinationResult (admin) — #notConfigured when none is set; later owner shares accumulate.",
+  "- listOwnerDestinations() : [OwnerDestinationView] (admin) — token, account, setAt, accumulated. getOwnerAccumulated() : [OwnerAccumulated] (admin).",
+  "- listOwnerSends(offset, limit) : OwnerSendPage (admin) — newest first; id, token, amount, fee, destination, source (#mint(id), #accumulated, #treasurySweep), status (#pending, #sent(block), #needsReview, #failed), block, memoText (TTTI-OW-<n> or TTTI-SR-<n>), createdAtTimeNs, attempt, sends, lastError. Sends use lib/retry.mo.",
+  "- getTreasurySweepStatus() : TreasurySweepView (admin) — one-time sweep of the internal mint treasuries: ICP first tops up the cycles reserve to 2 ICP (reserveTopUpE8s, block, memo), then each balance goes to its owner destination; per token #pending, #waitingDestination, #nothingToSend, #sending(send id) or #sent(send id); overall #notStarted, #toppingUpReserve, #sending or #completed.",
+  "",
+  "## Mint fee halves (MF, set-aside amounts, injections)",
+  "- The 1/101 mint fee is split in two halves in the paid token, for the lowest-liquidity TTTI-T pair of that token.",
+  "- Half A goes to that pair's liquidity providers pro rata; when the pair has none, it is set aside. getMyMintFees() : MintFeeLpView (caller) — balances { token; claimable; claimed } and claims.",
+  "- claimMintFee(token) -> ClaimMintFeeResult — sends the whole claimable amount of that token (memo TTTI-MF-<n>). Errors: #anonymous, #nothingToClaim, #belowLedgerFee { fee }, #claimInProgress.",
+  "- Half B is set aside until worth 0.001 TTTI-T (10 USD), then 50 % is swapped into TTTI-T (ICPSwap, then native pools) at bounded slippage and added with the other 50 % as permanent liquidity. A missing or expired rate waits. No TTTI-T is created for pools.",
+  "- getSetAsideAmounts() : [SetAsideView] (public) — token, amount, valueUsdE8, thresholdUsdE8, totalReceived, totalInjected, lastInjectionAt, targetPoolId.",
+  "- listLiquidityInjections(offset, limit) : InjectionPage (public) — newest first; token, poolId, venue (#native(poolId) or #icpswap(principal)), amountIn, swapAmountIn, pairAmountIn, minTttiOut, tttiReceived, used0, used1, liquidityShares, status (#swapping, #addingLiquidity, #completed, #needsReview, #failed).",
+  "",
+  "## To review",
+  "- To review adds OW (id = owner send id), SR (id = sweep send id) and MF (id = claim n), next to the past DC and DL items. Arrived records the block; Not arrived opens a new attempt sent by the timer; markRefundedManually returns #notApplicable.",
 ].join("\n");
 
 function purchaseError(
@@ -1656,7 +1804,7 @@ function buybackReviewRow(b: Buyback): TransferReview {
   return {
     kind: TransferKind.BB,
     purchaseId: b.id,
-    token: b.tokenReturned,
+    token: DEX_OF_PAY[b.tokenReturned],
     memoText: memoText === "" ? undefined : memoText,
     memoHex: memoText === "" ? undefined : memoHexOf(memoText),
     createdAtTimeNs: latest.created_at_time === 0n ? undefined : latest.created_at_time,
@@ -1686,8 +1834,1874 @@ function mockBuybackFunding(): Array<BuybackFunding> {
   }));
 }
 
+// --- DEX lot 1: pair registry and pair requests (simulated) ---------------
+
+const DEX_TTTI_MIN_LOCKED = 10_000n; // 0.0001 TTTI-T
+const DEX_REQUEST_DEPOSIT = 50_000n; // 0.0005 TTTI-T
+const DEX_FIRST_DEPOSIT_MULTIPLIER = 10n;
+const DEX_BADGE_NS = 30n * 24n * HOUR_NS;
+const DEX_COOLDOWN_NS = 7n * 24n * HOUR_NS;
+const DEX_MAX_PENDING = 2n;
+const DEX_MESSAGE_MAX = 500n;
+const DEX_REASON_MAX = 300n;
+const DEX_PROTOCOL_STATEMENT =
+  "The protocol places no price-based order and mints no TTTI-T for pools.";
+const DEX_LOCKED_SHARES_STATEMENT =
+  "The minimum locked shares belong to the contract forever.";
+const DEX_APPROVAL_STATEMENT = "Approval of a pair is not a recommendation.";
+const DEX_USD_RATE_SCALE = 100_000_000n; // usdE8 = USD x 1e8
+const DEX_LAUNCH_MIN_TOTAL_USD_E8 = 100n * DEX_USD_RATE_SCALE; // 100 USD
+const DEX_TTTI_T_USD_E8 = 10_000n * DEX_USD_RATE_SCALE; // 10,000 USD fixed
+const DEX_LAUNCH_DEPTH_STATEMENT =
+  "The first deposit that launches a pool must be worth at least 100 USD in total, both sides combined.";
+const DEX_FEE_BPS: Record<FeeTier, bigint> = {
+  [FeeTier.bps5]: 5n,
+  [FeeTier.bps30]: 30n,
+  [FeeTier.bps100]: 100n,
+};
+// DEX lot 3: position locks, swap deadline and fee split.
+const DEX_MIN_LOCK_NS = 24n * HOUR_NS; // 24 h
+const DEX_MAX_LOCK_NS = 1_826n * 24n * HOUR_NS; // 5 years (1826 days)
+const DEX_SWAP_DEADLINE_MAX_NS = 5n * 60n * 1_000_000_000n; // 5 minutes
+const DEX_LP_FEE_SHARE_PERCENT = SWAP_FEE_LP_PERCENT;
+/** 30 % of each swap fee becomes permanent liquidity in the same pool. */
+const DEX_PROTOCOL_FEE_SHARE_PERCENT = SWAP_FEE_PERMANENT_PERCENT;
+const DEX_MAX_SLIPPAGE_BPS = 5_000n;
+const DEX_BPS = 10_000n;
+
+const dexLabelBytes = (label: string, tail: bigint): Uint8Array => {
+  const bytes = new Uint8Array(32);
+  bytes.set(new TextEncoder().encode(label).slice(0, 24));
+  let value = tail;
+  for (let i = 31; i >= 24; i--) {
+    bytes[i] = Number(value & 0xffn);
+    value >>= 8n;
+  }
+  return bytes;
+};
+const dexHex = (bytes: Uint8Array) =>
+  Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+const DEX_DEPOSIT_ACCOUNT = {
+  owner: TTTI_CANISTER,
+  subaccount: dexLabelBytes("DEX-PAIR-REQUEST-DEPOSIT", 0n),
+};
+
+const dexToken = (
+  ledgerId: Principal,
+  symbol: string,
+  decimals: number,
+  isTttiT = false,
+): PoolTokenView => ({ ledgerId, symbol, decimals, isTttiT });
+
+const DEX_TTTI = dexToken(TTTI_CANISTER, TTTI_SYMBOL, TTTI_DECIMALS, true);
+const DEX_ICP = dexToken(ICP_CANISTER, "ICP", 8);
+const DEX_CKBTC = dexToken(Principal.fromText(CKBTC_LEDGER_CANISTER_ID), "ckBTC", 8);
+const DEX_CKUSDC = dexToken(Principal.fromText(CKUSDC_LEDGER_CANISTER_ID), "ckUSDC", 6);
+const DEX_CKUSDT = dexToken(Principal.fromText(CKUSDT_LEDGER_CANISTER_ID), "ckUSDT", 6);
+
+const mockPools: Array<PoolView> = [];
+let nextPoolId = 0n;
+const mockPairRequests: Array<PairRequestView> = [];
+let nextPairRequestId = 1n;
+let nextDexBlock = 4_200n;
+
+const dexSameLedger = (a: PoolTokenView, b: PoolTokenView) =>
+  a.ledgerId.toText() === b.ledgerId.toText();
+const dexSamePair = (
+  a0: PoolTokenView,
+  a1: PoolTokenView,
+  b0: PoolTokenView,
+  b1: PoolTokenView,
+) =>
+  (dexSameLedger(a0, b0) && dexSameLedger(a1, b1)) ||
+  (dexSameLedger(a0, b1) && dexSameLedger(a1, b0));
+
+function dexMinimums(
+  token0: PoolTokenView,
+  token1: PoolTokenView,
+  minimums: TokenMinimums | null,
+): PoolMinimums {
+  if (token0.isTttiT || token1.isTttiT) {
+    return token0.isTttiT
+      ? { token0: DEX_TTTI_MIN_LOCKED }
+      : { token1: DEX_TTTI_MIN_LOCKED };
+  }
+  return minimums ? { token0: minimums.token0, token1: minimums.token1 } : {};
+}
+
+const dexFirstDeposit = (m: PoolMinimums): PoolMinimums => ({
+  ...(m.token0 !== undefined ? { token0: m.token0 * DEX_FIRST_DEPOSIT_MULTIPLIER } : {}),
+  ...(m.token1 !== undefined ? { token1: m.token1 * DEX_FIRST_DEPOSIT_MULTIPLIER } : {}),
+});
+
+function dexCreatePool(
+  token0: PoolTokenView,
+  token1: PoolTokenView,
+  feeTier: FeeTier,
+  createdAt: bigint,
+  request?: { id: bigint; minimums: TokenMinimums | null },
+): PoolView {
+  const id = nextPoolId++;
+  const subaccount = dexLabelBytes("DEX-POOL", id);
+  const kind =
+    token0.isTttiT || token1.isTttiT ? PoolKind.tttiPair : PoolKind.utilityPair;
+  const minimumLocked = dexMinimums(token0, token1, request?.minimums ?? null);
+  const pool: PoolView = {
+    id,
+    token0,
+    token1,
+    feeTier,
+    feeBps: DEX_FEE_BPS[feeTier],
+    kind,
+    status: PoolStatus.filling,
+    createdAt,
+    reserve0: 0n,
+    reserve1: 0n,
+    totalShares: 0n,
+    lockedShares: 0n,
+    protocolFee0: 0n,
+    protocolFee1: 0n,
+    gauge: {
+      currentUsdE8: 0n,
+      targetUsdE8: DEX_LAUNCH_MIN_TOTAL_USD_E8,
+      remainingUsdE8: DEX_LAUNCH_MIN_TOTAL_USD_E8,
+      valueAvailable: true,
+      missingRate: { token0: false, token1: false },
+    },
+    subaccount,
+    subaccountText: dexHex(subaccount),
+    poolAccount: { owner: TTTI_CANISTER, subaccount },
+    minimumLocked,
+    firstDepositMinimum: dexFirstDeposit(minimumLocked),
+    minimumsSet: kind === PoolKind.tttiPair || !!request?.minimums,
+    lockedSharesStatement: DEX_LOCKED_SHARES_STATEMENT,
+    launchMinimumTotalUsdE8: DEX_LAUNCH_MIN_TOTAL_USD_E8,
+    newPairBadgeActive: false,
+    acceptsSwaps: false,
+    acceptsDeposits: true,
+    acceptsWithdrawals: true,
+    ...(request
+      ? {
+          requestId: request.id,
+          approvalStatement: DEX_APPROVAL_STATEMENT,
+          newPairBadgeUntil: createdAt + DEX_BADGE_NS,
+        }
+      : {}),
+  };
+  mockPools.push(pool);
+  return pool;
+}
+
+/** Persists #filling -> #active (lot 3), then returns the view with a fresh gauge. */
+const dexPoolOut = (pool: PoolView): PoolView => {
+  dexRefreshOpening(pool);
+  return {
+    ...pool,
+    gauge: dexGauge(pool),
+    acceptsSwaps: pool.status === PoolStatus.active,
+    newPairBadgeActive:
+      pool.newPairBadgeUntil !== undefined && pool.newPairBadgeUntil > nowNs(),
+  };
+};
+
+const dexStartedAt = nowNs() - 2n * 24n * HOUR_NS;
+for (const [a, b] of [
+  [DEX_TTTI, DEX_ICP],
+  [DEX_TTTI, DEX_CKBTC],
+  [DEX_TTTI, DEX_CKUSDC],
+  [DEX_TTTI, DEX_CKUSDT],
+  [DEX_CKBTC, DEX_ICP],
+  [DEX_CKUSDC, DEX_ICP],
+  [DEX_CKUSDT, DEX_ICP],
+] as const) {
+  dexCreatePool(a, b, FeeTier.bps30, dexStartedAt);
+}
+
+/** Simulated ledgers: one lacks ICRC-2, one reuses the ICP symbol, one is unreachable. */
+const DEX_NO_ICRC2_LEDGER = principalFrom(21);
+const DEX_COPYCAT_LEDGER = principalFrom(20);
+const DEX_UNREACHABLE_LEDGER = principalFrom(23);
+const DEX_SIM_METADATA: Record<string, Omit<RequestedToken, "ledgerId">> = {
+  [DEX_COPYCAT_LEDGER.toText()]: { name: "Internet Computer", symbol: "ICP", decimals: 8, fee: 10_000n },
+  [principalFrom(22).toText()]: { name: "Lumen", symbol: "LUMEN", decimals: 8, fee: 10_000n },
+};
+
+function dexReadToken(ledgerId: Principal): RequestedToken {
+  const known = [DEX_TTTI, DEX_ICP, DEX_CKBTC, DEX_CKUSDC, DEX_CKUSDT].find(
+    (token) => token.ledgerId.toText() === ledgerId.toText(),
+  );
+  if (known) {
+    return { ledgerId, name: known.symbol, symbol: known.symbol, decimals: known.decimals, fee: 10_000n };
+  }
+  const meta = DEX_SIM_METADATA[ledgerId.toText()];
+  if (meta) return { ledgerId, ...meta };
+  const symbol = `T${ledgerId.toText().slice(0, 4).toUpperCase().replace(/[^A-Z0-9]/g, "")}`;
+  return { ledgerId, name: `${symbol} token`, symbol, decimals: 8, fee: 10_000n };
+}
+
+const dexCopiedSymbolOf = (token: RequestedToken): string | undefined => {
+  const symbol = token.symbol.toLowerCase();
+  for (const pool of mockPools) {
+    for (const side of [pool.token0, pool.token1]) {
+      if (side.symbol.toLowerCase() === symbol && side.ledgerId.toText() !== token.ledgerId.toText()) {
+        return side.symbol;
+      }
+    }
+  }
+  return undefined;
+};
+
+function dexCounterToken(counter: CounterToken): PoolTokenView | null {
+  switch (counter.__kind__) {
+    case "icp":
+      return DEX_ICP;
+    case "ckbtc":
+      return DEX_CKBTC;
+    case "ckusdc":
+      return DEX_CKUSDC;
+    case "ckusdt":
+      return DEX_CKUSDT;
+    case "tttiT":
+      return DEX_TTTI;
+    case "poolToken": {
+      const ledger = counter.poolToken.toText();
+      for (const pool of mockPools) {
+        if (pool.status === PoolStatus.removed) continue;
+        if (pool.token0.ledgerId.toText() === ledger) return pool.token0;
+        if (pool.token1.ledgerId.toText() === ledger) return pool.token1;
+      }
+      return null;
+    }
+  }
+}
+
+const dexActivePool = (a: PoolTokenView, b: PoolTokenView, feeTier: FeeTier) =>
+  mockPools.find(
+    (pool) =>
+      pool.status !== PoolStatus.removed &&
+      pool.feeTier === feeTier &&
+      dexSamePair(pool.token0, pool.token1, a, b),
+  );
+
+const dexRequestToken = (request: PairRequestView): PoolTokenView =>
+  dexToken(request.token.ledgerId, request.token.symbol, request.token.decimals);
+
+function dexNewRequest(
+  requester: Principal,
+  token: RequestedToken,
+  counter: PoolTokenView,
+  feeTier: FeeTier,
+  message: string,
+  createdAt: bigint,
+): PairRequestView {
+  const copiedSymbolOf = dexCopiedSymbolOf(token);
+  const request: PairRequestView = {
+    id: nextPairRequestId++,
+    requester,
+    token,
+    counter,
+    feeTier,
+    feeBps: DEX_FEE_BPS[feeTier],
+    kind: counter.isTttiT ? PoolKind.tttiPair : PoolKind.utilityPair,
+    message,
+    createdAt,
+    checks: {
+      icrc1: true,
+      icrc2: true,
+      metadataRead: true,
+      pairUnique: true,
+      ...(copiedSymbolOf ? { copiedSymbolOf } : {}),
+    },
+    copiedSymbol: copiedSymbolOf !== undefined,
+    depositAmount: DEX_REQUEST_DEPOSIT,
+    depositBlock: nextDexBlock++,
+    status: { __kind__: "pending", pending: null },
+    refundStatus: { __kind__: "none", none: null },
+  };
+  mockPairRequests.push(request);
+  return request;
+}
+
+dexNewRequest(
+  HOLDER_2,
+  dexReadToken(principalFrom(22)),
+  DEX_TTTI,
+  FeeTier.bps30,
+  "Ledger with ICRC-1 and ICRC-2, metadata published.",
+  nowNs() - 5n * HOUR_NS,
+);
+const dexRefusedSeed = dexNewRequest(
+  HOLDER_3,
+  dexReadToken(DEX_COPYCAT_LEDGER),
+  DEX_CKUSDC,
+  FeeTier.bps100,
+  "",
+  nowNs() - 3n * 24n * HOUR_NS,
+);
+dexRefusedSeed.status = {
+  __kind__: "refused",
+  refused: { reason: "The symbol copies ICP.", at: nowNs() - 2n * 24n * HOUR_NS },
+};
+
+function mockRequestPair(args: RequestPairArgs): Outcome<"requestPair"> {
+  const err = (e: RequestPairError): Outcome<"requestPair"> => ({ __kind__: "err", err: e });
+  if (BigInt(args.message.length) > DEX_MESSAGE_MAX) {
+    return err({ __kind__: "messageTooLong", messageTooLong: { max: DEX_MESSAGE_MAX } });
+  }
+  if (args.ledgerId.isAnonymous()) {
+    return err({ __kind__: "invalidToken", invalidToken: "The anonymous principal is not a ledger." });
+  }
+  const counter = dexCounterToken(args.counter);
+  if (!counter) return err({ __kind__: "unknownCounterToken", unknownCounterToken: null });
+  if (counter.ledgerId.toText() === args.ledgerId.toText()) {
+    return err({ __kind__: "invalidToken", invalidToken: "The token and the counter token are the same ledger." });
+  }
+  if (args.ledgerId.toText() === DEX_UNREACHABLE_LEDGER.toText()) {
+    return err({ __kind__: "ledgerUnreachable", ledgerUnreachable: "Canister has no wasm module." });
+  }
+  if (args.ledgerId.toText() === DEX_NO_ICRC2_LEDGER.toText()) {
+    return err({ __kind__: "missingStandards", missingStandards: { icrc1: true, icrc2: false } });
+  }
+  const token = dexReadToken(args.ledgerId);
+  const tokenView = dexToken(token.ledgerId, token.symbol, token.decimals, token.ledgerId.toText() === TTTI_CANISTER.toText());
+  const pool = dexActivePool(tokenView, counter, args.feeTier);
+  const pending = mockPairRequests.find(
+    (r) =>
+      r.status.__kind__ === "pending" &&
+      r.feeTier === args.feeTier &&
+      dexSamePair(dexRequestToken(r), r.counter, tokenView, counter),
+  );
+  if (pool || pending) {
+    return err({
+      __kind__: "pairExists",
+      pairExists: {
+        ...(pool ? { poolId: pool.id } : {}),
+        ...(pending ? { requestId: pending.id } : {}),
+      },
+    });
+  }
+  const mine = mockPairRequests.filter((r) => r.requester.toText() === CALLER.toText());
+  if (BigInt(mine.filter((r) => r.status.__kind__ === "pending").length) >= DEX_MAX_PENDING) {
+    return err({ __kind__: "tooManyPending", tooManyPending: { max: DEX_MAX_PENDING } });
+  }
+  for (const r of mine) {
+    if (r.status.__kind__ === "refused" && r.status.refused.at + DEX_COOLDOWN_NS > nowNs()) {
+      return err({ __kind__: "cooldown", cooldown: { until: r.status.refused.at + DEX_COOLDOWN_NS } });
+    }
+  }
+  const request = dexNewRequest(CALLER, token, counter, args.feeTier, args.message, nowNs());
+  return { __kind__: "ok", ok: request };
+}
+
+function mockApprovePair(requestId: bigint, minimums: TokenMinimums | null): Outcome<"approvePair"> {
+  const err = (e: ApprovePairError): Outcome<"approvePair"> => ({ __kind__: "err", err: e });
+  const request = mockPairRequests.find((r) => r.id === requestId);
+  if (!request) return err({ __kind__: "requestNotFound", requestNotFound: null });
+  if (request.status.__kind__ !== "pending") return err({ __kind__: "notPending", notPending: null });
+  if (request.kind === PoolKind.tttiPair && minimums) {
+    return err({ __kind__: "minimumsNotAllowed", minimumsNotAllowed: null });
+  }
+  if (minimums && (minimums.token0 === 0n || minimums.token1 === 0n)) {
+    return err({ __kind__: "invalidMinimums", invalidMinimums: null });
+  }
+  const token = dexRequestToken(request);
+  const existing = dexActivePool(token, request.counter, request.feeTier);
+  if (existing) return err({ __kind__: "pairExists", pairExists: { poolId: existing.id } });
+  const [token0, token1] = request.counter.isTttiT ? [request.counter, token] : [token, request.counter];
+  const at = nowNs();
+  const pool = dexCreatePool(token0, token1, request.feeTier, at, { id: request.id, minimums });
+  request.status = { __kind__: "approved", approved: { poolId: pool.id, at } };
+  // DQ refund of the deposit minus one TTTI-T fee (memo TTTI-DQ-<request id>).
+  request.refundBlock = nextDexBlock++;
+  request.refundStatus = { __kind__: "refunded", refunded: request.refundBlock };
+  return { __kind__: "ok", ok: dexPoolOut(pool) };
+}
+
+function mockRefusePair(requestId: bigint, reason: string): Outcome<"refusePair"> {
+  const err = (e: RefusePairError): Outcome<"refusePair"> => ({ __kind__: "err", err: e });
+  const request = mockPairRequests.find((r) => r.id === requestId);
+  if (!request) return err({ __kind__: "requestNotFound", requestNotFound: null });
+  if (request.status.__kind__ !== "pending") return err({ __kind__: "notPending", notPending: null });
+  const trimmed = reason.trim();
+  if (trimmed === "") return err({ __kind__: "reasonRequired", reasonRequired: null });
+  if (BigInt(trimmed.length) > DEX_REASON_MAX) {
+    return err({ __kind__: "reasonTooLong", reasonTooLong: { max: DEX_REASON_MAX } });
+  }
+  request.status = { __kind__: "refused", refused: { reason: trimmed, at: nowNs() } };
+  return { __kind__: "ok", ok: request };
+}
+
+function mockRemovePair(poolId: bigint): Outcome<"removePair"> {
+  const pool = mockPools.find((p) => p.id === poolId);
+  if (!pool) return { __kind__: "err", err: RemovePairError.poolNotFound };
+  if (pool.status === PoolStatus.removed) {
+    return { __kind__: "err", err: RemovePairError.alreadyRemoved };
+  }
+  pool.status = PoolStatus.removed;
+  pool.removedAt = nowNs();
+  pool.acceptsSwaps = false;
+  pool.acceptsDeposits = false;
+  pool.acceptsWithdrawals = true;
+  return { __kind__: "ok", ok: dexPoolOut(pool) };
+}
+
+function mockSetUtilityPairMinimums(poolId: bigint, minimums: TokenMinimums): Outcome<"setUtilityPairMinimums"> {
+  const pool = mockPools.find((p) => p.id === poolId);
+  if (!pool) return { __kind__: "err", err: SetMinimumsError.poolNotFound };
+  if (pool.status === PoolStatus.removed) return { __kind__: "err", err: SetMinimumsError.poolRemoved };
+  if (pool.kind !== PoolKind.utilityPair) return { __kind__: "err", err: SetMinimumsError.notUtilityPair };
+  if (pool.totalShares > 0n) {
+    return { __kind__: "err", err: SetMinimumsError.liquidityAlreadyAdded };
+  }
+  if (minimums.token0 === 0n || minimums.token1 === 0n) {
+    return { __kind__: "err", err: SetMinimumsError.invalidMinimums };
+  }
+  pool.minimumLocked = { token0: minimums.token0, token1: minimums.token1 };
+  pool.firstDepositMinimum = dexFirstDeposit(pool.minimumLocked);
+  pool.minimumsSet = true;
+  return { __kind__: "ok", ok: dexPoolOut(pool) };
+}
+
+function mockDexConfig(): DexConfig {
+  return {
+    requestDeposit: DEX_REQUEST_DEPOSIT,
+    depositAccount: DEX_DEPOSIT_ACCOUNT,
+    maxPendingPerUser: DEX_MAX_PENDING,
+    refusalCooldownNs: DEX_COOLDOWN_NS,
+    messageMaxChars: DEX_MESSAGE_MAX,
+    reasonMaxChars: DEX_REASON_MAX,
+    newPairBadgeNs: DEX_BADGE_NS,
+    tttiMinimumLocked: DEX_TTTI_MIN_LOCKED,
+    firstDepositMultiplier: DEX_FIRST_DEPOSIT_MULTIPLIER,
+    feeTiers: [FeeTier.bps5, FeeTier.bps30, FeeTier.bps100],
+    protocolStatement: DEX_PROTOCOL_STATEMENT,
+    lockedSharesStatement: DEX_LOCKED_SHARES_STATEMENT,
+    approvalStatement: DEX_APPROVAL_STATEMENT,
+    launchMinimumTotalUsdE8: DEX_LAUNCH_MIN_TOTAL_USD_E8,
+    usdRateScale: DEX_USD_RATE_SCALE,
+    tttiTUsdE8: DEX_TTTI_T_USD_E8,
+    rateValidForNs: HOUR_NS,
+    rateGraceNs: 5n * 60n * 1_000_000_000n,
+    launchDepthStatement: DEX_LAUNCH_DEPTH_STATEMENT,
+    minLockNs: DEX_MIN_LOCK_NS,
+    maxLockNs: DEX_MAX_LOCK_NS,
+    swapDeadlineMaxNs: DEX_SWAP_DEADLINE_MAX_NS,
+    lpFeeSharePercent: DEX_LP_FEE_SHARE_PERCENT,
+    protocolFeeSharePercent: DEX_PROTOCOL_FEE_SHARE_PERCENT,
+  };
+}
+
+// --- DEX lot 2: deposit subaccounts, internal balances, DD / DW / DQ -------
+
+const DEX_TOKEN_ORDER: Array<DexToken> = [
+  DexToken.tttiT,
+  DexToken.icp,
+  DexToken.ckbtc,
+  DexToken.ckusdc,
+  DexToken.ckusdt,
+];
+const DEX_TOKEN_VIEW: Record<DexToken, PoolTokenView> = {
+  [DexToken.tttiT]: DEX_TTTI,
+  [DexToken.icp]: DEX_ICP,
+  [DexToken.ckbtc]: DEX_CKBTC,
+  [DexToken.ckusdc]: DEX_CKUSDC,
+  [DexToken.ckusdt]: DEX_CKUSDT,
+};
+const PAY_OF_DEX: Record<Exclude<DexToken, DexToken.tttiT>, PayToken> = {
+  [DexToken.icp]: PayToken.icp,
+  [DexToken.ckbtc]: PayToken.ckbtc,
+  [DexToken.ckusdc]: PayToken.ckusdc,
+  [DexToken.ckusdt]: PayToken.ckusdt,
+};
+
+const dexTokenFee = (token: DexToken): bigint =>
+  token === DexToken.tttiT ? state.fee : PAY_TOKENS[PAY_OF_DEX[token]].fee;
+
+function dexTokenInfo(token: DexToken): DexTokenInfo {
+  const view = DEX_TOKEN_VIEW[token];
+  const fee = dexTokenFee(token);
+  return {
+    token,
+    symbol: view.symbol,
+    ledgerId: view.ledgerId,
+    decimals: view.decimals,
+    fee,
+    minimumDeposit: 10n * fee,
+    minimumWithdrawal: 10n * fee,
+  };
+}
+
+/** [0xDD, principal length, principal bytes, zero padding]: 32 bytes, no secret. */
+function dexUserSubaccount(owner: Principal): Uint8Array {
+  const bytes = owner.toUint8Array();
+  const out = new Uint8Array(32);
+  out[0] = 0xdd;
+  out[1] = bytes.length;
+  out.set(bytes.slice(0, 30), 2);
+  return out;
+}
+
+const dexDepositAccountOf = (owner: Principal): DexAccount => ({
+  owner: TTTI_CANISTER,
+  subaccount: dexUserSubaccount(owner),
+});
+
+type DexBalance = { available: bigint; reserved: bigint };
+const mockDexBalances = new Map<string, Map<DexToken, DexBalance>>();
+const mockDexTransfers: Array<DexTransferView> = [];
+let nextDexTransferN = 1n;
+/** Last TTTI-T allowance granted to the contract through icrc2_approve. */
+let mockTttiAllowance = 0n;
+
+function dexBalanceOf(owner: Principal, token: DexToken): DexBalance {
+  let byToken = mockDexBalances.get(owner.toText());
+  if (!byToken) {
+    byToken = new Map();
+    mockDexBalances.set(owner.toText(), byToken);
+  }
+  let balance = byToken.get(token);
+  if (!balance) {
+    balance = { available: 0n, reserved: 0n };
+    byToken.set(token, balance);
+  }
+  return balance;
+}
+
+function dexBalancesView(owner: Principal): Array<DexBalanceView> {
+  return DEX_TOKEN_ORDER.map((token) => {
+    const balance = dexBalanceOf(owner, token);
+    const view = DEX_TOKEN_VIEW[token];
+    return {
+      token,
+      symbol: view.symbol,
+      ledgerId: view.ledgerId,
+      available: balance.available,
+      reserved: balance.reserved,
+    };
+  });
+}
+
+function dexNewTransfer(
+  direction: DexTransferDirection,
+  owner: Principal,
+  token: DexToken,
+  amount: bigint,
+  createdAt: bigint,
+): DexTransferView {
+  const n = nextDexTransferN++;
+  const fee = dexTokenFee(token);
+  const deposit = direction === DexTransferDirection.deposit;
+  const transfer: DexTransferView = {
+    n,
+    direction,
+    owner,
+    token,
+    amount,
+    ledgerAmount: deposit ? amount : amount - fee,
+    fee,
+    from: deposit ? { owner } : dexDepositAccountOf(owner),
+    to: deposit ? dexDepositAccountOf(owner) : { owner },
+    memoText: `TTTI-${deposit ? "DD" : "DW"}-${n}`,
+    createdAtTimeNs: createdAt,
+    attempt: 1n,
+    sends: 1n,
+    status: { __kind__: "inProgress", inProgress: null },
+  };
+  mockDexTransfers.push(transfer);
+  return transfer;
+}
+
+function dexTransferReview(t: DexTransferView, lastError: string): TransferReview {
+  return {
+    kind: t.direction === DexTransferDirection.deposit ? TransferKind.DD : TransferKind.DW,
+    purchaseId: t.n,
+    token: t.token,
+    memoText: t.memoText,
+    memoHex: memoHexOf(t.memoText),
+    createdAtTimeNs: t.createdAtTimeNs,
+    amount: t.ledgerAmount,
+    fee: t.fee,
+    destination: t.to,
+    sends: t.sends,
+    lastError,
+    buyer: t.owner,
+  };
+}
+
+function mockDepositToDex(token: DexToken, amount: bigint): Outcome<"depositToDex"> {
+  const err = (e: DexDepositError): Outcome<"depositToDex"> => ({ __kind__: "err", err: e });
+  const info = dexTokenInfo(token);
+  if (amount < info.minimumDeposit) {
+    return err({ __kind__: "amountTooSmall", amountTooSmall: { minimum: info.minimumDeposit } });
+  }
+  if (token === DexToken.tttiT) {
+    const required = amount + info.fee;
+    if (mockTttiAllowance < required) {
+      return err({
+        __kind__: "insufficientAllowance",
+        insufficientAllowance: { allowance: mockTttiAllowance, required },
+      });
+    }
+    if (required > 250_000n) {
+      return err({ __kind__: "insufficientFunds", insufficientFunds: { balance: 250_000n } });
+    }
+    mockTttiAllowance = 0n;
+  }
+  const transfer = dexNewTransfer(DexTransferDirection.deposit, CALLER, token, amount, nowNs());
+  transfer.status = { __kind__: "completed", completed: nextDexBlock++ };
+  dexBalanceOf(CALLER, token).available += amount;
+  return { __kind__: "ok", ok: transfer };
+}
+
+function mockWithdrawFromDex(token: DexToken, amount: bigint): Outcome<"withdrawFromDex"> {
+  const err = (e: DexWithdrawError): Outcome<"withdrawFromDex"> => ({ __kind__: "err", err: e });
+  const info = dexTokenInfo(token);
+  if (amount < info.minimumWithdrawal) {
+    return err({ __kind__: "amountTooSmall", amountTooSmall: { minimum: info.minimumWithdrawal } });
+  }
+  const balance = dexBalanceOf(CALLER, token);
+  if (balance.available < amount) {
+    return err({ __kind__: "insufficientBalance", insufficientBalance: { available: balance.available } });
+  }
+  // available -> reserved, then the Ok is the final debit.
+  balance.available -= amount;
+  const transfer = dexNewTransfer(DexTransferDirection.withdrawal, CALLER, token, amount, nowNs());
+  transfer.status = { __kind__: "completed", completed: nextDexBlock++ };
+  return { __kind__: "ok", ok: transfer };
+}
+
+/** Arrived: DD credits, DW final debit of the reserved amount, DQ refunded. */
+function dexMarkArrived(kind: TransferKind, id: bigint, block: bigint) {
+  if (kind === TransferKind.DQ) {
+    const request = mockPairRequests.find((r) => r.id === id);
+    if (request) {
+      request.refundBlock = block;
+      request.refundStatus = { __kind__: "refunded", refunded: block };
+    }
+    return;
+  }
+  const transfer = mockDexTransfers.find((t) => t.n === id);
+  if (!transfer) return;
+  transfer.status = { __kind__: "completed", completed: block };
+  const balance = dexBalanceOf(transfer.owner, transfer.token);
+  if (kind === TransferKind.DD) balance.available += transfer.amount;
+  else balance.reserved -= transfer.amount;
+}
+
+/** Not arrived: DD nothing credited, DW given back, DQ new attempt sent by the timer. */
+function dexMarkNotArrived(kind: TransferKind, id: bigint) {
+  if (kind === TransferKind.DQ) {
+    const request = mockPairRequests.find((r) => r.id === id);
+    if (request) request.refundStatus = { __kind__: "inProgress", inProgress: null };
+    return;
+  }
+  const transfer = mockDexTransfers.find((t) => t.n === id);
+  if (!transfer) return;
+  transfer.status = { __kind__: "failed", failed: "Not arrived (admin check)" };
+  if (kind === TransferKind.DW) {
+    const balance = dexBalanceOf(transfer.owner, transfer.token);
+    balance.reserved -= transfer.amount;
+    balance.available += transfer.amount;
+  }
+}
+
+// Seeds: completed DD deposits, one DW and one DD to review (outcome unknown
+// after 23 h), and an approved request whose DQ refund is to review.
+{
+  const ago = (hours: bigint) => nowNs() - hours * HOUR_NS;
+  const seedDone = (direction: DexTransferDirection, owner: Principal, token: DexToken, amount: bigint, hours: bigint) => {
+    const t = dexNewTransfer(direction, owner, token, amount, ago(hours));
+    t.status = { __kind__: "completed", completed: nextDexBlock++ };
+    return t;
+  };
+  seedDone(DexTransferDirection.deposit, CALLER, DexToken.tttiT, 120_000n, 72n);
+  seedDone(DexTransferDirection.deposit, CALLER, DexToken.icp, ICP_DIVISOR * 6n / 10n, 48n);
+  dexBalanceOf(CALLER, DexToken.tttiT).available = 120_000n;
+  dexBalanceOf(CALLER, DexToken.icp).available = ICP_DIVISOR / 2n;
+  seedDone(DexTransferDirection.deposit, HOLDER_2, DexToken.ckbtc, 25_000n, 40n);
+  dexBalanceOf(HOLDER_2, DexToken.ckbtc).available = 25_000n;
+
+  const unknown = "Call timed out (outcome unknown)";
+  const dw = dexNewTransfer(DexTransferDirection.withdrawal, CALLER, DexToken.icp, ICP_DIVISOR / 10n, ago(25n));
+  dw.status = { __kind__: "needsReview", needsReview: null };
+  dw.sends = 4n;
+  dw.lastError = unknown;
+  dexBalanceOf(CALLER, DexToken.icp).reserved = ICP_DIVISOR / 10n;
+  mockReviews.push(dexTransferReview(dw, unknown));
+
+  const dd = dexNewTransfer(DexTransferDirection.deposit, HOLDER_2, DexToken.ckusdc, 5_000_000n, ago(26n));
+  dd.status = { __kind__: "needsReview", needsReview: null };
+  dd.sends = 3n;
+  dd.lastError = unknown;
+  mockReviews.push(dexTransferReview(dd, unknown));
+
+  const approved = dexNewRequest(HOLDER_3, dexReadToken(principalFrom(24)), DEX_ICP, FeeTier.bps30, "", ago(30n));
+  const pool = dexCreatePool(dexRequestToken(approved), DEX_ICP, approved.feeTier, ago(27n), {
+    id: approved.id,
+    minimums: { token0: 100_000n, token1: 100_000n },
+  });
+  approved.status = { __kind__: "approved", approved: { poolId: pool.id, at: ago(27n) } };
+  approved.refundStatus = { __kind__: "needsReview", needsReview: null };
+  const memoText = `TTTI-DQ-${approved.id}`;
+  mockReviews.push({
+    kind: TransferKind.DQ,
+    purchaseId: approved.id,
+    token: DexToken.tttiT,
+    memoText,
+    memoHex: memoHexOf(memoText),
+    createdAtTimeNs: ago(26n),
+    amount: DEX_REQUEST_DEPOSIT - state.fee,
+    fee: state.fee,
+    destination: { owner: HOLDER_3 },
+    sends: 3n,
+    lastError: unknown,
+    buyer: HOLDER_3,
+  });
+}
+
+// --- DEX lot 3: filling gauge, v2 liquidity, positions and swaps ----------
+
+type DexPlan<T, E> = { __kind__: "ok"; ok: T } | { __kind__: "err"; err: E };
+type DexPosition = {
+  id: bigint;
+  poolId: bigint;
+  owner: Principal;
+  shares: bigint;
+  createdAt: bigint;
+  unlockAt: bigint;
+  isCreator: boolean;
+};
+const mockPositions: Array<DexPosition> = [];
+let nextPositionId = 1n;
+/** The mock caller is the admin/creator; its positions follow the same rules. */
+const DEX_CREATOR = CALLER;
+
+const dexCeilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
+const dexMin = (a: bigint, b: bigint) => (a < b ? a : b);
+
+/** Integer square root, rounded down. */
+function dexIsqrt(n: bigint): bigint {
+  if (n < 2n) return n;
+  let x = n;
+  let y = (x + 1n) / 2n;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2n;
+  }
+  return x;
+}
+
+function dexTokenOfView(view: PoolTokenView): DexToken | undefined {
+  return DEX_TOKEN_ORDER.find((token) => dexSameLedger(DEX_TOKEN_VIEW[token], view));
+}
+
+/** TTTI-T fixed at 10,000 USD; other tokens at the mock hourly rate while usable. */
+function dexUsdRate(view: PoolTokenView): bigint | undefined {
+  const token = dexTokenOfView(view);
+  if (token === undefined) return undefined;
+  if (token === DexToken.tttiT) return DEX_TTTI_T_USD_E8;
+  return mockPrice().usable ? MOCK_PAY_USD_E8[PAY_OF_DEX[token]] : undefined;
+}
+
+function dexGauge(pool: PoolView, reserve0 = pool.reserve0, reserve1 = pool.reserve1): UsdGauge {
+  const rate0 = dexUsdRate(pool.token0);
+  const rate1 = dexUsdRate(pool.token1);
+  const targetUsdE8 = DEX_LAUNCH_MIN_TOTAL_USD_E8;
+  if (rate0 === undefined || rate1 === undefined) {
+    return {
+      targetUsdE8,
+      valueAvailable: false,
+      missingRate: { token0: rate0 === undefined, token1: rate1 === undefined },
+    };
+  }
+  const currentUsdE8 =
+    (reserve0 * rate0) / 10n ** BigInt(pool.token0.decimals) +
+    (reserve1 * rate1) / 10n ** BigInt(pool.token1.decimals);
+  return {
+    currentUsdE8,
+    targetUsdE8,
+    remainingUsdE8: currentUsdE8 >= targetUsdE8 ? 0n : targetUsdE8 - currentUsdE8,
+    valueAvailable: true,
+    missingRate: { token0: false, token1: false },
+  };
+}
+
+const dexGaugeOpens = (gauge: UsdGauge) =>
+  gauge.valueAvailable && (gauge.currentUsdE8 ?? 0n) >= gauge.targetUsdE8;
+
+function dexRefreshOpening(pool: PoolView) {
+  if (pool.status === PoolStatus.filling && dexGaugeOpens(dexGauge(pool))) {
+    pool.status = PoolStatus.active;
+    pool.acceptsSwaps = true;
+  }
+}
+
+function dexPositionView(position: DexPosition): PositionView {
+  const pool = mockPools.find((p) => p.id === position.poolId);
+  const total = pool?.totalShares ?? 0n;
+  const unlocked = nowNs() >= position.unlockAt;
+  return {
+    id: position.id,
+    poolId: position.poolId,
+    owner: position.owner,
+    shares: position.shares,
+    amount0: pool && total > 0n ? (position.shares * pool.reserve0) / total : 0n,
+    amount1: pool && total > 0n ? (position.shares * pool.reserve1) / total : 0n,
+    token0Symbol: pool?.token0.symbol ?? "",
+    token1Symbol: pool?.token1.symbol ?? "",
+    createdAt: position.createdAt,
+    lockDurationNs: position.unlockAt - position.createdAt,
+    unlockAt: position.unlockAt,
+    isCreator: position.isCreator,
+    unlocked,
+    withdrawable: unlocked || pool?.status === PoolStatus.removed,
+  };
+}
+
+type DexAddPlan = { pool: PoolView; token0: DexToken; token1: DexToken; quote: AddLiquidityQuote };
+
+function dexPlanAdd(args: AddLiquidityQuoteArgs): DexPlan<DexAddPlan, AddLiquidityError> {
+  const fail = (err: AddLiquidityError): DexPlan<DexAddPlan, AddLiquidityError> => ({ __kind__: "err", err });
+  const pool = mockPools.find((p) => p.id === args.poolId);
+  if (!pool) return fail({ __kind__: "poolNotFound", poolNotFound: null });
+  if (pool.status === PoolStatus.removed) return fail({ __kind__: "poolRemoved", poolRemoved: null });
+  const token0 = dexTokenOfView(pool.token0);
+  const token1 = dexTokenOfView(pool.token1);
+  if (token0 === undefined || token1 === undefined) {
+    return fail({ __kind__: "unsupportedToken", unsupportedToken: null });
+  }
+  if (args.amount === 0n) return fail({ __kind__: "zeroAmount", zeroAmount: null });
+  const onToken0 = args.side === PoolSide.token0;
+  const isFirstDeposit = pool.totalShares === 0n;
+  let amount0: bigint;
+  let amount1: bigint;
+  let shares: bigint;
+  let lockedShares = 0n;
+  if (isFirstDeposit) {
+    if (!pool.minimumsSet) return fail({ __kind__: "minimumsNotSet", minimumsNotSet: null });
+    if (args.counterAmount === undefined) {
+      return fail({ __kind__: "counterAmountRequired", counterAmountRequired: null });
+    }
+    if (args.counterAmount === 0n) return fail({ __kind__: "zeroAmount", zeroAmount: null });
+    amount0 = onToken0 ? args.amount : args.counterAmount;
+    amount1 = onToken0 ? args.counterAmount : args.amount;
+    const first = pool.firstDepositMinimum;
+    if (
+      (first.token0 !== undefined && amount0 < first.token0) ||
+      (first.token1 !== undefined && amount1 < first.token1)
+    ) {
+      return fail({
+        __kind__: "belowMinimum",
+        belowMinimum: {
+          ...(first.token0 !== undefined ? { token0Minimum: first.token0 } : {}),
+          ...(first.token1 !== undefined ? { token1Minimum: first.token1 } : {}),
+        },
+      });
+    }
+    // Minimum locked amounts; a single-side minimum takes the other side at the deposit ratio.
+    const m0 = pool.minimumLocked.token0;
+    const m1 = pool.minimumLocked.token1;
+    const locked0 = m0 ?? (m1 !== undefined ? dexCeilDiv(m1 * amount0, amount1) : 0n);
+    const locked1 = m1 ?? (m0 !== undefined ? dexCeilDiv(m0 * amount1, amount0) : 0n);
+    lockedShares = dexIsqrt(locked0 * locked1);
+    const total = dexIsqrt(amount0 * amount1);
+    shares = total > lockedShares ? total - lockedShares : 0n;
+  } else {
+    if (pool.reserve0 === 0n || pool.reserve1 === 0n) {
+      return fail({ __kind__: "zeroShares", zeroShares: null });
+    }
+    // Counter amount from the reserve ratio, rounded up in favor of the pool.
+    amount0 = onToken0 ? args.amount : dexCeilDiv(args.amount * pool.reserve0, pool.reserve1);
+    amount1 = onToken0 ? dexCeilDiv(args.amount * pool.reserve1, pool.reserve0) : args.amount;
+    const counter = onToken0 ? amount1 : amount0;
+    if (args.counterAmount !== undefined && counter > args.counterAmount) {
+      return fail({ __kind__: "ratioMismatch", ratioMismatch: { requiredCounterAmount: counter } });
+    }
+    shares = dexMin(
+      (amount0 * pool.totalShares) / pool.reserve0,
+      (amount1 * pool.totalShares) / pool.reserve1,
+    );
+  }
+  if (shares === 0n) return fail({ __kind__: "zeroShares", zeroShares: null });
+  const gaugeAfter = dexGauge(pool, pool.reserve0 + amount0, pool.reserve1 + amount1);
+  return {
+    __kind__: "ok",
+    ok: {
+      pool,
+      token0,
+      token1,
+      quote: {
+        poolId: pool.id,
+        isFirstDeposit,
+        amount0,
+        amount1,
+        shares,
+        lockedShares,
+        totalSharesAfter: pool.totalShares + shares + lockedShares,
+        gaugeAfter,
+        opensPool: pool.status === PoolStatus.filling && dexGaugeOpens(gaugeAfter),
+      },
+    },
+  };
+}
+
+function mockQuoteAddLiquidity(args: AddLiquidityQuoteArgs): Outcome<"quoteAddLiquidity"> {
+  const plan = dexPlanAdd(args);
+  return plan.__kind__ === "err" ? plan : { __kind__: "ok", ok: plan.ok.quote };
+}
+
+function mockAddLiquidity(owner: Principal, args: AddLiquidityArgs): Outcome<"addLiquidity"> {
+  if (args.lockDurationNs < DEX_MIN_LOCK_NS) {
+    return { __kind__: "err", err: { __kind__: "lockTooShort", lockTooShort: { minimumNs: DEX_MIN_LOCK_NS } } };
+  }
+  if (args.lockDurationNs > DEX_MAX_LOCK_NS) {
+    return { __kind__: "err", err: { __kind__: "lockTooLong", lockTooLong: { maximumNs: DEX_MAX_LOCK_NS } } };
+  }
+  const plan = dexPlanAdd(args);
+  if (plan.__kind__ === "err") return plan;
+  const { pool, token0, token1, quote } = plan.ok;
+  const balance0 = dexBalanceOf(owner, token0);
+  const balance1 = dexBalanceOf(owner, token1);
+  for (const [token, balance, required] of [
+    [token0, balance0, quote.amount0],
+    [token1, balance1, quote.amount1],
+  ] as const) {
+    if (balance.available < required) {
+      return {
+        __kind__: "err",
+        err: { __kind__: "insufficientBalance", insufficientBalance: { token, available: balance.available, required } },
+      };
+    }
+  }
+  balance0.available -= quote.amount0;
+  balance1.available -= quote.amount1;
+  pool.reserve0 += quote.amount0;
+  pool.reserve1 += quote.amount1;
+  pool.totalShares = quote.totalSharesAfter;
+  pool.lockedShares += quote.lockedShares;
+  const now = nowNs();
+  const position: DexPosition = {
+    id: nextPositionId++,
+    poolId: pool.id,
+    owner,
+    shares: quote.shares,
+    createdAt: now,
+    unlockAt: now + args.lockDurationNs,
+    isCreator: owner.toText() === DEX_CREATOR.toText(),
+  };
+  mockPositions.push(position);
+  return {
+    __kind__: "ok",
+    ok: {
+      position: dexPositionView(position),
+      amount0: quote.amount0,
+      amount1: quote.amount1,
+      shares: quote.shares,
+      lockedShares: quote.lockedShares,
+      pool: dexPoolOut(pool),
+    },
+  };
+}
+
+function mockRemoveLiquidity(positionId: bigint): Outcome<"removeLiquidity"> {
+  const fail = (err: RemoveLiquidityError): Outcome<"removeLiquidity"> => ({ __kind__: "err", err });
+  const index = mockPositions.findIndex((p) => p.id === positionId);
+  if (index < 0) return fail({ __kind__: "positionNotFound", positionNotFound: null });
+  const position = mockPositions[index];
+  if (position.owner.toText() !== CALLER.toText()) {
+    return fail({ __kind__: "notPositionOwner", notPositionOwner: null });
+  }
+  const pool = mockPools.find((p) => p.id === position.poolId);
+  if (!pool) return fail({ __kind__: "poolNotFound", poolNotFound: null });
+  // Removed pair: withdrawals stay open even for locked positions.
+  if (pool.status !== PoolStatus.removed && nowNs() < position.unlockAt) {
+    return fail({ __kind__: "positionLocked", positionLocked: { unlockAt: position.unlockAt } });
+  }
+  const amount0 = (position.shares * pool.reserve0) / pool.totalShares;
+  const amount1 = (position.shares * pool.reserve1) / pool.totalShares;
+  pool.reserve0 -= amount0;
+  pool.reserve1 -= amount1;
+  pool.totalShares -= position.shares;
+  const token0 = dexTokenOfView(pool.token0);
+  const token1 = dexTokenOfView(pool.token1);
+  if (token0 !== undefined) dexBalanceOf(position.owner, token0).available += amount0;
+  if (token1 !== undefined) dexBalanceOf(position.owner, token1).available += amount1;
+  mockPositions.splice(index, 1);
+  return {
+    __kind__: "ok",
+    ok: { positionId, poolId: pool.id, shares: position.shares, amount0, amount1, pool: dexPoolOut(pool) },
+  };
+}
+
+function mockExtendLock(positionId: bigint, newUnlockAt: bigint): Outcome<"extendLock"> {
+  const fail = (err: ExtendLockError): Outcome<"extendLock"> => ({ __kind__: "err", err });
+  const position = mockPositions.find((p) => p.id === positionId);
+  if (!position) return fail({ __kind__: "positionNotFound", positionNotFound: null });
+  if (position.owner.toText() !== CALLER.toText()) {
+    return fail({ __kind__: "notPositionOwner", notPositionOwner: null });
+  }
+  if (newUnlockAt < position.unlockAt) {
+    return fail({ __kind__: "cannotShortenLock", cannotShortenLock: { unlockAt: position.unlockAt } });
+  }
+  const maximumUnlockAt = nowNs() + DEX_MAX_LOCK_NS;
+  if (newUnlockAt > maximumUnlockAt) {
+    return fail({ __kind__: "lockTooLong", lockTooLong: { maximumUnlockAt } });
+  }
+  position.unlockAt = newUnlockAt;
+  return { __kind__: "ok", ok: dexPositionView(position) };
+}
+
+type DexSwapPlan = { pool: PoolView; tokenOut: DexToken; inIsToken0: boolean; quote: SwapQuote };
+
+function dexPlanSwap(
+  poolId: bigint,
+  tokenIn: DexToken,
+  amountIn: bigint,
+  slippageBps: bigint,
+): DexPlan<DexSwapPlan, SwapError> {
+  const fail = (err: SwapError): DexPlan<DexSwapPlan, SwapError> => ({ __kind__: "err", err });
+  const pool = mockPools.find((p) => p.id === poolId);
+  if (!pool) return fail({ __kind__: "poolNotFound", poolNotFound: null });
+  if (pool.status === PoolStatus.removed) return fail({ __kind__: "poolRemoved", poolRemoved: null });
+  const token0 = dexTokenOfView(pool.token0);
+  const token1 = dexTokenOfView(pool.token1);
+  if (token0 === undefined || token1 === undefined) {
+    return fail({ __kind__: "unsupportedToken", unsupportedToken: null });
+  }
+  if (tokenIn !== token0 && tokenIn !== token1) {
+    return fail({ __kind__: "tokenNotInPool", tokenNotInPool: null });
+  }
+  dexRefreshOpening(pool);
+  if (pool.status === PoolStatus.filling) {
+    return fail({ __kind__: "poolFilling", poolFilling: { gauge: dexGauge(pool) } });
+  }
+  if (amountIn === 0n) return fail({ __kind__: "zeroAmount", zeroAmount: null });
+  if (slippageBps > DEX_MAX_SLIPPAGE_BPS) {
+    return fail({ __kind__: "invalidSlippage", invalidSlippage: { maximumBps: DEX_MAX_SLIPPAGE_BPS } });
+  }
+  const inIsToken0 = tokenIn === token0;
+  const reserveIn = inIsToken0 ? pool.reserve0 : pool.reserve1;
+  const reserveOut = inIsToken0 ? pool.reserve1 : pool.reserve0;
+  // Constant product v2: fee rounded up, output rounded down.
+  const fee = dexCeilDiv(amountIn * pool.feeBps, DEX_BPS);
+  const net = amountIn - fee;
+  const amountOut = reserveIn + net === 0n ? 0n : (reserveOut * net) / (reserveIn + net);
+  if (amountOut === 0n || amountOut >= reserveOut) {
+    return fail({ __kind__: "insufficientLiquidity", insufficientLiquidity: null });
+  }
+  const protocolFee = (fee * DEX_PROTOCOL_FEE_SHARE_PERCENT) / 100n;
+  const ideal = reserveIn === 0n ? 0n : (net * reserveOut) / reserveIn;
+  const priceImpactBps =
+    ideal > amountOut ? dexCeilDiv((ideal - amountOut) * DEX_BPS, ideal) : 0n;
+  return {
+    __kind__: "ok",
+    ok: {
+      pool,
+      tokenOut: inIsToken0 ? token1 : token0,
+      inIsToken0,
+      quote: {
+        poolId: pool.id,
+        tokenIn,
+        tokenOut: inIsToken0 ? token1 : token0,
+        amountIn,
+        amountOut,
+        fee,
+        lpFee: fee - protocolFee,
+        protocolFee,
+        feeBps: pool.feeBps,
+        priceImpactBps,
+        slippageBps,
+        minimumReceived: (amountOut * (DEX_BPS - slippageBps)) / DEX_BPS,
+        maxDeadlineNs: nowNs() + DEX_SWAP_DEADLINE_MAX_NS,
+      },
+    },
+  };
+}
+
+function mockQuoteSwap(poolId: bigint, tokenIn: DexToken, amountIn: bigint, slippageBps: bigint): Outcome<"quoteSwap"> {
+  const plan = dexPlanSwap(poolId, tokenIn, amountIn, slippageBps);
+  return plan.__kind__ === "err" ? plan : { __kind__: "ok", ok: plan.ok.quote };
+}
+
+function mockSwap(
+  poolId: bigint,
+  tokenIn: DexToken,
+  amountIn: bigint,
+  minAmountOut: bigint,
+  deadline: bigint,
+): Outcome<"swap"> {
+  const fail = (err: SwapError): Outcome<"swap"> => ({ __kind__: "err", err });
+  const plan = dexPlanSwap(poolId, tokenIn, amountIn, 0n);
+  if (plan.__kind__ === "err") return plan;
+  const { pool, tokenOut, inIsToken0, quote } = plan.ok;
+  const now = nowNs();
+  if (now > deadline) return fail({ __kind__: "deadlineExceeded", deadlineExceeded: { deadline, now } });
+  const maximum = now + DEX_SWAP_DEADLINE_MAX_NS;
+  if (deadline > maximum) return fail({ __kind__: "deadlineTooFar", deadlineTooFar: { maximum } });
+  if (quote.amountOut < minAmountOut) {
+    return fail({ __kind__: "slippageExceeded", slippageExceeded: { amountOut: quote.amountOut, minAmountOut } });
+  }
+  const balanceIn = dexBalanceOf(CALLER, tokenIn);
+  if (balanceIn.available < amountIn) {
+    return fail({ __kind__: "insufficientBalance", insufficientBalance: { available: balanceIn.available } });
+  }
+  balanceIn.available -= amountIn;
+  dexBalanceOf(CALLER, tokenOut).available += quote.amountOut;
+  // 70 % of the fee stays in the reserves for LPs; the 30 % permanent-liquidity part is counted apart.
+  const toReserve = amountIn - quote.protocolFee;
+  if (inIsToken0) {
+    pool.reserve0 += toReserve;
+    pool.protocolFee0 += quote.protocolFee;
+    pool.reserve1 -= quote.amountOut;
+  } else {
+    pool.reserve1 += toReserve;
+    pool.protocolFee1 += quote.protocolFee;
+    pool.reserve0 -= quote.amountOut;
+  }
+  return {
+    __kind__: "ok",
+    ok: {
+      poolId: pool.id,
+      tokenIn,
+      tokenOut,
+      amountIn,
+      amountOut: quote.amountOut,
+      fee: quote.fee,
+      lpFee: quote.lpFee,
+      protocolFee: quote.protocolFee,
+      pool: dexPoolOut(pool),
+    },
+  };
+}
+
+// Seed: another user fills the TTTI-T/ckUSDT pool to 37 of 100 USD (18 + 19 USD).
+{
+  const pool = mockPools.find(
+    (p) => dexSameLedger(p.token0, DEX_TTTI) && dexSameLedger(p.token1, DEX_CKUSDT),
+  );
+  if (pool) {
+    dexBalanceOf(HOLDER_2, DexToken.tttiT).available += 180_000n;
+    dexBalanceOf(HOLDER_2, DexToken.ckusdt).available += 19_000_000n;
+    mockAddLiquidity(HOLDER_2, {
+      poolId: pool.id,
+      side: PoolSide.token0,
+      amount: 180_000n,
+      counterAmount: 19_000_000n,
+      lockDurationNs: 30n * 24n * HOUR_NS,
+    });
+  }
+}
+
+// --- DEX lot 4: cycles autonomy, protocol fees (DC / DL), mint treasuries ----
+
+const LOT4_FIVE_YEARS_NS = 157_680_000_000_000_000n;
+const LOT4_DAY_NS = 24n * HOUR_NS;
+/** Simulated CMC rate: cycles per ICP. */
+const LOT4_CYCLES_PER_ICP = 9_200_000_000_000n;
+const LOT4_AVG7D = 212_000_000_000n;
+const LOT4_AVG30D = 196_000_000_000n;
+/** Simulated minimum DL claim: 0.001 ICP. */
+const LOT4_MIN_CLAIM_E8S = 100_000n;
+
+const lot4Pool = (a: PoolTokenView, b: PoolTokenView) =>
+  mockPools.find((p) => dexSameLedger(p.token0, a) && dexSameLedger(p.token1, b));
+
+/** 32-byte subaccount holding an ASCII label, zero padded. */
+function lot4Subaccount(label: string): Uint8Array {
+  const out = new Uint8Array(32);
+  out.set(new TextEncoder().encode(label).slice(0, 32));
+  return out;
+}
+
+function mockAutonomy(): AutonomyView {
+  const reserveCyclesEstimate = (state.reserveBalanceE8s * LOT4_CYCLES_PER_ICP) / ICP_DIVISOR;
+  const totalCycles = state.cyclesBalance + reserveCyclesEstimate;
+  const perDay = LOT4_AVG7D > LOT4_AVG30D ? LOT4_AVG7D : LOT4_AVG30D;
+  return {
+    cyclesBalance: state.cyclesBalance,
+    reserveBalanceE8s: state.reserveBalanceE8s,
+    reserveCyclesEstimate,
+    totalCycles,
+    avg7dCyclesPerDay: LOT4_AVG7D,
+    avg30dCyclesPerDay: LOT4_AVG30D,
+    autonomyDays: totalCycles / perDay,
+    targetDays: 90n,
+    sampleCount: 31n * 24n,
+    oldestSampleAt: nowNs() - 31n * LOT4_DAY_NS,
+    computedAt: nowNs() - HOUR_NS / 4n,
+  };
+}
+
+const mockShareHistory: Array<ShareChange> = [
+  { at: nowNs() - 9n * LOT4_DAY_NS, oldShareBps: 4_000n, newShareBps: 3_000n, autonomyDays: 132n },
+  { at: nowNs() - 5n * LOT4_DAY_NS, oldShareBps: 3_000n, newShareBps: 2_000n, autonomyDays: 158n },
+  { at: nowNs() - 2n * LOT4_DAY_NS, oldShareBps: 2_000n, newShareBps: 1_000n, autonomyDays: 171n },
+];
+
+function mockCyclesShare(): CyclesShareView {
+  const autonomyDays = mockAutonomy().autonomyDays;
+  const last = mockShareHistory[mockShareHistory.length - 1];
+  const days = autonomyDays ?? 0n;
+  // Linear between 40 % at 45 days and 5 % at 180 days.
+  const target =
+    days <= 45n ? 4_000n : days >= 180n ? 500n : 4_000n - ((days - 45n) * 3_500n) / 135n;
+  return {
+    shareBps: last.newShareBps,
+    targetShareBps: target,
+    minShareBps: 500n,
+    maxShareBps: 4_000n,
+    lowAutonomyDays: 45n,
+    highAutonomyDays: 180n,
+    maxStepBps: 1_000n,
+    minAdjustIntervalNs: LOT4_DAY_NS,
+    lastAdjustAt: last.at,
+    nextAdjustAfter: last.at + LOT4_DAY_NS,
+    autonomyDays,
+  };
+}
+
+const LOT4_TREASURY_BALANCES = {
+  icp: 1_240_000_000n,
+  ckbtc: 21_000n,
+  ckusdc: 85_000_000n,
+  ckusdt: 64_000_000n,
+};
+
+function mockMintTreasuryAccounts(): Array<MintTreasuryAccount> {
+  const balanceOf: Record<PayToken, bigint> = {
+    [PayToken.icp]: LOT4_TREASURY_BALANCES.icp,
+    [PayToken.ckbtc]: LOT4_TREASURY_BALANCES.ckbtc,
+    [PayToken.ckusdc]: LOT4_TREASURY_BALANCES.ckusdc,
+    [PayToken.ckusdt]: LOT4_TREASURY_BALANCES.ckusdt,
+  };
+  return PAY_TOKEN_ORDER.map((token) => ({
+    token,
+    account: {
+      owner: TTTI_CANISTER,
+      subaccount: lot4Subaccount(`MINT-TREASURY-${PAY_TOKENS[token].symbol.toUpperCase()}`),
+    },
+    balance: balanceOf[token],
+    legacyExternalAccount: state.treasuryConfig.icpAccount ?? undefined,
+  }));
+}
+
+// Protocol liquidity, seeded on the open ckUSDC/ICP utility pool.
+type MockProtocolLiquidity = {
+  poolId: bigint;
+  shares: bigint;
+  fromFees0: bigint;
+  fromFees1: bigint;
+  fromTreasury0: bigint;
+  fromTreasury1: bigint;
+  lastAddedAt?: bigint;
+};
+const mockProtocolLiquidity: Array<MockProtocolLiquidity> = [];
+
+/** Adds protocol-owned liquidity at the pool ratio: shares with no position. */
+function lot4AddProtocolLiquidity(
+  pool: PoolView,
+  amount0: bigint,
+  amount1: bigint,
+  source: "fees" | "treasury",
+  at: bigint,
+): bigint {
+  const shares = pool.reserve0 > 0n ? (amount0 * pool.totalShares) / pool.reserve0 : 0n;
+  pool.reserve0 += amount0;
+  pool.reserve1 += amount1;
+  pool.totalShares += shares;
+  let entry = mockProtocolLiquidity.find((e) => e.poolId === pool.id);
+  if (!entry) {
+    entry = { poolId: pool.id, shares: 0n, fromFees0: 0n, fromFees1: 0n, fromTreasury0: 0n, fromTreasury1: 0n };
+    mockProtocolLiquidity.push(entry);
+  }
+  entry.shares += shares;
+  if (source === "fees") {
+    entry.fromFees0 += amount0;
+    entry.fromFees1 += amount1;
+  } else {
+    entry.fromTreasury0 += amount0;
+    entry.fromTreasury1 += amount1;
+  }
+  entry.lastAddedAt = at;
+  return shares;
+}
+
+function mockProtocolLiquidityViews(): Array<ProtocolLiquidityView> {
+  return mockProtocolLiquidity.flatMap((entry) => {
+    const pool = mockPools.find((p) => p.id === entry.poolId);
+    if (!pool) return [];
+    const total = pool.totalShares;
+    return [
+      {
+        poolId: entry.poolId,
+        token0Symbol: pool.token0.symbol,
+        token1Symbol: pool.token1.symbol,
+        shares: entry.shares,
+        totalShares: total,
+        amount0: total > 0n ? (entry.shares * pool.reserve0) / total : 0n,
+        amount1: total > 0n ? (entry.shares * pool.reserve1) / total : 0n,
+        fromFees0: entry.fromFees0,
+        fromFees1: entry.fromFees1,
+        fromTreasury0: entry.fromTreasury0,
+        fromTreasury1: entry.fromTreasury1,
+        lastAddedAt: entry.lastAddedAt,
+      },
+    ];
+  });
+}
+
+const mockWeeklyAllocations: Array<WeeklyAllocation> = [];
+let lot4UsdcIcpPoolId = 0n;
+
+// Seed: another user opens the ckUSDC/ICP utility pool (60 + 60 USD), then the
+// protocol adds liquidity from fees and from the last weekly allocation.
+{
+  const pool = lot4Pool(DEX_CKUSDC, DEX_ICP);
+  if (pool) {
+    lot4UsdcIcpPoolId = pool.id;
+    mockSetUtilityPairMinimums(pool.id, { token0: 1_000_000n, token1: 10_000_000n });
+    dexBalanceOf(HOLDER_3, DexToken.ckusdc).available += 60_000_000n;
+    dexBalanceOf(HOLDER_3, DexToken.icp).available += 480_000_000n;
+    mockAddLiquidity(HOLDER_3, {
+      poolId: pool.id,
+      side: PoolSide.token0,
+      amount: 60_000_000n,
+      counterAmount: 480_000_000n,
+      lockDurationNs: 90n * LOT4_DAY_NS,
+    });
+    lot4AddProtocolLiquidity(pool, 1_250_000n, 10_000_000n, "fees", nowNs() - 30n * HOUR_NS);
+    const allocationAt = nowNs() - 20n * HOUR_NS;
+    const shares = lot4AddProtocolLiquidity(pool, 2_500_000n, 20_000_000n, "treasury", allocationAt);
+    dexRefreshOpening(pool);
+    const ttti = (counter: PoolTokenView) => lot4Pool(DEX_TTTI, counter)?.id ?? 0n;
+    mockWeeklyAllocations.push({
+      id: 1n,
+      at: allocationAt,
+      autonomyDays: mockAutonomy().autonomyDays,
+      treasuryBalances: LOT4_TREASURY_BALANCES,
+      stockPayoutCap: {
+        icp: LOT4_TREASURY_BALANCES.icp / 12n,
+        ckbtc: LOT4_TREASURY_BALANCES.ckbtc / 12n,
+        ckusdc: LOT4_TREASURY_BALANCES.ckusdc / 12n,
+        ckusdt: LOT4_TREASURY_BALANCES.ckusdt / 12n,
+      },
+      toCyclesReserveE8s: 0n,
+      surplusE8s: 40_000_000n,
+      toBonusE8s: 20_000_000n,
+      toLiquidity: { icp: 20_000_000n, ckbtc: 0n, ckusdc: 2_500_000n, ckusdt: 0n },
+      poolAdds: [{ poolId: pool.id, amount0: 2_500_000n, amount1: 20_000_000n, shares }],
+      skipped: [
+        { poolId: ttti(DEX_ICP), reason: "No eligible TTTI-T" },
+        { poolId: ttti(DEX_CKUSDT), reason: "Pool not yet open" },
+        { poolId: lot4Pool(DEX_CKBTC, DEX_ICP)?.id ?? 0n, reason: "Empty pool" },
+      ],
+      waiting: { icp: 0n, ckbtc: 0n, ckusdc: 0n, ckusdt: 1_000_000n },
+      note: "Autonomy above 100 days: surplus split 50 % DL bonus, 50 % protocol liquidity.",
+    });
+  }
+}
+
+// DC batches (fee conversions to ICP) and their sends to the cycles reserve.
+const mockDcBatches: Array<DcBatch> = [];
+const mockDcSends: Array<{ n: bigint; batchId: bigint }> = [];
+{
+  const tttiIcp = lot4Pool(DEX_TTTI, DEX_ICP)?.id ?? 0n;
+  const tttiUsdt = lot4Pool(DEX_TTTI, DEX_CKUSDT)?.id ?? 0n;
+  const usdcIcp = lot4UsdcIcpPoolId;
+  mockDcBatches.push(
+    {
+      id: 1n,
+      at: nowNs() - 3n * LOT4_DAY_NS,
+      trigger: DcTrigger.daily,
+      legs: [
+        { poolId: usdcIcp, tokenSymbol: "ckUSDC", amountIn: 2_400_000n, referenceIcpOutE8s: 19_200_000n, executionIcpOutE8s: 19_050_000n, deviationBps: 78n, converted: true },
+      ],
+      toCyclesE8s: 1_905_000n,
+      toBonusE8s: 17_145_000n,
+      status: { __kind__: "sent", sent: 18_402_117n },
+    },
+    {
+      id: 2n,
+      at: nowNs() - 2n * LOT4_DAY_NS,
+      trigger: DcTrigger.daily,
+      legs: [
+        { poolId: usdcIcp, tokenSymbol: "ckUSDC", amountIn: 1_600_000n, referenceIcpOutE8s: 12_800_000n, executionIcpOutE8s: 12_710_000n, deviationBps: 70n, converted: true },
+      ],
+      toCyclesE8s: 1_271_000n,
+      toBonusE8s: 11_439_000n,
+      status: { __kind__: "needsReview", needsReview: null },
+    },
+    {
+      id: 3n,
+      at: nowNs() - 26n * HOUR_NS,
+      trigger: DcTrigger.threshold,
+      legs: [
+        { poolId: tttiIcp, tokenSymbol: "TTTI-T", amountIn: 1_200n, referenceIcpOutE8s: 96_000_000n, executionIcpOutE8s: 92_700_000n, deviationBps: 344n, converted: false },
+        { poolId: tttiUsdt, tokenSymbol: "ckUSDT", amountIn: 900_000n, referenceIcpOutE8s: 7_200_000n, executionIcpOutE8s: 7_130_000n, deviationBps: 97n, converted: false },
+      ],
+      toCyclesE8s: 0n,
+      toBonusE8s: 0n,
+      status: { __kind__: "waitingPriceDeviation", waitingPriceDeviation: null },
+    },
+    {
+      id: 4n,
+      at: nowNs() - 2n * HOUR_NS,
+      trigger: DcTrigger.daily,
+      legs: [],
+      toCyclesE8s: 0n,
+      toBonusE8s: 0n,
+      status: { __kind__: "nothingToConvert", nothingToConvert: null },
+    },
+  );
+  mockDcSends.push({ n: 1n, batchId: 1n }, { n: 2n, batchId: 2n });
+  mockReviews.push(
+    reviewEntry(TransferKind.DC, 2n, "TTTI-DC-2", 1_271_000n - ICP_LEDGER_FEE, CYCLES_RESERVE_ACCOUNT, 3n, "Call timed out (outcome unknown)"),
+  );
+}
+
+// DL bonus of the caller: a claimable amount, one paid claim and one to verify.
+const mockBonus = { claimableE8s: 3_750_000n, claimInProgress: false };
+const mockBonusClaims: Array<BonusClaimView> = [
+  {
+    n: 1n,
+    amountE8s: 1_820_000n,
+    createdAt: nowNs() - 6n * LOT4_DAY_NS,
+    memoText: "TTTI-DL-1",
+    status: { __kind__: "completed", completed: 18_390_552n },
+  },
+  {
+    n: 2n,
+    amountE8s: 940_000n,
+    createdAt: nowNs() - 30n * HOUR_NS,
+    memoText: "TTTI-DL-2",
+    status: { __kind__: "needsReview", needsReview: null },
+  },
+];
+mockReviews.push(
+  reviewEntry(TransferKind.DL, 2n, "TTTI-DL-2", 940_000n - ICP_LEDGER_FEE, { owner: CALLER }, 2n, "Call rejected: canister ryjl3-tyaaa-aaaaa-aaaba-cai is stopping (outcome unknown)"),
+);
+
+// Seed: the caller holds a 1-year locked position in the TTTI-T/ckUSDT pair.
+{
+  const pool = lot4Pool(DEX_TTTI, DEX_CKUSDT);
+  if (pool) {
+    dexBalanceOf(CALLER, DexToken.tttiT).available += 20_000n;
+    dexBalanceOf(CALLER, DexToken.ckusdt).available += 2_200_000n;
+    const result = mockAddLiquidity(CALLER, {
+      poolId: pool.id,
+      side: PoolSide.token0,
+      amount: 20_000n,
+      counterAmount: 2_200_000n,
+      lockDurationNs: 365n * LOT4_DAY_NS,
+    });
+    if (result.__kind__ === "ok") {
+      // Take back what the seed did not use, so the caller's balances stay as before.
+      dexBalanceOf(CALLER, DexToken.tttiT).available -= 20_000n - result.ok.amount0;
+      dexBalanceOf(CALLER, DexToken.ckusdt).available -= 2_200_000n - result.ok.amount1;
+    }
+  }
+}
+
+/** Value of a position in ICP (e8s) at the mock rates; 0 when a rate is missing. */
+function lot4PositionValueIcp(position: PositionView, pool: PoolView): bigint {
+  const rate0 = dexUsdRate(pool.token0);
+  const rate1 = dexUsdRate(pool.token1);
+  const icpUsd = MOCK_PAY_USD_E8[PayToken.icp];
+  if (rate0 === undefined || rate1 === undefined || icpUsd === 0n) return 0n;
+  const usd =
+    (position.amount0 * rate0) / 10n ** BigInt(pool.token0.decimals) +
+    (position.amount1 * rate1) / 10n ** BigInt(pool.token1.decimals);
+  return (usd * ICP_DIVISOR) / icpUsd;
+}
+
+function mockLpBonusView(): LpBonusView {
+  const now = nowNs();
+  const positions: Array<PositionBonusWeight> = mockPositions.flatMap((position) => {
+    if (position.owner.toText() !== CALLER.toText() || position.unlockAt <= now) return [];
+    const pool = mockPools.find((p) => p.id === position.poolId);
+    if (!pool || pool.kind !== PoolKind.tttiPair || pool.status === PoolStatus.removed) return [];
+    const valueIcpE8s = lot4PositionValueIcp(dexPositionView(position), pool);
+    const remainingLockNs = position.unlockAt - now;
+    return [
+      {
+        positionId: position.id,
+        poolId: position.poolId,
+        valueIcpE8s,
+        remainingLockNs,
+        weight: (valueIcpE8s * remainingLockNs) / LOT4_FIVE_YEARS_NS,
+      },
+    ];
+  });
+  return {
+    claimableE8s: mockBonus.claimableE8s,
+    claimedE8s: mockBonusClaims.reduce((sum, c) => sum + c.amountE8s, 0n),
+    positions,
+    claims: [...mockBonusClaims].reverse(),
+  };
+}
+
+function mockClaimLpBonus(): Outcome<"claimLpBonus"> {
+  if (CALLER.isAnonymous()) return { __kind__: "err", err: { __kind__: "anonymous", anonymous: null } };
+  if (mockBonus.claimInProgress) {
+    return { __kind__: "err", err: { __kind__: "claimInProgress", claimInProgress: null } };
+  }
+  const amountE8s = mockBonus.claimableE8s;
+  if (amountE8s === 0n) return { __kind__: "err", err: { __kind__: "nothingToClaim", nothingToClaim: null } };
+  if (amountE8s < LOT4_MIN_CLAIM_E8S) {
+    return {
+      __kind__: "err",
+      err: { __kind__: "belowMinimum", belowMinimum: { minimumE8s: LOT4_MIN_CLAIM_E8S } },
+    };
+  }
+  const n = BigInt(mockBonusClaims.length + 1);
+  const claim: BonusClaimView = {
+    n,
+    amountE8s,
+    createdAt: nowNs(),
+    memoText: `TTTI-DL-${n}`,
+    status: { __kind__: "completed", completed: 18_410_000n + n },
+  };
+  mockBonusClaims.push(claim);
+  mockBonus.claimableE8s = 0n;
+  return { __kind__: "ok", ok: claim };
+}
+
+/** Arrived on a DC or DL review: records the block. */
+function protocolFeeArrived(kind: TransferKind, n: bigint, block: bigint) {
+  if (kind === TransferKind.DC) {
+    const send = mockDcSends.find((d) => d.n === n);
+    const batch = send ? mockDcBatches.find((b) => b.id === send.batchId) : undefined;
+    if (batch) batch.status = { __kind__: "sent", sent: block };
+    return;
+  }
+  const claim = mockBonusClaims.find((c) => c.n === n);
+  if (claim) claim.status = { __kind__: "completed", completed: block };
+}
+
+/** Not arrived on a DC or DL review: a new attempt is open, sent by the timer. */
+function protocolFeeNotArrived(kind: TransferKind, n: bigint) {
+  if (kind === TransferKind.DC) {
+    const send = mockDcSends.find((d) => d.n === n);
+    const batch = send ? mockDcBatches.find((b) => b.id === send.batchId) : undefined;
+    if (batch) batch.status = { __kind__: "sending", sending: null };
+    return;
+  }
+  const claim = mockBonusClaims.find((c) => c.n === n);
+  if (claim) claim.status = { __kind__: "inProgress", inProgress: null };
+}
+
+// --- Mint revenue correction: owner destinations (OW), treasury sweep (SR), mint fee halves (MF) ---
+
+/** Admin-set owner destination per paid token; ckUSDT has none, so its share accumulates. */
+const OWNER_WALLET = principalFrom(21);
+const mockOwnerDestinations: Record<PayToken, { account?: Account; setAt?: bigint; accumulated: bigint }> = {
+  [PayToken.icp]: { account: { owner: OWNER_WALLET }, setAt: nowNs() - 3n * LOT4_DAY_NS, accumulated: 0n },
+  [PayToken.ckbtc]: { account: { owner: OWNER_WALLET }, setAt: nowNs() - 3n * LOT4_DAY_NS, accumulated: 0n },
+  [PayToken.ckusdc]: {
+    account: { owner: OWNER_WALLET, subaccount: lot4Subaccount("OWNER-CKUSDC") },
+    setAt: nowNs() - 2n * LOT4_DAY_NS,
+    accumulated: 0n,
+  },
+  [PayToken.ckusdt]: { accumulated: 49_504_950n },
+};
+
+const mockOwnerSends: Array<OwnerSendView> = [];
+function pushOwnerSend(
+  token: PayToken,
+  amount: bigint,
+  source: OwnerSendView["source"],
+  status: OwnerSendView["status"],
+  ageNs: bigint,
+  lastError?: string,
+): OwnerSendView {
+  const id = BigInt(mockOwnerSends.length + 1);
+  const at = nowNs() - ageNs;
+  const prefix = source.__kind__ === "treasurySweep" ? "SR" : "OW";
+  const send: OwnerSendView = {
+    id,
+    token,
+    amount,
+    fee: PAY_TOKENS[token].fee,
+    destination: mockOwnerDestinations[token].account ?? { owner: OWNER_WALLET },
+    source,
+    status,
+    block: status.__kind__ === "sent" ? status.sent : undefined,
+    memoText: `TTTI-${prefix}-${id}`,
+    createdAtTimeNs: at,
+    attempt: 1n,
+    sends: status.__kind__ === "pending" ? 0n : 1n,
+    lastError,
+    createdAt: at,
+    updatedAt: at,
+  };
+  mockOwnerSends.push(send);
+  return send;
+}
+
+// One-time sweep: ICP first tops up the cycles reserve to 2 ICP, then each treasury balance goes to its owner destination.
+const SWEEP_RESERVE_TOP_UP_E8S = 54_330_000n;
+const mockSweepTokens: Array<SweepToken> = [];
+{
+  const icp = pushOwnerSend(PayToken.icp, LOT4_TREASURY_BALANCES.icp - SWEEP_RESERVE_TOP_UP_E8S - 2n * ICP_LEDGER_FEE, { __kind__: "treasurySweep", treasurySweep: null }, { __kind__: "sent", sent: 18_420_001n }, 4n * LOT4_DAY_NS);
+  const ckbtc = pushOwnerSend(PayToken.ckbtc, LOT4_TREASURY_BALANCES.ckbtc - PAY_TOKENS[PayToken.ckbtc].fee, { __kind__: "treasurySweep", treasurySweep: null }, { __kind__: "sent", sent: 2_310_455n }, 4n * LOT4_DAY_NS);
+  const ckusdc = pushOwnerSend(PayToken.ckusdc, LOT4_TREASURY_BALANCES.ckusdc - PAY_TOKENS[PayToken.ckusdc].fee, { __kind__: "treasurySweep", treasurySweep: null }, { __kind__: "needsReview", needsReview: null }, 4n * LOT4_DAY_NS, "Call timed out (outcome unknown)");
+  mockSweepTokens.push(
+    { token: PayToken.icp, balance: LOT4_TREASURY_BALANCES.icp, status: { __kind__: "sent", sent: icp.id } },
+    { token: PayToken.ckbtc, balance: LOT4_TREASURY_BALANCES.ckbtc, status: { __kind__: "sent", sent: ckbtc.id } },
+    { token: PayToken.ckusdc, balance: LOT4_TREASURY_BALANCES.ckusdc, status: { __kind__: "sending", sending: ckusdc.id } },
+    { token: PayToken.ckusdt, balance: LOT4_TREASURY_BALANCES.ckusdt, status: { __kind__: "waitingDestination", waitingDestination: null } },
+  );
+  pushOwnerSend(PayToken.icp, 99_009_900n, { __kind__: "mint", mint: 41n }, { __kind__: "sent", sent: 18_431_220n }, 30n * HOUR_NS);
+  pushOwnerSend(PayToken.ckbtc, 15_346n, { __kind__: "mint", mint: 42n }, { __kind__: "failed", failed: "InsufficientFunds (mock)" }, 20n * HOUR_NS, "InsufficientFunds (mock)");
+  const owReview = pushOwnerSend(PayToken.ckusdc, 4_950_495n, { __kind__: "mint", mint: 43n }, { __kind__: "needsReview", needsReview: null }, 25n * HOUR_NS, "Call rejected (outcome unknown)");
+  pushOwnerSend(PayToken.icp, 19_801_980n, { __kind__: "mint", mint: 44n }, { __kind__: "pending", pending: null }, HOUR_NS / 6n);
+  mockReviews.push(
+    { ...reviewEntry(TransferKind.OW, owReview.id, owReview.memoText, owReview.amount, owReview.destination, 2n, "Call rejected (outcome unknown)"), token: DexToken.ckusdc, fee: owReview.fee },
+    { ...reviewEntry(TransferKind.SR, ckusdc.id, ckusdc.memoText, ckusdc.amount, ckusdc.destination, 3n, "Call timed out (outcome unknown)"), token: DexToken.ckusdc, fee: ckusdc.fee },
+  );
+}
+const mockSweep = {
+  status: SweepStatus.sending,
+  startedAt: nowNs() - 4n * LOT4_DAY_NS,
+  completedAt: undefined as bigint | undefined,
+  reserveTopUpE8s: SWEEP_RESERVE_TOP_UP_E8S,
+  reserveTopUpBlock: 18_419_998n as bigint | undefined,
+  reserveTopUpMemo: "TTTI-SR-0" as string | undefined,
+};
+
+function mockSweepView(): TreasurySweepView {
+  return { ...mockSweep, tokens: mockSweepTokens.map((t) => ({ ...t })) };
+}
+
+function ownerDestinationView(token: PayToken): OwnerDestinationView {
+  const d = mockOwnerDestinations[token];
+  return { token, account: d.account, setAt: d.setAt, accumulated: d.accumulated };
+}
+
+function mockSetOwnerDestination(token: PayToken, account: Account): Outcome<"setOwnerDestination"> {
+  if (account.owner.isAnonymous()) return { __kind__: "err", err: OwnerRevenueError.anonymousOwner };
+  if (account.owner.toText() === TTTI_CANISTER.toText()) {
+    return { __kind__: "err", err: OwnerRevenueError.contractAccount };
+  }
+  if (account.subaccount !== undefined && account.subaccount.length !== 32) {
+    return { __kind__: "err", err: OwnerRevenueError.invalidSubaccount };
+  }
+  const d = mockOwnerDestinations[token];
+  d.account = account;
+  d.setAt = nowNs();
+  if (d.accumulated > 0n) {
+    // The accumulated share leaves as soon as a destination exists.
+    pushOwnerSend(token, d.accumulated - PAY_TOKENS[token].fee, { __kind__: "accumulated", accumulated: null }, { __kind__: "sent", sent: 18_440_000n + BigInt(mockOwnerSends.length) }, 0n);
+    d.accumulated = 0n;
+  }
+  const sweep = mockSweepTokens.find((t) => t.token === token && t.status.__kind__ === "waitingDestination");
+  if (sweep) {
+    const send = pushOwnerSend(token, (sweep.balance ?? 0n) - PAY_TOKENS[token].fee, { __kind__: "treasurySweep", treasurySweep: null }, { __kind__: "sent", sent: 18_441_000n + BigInt(mockOwnerSends.length) }, 0n);
+    sweep.status = { __kind__: "sent", sent: send.id };
+  }
+  return { __kind__: "ok", ok: ownerDestinationView(token) };
+}
+
+function mockClearOwnerDestination(token: PayToken): Outcome<"clearOwnerDestination"> {
+  const d = mockOwnerDestinations[token];
+  if (!d.account) return { __kind__: "err", err: OwnerRevenueError.notConfigured };
+  d.account = undefined;
+  d.setAt = undefined;
+  return { __kind__: "ok", ok: ownerDestinationView(token) };
+}
+
+/** Arrived / Not arrived on an OW or SR review. */
+function ownerSendReviewed(id: bigint, block: bigint | null) {
+  const send = mockOwnerSends.find((s) => s.id === id);
+  if (!send) return;
+  send.status = block === null ? { __kind__: "pending", pending: null } : { __kind__: "sent", sent: block };
+  send.block = block ?? undefined;
+  send.updatedAt = nowNs();
+  const sweep = mockSweepTokens.find((t) => t.status.__kind__ === "sending" && t.status.sending === id);
+  if (sweep && block !== null) {
+    sweep.status = { __kind__: "sent", sent: id };
+    if (mockSweepTokens.every((t) => t.status.__kind__ !== "sending")) {
+      mockSweep.status = SweepStatus.completed;
+      mockSweep.completedAt = nowNs();
+    }
+  }
+}
+
+// Mint fee half A: claimable by the liquidity providers of the lowest-liquidity TTTI-T pair of the paid token.
+const mockMintFeeBalances: Record<PayToken, { claimable: bigint; claimed: bigint }> = {
+  [PayToken.icp]: { claimable: 1_240_000n, claimed: 0n },
+  [PayToken.ckbtc]: { claimable: 0n, claimed: 0n },
+  [PayToken.ckusdc]: { claimable: 260_000n, claimed: 140_000n },
+  [PayToken.ckusdt]: { claimable: 8_000n, claimed: 0n },
+};
+const mockMintFeeClaims: Array<MintFeeClaimView> = [
+  { n: 1n, token: PayToken.ckusdc, amount: 140_000n, createdAt: nowNs() - 5n * LOT4_DAY_NS, memoText: "TTTI-MF-1", status: { __kind__: "completed", completed: 1_904_221n } },
+  { n: 2n, token: PayToken.icp, amount: 600_000n, createdAt: nowNs() - 28n * HOUR_NS, memoText: "TTTI-MF-2", status: { __kind__: "needsReview", needsReview: null } },
+];
+mockReviews.push(
+  reviewEntry(TransferKind.MF, 2n, "TTTI-MF-2", 600_000n - ICP_LEDGER_FEE, { owner: CALLER }, 2n, "Call timed out (outcome unknown)"),
+);
+const mockMintFeeClaimsInProgress = new Set<PayToken>();
+
+function mockMyMintFees(): MintFeeLpView {
+  return {
+    balances: PAY_TOKEN_ORDER.map((token) => ({ token, ...mockMintFeeBalances[token] })),
+    claims: [...mockMintFeeClaims].reverse(),
+  };
+}
+
+function mockClaimMintFee(token: PayToken): Outcome<"claimMintFee"> {
+  if (CALLER.isAnonymous()) return { __kind__: "err", err: { __kind__: "anonymous", anonymous: null } };
+  if (mockMintFeeClaimsInProgress.has(token)) {
+    return { __kind__: "err", err: { __kind__: "claimInProgress", claimInProgress: null } };
+  }
+  const balance = mockMintFeeBalances[token];
+  if (balance.claimable === 0n) return { __kind__: "err", err: { __kind__: "nothingToClaim", nothingToClaim: null } };
+  const fee = PAY_TOKENS[token].fee;
+  if (balance.claimable <= fee) {
+    return { __kind__: "err", err: { __kind__: "belowLedgerFee", belowLedgerFee: { fee } } };
+  }
+  const n = BigInt(mockMintFeeClaims.length + 1);
+  const claim: MintFeeClaimView = {
+    n,
+    token,
+    amount: balance.claimable,
+    createdAt: nowNs(),
+    memoText: `TTTI-MF-${n}`,
+    status: { __kind__: "completed", completed: 1_905_000n + n },
+  };
+  mockMintFeeClaims.push(claim);
+  balance.claimed += balance.claimable;
+  balance.claimable = 0n;
+  return { __kind__: "ok", ok: claim };
+}
+
+function mintFeeReviewed(n: bigint, block: bigint | null) {
+  const claim = mockMintFeeClaims.find((c) => c.n === n);
+  if (claim) {
+    claim.status = block === null ? { __kind__: "inProgress", inProgress: null } : { __kind__: "completed", completed: block };
+  }
+}
+
+// Mint fee half B: set aside, then added once worth 0.001 TTTI-T (10 USD) as permanent liquidity.
+const SET_ASIDE_THRESHOLD_USD_E8 = 1_000_000_000n;
+const ICPSWAP_POOL = principalFrom(31);
+const mockSetAside: Record<PayToken, Omit<SetAsideView, "token" | "valueUsdE8" | "thresholdUsdE8" | "targetPoolId">> = {
+  [PayToken.icp]: { amount: 310_000n, totalReceived: 150_310_000n, totalInjected: 150_000_000n, lastInjectionAt: nowNs() - 2n * LOT4_DAY_NS },
+  [PayToken.ckbtc]: { amount: 0n, totalReceived: 0n, totalInjected: 0n },
+  [PayToken.ckusdc]: { amount: 0n, totalReceived: 0n, totalInjected: 0n },
+  [PayToken.ckusdt]: { amount: 4_200_000n, totalReceived: 4_200_000n, totalInjected: 0n },
+};
+const SET_ASIDE_POOL: Record<PayToken, PoolTokenView> = {
+  [PayToken.icp]: DEX_ICP,
+  [PayToken.ckbtc]: DEX_CKBTC,
+  [PayToken.ckusdc]: DEX_CKUSDC,
+  [PayToken.ckusdt]: DEX_CKUSDT,
+};
+
+function mockSetAsideViews(): Array<SetAsideView> {
+  return PAY_TOKEN_ORDER.map((token) => {
+    const entry = mockSetAside[token];
+    const rate = MOCK_PAY_USD_E8[token];
+    return {
+      token,
+      ...entry,
+      valueUsdE8: rate > 0n ? (entry.amount * rate) / 10n ** BigInt(PAY_TOKENS[token].decimals) : undefined,
+      thresholdUsdE8: SET_ASIDE_THRESHOLD_USD_E8,
+      targetPoolId: lot4Pool(DEX_TTTI, SET_ASIDE_POOL[token])?.id,
+    };
+  });
+}
+
+const mockInjections: Array<LiquidityInjection> = [
+  {
+    id: 1n,
+    token: PayToken.icp,
+    poolId: lot4Pool(DEX_TTTI, DEX_ICP)?.id ?? 1n,
+    venue: { __kind__: "icpswap", icpswap: ICPSWAP_POOL },
+    amountIn: 150_000_000n,
+    swapAmountIn: 75_000_000n,
+    pairAmountIn: 75_000_000n,
+    minTttiOut: 49_500n,
+    tttiReceived: 50_120n,
+    used0: 50_120n,
+    used1: 75_000_000n,
+    liquidityShares: 1_936_018n,
+    status: { __kind__: "completed", completed: null },
+    startedAt: nowNs() - 2n * LOT4_DAY_NS,
+    updatedAt: nowNs() - 2n * LOT4_DAY_NS + 60_000_000_000n,
+  },
+];
+
 export const mockBackend: backendInterface = {
   _initialize_access_control: async () => undefined,
+  setOwnerDestination: async (token, account) => mockSetOwnerDestination(token, account),
+  clearOwnerDestination: async (token) => mockClearOwnerDestination(token),
+  listOwnerDestinations: async () => PAY_TOKEN_ORDER.map(ownerDestinationView),
+  listOwnerSends: async (offset, limit) => {
+    const all = [...mockOwnerSends].reverse();
+    return { items: all.slice(Number(offset), Number(offset + limit)), total: BigInt(all.length), offset };
+  },
+  getOwnerAccumulated: async () =>
+    PAY_TOKEN_ORDER.map((token) => ({ token, amount: mockOwnerDestinations[token].accumulated })),
+  getTreasurySweepStatus: async () => mockSweepView(),
+  getMyMintFees: async () => mockMyMintFees(),
+  claimMintFee: async (token) => mockClaimMintFee(token),
+  getSetAsideAmounts: async () => mockSetAsideViews(),
+  listLiquidityInjections: async (offset, limit) => {
+    const all = [...mockInjections].reverse();
+    return { items: all.slice(Number(offset), Number(offset + limit)), total: BigInt(all.length), offset };
+  },
+  getCyclesAutonomy: async () => mockAutonomy(),
+  getCyclesShare: async () => mockCyclesShare(),
+  getCyclesShareHistory: async () => [...mockShareHistory].reverse(),
+  getMintTreasuryAccounts: async () => mockMintTreasuryAccounts(),
+  getLastWeeklyAllocation: async () => mockWeeklyAllocations[mockWeeklyAllocations.length - 1] ?? null,
+  listWeeklyAllocations: async () => [...mockWeeklyAllocations].reverse(),
+  listDcBatches: async () => [...mockDcBatches].reverse(),
+  getProtocolLiquidity: async () => mockProtocolLiquidityViews(),
+  getMyLpBonus: async () => mockLpBonusView(),
+  claimLpBonus: async () => mockClaimLpBonus(),
+  quoteAddLiquidity: async (args) => mockQuoteAddLiquidity(args),
+  addLiquidity: async (args) => mockAddLiquidity(CALLER, args),
+  removeLiquidity: async (positionId) => mockRemoveLiquidity(positionId),
+  extendLock: async (positionId, newUnlockAt) => mockExtendLock(positionId, newUnlockAt),
+  getDexPosition: async (positionId) => {
+    const position = mockPositions.find((p) => p.id === positionId);
+    return position ? dexPositionView(position) : null;
+  },
+  listPoolPositions: async (poolId) =>
+    mockPositions.filter((p) => p.poolId === poolId).map(dexPositionView),
+  listDexPositionsOf: async (owner) =>
+    mockPositions.filter((p) => p.owner.toText() === owner.toText()).map(dexPositionView),
+  quoteSwap: async (poolId, tokenIn, amountIn, slippageBps) =>
+    mockQuoteSwap(poolId, tokenIn, amountIn, slippageBps),
+  swap: async (poolId, tokenIn, amountIn, minAmountOut, deadline) =>
+    mockSwap(poolId, tokenIn, amountIn, minAmountOut, deadline),
+  listDexPools: async () => mockPools.map(dexPoolOut),
+  getDexPool: async (poolId) => {
+    const pool = mockPools.find((p) => p.id === poolId);
+    return pool ? dexPoolOut(pool) : null;
+  },
+  getDexConfig: async () => mockDexConfig(),
+  listPairRequests: async () => [...mockPairRequests].reverse(),
+  getMyPairRequests: async () =>
+    mockPairRequests.filter((r) => r.requester.toText() === CALLER.toText()).reverse(),
+  requestPair: async (args) => mockRequestPair(args),
+  approvePair: async (requestId, minimums) => mockApprovePair(requestId, minimums),
+  refusePair: async (requestId, reason) => mockRefusePair(requestId, reason),
+  removePair: async (poolId) => mockRemovePair(poolId),
+  setUtilityPairMinimums: async (poolId, minimums) =>
+    mockSetUtilityPairMinimums(poolId, minimums),
+  getDexTokens: async () => DEX_TOKEN_ORDER.map(dexTokenInfo),
+  getDexDepositAccount: async (owner) => dexDepositAccountOf(owner),
+  getDexPoolAccount: async (poolId) => mockPools.find((p) => p.id === poolId)?.poolAccount ?? null,
+  getDexBalances: async (owner) => dexBalancesView(owner),
+  getDexTransfers: async (owner) =>
+    mockDexTransfers.filter((t) => t.owner.toText() === owner.toText()).reverse(),
+  depositToDex: async ({ token, amount }) => mockDepositToDex(token, amount),
+  withdrawFromDex: async ({ token, amount }) => mockWithdrawFromDex(token, amount),
   quoteBuyback: async (massToken, percent, receiveToken) =>
     mockBuybackQuote(massToken, percent, receiveToken),
   requestBuyback: async (massToken, percent, receiveToken, fromSubaccount) =>
@@ -1810,7 +3824,6 @@ export const mockBackend: backendInterface = {
       ? { __kind__: "Err", Err: "The current rate is still valid; refresh is allowed only when the rate is expired or absent." }
       : { __kind__: "Ok", Ok: price };
   },
-  setPayTokenAccount: async (token, account) => ({ __kind__: "Ok", Ok: { token, account } }),
   execute: async () => ({ hasMore: false, rows: [] }),
   exportBalanceSnapshot: async () => ({
     exportedAt: nowNs(),
@@ -1921,23 +3934,9 @@ export const mockBackend: backendInterface = {
     reserveAccount: CYCLES_RESERVE_ACCOUNT,
     reserveBalanceE8s: state.reserveBalanceE8s,
     reserveFloorE8s: RESERVE_FLOOR_E8S,
-    withdrawableExcessE8s: withdrawableExcess(),
-    withdrawalAllowed: true,
-    withdrawalBlockedReason: undefined,
     lastTopUp: state.lastTopUp,
     withdrawals: state.withdrawals,
   }),
-  withdrawReserveExcess: async (amount) => {
-    const withdrawableE8s = withdrawableExcess();
-    if (withdrawableE8s === 0n) return { __kind__: "noExcess", noExcess: null };
-    if (amount === 0n || amount > withdrawableE8s) {
-      return { __kind__: "amountExceedsExcess", amountExceedsExcess: { withdrawableE8s } };
-    }
-    const blockIndex = 18_300_000n + BigInt(state.withdrawals.length);
-    state.reserveBalanceE8s -= amount + ICP_LEDGER_FEE;
-    state.withdrawals = [...state.withdrawals, { timestamp: nowNs(), amountE8s: amount, blockIndex }];
-    return { __kind__: "ok", ok: blockIndex };
-  },
   getPublicTreasuryInfo: async () => ({
     icpAccount: state.treasuryConfig.icpAccount,
     tokenAccounts: PAY_TOKEN_ORDER.map((token) => ({
@@ -1975,7 +3974,10 @@ export const mockBackend: backendInterface = {
       ? { __kind__: "Err", Err: MINTING_REFUSAL }
       : { __kind__: "Ok", Ok: 9n },
   icrc2_allowance: async () => ({ allowance: 0n }),
-  icrc2_approve: async () => ({ __kind__: "Ok", Ok: 9n }),
+  icrc2_approve: async (args) => {
+    if (args.spender.owner.toText() === TTTI_CANISTER.toText()) mockTttiAllowance = args.amount;
+    return { __kind__: "Ok", Ok: 9n };
+  },
   icrc2_transfer_from: async (args) =>
     isMintingAccount(args.to)
       ? { __kind__: "Err", Err: MINTING_REFUSAL }
@@ -2019,10 +4021,6 @@ export const mockBackend: backendInterface = {
   },
   setSalesPaused: async (paused) => {
     state.salesPaused = paused;
-  },
-  setTreasuryConfig: async (config) => {
-    state.treasuryConfig = { ...config };
-    return { __kind__: "Ok", Ok: state.treasuryConfig };
   },
   set_fee: async (newFee) => {
     if (newFee < FEE_BOUNDS.min || newFee > FEE_BOUNDS.max) {

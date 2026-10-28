@@ -11,6 +11,7 @@ import {
   BtcDepositErrorCode,
   DepositErrorKind,
   DepositKind,
+  OwnerRevenueError,
   PayToken,
   PriceSource,
 } from "../backend";
@@ -20,11 +21,13 @@ import type {
   AllowanceArgs,
   ApproveArgs,
   ApproveResult,
+  AutonomyView,
   Backend,
   BalanceSnapshot,
   BtcDepositInfo,
   BtcDepositResult,
   Conversion,
+  CyclesShareView,
   CyclesStatus,
   DataCertificate,
   DeliveryAddressResult,
@@ -36,24 +39,30 @@ import type {
   GetBlocksResult,
   IcpPrice,
   LegacyBlockInfo,
+  MintTreasuryAccount,
   MyBtcDeposits,
+  OwnerAccumulated,
+  OwnerDestinationResult,
+  OwnerDestinationView,
+  OwnerSendPage,
   PayTokenStatus,
   PriceResult,
   PublicTreasuryInfo,
   PurchaseAcknowledgement,
   PurchaseResult,
   SaleStatus,
+  ShareChange,
   SupportedBlockType,
   SupportedStandard,
   TechnicalDetails,
-  TokenAccountInfo,
   TokenPrice,
   TransferArgs,
   TransferFromArgs,
   TransferFromResult,
   TransferResult,
   TreasuryConfig,
-  WithdrawReserveResult,
+  TreasurySweepView,
+  WeeklyAllocation,
 } from "../backend";
 import { MESSAGES_TEXT } from "../i18n/common/messages";
 import { pickDict } from "../i18n/core/dict";
@@ -62,7 +71,6 @@ import {
   PAY_TOKEN_ORDER,
   defaultNumberLang,
   formatDecimal,
-  formatIcpE8s,
   payTokenSymbol,
 } from "../lib/token";
 import { useActor } from "./useActor";
@@ -94,6 +102,12 @@ function invalidateSale(queryClient: QueryClient) {
     "cyclesStatus",
     "icrc3GetBlocks",
     "purchaseAcknowledgement",
+    "ownerSends",
+    "ownerAccumulated",
+    "ownerDestinations",
+    "setAsideAmounts",
+    "liquidityInjections",
+    "myMintFees",
   ]) {
     void queryClient.invalidateQueries({ queryKey: [key] });
   }
@@ -400,27 +414,6 @@ export function useTreasuryConfig() {
   });
 }
 
-/** Saves the treasury config; rejects with the backend Err text on failure. */
-export function useSetTreasuryConfig() {
-  const { actor } = useActor();
-  const queryClient = useQueryClient();
-
-  return useMutation<TreasuryConfig, Error, TreasuryConfig>({
-    mutationFn: async (config: TreasuryConfig) => {
-      if (!actor) throw new Error("Actor not available");
-      const result = await actor.setTreasuryConfig(config);
-      if (result.__kind__ === "Err") throw new Error(result.Err);
-      return result.Ok;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["treasuryConfig"] });
-      void queryClient.invalidateQueries({ queryKey: ["publicTreasuryInfo"] });
-      void queryClient.invalidateQueries({ queryKey: ["saleStatus"] });
-      void queryClient.invalidateQueries({ queryKey: ["technicalDetails"] });
-    },
-  });
-}
-
 /** All conversions (admin-only endpoint; never called for non-admins). */
 export function useConversions() {
   const { actor, isFetching } = useActor();
@@ -529,31 +522,6 @@ export function useRefreshTokenPrice() {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["tokenPrices"] });
       void queryClient.invalidateQueries({ queryKey: ["icpPrice"] });
-      void queryClient.invalidateQueries({ queryKey: ["saleStatus"] });
-      void queryClient.invalidateQueries({ queryKey: ["technicalDetails"] });
-    },
-  });
-}
-
-/** Admin: set the treasury account receiving one pay token. */
-export function useSetPayTokenAccount() {
-  const { actor } = useActor();
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    TokenAccountInfo,
-    Error,
-    { token: PayToken; account: Account }
-  >({
-    mutationFn: async ({ token, account }) => {
-      if (!actor) throw new Error("Actor not available");
-      const result = await actor.setPayTokenAccount(token, account);
-      if (result.__kind__ === "Err") throw new Error(result.Err);
-      return result.Ok;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["treasuryConfig"] });
-      void queryClient.invalidateQueries({ queryKey: ["publicTreasuryInfo"] });
       void queryClient.invalidateQueries({ queryKey: ["saleStatus"] });
       void queryClient.invalidateQueries({ queryKey: ["technicalDetails"] });
     },
@@ -1329,7 +1297,7 @@ export function useTechnicalDetails() {
 
 // --- Cycles reserve ---------------------------------------------------------
 
-/** Public cycles balance, reserve, floor, excess and top-up history. */
+/** Public cycles balance, reserve, floor and top-up history. */
 export function useCyclesStatus() {
   const { actor, isFetching } = useActor();
 
@@ -1344,50 +1312,237 @@ export function useCyclesStatus() {
   });
 }
 
-/**
- * Admin-only: moves `amountE8s` of reserve excess to the treasury account.
- * Resolves with the backend result; map it with withdrawReserveMessage.
- */
-export function useWithdrawReserveExcess() {
+// --- Cycles autonomy, share, mint treasuries, weekly allocation (admin) ----
+
+/** Admin: autonomy in days from the 7- and 30-day average consumption. */
+export function useCyclesAutonomy() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<AutonomyView>({
+    queryKey: ["cyclesAutonomy"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getCyclesAutonomy();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+    refetchInterval: 60_000,
+  });
+}
+
+/** Admin: current cycles share, its target and the fixed code bounds. */
+export function useCyclesShare() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<CyclesShareView>({
+    queryKey: ["cyclesShare"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getCyclesShare();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+  });
+}
+
+/** Admin: cycles share changes, newest first. */
+export function useCyclesShareHistory() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<ShareChange>>({
+    queryKey: ["cyclesShareHistory"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getCyclesShareHistory();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+  });
+}
+
+/** Admin: internal mint treasury accounts (no withdrawal path) and legacy accounts. */
+export function useMintTreasuryAccounts() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<MintTreasuryAccount>>({
+    queryKey: ["mintTreasuryAccounts"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getMintTreasuryAccounts();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+  });
+}
+
+/** Admin: the last weekly allocation calculation, or null before the first. */
+export function useLastWeeklyAllocation() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<WeeklyAllocation | null>({
+    queryKey: ["lastWeeklyAllocation"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getLastWeeklyAllocation();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+  });
+}
+
+/** Admin: every weekly allocation calculation, newest first. */
+export function useWeeklyAllocations() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<WeeklyAllocation>>({
+    queryKey: ["weeklyAllocations"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listWeeklyAllocations();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+  });
+}
+
+// --- Owner revenue: destinations, sends, accumulated, treasury sweep (admin) --
+
+/** React Query keys of the owner revenue (admin) views. */
+export const OWNER_KEYS = {
+  destinations: ["ownerDestinations"],
+  sends: (offset: bigint, limit: bigint) => [
+    "ownerSends",
+    offset.toString(),
+    limit.toString(),
+  ],
+  accumulated: ["ownerAccumulated"],
+  sweep: ["treasurySweepStatus"],
+} as const;
+
+function invalidateOwnerRevenue(queryClient: QueryClient) {
+  for (const key of [
+    "ownerDestinations",
+    "ownerSends",
+    "ownerAccumulated",
+    "treasurySweepStatus",
+    "transfersToReview",
+  ]) {
+    void queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+/** Admin: owner destination account per paid token, with accumulated amounts. */
+export function useOwnerDestinations() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<OwnerDestinationView>>({
+    queryKey: OWNER_KEYS.destinations,
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listOwnerDestinations();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+  });
+}
+
+/** Admin: one page of owner sends (OW), newest first. */
+export function useOwnerSends(offset: bigint, limit: bigint) {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<OwnerSendPage>({
+    queryKey: OWNER_KEYS.sends(offset, limit),
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listOwnerSends(offset, limit);
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+    refetchInterval: 30_000,
+  });
+}
+
+/** Admin: owner amounts kept because the token has no destination yet. */
+export function useOwnerAccumulated() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<OwnerAccumulated>>({
+    queryKey: OWNER_KEYS.accumulated,
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getOwnerAccumulated();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+  });
+}
+
+/** Admin: status of the one-time treasury sweep and reserve top-up. */
+export function useTreasurySweepStatus() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<TreasurySweepView>({
+    queryKey: OWNER_KEYS.sweep,
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getTreasurySweepStatus();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+    refetchInterval: 30_000,
+  });
+}
+
+export interface SetOwnerDestinationInput {
+  token: PayToken;
+  account: Account;
+}
+
+/** Admin: set the owner destination account of one paid token. */
+export function useSetOwnerDestination() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
 
-  return useMutation<WithdrawReserveResult, Error, bigint>({
-    mutationFn: async (amountE8s: bigint) => {
+  return useMutation<OwnerDestinationResult, Error, SetOwnerDestinationInput>({
+    mutationFn: async ({ token, account }) => {
       if (!actor) throw new Error("Actor not available");
-      return actor.withdrawReserveExcess(amountE8s);
+      return actor.setOwnerDestination(token, account);
     },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ["cyclesStatus"] });
-      void queryClient.invalidateQueries({ queryKey: ["technicalDetails"] });
+    onSuccess: () => {
+      invalidateOwnerRevenue(queryClient);
     },
   });
 }
 
-/** Cycles as "2.950 T". */
-function formatCyclesT(cycles: bigint): string {
-  return `${(Number(cycles) / 1e12).toFixed(3)} T`;
+/** Admin: clear the owner destination of one paid token (amounts accumulate). */
+export function useClearOwnerDestination() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<OwnerDestinationResult, Error, PayToken>({
+    mutationFn: async (token) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.clearOwnerDestination(token);
+    },
+    onSuccess: () => {
+      invalidateOwnerRevenue(queryClient);
+    },
+  });
 }
 
-/** Plain English message for a withdrawReserveExcess result. */
-export function withdrawReserveMessage(result: WithdrawReserveResult): string {
-  switch (result.__kind__) {
-    case "ok":
-      return `Transferred to the treasury account (ICP block ${result.ok.toString()}).`;
-    case "noExcess":
-      return "There is no excess above the 2 ICP floor to transfer.";
-    case "amountExceedsExcess":
-      return `The amount exceeds the withdrawable excess of ${formatIcpE8s(result.amountExceedsExcess.withdrawableE8s)}.`;
-    case "treasuryNotConfigured":
-      return "Set the treasury account before transferring the reserve excess.";
-    case "busy":
-      return "A cycles top-up or another withdrawal is in progress. Try again shortly.";
-    case "topUpPendingNotify":
-      return "A cycles top-up is waiting for confirmation. Try again after it completes.";
-    case "cyclesBelowThreshold":
-      return `Transfer blocked: the canister holds ${formatCyclesT(result.cyclesBelowThreshold.cyclesBalance)} cycles, below the ${formatCyclesT(result.cyclesBelowThreshold.topUpThreshold)} top-up threshold. No ICP was moved.`;
-    case "ledgerError":
-      return `The ICP ledger refused the transfer: ${result.ledgerError}`;
+/** English admin message of an owner destination error. */
+export function ownerRevenueErrorMessage(error: OwnerRevenueError): string {
+  switch (error) {
+    case OwnerRevenueError.notAdmin:
+      return "Only an administrator can change owner destinations.";
+    case OwnerRevenueError.anonymousOwner:
+      return "The anonymous principal cannot be a destination.";
+    case OwnerRevenueError.invalidSubaccount:
+      return "The subaccount must be exactly 32 bytes.";
+    case OwnerRevenueError.contractAccount:
+      return "A contract account cannot be a destination.";
+    case OwnerRevenueError.notConfigured:
+      return "No destination is set for this token.";
   }
 }
 

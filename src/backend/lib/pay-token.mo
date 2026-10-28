@@ -120,9 +120,11 @@ module {
     };
   };
 
-  // True only for #icp (fee share goes to the cycles reserve).
+  // Mint revenue correction: no mint fee share goes to the cycles reserve
+  // any more (the fee is routed to TTTI-T liquidity), so false for every token.
   public func fundsCycles(token : PayToken) : Bool {
-    token == #icp;
+    ignore token;
+    false;
   };
 
   // Minimum purchase in USD * 10^8, fee included: 1.01 USD for every pay token.

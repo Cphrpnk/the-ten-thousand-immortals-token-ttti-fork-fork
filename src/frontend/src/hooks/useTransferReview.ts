@@ -1,10 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  Buyback,
-  ReviewResult,
-  TransferKind,
-  TransferReview,
-} from "../backend";
+import { TransferKind } from "../backend";
+import type { Buyback, ReviewResult, TransferReview } from "../backend";
 import { BuybackFailure } from "../lib/buyback";
 import { useActor } from "./useActor";
 import { useIsCallerAdmin } from "./useQueries";
@@ -34,7 +30,28 @@ function useInvalidateReview() {
     void queryClient.invalidateQueries({ queryKey: ["myBuybacks"] });
     void queryClient.invalidateQueries({ queryKey: ["allBuybackMasses"] });
     void queryClient.invalidateQueries({ queryKey: ["myBuybackMasses"] });
+    void queryClient.invalidateQueries({ queryKey: ["dexBalances"] });
+    void queryClient.invalidateQueries({ queryKey: ["dexTransfers"] });
+    void queryClient.invalidateQueries({ queryKey: ["pairRequests"] });
+    void queryClient.invalidateQueries({ queryKey: ["dcBatches"] });
+    void queryClient.invalidateQueries({ queryKey: ["myLpBonus"] });
+    void queryClient.invalidateQueries({ queryKey: ["cyclesAutonomy"] });
   };
+}
+
+/**
+ * DEX lot 4 review kinds, both ICP sends of the protocol fees:
+ * DC = converted fees sent to the cycles reserve (id = DC send n, memo TTTI-DC-<n>);
+ * DL = an LP bonus claim paid to the LP (id = claim n, memo TTTI-DL-<n>).
+ * Arrived records the block; Not arrived opens a new attempt; no manual refund.
+ */
+export const PROTOCOL_FEE_REVIEW_KINDS: ReadonlyArray<TransferKind> = [
+  TransferKind.DC,
+  TransferKind.DL,
+];
+
+export function isProtocolFeeReviewKind(kind: TransferKind): boolean {
+  return kind === TransferKind.DC || kind === TransferKind.DL;
 }
 
 export interface MarkBuybackCancelledInput {

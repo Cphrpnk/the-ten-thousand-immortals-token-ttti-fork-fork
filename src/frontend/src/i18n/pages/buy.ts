@@ -21,7 +21,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "I understand that its price can fall to zero and that nobody is obligated to support it or buy back my TTTI-T.",
     ackIcpCreator:
-      "The ICP, ckBTC, ckUSDC or ckUSDT I pay, 1% fee included, goes to the creator, except the ICP fee share that funds the canister's cycles.",
+      "Of the ICP, ckBTC, ckUSDC or ckUSDT I pay, 100/101 goes to the owner's destination account in the paid token and 1/101 is the mint fee.",
     ackNoProfit:
       "I am not relying on any promise of profit, from the creator or from anyone.",
     ackAffordLoss: "I am spending only what I can afford to lose entirely.",
@@ -82,7 +82,7 @@ export const BUY_PAGE_TEXT = defineDict({
     balanceLabel: (symbol: string) => `${symbol} balance`,
     unavailable: "Unavailable",
     noTreasury: (symbol: string) =>
-      `No treasury account is configured for ${symbol}.`,
+      `Minting with ${symbol} is not available at the moment.`,
     youPayIn: (symbol: string) => `You pay in ${symbol}`,
     youReceive: "You receive",
     withFees: (amount: string) => ` · ${amount} with fees`,
@@ -103,7 +103,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "Je comprends que son prix peut tomber à zéro et que personne n'est tenu de le soutenir ni de racheter mes TTTI-T.",
     ackIcpCreator:
-      "L'ICP, le ckBTC, le ckUSDC ou le ckUSDT que je paie, frais de 1% inclus, va au créateur, à l'exception de la part des frais en ICP qui finance les cycles du canister.",
+      "De l'ICP, du ckBTC, du ckUSDC ou du ckUSDT que je paie, 100/101 vont au compte de destination du propriétaire dans le jeton payé et 1/101 constitue les frais de mint.",
     ackNoProfit:
       "Je ne me fie à aucune promesse de profit, ni du créateur ni de quiconque.",
     ackAffordLoss:
@@ -158,7 +158,7 @@ export const BUY_PAGE_TEXT = defineDict({
     balanceLabel: (symbol: string) => `Solde ${symbol}`,
     unavailable: "Indisponible",
     noTreasury: (symbol: string) =>
-      `Aucun compte de trésorerie n'est configuré pour ${symbol}.`,
+      `La frappe avec ${symbol} n'est pas disponible pour le moment.`,
     youPayIn: (symbol: string) => `Vous payez en ${symbol}`,
     youReceive: "Vous recevez",
     withFees: (amount: string) => ` · ${amount} frais compris`,
@@ -179,7 +179,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "Entiendo que su precio puede caer a cero y que nadie está obligado a respaldarlo ni a recomprar mis TTTI-T.",
     ackIcpCreator:
-      "El ICP, ckBTC, ckUSDC o ckUSDT que pago, comisión del 1% incluida, va al creador, excepto la parte de la comisión en ICP que financia los cycles del canister.",
+      "Del ICP, ckBTC, ckUSDC o ckUSDT que pago, 100/101 van a la cuenta de destino del propietario en el token pagado y 1/101 es la comisión de mint.",
     ackNoProfit:
       "No me baso en ninguna promesa de beneficio, ni del creador ni de nadie.",
     ackAffordLoss: "Solo gasto lo que puedo permitirme perder por completo.",
@@ -234,7 +234,7 @@ export const BUY_PAGE_TEXT = defineDict({
     balanceLabel: (symbol: string) => `Saldo de ${symbol}`,
     unavailable: "No disponible",
     noTreasury: (symbol: string) =>
-      `No hay ninguna cuenta de tesorería configurada para ${symbol}.`,
+      `La acuñación con ${symbol} no está disponible por el momento.`,
     youPayIn: (symbol: string) => `Paga en ${symbol}`,
     youReceive: "Recibe",
     withFees: (amount: string) => ` · ${amount} con comisiones`,
@@ -254,7 +254,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "我理解其价格可能跌至零，且没有人有义务为其提供支撑或回购我的 TTTI-T。",
     ackIcpCreator:
-      "我支付的 ICP、ckBTC、ckUSDC 或 ckUSDT（含 1% 手续费）归创建者所有，但用于支付 canister cycles 的 ICP 手续费部分除外。",
+      "我支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 中，100/101 以所支付的代币转入所有者的目标账户，1/101 为铸造费用。",
     ackNoProfit: "我不依赖任何来自创建者或任何其他人的盈利承诺。",
     ackAffordLoss: "我只花费我能够承受全部损失的金额。",
     ackLegend: "首次购买前需确认，此后每当这些条款变更时需再次确认。",
@@ -305,7 +305,7 @@ export const BUY_PAGE_TEXT = defineDict({
     walletBuiltIn: "内置钱包",
     balanceLabel: (symbol: string) => `${symbol} 余额`,
     unavailable: "不可用",
-    noTreasury: (symbol: string) => `尚未为 ${symbol} 配置金库账户。`,
+    noTreasury: (symbol: string) => `目前无法使用 ${symbol} 铸造。`,
     youPayIn: (symbol: string) => `您以 ${symbol} 支付`,
     youReceive: "您将收到",
     withFees: (amount: string) => ` · 含手续费 ${amount}`,
@@ -324,7 +324,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "Entendo que seu preço pode cair a zero e que ninguém é obrigado a sustentá-lo nem a recomprar meus TTTI-T.",
     ackIcpCreator:
-      "O ICP, ckBTC, ckUSDC ou ckUSDT que eu pago, taxa de 1% incluída, vai para o criador, exceto a parte da taxa em ICP que financia os cycles do canister.",
+      "Do ICP, ckBTC, ckUSDC ou ckUSDT que eu pago, 100/101 vão para a conta de destino do proprietário no token pago e 1/101 é a taxa de mint.",
     ackNoProfit:
       "Não estou me baseando em nenhuma promessa de lucro, nem do criador nem de qualquer outra pessoa.",
     ackAffordLoss:
@@ -379,7 +379,7 @@ export const BUY_PAGE_TEXT = defineDict({
     balanceLabel: (symbol: string) => `Saldo de ${symbol}`,
     unavailable: "Indisponível",
     noTreasury: (symbol: string) =>
-      `Nenhuma conta de tesouraria está configurada para ${symbol}.`,
+      `A cunhagem com ${symbol} não está disponível no momento.`,
     youPayIn: (symbol: string) => `Você paga em ${symbol}`,
     youReceive: "Você recebe",
     withFees: (amount: string) => ` · ${amount} com taxas`,
@@ -400,7 +400,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "그 가격이 0까지 떨어질 수 있으며, 누구도 이를 지지하거나 제 TTTI-T를 되살 의무가 없다는 것을 이해합니다.",
     ackIcpCreator:
-      "제가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT(1% 수수료 포함)는 제작자에게 귀속됩니다. 단, canister의 cycles 비용을 충당하는 ICP 수수료 부분은 제외됩니다.",
+      "제가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT 중 100/101은 지불한 토큰으로 소유자의 목적지 계정으로 가며, 1/101은 민트 수수료입니다.",
     ackNoProfit:
       "저는 제작자로부터든 다른 누구로부터든 어떠한 수익 약속에도 의존하지 않습니다.",
     ackAffordLoss: "저는 전부 잃어도 감당할 수 있는 금액만 사용합니다.",
@@ -453,8 +453,7 @@ export const BUY_PAGE_TEXT = defineDict({
     walletBuiltIn: "내장 지갑",
     balanceLabel: (symbol: string) => `${symbol} 잔액`,
     unavailable: "사용 불가",
-    noTreasury: (symbol: string) =>
-      `${symbol}에 대해 구성된 재무 계정이 없습니다.`,
+    noTreasury: (symbol: string) => `현재 ${symbol}(으)로 발행할 수 없습니다.`,
     youPayIn: (symbol: string) => `${symbol}(으)로 지불`,
     youReceive: "받는 수량",
     withFees: (amount: string) => ` · 수수료 포함 ${amount}`,
@@ -475,7 +474,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ ਇਸਦੀ ਕੀਮਤ ਸਿਫ਼ਰ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ ਅਤੇ ਕੋਈ ਵੀ ਇਸਨੂੰ ਸਹਾਰਾ ਦੇਣ ਜਾਂ ਮੇਰੇ TTTI-T ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਪਾਬੰਦ ਨਹੀਂ ਹੈ।",
     ackIcpCreator:
-      "ਮੇਰੇ ਵੱਲੋਂ ਭੁਗਤਾਨ ਕੀਤਾ ਗਿਆ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT, 1% ਫੀਸ ਸਮੇਤ, ਨਿਰਮਾਤਾ ਨੂੰ ਜਾਂਦਾ ਹੈ, ਸਿਵਾਏ ICP ਫੀਸ ਦੇ ਉਸ ਹਿੱਸੇ ਦੇ ਜੋ canister ਦੇ cycles ਦਾ ਖਰਚਾ ਚੁੱਕਦਾ ਹੈ।",
+      "ਮੇਰੇ ਵੱਲੋਂ ਭੁਗਤਾਨ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚੋਂ, 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਮਾਲਕ ਦੇ ਮੰਜ਼ਿਲ ਖਾਤੇ ਨੂੰ ਜਾਂਦਾ ਹੈ ਅਤੇ 1/101 ਮਿੰਟ ਫੀਸ ਹੈ।",
     ackNoProfit: "ਮੈਂ ਨਿਰਮਾਤਾ ਜਾਂ ਕਿਸੇ ਹੋਰ ਵੱਲੋਂ ਮੁਨਾਫ਼ੇ ਦੇ ਕਿਸੇ ਵੀ ਵਾਅਦੇ 'ਤੇ ਨਿਰਭਰ ਨਹੀਂ ਹਾਂ।",
     ackAffordLoss:
       "ਮੇਰੇ ਵੱਲੋਂ ਖਰਚੀ ਜਾ ਰਹੀ ਰਕਮ ਸਿਰਫ਼ ਉਹੀ ਹੈ ਜਿਸਦਾ ਪੂਰਾ ਨੁਕਸਾਨ ਮੇਰੇ ਲਈ ਸਹਿਣਯੋਗ ਹੈ।",
@@ -528,7 +527,7 @@ export const BUY_PAGE_TEXT = defineDict({
     walletBuiltIn: "ਬਿਲਟ-ਇਨ ਵਾਲਿਟ",
     balanceLabel: (symbol: string) => `${symbol} ਬਕਾਇਆ`,
     unavailable: "ਉਪਲਬਧ ਨਹੀਂ",
-    noTreasury: (symbol: string) => `${symbol} ਲਈ ਕੋਈ ਖ਼ਜ਼ਾਨਾ ਖਾਤਾ ਸੰਰਚਿਤ ਨਹੀਂ ਹੈ।`,
+    noTreasury: (symbol: string) => `ਇਸ ਸਮੇਂ ${symbol} ਨਾਲ ਮਿੰਟ ਕਰਨਾ ਉਪਲਬਧ ਨਹੀਂ ਹੈ।`,
     youPayIn: (symbol: string) => `ਤੁਸੀਂ ${symbol} ਵਿੱਚ ਭੁਗਤਾਨ ਕਰਦੇ ਹੋ`,
     youReceive: "ਤੁਹਾਨੂੰ ਮਿਲਦਾ ਹੈ",
     withFees: (amount: string) => ` · ਫੀਸਾਂ ਸਮੇਤ ${amount}`,
@@ -595,7 +594,7 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `No ${symbol} was taken. Purchases in ${symbol} are unavailable until a rate is set.`,
     notConfiguredTitle: (symbol: string) => `${symbol} is not configured`,
     notConfiguredMessage: (symbol: string) =>
-      `No treasury account is set for ${symbol}. No ${symbol} was taken.`,
+      `The sale is not configured yet. No ${symbol} was taken.`,
     ledgerMismatchTitle: (symbol: string) => `${symbol} ledger mismatch`,
     ledgerMismatchMessage: (
       symbol: string,
@@ -668,7 +667,7 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `Aucun ${symbol} n'a été prélevé. Les achats en ${symbol} sont indisponibles tant qu'aucun taux n'est fixé.`,
     notConfiguredTitle: (symbol: string) => `${symbol} n'est pas configuré`,
     notConfiguredMessage: (symbol: string) =>
-      `Aucun compte de trésorerie n'est défini pour ${symbol}. Aucun ${symbol} n'a été prélevé.`,
+      `La vente n'est pas encore configurée. Aucun ${symbol} n'a été prélevé.`,
     ledgerMismatchTitle: (symbol: string) => `Incohérence du ledger ${symbol}`,
     ledgerMismatchMessage: (
       symbol: string,
@@ -743,7 +742,7 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `No se ha tomado ningún ${symbol}. Las compras en ${symbol} no están disponibles hasta que se fije un tipo.`,
     notConfiguredTitle: (symbol: string) => `${symbol} no está configurado`,
     notConfiguredMessage: (symbol: string) =>
-      `No hay ninguna cuenta de tesorería definida para ${symbol}. No se ha tomado ningún ${symbol}.`,
+      `La venta aún no está configurada. No se ha tomado ningún ${symbol}.`,
     ledgerMismatchTitle: (symbol: string) =>
       `Discrepancia del ledger ${symbol}`,
     ledgerMismatchMessage: (
@@ -817,7 +816,7 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `未扣取任何 ${symbol}。在设定汇率之前，无法使用 ${symbol} 购买。`,
     notConfiguredTitle: (symbol: string) => `${symbol} 未配置`,
     notConfiguredMessage: (symbol: string) =>
-      `尚未为 ${symbol} 设置金库账户。未扣取任何 ${symbol}。`,
+      `销售尚未配置。未扣取任何 ${symbol}。`,
     ledgerMismatchTitle: (symbol: string) => `${symbol} 账本不一致`,
     ledgerMismatchMessage: (
       symbol: string,
@@ -889,7 +888,7 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `Nenhum ${symbol} foi cobrado. As compras em ${symbol} ficam indisponíveis até que uma cotação seja definida.`,
     notConfiguredTitle: (symbol: string) => `${symbol} não está configurado`,
     notConfiguredMessage: (symbol: string) =>
-      `Nenhuma conta de tesouraria está definida para ${symbol}. Nenhum ${symbol} foi cobrado.`,
+      `A venda ainda não está configurada. Nenhum ${symbol} foi cobrado.`,
     ledgerMismatchTitle: (symbol: string) =>
       `Inconsistência no ledger de ${symbol}`,
     ledgerMismatchMessage: (
@@ -965,7 +964,7 @@ export const BUY_OUTCOME_TEXT = defineDict({
     notConfiguredTitle: (symbol: string) =>
       `${symbol}이(가) 구성되어 있지 않습니다`,
     notConfiguredMessage: (symbol: string) =>
-      `${symbol}에 대해 설정된 재무 계정이 없습니다. ${symbol}은(는) 전혀 차감되지 않았습니다.`,
+      `판매가 아직 구성되지 않았습니다. ${symbol}은(는) 전혀 차감되지 않았습니다.`,
     ledgerMismatchTitle: (symbol: string) => `${symbol} 원장 불일치`,
     ledgerMismatchMessage: (
       symbol: string,
@@ -1039,7 +1038,7 @@ export const BUY_OUTCOME_TEXT = defineDict({
       `ਕੋਈ ${symbol} ਨਹੀਂ ਲਿਆ ਗਿਆ। ਦਰ ਨਿਰਧਾਰਤ ਹੋਣ ਤੱਕ ${symbol} ਵਿੱਚ ਖਰੀਦਾਂ ਉਪਲਬਧ ਨਹੀਂ ਹਨ।`,
     notConfiguredTitle: (symbol: string) => `${symbol} ਸੰਰਚਿਤ ਨਹੀਂ ਹੈ`,
     notConfiguredMessage: (symbol: string) =>
-      `${symbol} ਲਈ ਕੋਈ ਖ਼ਜ਼ਾਨਾ ਖਾਤਾ ਨਿਰਧਾਰਤ ਨਹੀਂ ਹੈ। ਕੋਈ ${symbol} ਨਹੀਂ ਲਿਆ ਗਿਆ।`,
+      `ਵਿਕਰੀ ਅਜੇ ਸੰਰਚਿਤ ਨਹੀਂ ਹੈ। ਕੋਈ ${symbol} ਨਹੀਂ ਲਿਆ ਗਿਆ।`,
     ledgerMismatchTitle: (symbol: string) => `${symbol} ledger ਬੇਮੇਲ`,
     ledgerMismatchMessage: (
       symbol: string,

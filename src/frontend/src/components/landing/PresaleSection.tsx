@@ -1,5 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useGetSaleStatus } from "../../hooks/useQueries";
+import { MINT_REVENUE_TEXT } from "../../i18n/common";
 import { useDict } from "../../i18n/core";
 import { CAP_TEXT, PRESALE_TEXT } from "../../i18n/pages/landing";
 import {
@@ -8,7 +9,6 @@ import {
   formatDecimal,
   formatInteger,
   formatTtti,
-  useCyclesFeeText,
   usePriceText,
 } from "../../lib/token";
 import { Button } from "../ui/button";
@@ -20,7 +20,7 @@ export function PresaleSection() {
   const t = useDict(PRESALE_TEXT);
   const cap = useDict(CAP_TEXT);
   const priceText = usePriceText();
-  const cyclesFeeText = useCyclesFeeText();
+  const mintRevenue = useDict(MINT_REVENUE_TEXT);
   const percent =
     status && status.maxSupply > 0n
       ? Number((status.totalSupply * 10_000n) / status.maxSupply) / 100
@@ -125,7 +125,9 @@ export function PresaleSection() {
                 className="mt-5 max-w-2xl text-xs leading-relaxed text-muted-foreground"
                 data-ocid="landing.snapshot.fee_note"
               >
-                {priceText} {cyclesFeeText}
+                {priceText} {mintRevenue.priceRule} {mintRevenue.ownerShare}{" "}
+                {mintRevenue.feeShare} {mintRevenue.halfLp}{" "}
+                {mintRevenue.halfPermanent} {mintRevenue.noTttiCreated}
               </p>
               <div className="mt-8 max-w-xl">
                 <Progress

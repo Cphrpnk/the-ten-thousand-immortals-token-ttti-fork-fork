@@ -13,7 +13,8 @@ import Treasury "../types/treasury";
 import TreasuryLib "treasury";
 
 // Cycles reserve domain logic: reserve share, cached balance, automatic CMC
-// top-up (timer) and the admin withdrawal of the excess above the floor.
+// top-up (timer), cycles samples, autonomy and the dynamic cycles share of the
+// 20 % pool protocol share (DEX lot 4). The reserve has no withdrawal path.
 module {
   public type Account = Types.Account;
   public type CyclesReserveStore = Types.CyclesReserveStore;
@@ -23,8 +24,24 @@ module {
   public type TopUpAttempt = Types.TopUpAttempt;
   public type ReserveWithdrawal = Types.ReserveWithdrawal;
   public type ReserveShare = Types.ReserveShare;
-  public type WithdrawReserveResult = Types.WithdrawReserveResult;
   public type Cmc = Types.Cmc;
+  public type AutonomyStore = Types.AutonomyStore;
+  public type CyclesSample = Types.CyclesSample;
+  public type ShareChange = Types.ShareChange;
+  public type AutonomyView = Types.AutonomyView;
+  public type CyclesShareView = Types.CyclesShareView;
+
+  // --- DEX lot 4: autonomy and cycles share constants (code, not settable) ---
+
+  public let AUTONOMY_TARGET_DAYS : Nat = 90;
+  public let MIN_CYCLES_SHARE_BPS : Nat = 500; // 5 % of the 20 % protocol share
+  public let MAX_CYCLES_SHARE_BPS : Nat = 4_000; // 40 % of the 20 % protocol share
+  public let LOW_AUTONOMY_DAYS : Nat = 45; // max share below
+  public let HIGH_AUTONOMY_DAYS : Nat = 180; // min share above
+  // At most 10 percentage points (absolute, 1 000 bps) per adjustment.
+  public let MAX_SHARE_STEP_BPS : Nat = 1_000;
+  public let SHARE_ADJUST_INTERVAL_NS : Nat = 86_400_000_000_000; // 1 day
+  public let DAY_NS : Nat = 86_400_000_000_000;
 
   // --- Constants -------------------------------------------------------------
 
@@ -32,10 +49,10 @@ module {
   // cycles reserve (printable ASCII). Stable account identifier: never change.
   public let CYCLES_RESERVE_SUBACCOUNT : Blob = "CYCLES-RESERVE-TTTI-T-0000000001";
 
-  // Always kept for cycles (2 ICP); only the amount above it can be withdrawn.
+  // Always kept for cycles (2 ICP); the reserve has no withdrawal path.
   public let RESERVE_FLOOR_E8S : Nat = 200_000_000;
-  // Top up when the cycles balance is below 3 T cycles.
-  public let TOPUP_THRESHOLD : Nat = 3_000_000_000_000;
+  // Top up when the cycles balance is below 20 T cycles.
+  public let TOPUP_THRESHOLD : Nat = 20_000_000_000_000;
   // Each top-up converts about 2 T cycles worth of ICP.
   public let TOPUP_TARGET_CYCLES : Nat = 2_000_000_000_000;
   // Top-up check interval: 6 hours.
@@ -53,7 +70,7 @@ module {
   // The same memo as the ICRC-1 blob: 8-byte little-endian encoding.
   public let TPUP_MEMO_BLOB : Blob = "\54\50\55\50\00\00\00\00";
 
-  public let RESERVE_RULE : Text = "Fixed 1% fee on every purchase (ICP, ckBTC, ckUSDC, ckUSDT). ICP purchases: the fee share (cost × 100 / 10 100 of each delivered ICP purchase) is kept in the canister's public cycles reserve and converted to cycles automatically when the cycles balance is below 3 T cycles. ckBTC, ckUSDC and ckUSDT purchases: the amount paid, fee included, is forwarded to that token's treasury account; these fees do not become cycles. The ICP above a 2 ICP floor is transferable in ICP to the treasury account only; the floor always stays available for cycles. This transfer is blocked while the cycles balance is below 3 T cycles or a top-up is running or awaiting confirmation.";
+  public let RESERVE_RULE : Text = "Fixed 1% fee on every mint (ICP, ckBTC, ckUSDC, ckUSDT; BTC counts as ckBTC): 101 paid for 100 received. The owner share (100/101) is sent in the paid token to the destination configured for that token; the 1/101 fee goes to TTTI-T liquidity. The canister's public cycles reserve was topped up once to 2 ICP from the internal ICP mint treasury and is converted to cycles automatically when the cycles balance is below 20 T cycles. The reserve has no withdrawal path; the 2 ICP floor always stays available for cycles.";
 
   // --- Accounts and handles --------------------------------------------------
 
@@ -96,11 +113,6 @@ module {
     if (shareE8s == 0) rest else sat(rest, TreasuryLib.ICP_FEE);
   };
 
-  // max(0, reserveBalanceE8s - RESERVE_FLOOR_E8S - ICP_FEE).
-  public func withdrawableExcess(store : CyclesReserveStore) : Nat {
-    sat(store.reserveBalanceE8s, RESERVE_FLOOR_E8S + TreasuryLib.ICP_FEE);
-  };
-
   // Base amount a treasury forward (and its retries) uses for a conversion:
   // the recorded treasury share of an ICP conversion, otherwise the full
   // amount collected in the conversion's own pay token.
@@ -118,33 +130,167 @@ module {
 
   // --- Views -----------------------------------------------------------------
 
-  // Current refusal reason for withdrawReserveExcess, or null when allowed.
-  public func withdrawalBlockedReason(store : CyclesReserveStore, lock : ReserveLock) : ?Types.WithdrawalBlockedReason {
-    if (lock.busy) {
-      ?#topUpRunning;
-    } else if (isPendingNotify(store) or hasOpenTopUp(store)) {
-      ?#topUpAwaitingConfirmation;
-    } else if (Cycles.balance() < TOPUP_THRESHOLD) {
-      ?#cyclesBelowThreshold;
-    } else {
-      null;
-    };
-  };
-
-  public func status(store : CyclesReserveStore, lock : ReserveLock, canister : Principal) : CyclesStatus {
-    let blocked = withdrawalBlockedReason(store, lock);
+  public func status(store : CyclesReserveStore, canister : Principal) : CyclesStatus {
     {
-      withdrawalAllowed = blocked == null;
-      withdrawalBlockedReason = blocked;
       cyclesBalance = Cycles.balance();
       topUpThreshold = TOPUP_THRESHOLD;
       reserveAccount = reserveAccount(canister);
       reserveBalanceE8s = store.reserveBalanceE8s;
       reserveFloorE8s = RESERVE_FLOOR_E8S;
-      withdrawableExcessE8s = withdrawableExcess(store);
       lastTopUp = store.lastTopUp;
       withdrawals = store.withdrawals.toArray();
     };
+  };
+
+  // --- DEX lot 4: autonomy, samples and the dynamic cycles share -------------
+
+  // Samples kept: 31 days (one sample before the 30-day window stays as its
+  // anchor) and at most MAX_SAMPLES.
+  let SAMPLE_RETENTION_DAYS : Nat = 31;
+  let MAX_SAMPLES : Nat = 500;
+  // An average needs samples spanning at least one timer interval (6 h).
+  let MIN_AVERAGE_SPAN_NS : Nat = 21_600_000_000_000;
+
+  // Records a cycles sample (6-hour timer, after each top-up); prunes samples
+  // older than 31 days and keeps at most 500.
+  public func recordSample(autonomy : AutonomyStore, cyclesBalance : Nat, toppedUpCycles : Nat, now : Int) {
+    autonomy.samples.add({ at = now; cyclesBalance; toppedUpCycles });
+    let cutoff : Int = now - SAMPLE_RETENTION_DAYS * DAY_NS;
+    let all = autonomy.samples.toArray();
+    let size = all.size();
+    if (size > MAX_SAMPLES or all[0].at < cutoff) {
+      autonomy.samples.clear();
+      var i = 0;
+      for (s in all.values()) {
+        if (s.at >= cutoff and i + MAX_SAMPLES >= size) {
+          autonomy.samples.add(s);
+        };
+        i += 1;
+      };
+    };
+  };
+
+  // Average daily consumption over the last `days` days, null without data.
+  // Consumption between two samples = previous balance + topped up - balance.
+  public func averageCyclesPerDay(autonomy : AutonomyStore, days : Nat, now : Int) : ?Nat {
+    let from : Int = now - days * DAY_NS;
+    var prev : ?CyclesSample = null;
+    var first : ?Int = null;
+    var lastAt : Int = 0;
+    var consumed = 0;
+    for (s in autonomy.samples.values()) {
+      if (s.at >= from) {
+        switch (prev) {
+          case (?p) { consumed += sat(p.cyclesBalance + s.toppedUpCycles, s.cyclesBalance) };
+          case null { first := ?s.at };
+        };
+        prev := ?s;
+        lastAt := s.at;
+      };
+    };
+    let start = first ?? (return null);
+    let span = lastAt - start;
+    if (span < MIN_AVERAGE_SPAN_NS) {
+      return null;
+    };
+    ?(consumed * DAY_NS / span.toNat());
+  };
+
+  // Cycles per whole ICP observed at the last notified top-up (the CMC rate
+  // of that conversion), null before any notified top-up.
+  public func cyclesPerIcpEstimate(store : CyclesReserveStore) : ?Nat {
+    switch (store.lastTopUp) {
+      case (?r) {
+        switch (r.status) {
+          case (#notified({ cycles })) { if (r.icpE8s == 0) null else ?(cycles * TreasuryLib.ICP_DECIMALS / r.icpE8s) };
+          case (_) { null };
+        };
+      };
+      case null { null };
+    };
+  };
+
+  // Cycles per whole ICP at the current CMC rate (1 XDR = 1 T cycles), null
+  // when the CMC cannot be reached.
+  public func liveCyclesPerIcp() : async ?Nat {
+    try {
+      let permyriad = (await cmc().get_icp_xdr_conversion_rate()).data.xdr_permyriad_per_icp.toNat();
+      if (permyriad == 0) null else ?(permyriad * 100_000_000);
+    } catch (_) {
+      null;
+    };
+  };
+
+  // Autonomy view: (cycles balance + reserve ICP in cycles) / max(avg7, avg30).
+  // `cyclesPerIcp` = cycles per whole ICP at the CMC rate, null when unknown.
+  public func autonomyView(store : CyclesReserveStore, autonomy : AutonomyStore, cyclesPerIcp : ?Nat, now : Int) : AutonomyView {
+    let cyclesBalance = Cycles.balance();
+    let reserveCyclesEstimate : ?Nat = switch (cyclesPerIcp) {
+      case (?c) { ?(store.reserveBalanceE8s * c / TreasuryLib.ICP_DECIMALS) };
+      case null { null };
+    };
+    let totalCycles = cyclesBalance + (reserveCyclesEstimate ?? 0);
+    let avg7 = averageCyclesPerDay(autonomy, 7, now);
+    let avg30 = averageCyclesPerDay(autonomy, 30, now);
+    let daily = Nat.max(avg7 ?? 0, avg30 ?? 0);
+    {
+      computedAt = now;
+      cyclesBalance;
+      reserveBalanceE8s = store.reserveBalanceE8s;
+      reserveCyclesEstimate;
+      totalCycles;
+      avg7dCyclesPerDay = avg7;
+      avg30dCyclesPerDay = avg30;
+      autonomyDays = if (daily == 0) null else ?(totalCycles / daily);
+      targetDays = AUTONOMY_TARGET_DAYS;
+      sampleCount = autonomy.samples.size();
+      oldestSampleAt = do ? { autonomy.samples.first()!.at };
+    };
+  };
+
+  // Autonomy at `now` using the live CMC rate, else the rate of the last
+  // notified top-up.
+  public func currentAutonomy(store : CyclesReserveStore, autonomy : AutonomyStore) : async AutonomyView {
+    let live = await liveCyclesPerIcp();
+    let rate = if (live != null) live else cyclesPerIcpEstimate(store);
+    autonomyView(store, autonomy, rate, Time.now());
+  };
+
+  // Target cycles share: 4000 bps below 45 days (or unknown), 500 bps above
+  // 180 days, linear in between.
+  public func targetShareBps(autonomyDays : ?Nat) : Nat {
+    let days = autonomyDays ?? (return MAX_CYCLES_SHARE_BPS);
+    if (days <= LOW_AUTONOMY_DAYS) return MAX_CYCLES_SHARE_BPS;
+    if (days >= HIGH_AUTONOMY_DAYS) return MIN_CYCLES_SHARE_BPS;
+    let range = Nat.sub(MAX_CYCLES_SHARE_BPS, MIN_CYCLES_SHARE_BPS);
+    let down = Nat.sub(days, LOW_AUTONOMY_DAYS) * range / Nat.sub(HIGH_AUTONOMY_DAYS, LOW_AUTONOMY_DAYS);
+    Nat.sub(MAX_CYCLES_SHARE_BPS, down);
+  };
+
+  // The current cycles share (bps of the 20 % protocol share).
+  public func cyclesShareBps(autonomy : AutonomyStore) : Nat {
+    Nat.min(MAX_CYCLES_SHARE_BPS, Nat.max(MIN_CYCLES_SHARE_BPS, autonomy.cyclesShareBps));
+  };
+
+  public func shareView(autonomy : AutonomyStore, autonomyDays : ?Nat) : CyclesShareView {
+    {
+      shareBps = cyclesShareBps(autonomy);
+      targetShareBps = targetShareBps(autonomyDays);
+      minShareBps = MIN_CYCLES_SHARE_BPS;
+      maxShareBps = MAX_CYCLES_SHARE_BPS;
+      lowAutonomyDays = LOW_AUTONOMY_DAYS;
+      highAutonomyDays = HIGH_AUTONOMY_DAYS;
+      maxStepBps = MAX_SHARE_STEP_BPS;
+      minAdjustIntervalNs = SHARE_ADJUST_INTERVAL_NS;
+      lastAdjustAt = autonomy.lastShareAdjustAt;
+      nextAdjustAfter = do ? { autonomy.lastShareAdjustAt! + SHARE_ADJUST_INTERVAL_NS };
+      autonomyDays;
+    };
+  };
+
+  // Share changes, newest first.
+  public func shareHistory(autonomy : AutonomyStore) : [ShareChange] {
+    autonomy.shareHistory.reverseValues().toArray();
   };
 
   // --- Ledger / CMC operations (never trap, never send cycles) ---------------
@@ -398,85 +544,30 @@ module {
     };
   };
 
-  // --- Withdrawal ------------------------------------------------------------
-
-  // Transfers `amount` (<= withdrawable excess) from the reserve to the
-  // configured treasury account only; refused without a ledger call otherwise,
-  // including while the cycles balance is below TOPUP_THRESHOLD.
-  public func withdrawExcess(store : CyclesReserveStore, lock : ReserveLock, treasury : TreasuryLib.TreasuryStore, canister : Principal, amount : Nat) : async WithdrawReserveResult {
-    if (lock.busy) {
-      return #busy;
-    };
-    if (isPendingNotify(store) or hasOpenTopUp(store)) {
-      return #topUpPendingNotify;
-    };
-    let cyclesBalance = Cycles.balance();
-    if (cyclesBalance < TOPUP_THRESHOLD) {
-      return #cyclesBelowThreshold({ cyclesBalance; topUpThreshold = TOPUP_THRESHOLD });
-    };
-    let target = switch (treasury.config) {
-      case (?c) { c.icpAccount };
-      case null { return #treasuryNotConfigured };
-    };
-    // Refusals against the cached reserve balance: no ledger call at all.
-    let cachedExcess = withdrawableExcess(store);
-    if (cachedExcess == 0) {
-      return #noExcess;
-    };
-    if (amount > cachedExcess) {
-      return #amountExceedsExcess({ withdrawableE8s = cachedExcess });
-    };
-    if (amount == 0) {
-      return #ledgerError("The amount must be greater than zero; nothing was transferred");
-    };
-    lock.busy := true;
-    try {
-      let balance = switch (await fetchReserveBalance(canister)) {
-        case (?b) { b };
-        case null {
-          return #ledgerError("The reserve balance could not be read from the ICP ledger; nothing was transferred");
-        };
-      };
-      store.reserveBalanceE8s := balance;
-      let withdrawable = withdrawableExcess(store);
-      if (withdrawable == 0) {
-        return #noExcess;
-      };
-      if (amount > withdrawable) {
-        return #amountExceedsExcess({ withdrawableE8s = withdrawable });
-      };
-      if (amount == 0) {
-        return #ledgerError("The amount must be greater than zero; nothing was transferred");
-      };
-      let result = try {
-        await icpLedger().icrc1_transfer({
-          from_subaccount = ?CYCLES_RESERVE_SUBACCOUNT;
-          to = target;
-          amount;
-          fee = ?TreasuryLib.ICP_FEE;
-          memo = null;
-          created_at_time = ?nowNat64();
-        });
-      } catch (e) {
-        return #ledgerError("The ICP ledger could not be reached: " # e.message());
-      };
-      switch (result) {
-        case (#Ok(blockIndex)) {
-          store.withdrawals.add({ timestamp = Time.now(); amountE8s = amount; blockIndex });
-          await refreshReserveBalance(store, canister);
-          #ok(blockIndex);
-        };
-        case (#Err(err)) { #ledgerError(TreasuryLib.transferErrorMessage(err)) };
-      };
-    } finally {
-      lock.busy := false;
+  func notifiedBlock(store : CyclesReserveStore) : ?Nat {
+    switch (store.lastTopUp) {
+      case (?r) { switch (r.status) { case (#notified(_)) { ?r.blockIndex }; case (_) { null } } };
+      case null { null };
     };
   };
 
-  // Arms the 6-hour top-up timer (called on every install and upgrade).
-  public func startTimer<system>(store : CyclesReserveStore, lock : ReserveLock, canister : Principal) {
+  // Arms the 6-hour top-up timer (called on every install and upgrade). Each
+  // tick then records a cycles sample (with the cycles of a top-up notified
+  // during that tick). The cycles share is no longer adjusted (read-only history).
+  public func startTimer<system>(store : CyclesReserveStore, autonomy : AutonomyStore, lock : ReserveLock, canister : Principal) {
     func tick() : async () {
+      let before = notifiedBlock(store);
       await runTopUp(store, lock, canister);
+      let toppedUp = switch (store.lastTopUp) {
+        case (?r) {
+          switch (r.status) {
+            case (#notified({ cycles })) { if (before == ?r.blockIndex) 0 else cycles };
+            case (_) { 0 };
+          };
+        };
+        case null { 0 };
+      };
+      recordSample(autonomy, Cycles.balance(), toppedUp, Time.now());
     };
     ignore Timer.setTimer<system>(#seconds(0), tick);
     ignore Timer.recurringTimer<system>(#seconds(TOPUP_INTERVAL_SECONDS), tick);

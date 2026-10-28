@@ -11,10 +11,10 @@ import { createLedgerAgent } from "./icpLedger";
 
 /** ICPSwap SwapFactory canister (mainnet). */
 export const ICPSWAP_FACTORY_ID = "4mmnk-kiaaa-aaaag-qbllq-cai";
-/** Pool fee tier looked up: 3000 = 0.3 %. */
-export const ICPSWAP_POOL_FEE = 3000n;
-/** Token standard of the ICP, ckBTC, ckUSDC and ckUSDT ledgers in ICPSwap. */
-const STANDARD = "ICRC2";
+/** Pool fee tiers looked up, in order: 3000 = 0.3 %, 500 = 0.05 %, 10000 = 1 %. */
+export const ICPSWAP_POOL_FEES = [3000n, 500n, 10000n] as const;
+/** Token standards tried for each ledger: ICRC2 first, then ICRC1. */
+const STANDARDS = ["ICRC2", "ICRC1"] as const;
 /** A quote is considered expired after this delay. */
 export const QUOTE_TTL_MS = 30_000;
 
@@ -186,9 +186,40 @@ async function anonymousActor<T>(
 
 const poolCache = new Map<string, Promise<SwapPoolInfo | null>>();
 
+/** First pool found for the pair: fee tiers 3000, 500, 10000; ICRC2 then ICRC1. */
+async function findPoolId(
+  factory: SwapFactoryActor,
+  first: string,
+  second: string,
+): Promise<string | null> {
+  const [icrc2, icrc1] = STANDARDS;
+  const combos = [
+    [icrc2, icrc2],
+    [icrc1, icrc2],
+    [icrc2, icrc1],
+    [icrc1, icrc1],
+  ] as const;
+  for (const [standard0, standard1] of combos) {
+    const results = await Promise.all(
+      ICPSWAP_POOL_FEES.map((fee) =>
+        factory.getPool({
+          token0: { address: first, standard: standard0 },
+          token1: { address: second, standard: standard1 },
+          fee,
+        }),
+      ),
+    );
+    for (const found of results) {
+      if ("ok" in found) return found.ok.canisterId.toText();
+    }
+  }
+  return null;
+}
+
 /**
- * Direct ICPSwap pool of two ledgers (fee 3000, ICRC2), or null when the
- * factory has none. Lookups are cached; a failed call is retried next time.
+ * Direct ICPSwap pool of two ledgers, whatever its fee tier, or null when
+ * the factory has none. Lookups are cached per pair; a failed call is
+ * retried next time.
  */
 export function resolveSwapPool(
   ledgerA: string,
@@ -204,13 +235,8 @@ export function resolveSwapPool(
       swapFactoryIdlFactory,
       ICPSWAP_FACTORY_ID,
     );
-    const found = await factory.getPool({
-      token0: { address: first, standard: STANDARD },
-      token1: { address: second, standard: STANDARD },
-      fee: ICPSWAP_POOL_FEE,
-    });
-    if ("err" in found) return null;
-    const poolId = found.ok.canisterId.toText();
+    const poolId = await findPoolId(factory, first, second);
+    if (!poolId) return null;
     const pool = await anonymousActor<SwapPoolActor>(
       swapPoolIdlFactory,
       poolId,
@@ -283,9 +309,10 @@ export async function signedSwapPool(
   poolId: string,
   plugSigner: boolean,
   agent: () => Promise<Agent>,
+  ledgers: ReadonlyArray<string> = [],
 ): Promise<SwapPoolActor> {
   if (plugSigner) {
-    const plug = await readyPlug([poolId, ICPSWAP_FACTORY_ID]);
+    const plug = await readyPlug([poolId, ICPSWAP_FACTORY_ID, ...ledgers]);
     return plug.createActor<SwapPoolActor>({
       canisterId: poolId,
       interfaceFactory: swapPoolIdlFactory,
@@ -297,7 +324,13 @@ export async function signedSwapPool(
   });
 }
 
-/** Add the pool and factory to the Plug session before the first signature. */
-export async function preparePlugForSwap(poolId: string): Promise<void> {
-  await readyPlug([poolId, ICPSWAP_FACTORY_ID]);
+/**
+ * Add the pool, the factory and the pair's ledgers (added tokens included)
+ * to the Plug session before the first signature.
+ */
+export async function preparePlugForSwap(
+  poolId: string,
+  ledgers: ReadonlyArray<string> = [],
+): Promise<void> {
+  await readyPlug([poolId, ICPSWAP_FACTORY_ID, ...ledgers]);
 }

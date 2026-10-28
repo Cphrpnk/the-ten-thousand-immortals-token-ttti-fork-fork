@@ -36,37 +36,75 @@ module {
     blockIndex : Nat; // ICP ledger block of the transfer to the treasury
   };
 
-  // Public transparency view (getCyclesStatus).
+  // Public transparency view (getCyclesStatus). The reserve has no withdrawal
+  // path (DEX lot 4); `withdrawals` lists the past withdrawals only.
   public type CyclesStatus = {
     cyclesBalance : Nat;
     topUpThreshold : Nat;
     reserveAccount : Account;
     reserveBalanceE8s : Nat; // cached; refreshed by the timer and after each reserve movement
     reserveFloorE8s : Nat;
-    withdrawableExcessE8s : Nat; // max(0, reserve - floor - ICP fee)
     lastTopUp : ?TopUpRecord;
     withdrawals : [ReserveWithdrawal];
-    withdrawalAllowed : Bool; // true when withdrawalBlockedReason is null
-    withdrawalBlockedReason : ?WithdrawalBlockedReason;
   };
 
-  // Why withdrawReserveExcess is currently refused (factual reason).
-  public type WithdrawalBlockedReason = {
-    #cyclesBelowThreshold; // cycles balance below TOPUP_THRESHOLD (3T)
-    #topUpRunning; // a top-up or another withdrawal holds the lock
-    #topUpAwaitingConfirmation; // a top-up transfer awaits notify_top_up / ledger reply
+  // --- DEX lot 4: cycles autonomy and the dynamic cycles share ---------------
+
+  // One cycles balance sample (taken by the 6-hour timer and after each
+  // top-up). `toppedUpCycles` = cycles minted by top-ups since the previous
+  // sample, so consumption = previous balance + toppedUp - balance.
+  public type CyclesSample = {
+    at : Timestamp;
+    cyclesBalance : Nat;
+    toppedUpCycles : Nat;
   };
 
-  // Non-admin callers are refused by a trap, not by a variant.
-  public type WithdrawReserveResult = {
-    #ok : Nat; // ICP ledger block index
-    #cyclesBelowThreshold : { cyclesBalance : Nat; topUpThreshold : Nat }; // no ledger call
-    #noExcess;
-    #amountExceedsExcess : { withdrawableE8s : Nat };
-    #treasuryNotConfigured;
-    #busy; // a top-up or another withdrawal is running
-    #topUpPendingNotify; // a top-up transfer still awaits its notify_top_up
-    #ledgerError : Text;
+  // One change of the cycles share (basis points of the 20 % pool protocol share).
+  public type ShareChange = {
+    at : Timestamp;
+    oldShareBps : Nat;
+    newShareBps : Nat;
+    autonomyDays : ?Nat; // null while no consumption average exists
+  };
+
+  // Stable autonomy state (new stable field `cyclesAutonomy`).
+  public type AutonomyStore = {
+    samples : List.List<CyclesSample>; // oldest first, pruned beyond 30 days
+    var cyclesShareBps : Nat; // current share, 500..4000
+    var lastShareAdjustAt : ?Timestamp;
+    shareHistory : List.List<ShareChange>;
+  };
+
+  // Admin view: autonomy (days) = cycles reserve / max(7-day avg, 30-day avg)
+  // daily consumption. The cycles reserve = cycles balance + the reserve ICP
+  // converted at the CMC rate when known.
+  public type AutonomyView = {
+    computedAt : Timestamp;
+    cyclesBalance : Nat;
+    reserveBalanceE8s : Nat;
+    reserveCyclesEstimate : ?Nat; // reserve ICP in cycles at the CMC rate
+    totalCycles : Nat; // cycles balance + reserveCyclesEstimate (0 when unknown)
+    avg7dCyclesPerDay : ?Nat;
+    avg30dCyclesPerDay : ?Nat;
+    autonomyDays : ?Nat;
+    targetDays : Nat; // 90
+    sampleCount : Nat;
+    oldestSampleAt : ?Timestamp;
+  };
+
+  // Admin view of the cycles share and its fixed code bounds.
+  public type CyclesShareView = {
+    shareBps : Nat;
+    targetShareBps : Nat; // value from the current autonomy (before the step limit)
+    minShareBps : Nat; // 500 = 5 %
+    maxShareBps : Nat; // 4000 = 40 %
+    lowAutonomyDays : Nat; // 45: max share below
+    highAutonomyDays : Nat; // 180: min share above
+    maxStepBps : Nat; // 1000 = 10 percentage points per adjustment
+    minAdjustIntervalNs : Nat; // 1 day
+    lastAdjustAt : ?Timestamp;
+    nextAdjustAfter : ?Timestamp;
+    autonomyDays : ?Nat;
   };
 
   // Transfer of a purchase's reserve share into the reserve subaccount.

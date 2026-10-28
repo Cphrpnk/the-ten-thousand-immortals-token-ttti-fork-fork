@@ -1,3 +1,4 @@
+import List "mo:core/List";
 import Common "common";
 import Pay "pay-token";
 
@@ -23,15 +24,9 @@ module {
     account : ?Account;
   };
 
-  public type TokenAccountResult = {
-    #Ok : TokenAccountInfo;
-    #Err : Text;
-  };
-
-  // Admin-controlled configuration: the only setting is `icpAccount`, the
-  // account that receives the creator's ICP (collected ICP is forwarded there
-  // automatically after each delivery). Price and the fee (1% for every pay token)
-  // are code constants; ck-token accounts are set with setPayTokenAccount.
+  // Legacy configuration (set by the admin before DEX lot 4, no longer
+  // settable): the old external ICP account. Its funds stay where they are;
+  // new forwards go to the internal mint treasury subaccounts.
   public type TreasuryConfig = {
     icpAccount : Account;
   };
@@ -144,14 +139,74 @@ module {
 
   // --- Treasury API results --------------------------------------------------
 
-  public type TreasuryConfigResult = {
-    #Ok : TreasuryConfig;
-    #Err : Text;
-  };
-
   // Public subset of the treasury configuration (no buyer data).
   public type PublicTreasuryInfo = {
     icpAccount : Account;
     tokenAccounts : [TokenAccountInfo]; // #icp, #ckbtc, #ckusdc, #ckusdt in that order
+  };
+
+  // --- DEX lot 4: internal mint treasuries and the weekly allocation ---------
+
+  // One mint treasury: the internal subaccount of this canister that receives
+  // new forwards (FW), with no withdrawal path, and the old external account
+  // (admin-set before lot 4) whose funds stay where they are.
+  public type MintTreasuryAccount = {
+    token : PayToken;
+    account : Account; // canister + MINT-TREASURY-<token> subaccount
+    balance : ?Nat; // cached balance in the token's base units, null until read
+    legacyExternalAccount : ?Account;
+  };
+
+  // Amounts per mint treasury token, in each token's base units.
+  public type TokenAmounts = {
+    icp : Nat;
+    ckbtc : Nat;
+    ckusdc : Nat;
+    ckusdt : Nat;
+  };
+
+  // Fixed protocol liquidity added to one pool by a weekly allocation, at
+  // the pool ratio with no swap.
+  public type AllocationPoolAdd = {
+    poolId : Nat;
+    amount0 : Nat;
+    amount1 : Nat;
+    shares : Nat;
+  };
+
+  // A pool skipped by the weekly allocation (empty, not yet open, removed,
+  // or no eligible TTTI-T).
+  public type AllocationSkip = {
+    poolId : Nat;
+    reason : Text;
+  };
+
+  // One weekly allocation calculation.
+  public type WeeklyAllocation = {
+    id : Nat;
+    at : Int; // nanoseconds (Time.now())
+    autonomyDays : ?Nat;
+    treasuryBalances : TokenAmounts; // internal mint treasuries at calculation
+    stockPayoutCap : TokenAmounts; // at most 1/12 of the accumulated stock
+    toCyclesReserveE8s : Nat; // treasury ICP sent first to the cycles reserve below 90 days
+    surplusE8s : Nat; // ICP beyond about 100 days of autonomy
+    toBonusE8s : Nat; // 50 % of the surplus, to the DL bonus of locked TTTI-T-pair LPs
+    toLiquidity : TokenAmounts; // 50 % side, used as fixed protocol liquidity
+    poolAdds : [AllocationPoolAdd];
+    skipped : [AllocationSkip];
+    waiting : TokenAmounts; // token in excess of the pool ratio, waits for next week
+    note : Text;
+  };
+
+  // Stable weekly allocation state (new stable field `treasuryAllocation`).
+  public type AllocationStore = {
+    var nextId : Nat;
+    var lastRunAt : ?Int; // nanoseconds
+    history : List.List<WeeklyAllocation>;
+    // Accumulated stock at the first lot 4 calculation; paid out at most
+    // 1/12 per week. Null until the first calculation.
+    var stockBase : ?TokenAmounts;
+    var stockPaid : TokenAmounts;
+    var balances : TokenAmounts; // cached internal mint treasury balances
   };
 };

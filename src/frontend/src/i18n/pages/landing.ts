@@ -1025,7 +1025,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Total supply: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Creator disclosures",
     disclosure1:
-      "The ICP, ckBTC, ckUSDC or ckUSDT you pay goes to the creator, except the ICP fee share that funds the canister's cycles. The creator may fund buybacks with personal funds. Buybacks are optional and limited, and nobody is obligated to buy back. The creator does not defend a price or trade to create volume. He will not open a liquidity pool or list TTTI on any other exchange. Any market is created by holders.",
+      "For each mint, 100/101 of the ICP, ckBTC, ckUSDC or ckUSDT paid goes, in the paid token, to the owner's destination account set for that token; 1/101 is the mint fee. The creator may fund buybacks with personal funds. Buybacks are optional and limited, and nobody is obligated to buy back. The creator does not defend a price or trade to create volume. He will not open a liquidity pool or list TTTI on any other exchange. Any market is created by holders.",
     disclosure2:
       "TTTI and THAT have the same creator. TTTI has no link to THAT: it cannot be exchanged for THAT, used inside THAT, or converted into anything else.",
   },
@@ -1052,7 +1052,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Offre totale : ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Déclarations du créateur",
     disclosure1:
-      "L'ICP, le ckBTC, le ckUSDC ou le ckUSDT que vous payez revient au créateur, à l'exception de la part des frais en ICP qui finance les cycles du canister. Le créateur peut financer des rachats avec ses fonds personnels. Les rachats sont facultatifs et limités, et personne n'est obligé de racheter. Le créateur ne défend aucun prix et n'effectue pas de transactions pour créer du volume. Il n'ouvrira pas de pool de liquidité et ne listera TTTI sur aucune autre plateforme d'échange. Tout marché est créé par les détenteurs.",
+      "Pour chaque mint, 100/101 de l'ICP, du ckBTC, du ckUSDC ou du ckUSDT payé vont, dans le jeton payé, au compte de destination du propriétaire fixé pour ce jeton ; 1/101 constitue les frais de mint. Le créateur peut financer des rachats avec ses fonds personnels. Les rachats sont facultatifs et limités, et personne n'est obligé de racheter. Le créateur ne défend aucun prix et n'effectue pas de transactions pour créer du volume. Il n'ouvrira pas de pool de liquidité et ne listera TTTI sur aucune autre plateforme d'échange. Tout marché est créé par les détenteurs.",
     disclosure2:
       "TTTI et THAT ont le même créateur. TTTI n'a aucun lien avec THAT : il ne peut pas être échangé contre THAT, ni utilisé au sein de THAT, ni converti en quoi que ce soit d'autre.",
   },
@@ -1079,7 +1079,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Suministro total: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Declaraciones del creador",
     disclosure1:
-      "El ICP, ckBTC, ckUSDC o ckUSDT que usted paga va al creador, excepto la parte de la comisión en ICP que financia los ciclos del canister. El creador puede financiar recompras con fondos personales. Las recompras son opcionales y limitadas, y nadie está obligado a recomprar. El creador no defiende ningún precio ni opera para generar volumen. No abrirá ningún pool de liquidez ni listará TTTI en ninguna otra plataforma de intercambio. Cualquier mercado lo crean los poseedores.",
+      "En cada mint, 100/101 del ICP, ckBTC, ckUSDC o ckUSDT pagado van, en el token pagado, a la cuenta de destino del propietario fijada para ese token; 1/101 es la comisión de mint. El creador puede financiar recompras con fondos personales. Las recompras son opcionales y limitadas, y nadie está obligado a recomprar. El creador no defiende ningún precio ni opera para generar volumen. No abrirá ningún pool de liquidez ni listará TTTI en ninguna otra plataforma de intercambio. Cualquier mercado lo crean los poseedores.",
     disclosure2:
       "TTTI y THAT tienen el mismo creador. TTTI no tiene ningún vínculo con THAT: no puede intercambiarse por THAT, ni usarse dentro de THAT, ni convertirse en ninguna otra cosa.",
   },
@@ -1104,7 +1104,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `总供应量：${total} / ${max} ${symbol}（${percent}%）`,
     disclosuresTitle: "创建者声明",
     disclosure1:
-      "您支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 归创建者所有，但用于支付该 canister cycles 的 ICP 手续费部分除外。创建者可以用个人资金为回购提供资金。回购是可选且有限的，任何人都没有回购的义务。创建者不维护任何价格，也不为制造交易量而交易。他不会开设流动性池，也不会在任何其他交易所上架 TTTI。任何市场均由持有者创建。",
+      "每次铸造时，所支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 的 100/101 以所支付的代币转入为该代币设置的所有者目标账户；1/101 为铸造费用。创建者可以用个人资金为回购提供资金。回购是可选且有限的，任何人都没有回购的义务。创建者不维护任何价格，也不为制造交易量而交易。他不会开设流动性池，也不会在任何其他交易所上架 TTTI。任何市场均由持有者创建。",
     disclosure2:
       "TTTI 与 THAT 出自同一创建者。TTTI 与 THAT 没有任何关联：它不能兑换为 THAT，不能在 THAT 中使用，也不能转换为任何其他东西。",
   },
@@ -1131,7 +1131,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Oferta total: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Declarações do criador",
     disclosure1:
-      "O ICP, ckBTC, ckUSDC ou ckUSDT que você paga vai para o criador, exceto a parcela da taxa em ICP que financia os cycles do canister. O criador pode financiar recompras com fundos pessoais. As recompras são opcionais e limitadas, e ninguém é obrigado a recomprar. O criador não defende nenhum preço nem negocia para gerar volume. Ele não abrirá nenhum pool de liquidez nem listará TTTI em nenhuma outra plataforma de negociação. Qualquer mercado é criado pelos detentores.",
+      "Em cada mint, 100/101 do ICP, ckBTC, ckUSDC ou ckUSDT pago vão, no token pago, para a conta de destino do proprietário definida para esse token; 1/101 é a taxa de mint. O criador pode financiar recompras com fundos pessoais. As recompras são opcionais e limitadas, e ninguém é obrigado a recomprar. O criador não defende nenhum preço nem negocia para gerar volume. Ele não abrirá nenhum pool de liquidez nem listará TTTI em nenhuma outra plataforma de negociação. Qualquer mercado é criado pelos detentores.",
     disclosure2:
       "TTTI e THAT têm o mesmo criador. TTTI não tem nenhum vínculo com THAT: não pode ser trocado por THAT, nem usado dentro de THAT, nem convertido em qualquer outra coisa.",
   },
@@ -1156,7 +1156,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `총 공급량: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "창작자 고지",
     disclosure1:
-      "귀하가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT는 canister의 cycles 비용에 충당되는 ICP 수수료 몫을 제외하고 창작자에게 갑니다. 창작자는 개인 자금으로 환매 자금을 댈 수 있습니다. 환매는 선택적이고 제한적이며, 누구도 환매할 의무가 없습니다. 창작자는 가격을 방어하지 않으며, 거래량을 만들기 위해 거래하지 않습니다. 창작자는 유동성 풀을 열지 않으며 다른 어떤 거래소에도 TTTI를 상장하지 않습니다. 모든 시장은 보유자가 만듭니다.",
+      "민트할 때마다 지불한 ICP, ckBTC, ckUSDC 또는 ckUSDT의 100/101은 지불한 토큰으로, 해당 토큰에 설정된 소유자의 목적지 계정으로 갑니다. 1/101은 민트 수수료입니다. 창작자는 개인 자금으로 환매 자금을 댈 수 있습니다. 환매는 선택적이고 제한적이며, 누구도 환매할 의무가 없습니다. 창작자는 가격을 방어하지 않으며, 거래량을 만들기 위해 거래하지 않습니다. 창작자는 유동성 풀을 열지 않으며 다른 어떤 거래소에도 TTTI를 상장하지 않습니다. 모든 시장은 보유자가 만듭니다.",
     disclosure2:
       "TTTI와 THAT은 창작자가 같습니다. TTTI는 THAT과 아무 관련이 없습니다: THAT으로 교환할 수 없고, THAT 안에서 사용할 수 없으며, 다른 어떤 것으로도 전환할 수 없습니다.",
   },
@@ -1181,7 +1181,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `ਕੁੱਲ ਸਪਲਾਈ: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "ਨਿਰਮਾਤਾ ਦੇ ਖੁਲਾਸੇ",
     disclosure1:
-      "ਤੁਸੀਂ ਜੋ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਅਦਾ ਕਰਦੇ ਹੋ ਉਹ ਨਿਰਮਾਤਾ ਨੂੰ ਜਾਂਦਾ ਹੈ, ICP ਫੀਸ ਦੇ ਉਸ ਹਿੱਸੇ ਨੂੰ ਛੱਡ ਕੇ ਜੋ canister ਦੇ cycles ਦਾ ਖਰਚਾ ਚੁੱਕਦਾ ਹੈ। ਨਿਰਮਾਤਾ ਨਿੱਜੀ ਫੰਡਾਂ ਨਾਲ ਵਾਪਸ ਖਰੀਦਾਂ ਲਈ ਫੰਡ ਦੇ ਸਕਦਾ ਹੈ। ਵਾਪਸ ਖਰੀਦਾਂ ਵਿਕਲਪਿਕ ਅਤੇ ਸੀਮਤ ਹਨ, ਅਤੇ ਕੋਈ ਵੀ ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਮਜਬੂਰ ਨਹੀਂ ਹੈ। ਨਿਰਮਾਤਾ ਕਿਸੇ ਕੀਮਤ ਦਾ ਬਚਾਅ ਨਹੀਂ ਕਰਦਾ ਅਤੇ ਵਾਲੀਅਮ ਬਣਾਉਣ ਲਈ ਵਪਾਰ ਨਹੀਂ ਕਰਦਾ। ਉਹ ਕੋਈ ਲਿਕਵਿਡਿਟੀ ਪੂਲ ਨਹੀਂ ਖੋਲ੍ਹੇਗਾ ਅਤੇ TTTI ਨੂੰ ਕਿਸੇ ਹੋਰ ਐਕਸਚੇਂਜ 'ਤੇ ਸੂਚੀਬੱਧ ਨਹੀਂ ਕਰੇਗਾ। ਕੋਈ ਵੀ ਬਾਜ਼ਾਰ ਧਾਰਕਾਂ ਵੱਲੋਂ ਬਣਾਇਆ ਜਾਂਦਾ ਹੈ।",
+      "ਹਰ ਮਿੰਟ ਲਈ, ਅਦਾ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਦਾ 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ, ਉਸ ਟੋਕਨ ਲਈ ਨਿਰਧਾਰਤ ਮਾਲਕ ਦੇ ਮੰਜ਼ਿਲ ਖਾਤੇ ਨੂੰ ਜਾਂਦਾ ਹੈ; 1/101 ਮਿੰਟ ਫੀਸ ਹੈ। ਨਿਰਮਾਤਾ ਨਿੱਜੀ ਫੰਡਾਂ ਨਾਲ ਵਾਪਸ ਖਰੀਦਾਂ ਲਈ ਫੰਡ ਦੇ ਸਕਦਾ ਹੈ। ਵਾਪਸ ਖਰੀਦਾਂ ਵਿਕਲਪਿਕ ਅਤੇ ਸੀਮਤ ਹਨ, ਅਤੇ ਕੋਈ ਵੀ ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਮਜਬੂਰ ਨਹੀਂ ਹੈ। ਨਿਰਮਾਤਾ ਕਿਸੇ ਕੀਮਤ ਦਾ ਬਚਾਅ ਨਹੀਂ ਕਰਦਾ ਅਤੇ ਵਾਲੀਅਮ ਬਣਾਉਣ ਲਈ ਵਪਾਰ ਨਹੀਂ ਕਰਦਾ। ਉਹ ਕੋਈ ਲਿਕਵਿਡਿਟੀ ਪੂਲ ਨਹੀਂ ਖੋਲ੍ਹੇਗਾ ਅਤੇ TTTI ਨੂੰ ਕਿਸੇ ਹੋਰ ਐਕਸਚੇਂਜ 'ਤੇ ਸੂਚੀਬੱਧ ਨਹੀਂ ਕਰੇਗਾ। ਕੋਈ ਵੀ ਬਾਜ਼ਾਰ ਧਾਰਕਾਂ ਵੱਲੋਂ ਬਣਾਇਆ ਜਾਂਦਾ ਹੈ।",
     disclosure2:
       "TTTI ਅਤੇ THAT ਦਾ ਨਿਰਮਾਤਾ ਇੱਕੋ ਹੈ। TTTI ਦਾ THAT ਨਾਲ ਕੋਈ ਸਬੰਧ ਨਹੀਂ ਹੈ: ਇਸ ਨੂੰ THAT ਨਾਲ ਬਦਲਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ, THAT ਦੇ ਅੰਦਰ ਵਰਤਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ, ਜਾਂ ਕਿਸੇ ਹੋਰ ਚੀਜ਼ ਵਿੱਚ ਬਦਲਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ।",
   },

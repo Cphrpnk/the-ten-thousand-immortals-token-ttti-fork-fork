@@ -1,6 +1,8 @@
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
 import Int "mo:core/Int";
+import Principal "mo:core/Principal";
+import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
@@ -14,6 +16,10 @@ import CyclesTypes "../types/cycles-reserve";
 import TreasuryLib "treasury";
 import CyclesReserveLib "cycles-reserve";
 import PayTokenLib "pay-token";
+import IcrcLib "icrc";
+import DexTypes "../types/dex";
+import DexLib "dex";
+import OwnerTypes "../types/owner-revenue";
 
 // Common retry module for outgoing ledger transfers, and its use by treasury
 // forwards (FW) and reserve shares (SH).
@@ -43,7 +49,7 @@ module {
 
   // --- Generic retry rule ----------------------------------------------------
 
-  // "PC", "RF", "FW", "SH", "BB", "BR".
+  // "PC", "RF", "FW", "SH", "BB", "BR", "DD", "DW", "DQ".
   public func prefixText(prefix : TransferPrefix) : Text {
     switch (prefix) {
       case (#PC) { "PC" };
@@ -52,6 +58,14 @@ module {
       case (#SH) { "SH" };
       case (#BB) { "BB" };
       case (#BR) { "BR" };
+      case (#DD) { "DD" };
+      case (#DW) { "DW" };
+      case (#DQ) { "DQ" };
+      case (#DC) { "DC" };
+      case (#DL) { "DL" };
+      case (#OW) { "OW" };
+      case (#SR) { "SR" };
+      case (#MF) { "MF" };
     };
   };
 
@@ -361,6 +375,9 @@ module {
     // changed only through purchase traces (openTrace / releaseTrace).
     // While salesPaused is true no FW, SH, RF or BR transfer is sent.
     sale : { var reserved : Nat; var salesPaused : Bool };
+    // Mint revenue correction: owner destinations, accumulated shares, owner
+    // sends (OW) and the one-time treasury sweep (SR + OW).
+    ownerRevenue : OwnerTypes.OwnerRevenueStore;
   };
 
   type Plan = {
@@ -371,7 +388,9 @@ module {
 
   func forwardPlan(ctx : TransferContext, conversion : Treasury.Conversion) : Plan {
     let token = conversion.payToken;
-    let target = TreasuryLib.tokenAccount(ctx.treasury, token) ?? (return #noTarget);
+    // New forwards go to the contract's own mint treasury account; funds
+    // already at the old external accounts are left where they are.
+    let target = TreasuryLib.mintTreasuryAccount(ctx.canister, token);
     let canisterAccount : Types.Account = { owner = ctx.canister; subaccount = null };
     if (target == canisterAccount) {
       return #notRequired;
@@ -798,6 +817,9 @@ module {
   // While sales are paused nothing is sent; stored attempts stay unchanged.
   public func runRetries(ctx : TransferContext) : async () {
     sweepTraces(ctx);
+    // Owner sends (OW) and the one-time treasury sweep (SR first); owner
+    // sends follow the pause inside.
+    try { await runOwnerRetries(ctx) } catch (_) {};
     if (ctx.sale.salesPaused) {
       return;
     };
@@ -926,7 +948,21 @@ module {
       func c = review(#RF, c.id, c.payToken, ctx.retry.refunds.get(c.id), refundRequest(c.payToken, c.depositor, c.payAmount))
     ).toArray();
     let payments = ctx.retry.toRefund.values().map(paymentReview).toArray();
-    forwards.concat(shares).concat(refunds).concat(payments);
+    let owners = ctx.ownerRevenue.sends.values().filter(
+      func(s : OwnerTypes.OwnerSend) : Bool = s.status == #needsReview
+    ).map(
+      func(s : OwnerTypes.OwnerSend) : TransferReview = review(#OW, s.id, s.token, ?s.attempt, null)
+    ).toArray();
+    let reserveTopUp = switch (ctx.ownerRevenue.sweep.reserveTopUp) {
+      case (?a) {
+        switch (nextAction(a, nowNat64())) {
+          case (#needsReview) { [review(#SR, a.n, #icp, ?a, null)] };
+          case (_) { [] };
+        };
+      };
+      case null { [] };
+    };
+    forwards.concat(shares).concat(refunds).concat(payments).concat(owners).concat(reserveTopUp);
   };
 
   // The #refundReview conversion `id`, or the review error.
@@ -969,11 +1005,36 @@ module {
         };
       };
       case (#PC) { return #err(#notApplicable) };
+      case (#OW) {
+        let s = ctx.ownerRevenue.sends.get(purchaseId) ?? (return #err(#notFound));
+        if (s.status != #needsReview) {
+          return #err(#notUnderReview);
+        };
+        storeOwnerSend(ctx, { s with attempt = { s.attempt with outcome = #succeeded(block) }; status = #sent(block) });
+      };
+      case (#SR) {
+        let a = reserveTopUpUnderReview(ctx, purchaseId) ?? (return #err(#notUnderReview));
+        setSweep(ctx, { ctx.ownerRevenue.sweep with reserveTopUp = ?{ a with outcome = #succeeded(block) } });
+      };
       // BTC rows are handled by lib/btc-deposit.mo (deposit entries).
       // BTC rows are handled by lib/btc-deposit.mo, BB rows by lib/buyback.mo.
-      case (#BR or #BC or #BM or #BB) { return #err(#notApplicable) };
+      // DEX rows (DD, DW, DQ) are handled by markDexArrived.
+      // Mint-fee rows (MF) are not handled here.
+      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF) { return #err(#notApplicable) };
     };
     #ok;
+  };
+
+  // The SR attempt `n` when it is under review.
+  func reserveTopUpUnderReview(ctx : TransferContext, n : Nat) : ?TransferAttempt {
+    let a = ctx.ownerRevenue.sweep.reserveTopUp ?? (return null);
+    if (a.n != n) {
+      return null;
+    };
+    switch (nextAction(a, nowNat64())) {
+      case (#needsReview) { ?a };
+      case (_) { null };
+    };
   };
 
   // Admin verification: not arrived -> a new attempt (#pending), sent by the
@@ -1042,9 +1103,31 @@ module {
           case null { return #err(#notFound) };
         };
       };
+      case (#OW) {
+        let s = ctx.ownerRevenue.sends.get(purchaseId) ?? (return #err(#notFound));
+        if (s.status != #needsReview) {
+          return #err(#notUnderReview);
+        };
+        // New attempt to the current destination (kept #failed until one exists).
+        switch (ctx.ownerRevenue.destinations.get(ownerKey(s.token))) {
+          case (?d) {
+            storeOwnerSend(ctx, { s with attempt = newAttempt(ctx.retry, #OW, ?s.attempt, { s.attempt.request with to = d.account }, now); status = #pending });
+          };
+          case null {
+            let text = "Not arrived (admin verification)";
+            storeOwnerSend(ctx, { s with attempt = { s.attempt with outcome = #failed(text); lastError = ?text }; status = #failed(text) });
+          };
+        };
+      };
+      case (#SR) {
+        let a = reserveTopUpUnderReview(ctx, purchaseId) ?? (return #err(#notUnderReview));
+        setSweep(ctx, { ctx.ownerRevenue.sweep with reserveTopUp = ?newAttempt(ctx.retry, #SR, ?a, a.request, now) });
+      };
       // BTC rows are handled by lib/btc-deposit.mo (deposit entries).
       // BB rows are handled by lib/buyback.mo.
-      case (#BR or #BC or #BM or #BB) { return #err(#notApplicable) };
+      // DEX rows (DD, DW, DQ) are handled by markDexNotArrived.
+      // Mint-fee rows (MF) are not handled here.
+      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF) { return #err(#notApplicable) };
     };
     #ok;
   };
@@ -1072,7 +1155,979 @@ module {
       };
       // BTC rows are handled by lib/btc-deposit.mo (deposit entries).
       // BB: buyback payouts are not refunded by hand (cancelBuyback instead).
-      case (#BR or #BC or #BM or #BB) { #err(#notApplicable) };
+      // DEX rows: no hand refund.
+      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #OW or #SR or #MF) { #err(#notApplicable) };
+    };
+  };
+
+  // --- DEX transfers (DD deposits, DW withdrawals, DQ pair refunds) ---------
+  // TTTI-T goes through the in-process ledger (synchronous); ICP, ckBTC,
+  // ckUSDC and ckUSDT through their external ledgers (async).
+
+  public type DexContext = {
+    retry : RetryStore; // global n (nextN)
+    transfers : Types.DexTransferStore;
+    balances : DexTypes.DexBalances;
+    dex : DexTypes.DexStore;
+    ledger : IcrcLib.Ledger; // TTTI-T in-process ledger
+    locks : Set.Set<Text>; // transient: "<owner>/<token>" and "DQ/<request id>"
+    canister : Principal;
+  };
+
+  // Lock key of one deposit or withdrawal in flight per principal and token.
+  public func dexLockKey(owner : Principal, token : DexTypes.DexToken) : Text {
+    owner.toText() # "/" # DexLib.tokenKey(token);
+  };
+
+  public func dexRequestLockKey(requestId : Nat) : Text {
+    "DQ/" # requestId.toText();
+  };
+
+  // Pay token of an external DEX token; null for TTTI-T.
+  public func dexPayToken(token : DexTypes.DexToken) : ?Types.PayToken {
+    switch (token) {
+      case (#tttiT) { null };
+      case (#icp) { ?#icp };
+      case (#ckbtc) { ?#ckbtc };
+      case (#ckusdc) { ?#ckusdc };
+      case (#ckusdt) { ?#ckusdt };
+    };
+  };
+
+  // Ledger fee of a DEX token (TTTI-T: IcrcLib.fee; others: expectedFee).
+  public func dexFee(ctx : DexContext, token : DexTypes.DexToken) : Nat {
+    switch (dexPayToken(token)) {
+      case (?p) { PayTokenLib.expectedFee(p) };
+      case null { IcrcLib.fee(ctx.ledger) };
+    };
+  };
+
+  // New DD / DW / DQ attempt: next global n (or same n with m + 1 after a
+  // previous attempt), memo TTTI-<prefix>-<n>[-<m>], created_at_time = now.
+  public func newDexAttempt(store : RetryStore, prefix : TransferPrefix, previous : ?Types.DexTransferAttempt, request : Types.DexTransferRequest, now : Nat64) : Types.DexTransferAttempt {
+    let (n, m) = switch (previous) {
+      case (?p) { (p.n, p.attempt + 1) };
+      case null {
+        let fresh = store.nextN;
+        store.nextN += 1;
+        (fresh, 1);
+      };
+    };
+    {
+      n;
+      attempt = m;
+      memo = memoBlob(prefix, n, m);
+      created_at_time = now;
+      request;
+      sends = 0;
+      lastError = null;
+      outcome = #pending;
+    };
+  };
+
+  func dexWithinWindow(a : Types.DexTransferAttempt, now : Nat64) : Bool {
+    now < a.created_at_time or now - a.created_at_time < RESEND_WINDOW_NS;
+  };
+
+  // Same rule as nextAction for a DEX attempt.
+  func dexNextAction(a : Types.DexTransferAttempt, now : Nat64) : RetryAction {
+    switch (a.outcome) {
+      case (#succeeded(_)) { #done };
+      case (#failed(_)) { #newAttempt };
+      case (#unknown) { if (dexWithinWindow(a, now)) #resend else #needsReview };
+      case (#pending) {
+        if (dexWithinWindow(a, now)) #resend else if (a.sends == 0) #newAttempt else #needsReview;
+      };
+    };
+  };
+
+  func dexOutcomeUnknown(a : Types.DexTransferAttempt) : Bool {
+    switch (a.outcome) {
+      case (#unknown) { true };
+      case (#pending) { a.sends > 1 };
+      case (_) { false };
+    };
+  };
+
+  // Known ledger Err text (the variants are those of ICRC-2 transfer_from).
+  func dexErrorText(token : DexTypes.DexToken, err : Treasury.IcpTransferFromError) : Text {
+    switch (dexPayToken(token)) {
+      case (?p) { PayTokenLib.transferFromErrorMessage(p, err) };
+      case null {
+        switch (err) {
+          case (#InsufficientAllowance({ allowance })) { "TTTI-T approval missing or too low (allowance " # allowance.toText() # ")" };
+          case (#InsufficientFunds({ balance })) { "Insufficient TTTI-T balance (" # balance.toText() # ")" };
+          case (#GenericError({ message })) { "The TTTI-T ledger refused the transfer: " # message };
+          case (other) { "The TTTI-T ledger refused the transfer: " # debug_show (other) };
+        };
+      };
+    };
+  };
+
+  // Classified ledger reply of one send (sends already counted).
+  type DexSendResult = {
+    #ok : Nat;
+    #err : Treasury.IcpTransferFromError;
+    #rejected : Text;
+  };
+
+  func applyDexResult(a : Types.DexTransferAttempt, result : DexSendResult) : Types.DexTransferAttempt {
+    switch (result) {
+      case (#ok(block)) { { a with outcome = #succeeded(block) } };
+      case (#err(err)) {
+        let text = dexErrorText(a.request.token, err);
+        if (dexOutcomeUnknown(a)) {
+          { a with outcome = #unknown; lastError = ?text };
+        } else {
+          { a with outcome = #failed(text); lastError = ?text };
+        };
+      };
+      case (#rejected(m)) {
+        { a with outcome = #unknown; lastError = ?("the " # DexLib.tokenSymbol(a.request.token) # " ledger could not be reached: " # m) };
+      };
+    };
+  };
+
+  func fromCollect(r : Treasury.CollectResult) : DexSendResult {
+    switch (r) {
+      case (#ok(block)) { #ok(block) };
+      case (#ledgerError(err)) { #err(err) };
+      case (#callFailed(m)) { #rejected(m) };
+    };
+  };
+
+  // icrc1_transfer of the recorded request (TTTI-T in-process, others async).
+  func dexTransferSend(ctx : DexContext, a : Types.DexTransferAttempt) : async DexSendResult {
+    let r = a.request;
+    let fee = r.fee ?? dexFee(ctx, r.token);
+    switch (dexPayToken(r.token)) {
+      case null {
+        switch (
+          IcrcLib.transfer(
+            ctx.ledger,
+            ctx.canister,
+            ctx.canister,
+            {
+              from_subaccount = r.from.subaccount;
+              to = r.to;
+              amount = r.amount;
+              fee = ?fee;
+              memo = ?a.memo;
+              created_at_time = ?a.created_at_time;
+            },
+          )
+        ) {
+          case (#Ok(block)) { #ok(block) };
+          case (#Err(#Duplicate({ duplicate_of }))) { #ok(duplicate_of) };
+          case (#Err(err)) { #err(err) };
+        };
+      };
+      case (?p) {
+        try {
+          fromCollect(await PayTokenLib.sendFromSubaccount(PayTokenLib.ledger(p), p, r.from.subaccount ?? ("" : Blob), r.to, r.amount + fee, a.memo, a.created_at_time));
+        } catch (e) {
+          #rejected(e.message());
+        };
+      };
+    };
+  };
+
+  // DEX lot 4 (DC / DL): retry decision of a recorded DEX attempt.
+  public func dexAction(a : Types.DexTransferAttempt, now : Nat64) : RetryAction {
+    dexNextAction(a, now);
+  };
+
+  // DEX lot 4 (DC / DL): created_at_time base for a new attempt.
+  public func dexNow() : Nat64 = nowNat64();
+
+  // DEX lot 4 (DC / DL): sends a recorded pay-token attempt (sends already
+  // counted by the caller) and returns it with its classified outcome.
+  // Never traps; TTTI-T is not sent here (#failed outcome).
+  public func sendPayDexAttempt(a : Types.DexTransferAttempt) : async Types.DexTransferAttempt {
+    let r = a.request;
+    switch (dexPayToken(r.token)) {
+      case null {
+        { a with outcome = #failed("TTTI-T is not sent by this transfer"); lastError = ?"TTTI-T is not sent by this transfer" };
+      };
+      case (?p) {
+        let fee = r.fee ?? PayTokenLib.expectedFee(p);
+        let result : DexSendResult = try {
+          fromCollect(await PayTokenLib.sendFromSubaccount(PayTokenLib.ledger(p), p, r.from.subaccount ?? ("" : Blob), r.to, r.amount + fee, a.memo, a.created_at_time));
+        } catch (e) {
+          #rejected(e.message());
+        };
+        applyDexResult(a, result);
+      };
+    };
+  };
+
+  // icrc2_transfer_from of the recorded DD request (canister = spender).
+  func dexTransferFromSend(ctx : DexContext, a : Types.DexTransferAttempt) : async DexSendResult {
+    let r = a.request;
+    switch (dexPayToken(r.token)) {
+      case null {
+        switch (
+          IcrcLib.transferFrom(
+            ctx.ledger,
+            ctx.canister,
+            ctx.canister,
+            {
+              spender_subaccount = null;
+              from = r.from;
+              to = r.to;
+              amount = r.amount;
+              fee = null;
+              memo = ?a.memo;
+              created_at_time = ?a.created_at_time;
+            },
+          )
+        ) {
+          case (#Ok(block)) { #ok(block) };
+          case (#Err(#Duplicate({ duplicate_of }))) { #ok(duplicate_of) };
+          case (#Err(err)) { #err(err) };
+        };
+      };
+      case (?p) {
+        try {
+          fromCollect(await PayTokenLib.collect(PayTokenLib.ledger(p), r.from.owner, r.to, r.amount, a.memo, a.created_at_time));
+        } catch (e) {
+          #rejected(e.message());
+        };
+      };
+    };
+  };
+
+  // DD: records the attempt (before any await) and the deposit #inProgress.
+  public func openDexDeposit(ctx : DexContext, owner : Principal, token : DexTypes.DexToken, amount : Nat) : Types.DexTransfer {
+    let request : Types.DexTransferRequest = {
+      token;
+      from = { owner; subaccount = null };
+      to = DexLib.userDepositAccount(ctx.canister, owner);
+      amount;
+      fee = ?dexFee(ctx, token);
+    };
+    let attempt = newDexAttempt(ctx.retry, #DD, null, request, nowNat64());
+    let transfer : Types.DexTransfer = { n = attempt.n; owner; token; amount; attempt; status = #inProgress };
+    ctx.transfers.deposits.add(attempt.n, transfer);
+    transfer;
+  };
+
+  // One DD send with the ledger Err (if any). Credits exactly once: only an
+  // #inProgress deposit moves to #completed.
+  public func sendDexDepositDetailed(ctx : DexContext, n : Nat) : async (Types.DexTransfer, ?Treasury.IcpTransferFromError) {
+    let transfer = ctx.transfers.deposits.get(n) ?? Runtime.trap("Unknown DEX deposit");
+    if (transfer.status != #inProgress) {
+      return (transfer, null);
+    };
+    let sending = { transfer.attempt with sends = transfer.attempt.sends + 1 };
+    ctx.transfers.deposits.add(n, { transfer with attempt = sending });
+    let result = await dexTransferFromSend(ctx, sending);
+    let current = ctx.transfers.deposits.get(n) ?? Runtime.trap("Unknown DEX deposit");
+    let attempt = applyDexResult(sending, result);
+    if (current.status != #inProgress) {
+      ctx.transfers.deposits.add(n, { current with attempt });
+      return (current, null);
+    };
+    let status : DexTypes.DexTransferStatus = switch (attempt.outcome) {
+      case (#succeeded(block)) {
+        DexLib.credit(ctx.balances, current.owner, current.token, current.amount);
+        #completed(block);
+      };
+      case (#failed(text)) { #failed(text) };
+      case (_) { #inProgress };
+    };
+    let updated = { current with attempt; status };
+    ctx.transfers.deposits.add(n, updated);
+    let err = switch (result, status) {
+      case (#err(e), #failed(_)) { ?e };
+      case _ { null };
+    };
+    (updated, err);
+  };
+
+  // DD: sends the recorded transfer_from as recorded; Ok / #Duplicate credits
+  // the internal balance exactly once; Err credits nothing (#failed); a
+  // reject or trap keeps it #inProgress (unknown outcome).
+  public func sendDexDeposit(ctx : DexContext, n : Nat) : async Types.DexTransfer {
+    (await sendDexDepositDetailed(ctx, n)).0;
+  };
+
+  // DW: reserves `amount` of the internal balance and records the attempt
+  // (amount - fee sent to the owner's default account). Null when the
+  // available balance does not cover `amount`.
+  public func openDexWithdrawal(ctx : DexContext, owner : Principal, token : DexTypes.DexToken, amount : Nat, fee : Nat) : ?Types.DexTransfer {
+    if (amount <= fee or not DexLib.reserve(ctx.balances, owner, token, amount)) {
+      return null;
+    };
+    let request : Types.DexTransferRequest = {
+      token;
+      from = DexLib.userDepositAccount(ctx.canister, owner);
+      to = { owner; subaccount = null };
+      amount = Nat.sub(amount, fee);
+      fee = ?fee;
+    };
+    let attempt = newDexAttempt(ctx.retry, #DW, null, request, nowNat64());
+    let transfer : Types.DexTransfer = { n = attempt.n; owner; token; amount; attempt; status = #inProgress };
+    ctx.transfers.withdrawals.add(attempt.n, transfer);
+    ?transfer;
+  };
+
+  // DW: Ok / #Duplicate = final debit; Err gives the balance back (#failed);
+  // a reject or trap keeps it reserved and #inProgress.
+  public func sendDexWithdrawal(ctx : DexContext, n : Nat) : async Types.DexTransfer {
+    let transfer = ctx.transfers.withdrawals.get(n) ?? Runtime.trap("Unknown DEX withdrawal");
+    if (transfer.status != #inProgress) {
+      return transfer;
+    };
+    let sending = { transfer.attempt with sends = transfer.attempt.sends + 1 };
+    ctx.transfers.withdrawals.add(n, { transfer with attempt = sending });
+    let result = await dexTransferSend(ctx, sending);
+    let current = ctx.transfers.withdrawals.get(n) ?? Runtime.trap("Unknown DEX withdrawal");
+    let attempt = applyDexResult(sending, result);
+    if (current.status != #inProgress) {
+      ctx.transfers.withdrawals.add(n, { current with attempt });
+      return current;
+    };
+    let status : DexTypes.DexTransferStatus = switch (attempt.outcome) {
+      case (#succeeded(block)) {
+        DexLib.settleReserved(ctx.balances, current.owner, current.token, current.amount);
+        #completed(block);
+      };
+      case (#failed(text)) {
+        DexLib.release(ctx.balances, current.owner, current.token, current.amount);
+        #failed(text);
+      };
+      case (_) { #inProgress };
+    };
+    let updated = { current with attempt; status };
+    ctx.transfers.withdrawals.add(n, updated);
+    updated;
+  };
+
+  func setRefundStatus(ctx : DexContext, requestId : Nat, refundStatus : DexTypes.PairRefundStatus) {
+    switch (ctx.dex.requests.get(requestId)) {
+      case (?r) {
+        let refundBlock = switch (refundStatus) {
+          case (#refunded(block)) { ?block };
+          case (_) { r.refundBlock };
+        };
+        ctx.dex.requests.add(requestId, { r with refundStatus; refundBlock });
+      };
+      case null {};
+    };
+  };
+
+  // DQ: records the refund attempt of an approved request (deposit minus one
+  // TTTI-T fee, from the request deposit subaccount to the requester).
+  public func openPairRefund(ctx : DexContext, requestId : Nat) : ?Types.DexTransferAttempt {
+    let request = ctx.dex.requests.get(requestId) ?? (return null);
+    if (request.refundStatus != #inProgress or request.refundBlock != null) {
+      return null;
+    };
+    switch (ctx.transfers.pairRefunds.get(requestId)) {
+      case (?existing) { return ?existing };
+      case null {};
+    };
+    let fee = IcrcLib.fee(ctx.ledger);
+    if (request.depositAmount <= fee) {
+      return null;
+    };
+    let attempt = newDexAttempt(
+      ctx.retry,
+      #DQ,
+      null,
+      {
+        token = #tttiT;
+        from = DexLib.requestDepositAccount(ctx.canister);
+        to = { owner = request.requester; subaccount = null };
+        amount = Nat.sub(request.depositAmount, fee);
+        fee = ?fee;
+      },
+      nowNat64(),
+    );
+    ctx.transfers.pairRefunds.add(requestId, attempt);
+    ?attempt;
+  };
+
+  // DQ: sends the recorded refund on the in-process TTTI-T ledger and keeps
+  // the request refundStatus up to date. Caller holds the request lock.
+  public func sendPairRefund(ctx : DexContext, requestId : Nat) {
+    let request = ctx.dex.requests.get(requestId) ?? (return);
+    if (request.refundStatus != #inProgress) {
+      return;
+    };
+    let existing = switch (ctx.transfers.pairRefunds.get(requestId)) {
+      case (?a) { a };
+      case null { openPairRefund(ctx, requestId) ?? (return) };
+    };
+    let now = nowNat64();
+    let attempt = switch (dexNextAction(existing, now)) {
+      case (#done) {
+        switch (existing.outcome) {
+          case (#succeeded(block)) { setRefundStatus(ctx, requestId, #refunded(block)) };
+          case (_) {};
+        };
+        return;
+      };
+      case (#needsReview) {
+        setRefundStatus(ctx, requestId, #needsReview);
+        return;
+      };
+      case (#resend) { existing };
+      case (#newAttempt) { newDexAttempt(ctx.retry, #DQ, ?existing, existing.request, now) };
+    };
+    let sending = { attempt with sends = attempt.sends + 1 };
+    ctx.transfers.pairRefunds.add(requestId, sending);
+    let fee = sending.request.fee ?? IcrcLib.fee(ctx.ledger);
+    let result : DexSendResult = switch (
+      IcrcLib.transfer(
+        ctx.ledger,
+        ctx.canister,
+        ctx.canister,
+        {
+          from_subaccount = sending.request.from.subaccount;
+          to = sending.request.to;
+          amount = sending.request.amount;
+          fee = ?fee;
+          memo = ?sending.memo;
+          created_at_time = ?sending.created_at_time;
+        },
+      )
+    ) {
+      case (#Ok(block)) { #ok(block) };
+      case (#Err(#Duplicate({ duplicate_of }))) { #ok(duplicate_of) };
+      case (#Err(err)) { #err(err) };
+    };
+    let classified = applyDexResult(sending, result);
+    ctx.transfers.pairRefunds.add(requestId, classified);
+    switch (classified.outcome) {
+      case (#succeeded(block)) { setRefundStatus(ctx, requestId, #refunded(block)) };
+      case (_) {};
+    };
+  };
+
+  // One timer step of an #inProgress DD / DW: resend within 23 h, review
+  // after; never sent and too old -> #failed (nothing moved).
+  func dexTransferAction(t : Types.DexTransfer, now : Nat64) : RetryAction {
+    dexNextAction(t.attempt, now);
+  };
+
+  // Resends unknown DD / DW / DQ attempts within 23 h, marks them for review
+  // after 23 h, sends pending DQ attempts (new attempt after a known Err).
+  public func runDexRetries(ctx : DexContext) : async () {
+    let now = nowNat64();
+    let deposits = ctx.transfers.deposits.values().filter(func t = t.status == #inProgress).toArray();
+    for (t in deposits.values()) {
+      let key = dexLockKey(t.owner, t.token);
+      if (tryLock(ctx.locks, key)) {
+        try {
+          switch (dexTransferAction(t, now)) {
+            case (#resend) { ignore await sendDexDeposit(ctx, t.n) };
+            case (#needsReview) { ctx.transfers.deposits.add(t.n, { t with status = #needsReview }) };
+            case (#newAttempt) {
+              ctx.transfers.deposits.add(t.n, { t with status = #failed("Not sent within 23 h; nothing was taken") });
+            };
+            case (#done) {};
+          };
+        } catch (_) {} finally {
+          unlock(ctx.locks, key);
+        };
+      };
+    };
+    let withdrawals = ctx.transfers.withdrawals.values().filter(func t = t.status == #inProgress).toArray();
+    for (t in withdrawals.values()) {
+      let key = dexLockKey(t.owner, t.token);
+      if (tryLock(ctx.locks, key)) {
+        try {
+          switch (dexTransferAction(t, now)) {
+            case (#resend) { ignore await sendDexWithdrawal(ctx, t.n) };
+            case (#needsReview) { ctx.transfers.withdrawals.add(t.n, { t with status = #needsReview }) };
+            case (#newAttempt) {
+              DexLib.release(ctx.balances, t.owner, t.token, t.amount);
+              ctx.transfers.withdrawals.add(t.n, { t with status = #failed("Not sent within 23 h; the balance was given back") });
+            };
+            case (#done) {};
+          };
+        } catch (_) {} finally {
+          unlock(ctx.locks, key);
+        };
+      };
+    };
+    let requestIds = ctx.dex.requests.values().filter(func r = r.refundStatus == #inProgress).map(func r = r.id).toArray();
+    for (id in requestIds.values()) {
+      let key = dexRequestLockKey(id);
+      if (tryLock(ctx.locks, key)) {
+        try {
+          sendPairRefund(ctx, id);
+        } catch (_) {} finally {
+          unlock(ctx.locks, key);
+        };
+      };
+    };
+  };
+
+  // 10-minute recurring timer; armed on every install and upgrade.
+  public func startDexTimer<system>(ctx : DexContext) {
+    ignore Timer.recurringTimer<system>(
+      #seconds(TIMER_INTERVAL_SECONDS),
+      func() : async () { await runDexRetries(ctx) },
+    );
+  };
+
+  public func dexTransferView(ctx : DexContext, transfer : Types.DexTransfer, direction : DexTypes.DexTransferDirection) : DexTypes.DexTransferView {
+    let a = transfer.attempt;
+    {
+      n = transfer.n;
+      direction;
+      owner = transfer.owner;
+      token = transfer.token;
+      amount = transfer.amount;
+      ledgerAmount = a.request.amount;
+      fee = a.request.fee ?? dexFee(ctx, transfer.token);
+      from = a.request.from;
+      to = a.request.to;
+      memoText = a.memo.decodeUtf8() ?? "";
+      createdAtTimeNs = a.created_at_time;
+      attempt = a.attempt;
+      sends = a.sends;
+      status = transfer.status;
+      lastError = a.lastError;
+    };
+  };
+
+  // Deposits and withdrawals of `owner`, newest first.
+  public func dexTransfersOf(ctx : DexContext, owner : Principal) : [DexTypes.DexTransferView] {
+    let deposits = ctx.transfers.deposits.values().filter(func t = t.owner == owner).map(func t = dexTransferView(ctx, t, #deposit)).toArray();
+    let withdrawals = ctx.transfers.withdrawals.values().filter(func t = t.owner == owner).map(func t = dexTransferView(ctx, t, #withdrawal)).toArray();
+    deposits.concat(withdrawals).sort(func(x, y) = Nat.compare(y.n, x.n));
+  };
+
+  func dexReview(kind : TransferKind, id : Nat, owner : Principal, a : Types.DexTransferAttempt) : TransferReview {
+    {
+      kind;
+      purchaseId = id;
+      block = null;
+      collect = null;
+      token = a.request.token;
+      memoText = a.memo.decodeUtf8();
+      memoHex = ?hex(a.memo);
+      createdAtTimeNs = ?a.created_at_time;
+      amount = a.request.amount;
+      fee = a.request.fee;
+      destination = ?a.request.to;
+      sends = a.sends;
+      lastError = a.lastError;
+      buyer = ?owner;
+      depositIndex = null;
+      conversionId = null;
+      refundPurpose = null;
+      outcome = ?a.outcome;
+    };
+  };
+
+  // Every DD / DW in #needsReview (purchaseId = n) and every DQ to review
+  // (purchaseId = request id), with all fields.
+  public func dexToReview(ctx : DexContext) : [TransferReview] {
+    let deposits = ctx.transfers.deposits.values().filter(func t = t.status == #needsReview).map(func t = dexReview(#DD, t.n, t.owner, t.attempt)).toArray();
+    let withdrawals = ctx.transfers.withdrawals.values().filter(func t = t.status == #needsReview).map(func t = dexReview(#DW, t.n, t.owner, t.attempt)).toArray();
+    let refunds = ctx.dex.requests.values().filter(func r = r.refundStatus == #needsReview).filterMap(
+      func r = switch (ctx.transfers.pairRefunds.get(r.id)) {
+        case (?a) { ?dexReview(#DQ, r.id, r.requester, a) };
+        case null { null };
+      }
+    ).toArray();
+    deposits.concat(withdrawals).concat(refunds);
+  };
+
+  // DD: credits the balance once; DW: final debit; DQ: request refunded.
+  public func markDexArrived(ctx : DexContext, kind : TransferKind, id : Nat, block : Nat) : ReviewResult {
+    switch (kind) {
+      case (#DD) {
+        let t = ctx.transfers.deposits.get(id) ?? (return #err(#notFound));
+        if (t.status != #needsReview) { return #err(#notUnderReview) };
+        DexLib.credit(ctx.balances, t.owner, t.token, t.amount);
+        ctx.transfers.deposits.add(id, { t with status = #completed(block); attempt = { t.attempt with outcome = #succeeded(block) } });
+      };
+      case (#DW) {
+        let t = ctx.transfers.withdrawals.get(id) ?? (return #err(#notFound));
+        if (t.status != #needsReview) { return #err(#notUnderReview) };
+        DexLib.settleReserved(ctx.balances, t.owner, t.token, t.amount);
+        ctx.transfers.withdrawals.add(id, { t with status = #completed(block); attempt = { t.attempt with outcome = #succeeded(block) } });
+      };
+      case (#DQ) {
+        let r = ctx.dex.requests.get(id) ?? (return #err(#notFound));
+        if (r.refundStatus != #needsReview) { return #err(#notUnderReview) };
+        switch (ctx.transfers.pairRefunds.get(id)) {
+          case (?a) { ctx.transfers.pairRefunds.add(id, { a with outcome = #succeeded(block) }) };
+          case null {};
+        };
+        setRefundStatus(ctx, id, #refunded(block));
+      };
+      case (_) { return #err(#notApplicable) };
+    };
+    #ok;
+  };
+
+  // DD: nothing credited (#failed); DW: balance given back; DQ: new attempt
+  // (new memo and created_at_time) sent by the timer.
+  public func markDexNotArrived(ctx : DexContext, kind : TransferKind, id : Nat) : ReviewResult {
+    let text = "Not arrived (admin verification)";
+    switch (kind) {
+      case (#DD) {
+        let t = ctx.transfers.deposits.get(id) ?? (return #err(#notFound));
+        if (t.status != #needsReview) { return #err(#notUnderReview) };
+        ctx.transfers.deposits.add(id, { t with status = #failed(text); attempt = { t.attempt with outcome = #failed(text) } });
+      };
+      case (#DW) {
+        let t = ctx.transfers.withdrawals.get(id) ?? (return #err(#notFound));
+        if (t.status != #needsReview) { return #err(#notUnderReview) };
+        DexLib.release(ctx.balances, t.owner, t.token, t.amount);
+        ctx.transfers.withdrawals.add(id, { t with status = #failed(text); attempt = { t.attempt with outcome = #failed(text) } });
+      };
+      case (#DQ) {
+        let r = ctx.dex.requests.get(id) ?? (return #err(#notFound));
+        if (r.refundStatus != #needsReview) { return #err(#notUnderReview) };
+        let previous = ctx.transfers.pairRefunds.get(id) ?? (return #err(#notFound));
+        ctx.transfers.pairRefunds.add(id, newDexAttempt(ctx.retry, #DQ, ?previous, previous.request, nowNat64()));
+        setRefundStatus(ctx, id, #inProgress);
+      };
+      case (_) { return #err(#notApplicable) };
+    };
+    #ok;
+  };
+
+  // --- Mint owner revenue (OW) and one-time treasury sweep (SR) -------------
+
+  func ownerKey(token : Types.PayToken) : Text = TreasuryLib.tokenKey(token);
+
+  func addAccumulated(ctx : TransferContext, token : Types.PayToken, amount : Nat) {
+    let key = ownerKey(token);
+    ctx.ownerRevenue.accumulated.add(key, (ctx.ownerRevenue.accumulated.get(key) ?? 0) + amount);
+  };
+
+  func storeOwnerSend(ctx : TransferContext, s : OwnerTypes.OwnerSend) {
+    ctx.ownerRevenue.sends.add(s.id, { s with updatedAt = Time.now() });
+  };
+
+  func ownerSendActive(s : OwnerTypes.OwnerSend) : Bool {
+    switch (s.status) {
+      case (#pending or #failed(_)) { true };
+      case (#sent(_) or #needsReview) { false };
+    };
+  };
+
+  // Owner share of a mint (cost minus the 1/101 fee, in the paid token, held
+  // in `fromSubaccount` of the canister). With a destination: records an OW
+  // send (attempt before the first await) and returns it; without: adds the
+  // amount to ownerRevenue.accumulated and returns null. Amounts held in a
+  // subaccount are never accumulated (accumulated shares sit in the default
+  // account); the caller checks the destination first.
+  public func openOwnerSend(ctx : TransferContext, token : Types.PayToken, amount : Nat, source : OwnerTypes.OwnerSendSource, fromSubaccount : ?Blob) : ?OwnerTypes.OwnerSend {
+    if (amount == 0) {
+      return null;
+    };
+    let fee = PayTokenLib.expectedFee(token);
+    let dest = ctx.ownerRevenue.destinations.get(ownerKey(token));
+    switch (dest) {
+      case (?d) {
+        if (amount <= fee) {
+          if (fromSubaccount == null) { addAccumulated(ctx, token, amount) };
+          return null;
+        };
+        let request : TransferRequest = {
+          token;
+          from_subaccount = fromSubaccount;
+          to = d.account;
+          amount = Nat.sub(amount, fee); // the send's ledger fee is deducted
+          fee = ?fee;
+        };
+        let attempt = newAttempt(ctx.retry, #OW, null, request, nowNat64());
+        let id = ctx.ownerRevenue.nextSendId;
+        ctx.ownerRevenue.nextSendId += 1;
+        let now = Time.now();
+        let s : OwnerTypes.OwnerSend = {
+          id;
+          token;
+          amount;
+          source;
+          attempt;
+          status = #pending;
+          createdAt = now;
+          updatedAt = now;
+        };
+        ctx.ownerRevenue.sends.add(id, s);
+        ?s;
+      };
+      case null {
+        if (fromSubaccount == null) { addAccumulated(ctx, token, amount) };
+        null;
+      };
+    };
+  };
+
+  // One step of the rule for an active OW send. Caller holds the lock.
+  func stepOwner(ctx : TransferContext, id : Nat) : async () {
+    if (ctx.sale.salesPaused) {
+      return;
+    };
+    let s = ctx.ownerRevenue.sends.get(id) ?? (return);
+    if (not ownerSendActive(s)) {
+      return;
+    };
+    let now = nowNat64();
+    let attempt = switch (nextAction(s.attempt, now)) {
+      case (#done) {
+        switch (s.attempt.outcome) {
+          case (#succeeded(block)) { storeOwnerSend(ctx, { s with status = #sent(block) }) };
+          case (_) {};
+        };
+        return;
+      };
+      case (#needsReview) {
+        storeOwnerSend(ctx, { s with status = #needsReview });
+        return;
+      };
+      case (#resend) { s.attempt };
+      case (#newAttempt) {
+        // Only a new attempt may change the destination: the current one.
+        let dest = ctx.ownerRevenue.destinations.get(ownerKey(s.token)) ?? (return);
+        newAttempt(ctx.retry, #OW, ?s.attempt, { s.attempt.request with to = dest.account }, now);
+      };
+    };
+    // Recorded (with this send counted) before the await.
+    let sending = { attempt with sends = attempt.sends + 1 };
+    storeOwnerSend(ctx, { s with attempt = sending; status = #pending });
+    let result = await sendCounted(PayTokenLib.ledger(s.token), sending, describeFor(s.token));
+    let current = ctx.ownerRevenue.sends.get(id) ?? (return);
+    let status : OwnerTypes.OwnerSendStatus = switch (result.outcome) {
+      case (#succeeded(block)) { #sent(block) };
+      case (#failed(text)) { #failed(text) };
+      case (_) { #pending };
+    };
+    storeOwnerSend(ctx, { current with attempt = result; status });
+  };
+
+  // Sends (or resends identically within 23 h) the recorded OW send `id`.
+  public func sendOwner(ctx : TransferContext, id : Nat) : async () {
+    let key = lockKey(#OW, id);
+    if (not tryLock(ctx.locks, key)) {
+      return;
+    };
+    try {
+      await stepOwner(ctx, id);
+    } catch (_) {
+      // The attempt stays recorded; the timer applies the rule again.
+    } finally {
+      unlock(ctx.locks, key);
+    };
+  };
+
+  // Opens and sends an #accumulated OW send for `token` when a destination
+  // is configured and the accumulated amount covers the ledger fee.
+  public func flushOwnerAccumulated(ctx : TransferContext, token : Types.PayToken) : async () {
+    if (ctx.sale.salesPaused) {
+      return;
+    };
+    let key = ownerKey(token);
+    if (not ctx.ownerRevenue.destinations.containsKey(key)) {
+      return;
+    };
+    let amount = ctx.ownerRevenue.accumulated.get(key) ?? 0;
+    if (amount <= PayTokenLib.expectedFee(token)) {
+      return;
+    };
+    // Taken before the send is recorded, so it is never sent twice.
+    ctx.ownerRevenue.accumulated.remove(key);
+    switch (openOwnerSend(ctx, token, amount, #accumulated, null)) {
+      case (?s) { await sendOwner(ctx, s.id) };
+      case null {};
+    };
+  };
+
+  func setSweep(ctx : TransferContext, sweep : OwnerTypes.TreasurySweep) {
+    ctx.ownerRevenue.sweep := sweep;
+  };
+
+  func setSweepToken(ctx : TransferContext, token : Types.PayToken, balance : ?Nat, status : OwnerTypes.SweepTokenStatus) {
+    let sweep = ctx.ownerRevenue.sweep;
+    setSweep(ctx, { sweep with tokens = sweep.tokens.map(func(t : OwnerTypes.SweepToken) : OwnerTypes.SweepToken = if (t.token == token) { { t with balance; status } } else t) });
+  };
+
+  // One send of the recorded SR attempt (sends + 1). True once it succeeded.
+  func sendReserveTopUp(ctx : TransferContext, attempt : TransferAttempt) : async Bool {
+    let sending = { attempt with sends = attempt.sends + 1 };
+    setSweep(ctx, { ctx.ownerRevenue.sweep with reserveTopUp = ?sending });
+    let result = await sendCounted(PayTokenLib.ledger(#icp), sending, describeFor(#icp));
+    setSweep(ctx, { ctx.ownerRevenue.sweep with reserveTopUp = ?result });
+    switch (result.outcome) {
+      case (#succeeded(_)) {
+        await CyclesReserveLib.refreshReserveBalance(ctx.cyclesReserve, ctx.canister);
+        true;
+      };
+      case (_) { false };
+    };
+  };
+
+  // Once only: tops the cycles reserve up to 2 ICP from MINT-TREASURY-ICP
+  // (memo TTTI-SR-<n>). True when done (sent, or nothing to send).
+  func stepReserveTopUp(ctx : TransferContext) : async Bool {
+    let now = nowNat64();
+    switch (ctx.ownerRevenue.sweep.reserveTopUp) {
+      case (?a) {
+        switch (nextAction(a, now)) {
+          case (#done) { true };
+          case (#needsReview) { false }; // waits for the admin (To review)
+          case (#resend) { await sendReserveTopUp(ctx, a) };
+          case (#newAttempt) { await sendReserveTopUp(ctx, newAttempt(ctx.retry, #SR, ?a, a.request, now)) };
+        };
+      };
+      case null {
+        let ledger = PayTokenLib.ledger(#icp);
+        let treasuryBalance = switch (await PayTokenLib.balanceOf(ledger, TreasuryLib.mintTreasuryAccount(ctx.canister, #icp))) {
+          case (#ok(v)) { v };
+          case (#err(_)) { return false };
+        };
+        let reserveBalance = switch (await PayTokenLib.balanceOf(ledger, CyclesReserveLib.reserveAccount(ctx.canister))) {
+          case (#ok(v)) { v };
+          case (#err(_)) { return false };
+        };
+        // Re-checked after the awaits: never opened twice.
+        if (ctx.ownerRevenue.sweep.reserveTopUp != null or ctx.ownerRevenue.sweep.status != #toppingUpReserve) {
+          return false;
+        };
+        let fee = TreasuryLib.ICP_FEE;
+        let need = if (CyclesReserveLib.RESERVE_FLOOR_E8S > reserveBalance) Nat.sub(CyclesReserveLib.RESERVE_FLOOR_E8S, reserveBalance) else 0;
+        let available = if (treasuryBalance > fee) Nat.sub(treasuryBalance, fee) else 0;
+        let amount = Nat.min(need, available);
+        if (amount == 0) {
+          return true;
+        };
+        let request : TransferRequest = {
+          token = #icp;
+          from_subaccount = ?TreasuryLib.mintTreasurySubaccount(#icp);
+          to = CyclesReserveLib.reserveAccount(ctx.canister);
+          amount;
+          fee = ?fee;
+        };
+        let attempt = newAttempt(ctx.retry, #SR, null, request, nowNat64());
+        setSweep(ctx, { ctx.ownerRevenue.sweep with reserveTopUp = ?attempt; reserveTopUpE8s = amount });
+        await sendReserveTopUp(ctx, attempt);
+      };
+    };
+  };
+
+  // Sweep of one internal mint treasury. True when this token is finished.
+  func stepSweepToken(ctx : TransferContext, token : Types.PayToken) : async Bool {
+    let entry = ctx.ownerRevenue.sweep.tokens.find(func(t : OwnerTypes.SweepToken) : Bool = t.token == token) ?? (return true);
+    switch (entry.status) {
+      case (#nothingToSend or #sent(_)) { true };
+      case (#sending(id)) {
+        let s = ctx.ownerRevenue.sends.get(id) ?? (return false);
+        switch (s.status) {
+          case (#sent(_)) {
+            setSweepToken(ctx, token, entry.balance, #sent(id));
+            true;
+          };
+          case (_) { false }; // retried by runOwnerRetries / To review
+        };
+      };
+      case (#pending or #waitingDestination) {
+        let balance = switch (await PayTokenLib.balanceOf(PayTokenLib.ledger(token), TreasuryLib.mintTreasuryAccount(ctx.canister, token))) {
+          case (#ok(v)) { v };
+          case (#err(_)) { return false };
+        };
+        if (balance <= PayTokenLib.expectedFee(token)) {
+          setSweepToken(ctx, token, ?balance, #nothingToSend);
+          return true;
+        };
+        if (not ctx.ownerRevenue.destinations.containsKey(ownerKey(token))) {
+          setSweepToken(ctx, token, ?balance, #waitingDestination);
+          return false;
+        };
+        switch (openOwnerSend(ctx, token, balance, #treasurySweep, ?TreasuryLib.mintTreasurySubaccount(token))) {
+          case (?s) {
+            setSweepToken(ctx, token, ?balance, #sending(s.id));
+            await sendOwner(ctx, s.id);
+            switch (ctx.ownerRevenue.sends.get(s.id)) {
+              case (?done) {
+                switch (done.status) {
+                  case (#sent(_)) {
+                    setSweepToken(ctx, token, ?balance, #sent(s.id));
+                    true;
+                  };
+                  case (_) { false };
+                };
+              };
+              case null { false };
+            };
+          };
+          case null { false };
+        };
+      };
+    };
+  };
+
+  func stepSweep(ctx : TransferContext) : async () {
+    if (ctx.ownerRevenue.sweep.status == #notStarted) {
+      setSweep(ctx, {
+        ctx.ownerRevenue.sweep with
+        status = #toppingUpReserve;
+        startedAt = ?Time.now();
+        tokens = PayTokenLib.ALL.map(func(t : Types.PayToken) : OwnerTypes.SweepToken = { token = t; balance = null; status = #pending });
+      });
+    };
+    if (ctx.ownerRevenue.sweep.status == #toppingUpReserve) {
+      if (not (await stepReserveTopUp(ctx))) {
+        return;
+      };
+      setSweep(ctx, { ctx.ownerRevenue.sweep with status = #sending });
+    };
+    if (ctx.ownerRevenue.sweep.status == #sending) {
+      var finished = true;
+      for (token in PayTokenLib.ALL.values()) {
+        if (not (await stepSweepToken(ctx, token))) {
+          finished := false;
+        };
+      };
+      if (finished) {
+        setSweep(ctx, { ctx.ownerRevenue.sweep with status = #completed; completedAt = ?Time.now() });
+      };
+    };
+  };
+
+  // Runs the once-only treasury sweep step by step (top-up of the cycles
+  // reserve to 2 ICP from MINT-TREASURY-ICP, then one #treasurySweep OW send
+  // per token, waiting for missing destinations). No-op once #completed.
+  public func runTreasurySweep(ctx : TransferContext) : async () {
+    if (ctx.ownerRevenue.sweep.status == #completed) {
+      return;
+    };
+    let key = "SWEEP";
+    if (not tryLock(ctx.locks, key)) {
+      return;
+    };
+    try {
+      await stepSweep(ctx);
+    } catch (_) {
+      // State is recorded step by step; the next timer pass continues.
+    } finally {
+      unlock(ctx.locks, key);
+    };
+  };
+
+  // Retry pass for OW and SR (called by the 10-minute retry timer). The pause
+  // blocks owner sends; the reserve top-up (SR) continues.
+  public func runOwnerRetries(ctx : TransferContext) : async () {
+    await runTreasurySweep(ctx);
+    if (ctx.sale.salesPaused) {
+      return;
+    };
+    for (token in PayTokenLib.ALL.values()) {
+      await flushOwnerAccumulated(ctx, token);
+    };
+    let ids = ctx.ownerRevenue.sends.values().filter(ownerSendActive).map(func(s : OwnerTypes.OwnerSend) : Nat = s.id).toArray();
+    for (id in ids.values()) {
+      await sendOwner(ctx, id);
     };
   };
 };

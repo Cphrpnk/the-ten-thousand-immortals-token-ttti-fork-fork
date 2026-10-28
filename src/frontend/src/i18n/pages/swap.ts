@@ -8,7 +8,7 @@ import { defineDict } from "../core/dict";
 export const SWAP_TEXT = defineDict({
   en: {
     description:
-      "Swap between ICP, ckBTC, ckUSDC and ckUSDT through an ICPSwap pool, from your own wallet.",
+      "Swap ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT and the ICPSwap-listed tokens you add, through an ICPSwap pool, from your own wallet.",
     from: "From",
     to: "To",
     switchTokens: "Switch the two tokens",
@@ -73,10 +73,30 @@ export const SWAP_TEXT = defineDict({
     withdrawing: "Withdrawing…",
     withdrawDone: "Balance withdrawn to your wallet.",
     withdrawFailed: (detail: string) => `The withdrawal failed: ${detail}`,
+    feeError: "The token ledger fee could not be read. Try again.",
+    addToken: "Add a token",
+    addTokenLabel: "Symbol or ledger ID",
+    addTokenHint:
+      "Search a token listed on ICPSwap by symbol, or paste its ledger ID. Added tokens are kept in this browser and appear only in this selector.",
+    addTokenSubmit: "Add",
+    addTokenReading: "Reading the token ledger…",
+    addTokenListLoading: "Reading the ICPSwap token list…",
+    addTokenListError:
+      "The ICPSwap token list could not be read. Paste the ledger ID instead.",
+    addTokenNoMatch:
+      "No ICPSwap-listed token matches this symbol. Paste the ledger ID instead.",
+    addTokenInvalidId: "Invalid ledger ID.",
+    addTokenNotIcrc:
+      "This canister did not return ICRC-1 token metadata. It cannot be added.",
+    addTokenAlready: (symbol: string) => `${symbol} is already in the list.`,
+    addTokenDone: (symbol: string) => `${symbol} added.`,
+    addedTokens: "Added tokens",
+    removeToken: (symbol: string) => `Remove ${symbol}`,
+    closeAddToken: "Close",
   },
   fr: {
     description:
-      "Échangez entre ICP, ckBTC, ckUSDC et ckUSDT via un pool ICPSwap, depuis votre propre wallet.",
+      "Échangez ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT et les jetons listés sur ICPSwap que vous ajoutez, via un pool ICPSwap, depuis votre propre wallet.",
     from: "De",
     to: "Vers",
     switchTokens: "Inverser les deux jetons",
@@ -141,10 +161,30 @@ export const SWAP_TEXT = defineDict({
     withdrawing: "Retrait…",
     withdrawDone: "Solde retiré vers votre wallet.",
     withdrawFailed: (detail: string) => `Le retrait a échoué : ${detail}`,
+    feeError: "Les frais du ledger du jeton n'ont pas pu être lus. Réessayez.",
+    addToken: "Ajouter un jeton",
+    addTokenLabel: "Symbole ou ID de ledger",
+    addTokenHint:
+      "Cherchez un jeton listé sur ICPSwap par son symbole, ou collez l'ID de son ledger. Les jetons ajoutés sont conservés dans ce navigateur et n'apparaissent que dans ce sélecteur.",
+    addTokenSubmit: "Ajouter",
+    addTokenReading: "Lecture du ledger du jeton…",
+    addTokenListLoading: "Lecture de la liste des jetons ICPSwap…",
+    addTokenListError:
+      "La liste des jetons ICPSwap n'a pas pu être lue. Collez plutôt l'ID du ledger.",
+    addTokenNoMatch:
+      "Aucun jeton listé sur ICPSwap ne correspond à ce symbole. Collez plutôt l'ID du ledger.",
+    addTokenInvalidId: "ID de ledger invalide.",
+    addTokenNotIcrc:
+      "Ce canister n'a pas renvoyé de métadonnées de jeton ICRC-1. Il ne peut pas être ajouté.",
+    addTokenAlready: (symbol: string) => `${symbol} est déjà dans la liste.`,
+    addTokenDone: (symbol: string) => `${symbol} ajouté.`,
+    addedTokens: "Jetons ajoutés",
+    removeToken: (symbol: string) => `Retirer ${symbol}`,
+    closeAddToken: "Fermer",
   },
   es: {
     description:
-      "Intercambie entre ICP, ckBTC, ckUSDC y ckUSDT a través de un pool de ICPSwap, desde su propio wallet.",
+      "Intercambie ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT y los tokens listados en ICPSwap que añada, a través de un pool de ICPSwap, desde su propio wallet.",
     from: "De",
     to: "A",
     switchTokens: "Invertir los dos tokens",
@@ -211,10 +251,31 @@ export const SWAP_TEXT = defineDict({
     withdrawing: "Retirando…",
     withdrawDone: "Saldo retirado a su wallet.",
     withdrawFailed: (detail: string) => `La retirada falló: ${detail}`,
+    feeError:
+      "No se pudo leer la comisión del ledger del token. Inténtelo de nuevo.",
+    addToken: "Añadir un token",
+    addTokenLabel: "Símbolo o ID del ledger",
+    addTokenHint:
+      "Busque un token listado en ICPSwap por su símbolo o pegue el ID de su ledger. Los tokens añadidos se guardan en este navegador y solo aparecen en este selector.",
+    addTokenSubmit: "Añadir",
+    addTokenReading: "Leyendo el ledger del token…",
+    addTokenListLoading: "Leyendo la lista de tokens de ICPSwap…",
+    addTokenListError:
+      "No se pudo leer la lista de tokens de ICPSwap. Pegue el ID del ledger.",
+    addTokenNoMatch:
+      "Ningún token listado en ICPSwap coincide con este símbolo. Pegue el ID del ledger.",
+    addTokenInvalidId: "ID de ledger no válido.",
+    addTokenNotIcrc:
+      "Este canister no devolvió metadatos de token ICRC-1. No se puede añadir.",
+    addTokenAlready: (symbol: string) => `${symbol} ya está en la lista.`,
+    addTokenDone: (symbol: string) => `${symbol} añadido.`,
+    addedTokens: "Tokens añadidos",
+    removeToken: (symbol: string) => `Quitar ${symbol}`,
+    closeAddToken: "Cerrar",
   },
   "zh-Hans": {
     description:
-      "通过 ICPSwap 资金池，从您自己的钱包在 ICP、ckBTC、ckUSDC 和 ckUSDT 之间兑换。",
+      "通过 ICPSwap 资金池，从您自己的钱包兑换 ICP、TTTI-T、ckBTC、ckUSDC、ckUSDT 以及您添加的 ICPSwap 上架代币。",
     from: "从",
     to: "到",
     switchTokens: "互换两个代币",
@@ -276,10 +337,27 @@ export const SWAP_TEXT = defineDict({
     withdrawing: "正在提取…",
     withdrawDone: "余额已提取到您的钱包。",
     withdrawFailed: (detail: string) => `提取失败：${detail}`,
+    feeError: "无法读取代币账本费用。请重试。",
+    addToken: "添加代币",
+    addTokenLabel: "符号或账本 ID",
+    addTokenHint:
+      "按符号搜索 ICPSwap 上架的代币，或粘贴其账本 ID。添加的代币保存在此浏览器中，仅显示在此选择器中。",
+    addTokenSubmit: "添加",
+    addTokenReading: "正在读取代币账本…",
+    addTokenListLoading: "正在读取 ICPSwap 代币列表…",
+    addTokenListError: "无法读取 ICPSwap 代币列表。请改为粘贴账本 ID。",
+    addTokenNoMatch: "没有与此符号匹配的 ICPSwap 上架代币。请改为粘贴账本 ID。",
+    addTokenInvalidId: "账本 ID 无效。",
+    addTokenNotIcrc: "此 canister 未返回 ICRC-1 代币元数据，无法添加。",
+    addTokenAlready: (symbol: string) => `${symbol} 已在列表中。`,
+    addTokenDone: (symbol: string) => `已添加 ${symbol}。`,
+    addedTokens: "已添加的代币",
+    removeToken: (symbol: string) => `移除 ${symbol}`,
+    closeAddToken: "关闭",
   },
   "pt-BR": {
     description:
-      "Troque entre ICP, ckBTC, ckUSDC e ckUSDT por meio de um pool da ICPSwap, a partir da sua própria carteira.",
+      "Troque ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT e os tokens listados na ICPSwap que você adicionar, por meio de um pool da ICPSwap, a partir da sua própria carteira.",
     from: "De",
     to: "Para",
     switchTokens: "Inverter os dois tokens",
@@ -344,10 +422,31 @@ export const SWAP_TEXT = defineDict({
     withdrawing: "Sacando…",
     withdrawDone: "Saldo sacado para a sua carteira.",
     withdrawFailed: (detail: string) => `O saque falhou: ${detail}`,
+    feeError:
+      "Não foi possível ler a taxa do ledger do token. Tente novamente.",
+    addToken: "Adicionar um token",
+    addTokenLabel: "Símbolo ou ID do ledger",
+    addTokenHint:
+      "Pesquise um token listado na ICPSwap pelo símbolo ou cole o ID do ledger. Os tokens adicionados ficam salvos neste navegador e aparecem apenas neste seletor.",
+    addTokenSubmit: "Adicionar",
+    addTokenReading: "Lendo o ledger do token…",
+    addTokenListLoading: "Lendo a lista de tokens da ICPSwap…",
+    addTokenListError:
+      "Não foi possível ler a lista de tokens da ICPSwap. Cole o ID do ledger.",
+    addTokenNoMatch:
+      "Nenhum token listado na ICPSwap corresponde a este símbolo. Cole o ID do ledger.",
+    addTokenInvalidId: "ID de ledger inválido.",
+    addTokenNotIcrc:
+      "Este canister não retornou metadados de token ICRC-1. Ele não pode ser adicionado.",
+    addTokenAlready: (symbol: string) => `${symbol} já está na lista.`,
+    addTokenDone: (symbol: string) => `${symbol} adicionado.`,
+    addedTokens: "Tokens adicionados",
+    removeToken: (symbol: string) => `Remover ${symbol}`,
+    closeAddToken: "Fechar",
   },
   ko: {
     description:
-      "본인 지갑에서 ICPSwap 풀을 통해 ICP, ckBTC, ckUSDC, ckUSDT 간에 스왑합니다.",
+      "본인 지갑에서 ICPSwap 풀을 통해 ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT 및 추가한 ICPSwap 상장 토큰을 스왑합니다.",
     from: "보내는 토큰",
     to: "받는 토큰",
     switchTokens: "두 토큰 바꾸기",
@@ -411,10 +510,30 @@ export const SWAP_TEXT = defineDict({
     withdrawing: "출금 중…",
     withdrawDone: "잔액이 지갑으로 출금되었습니다.",
     withdrawFailed: (detail: string) => `출금에 실패했습니다: ${detail}`,
+    feeError: "토큰 원장 수수료를 읽을 수 없습니다. 다시 시도하세요.",
+    addToken: "토큰 추가",
+    addTokenLabel: "심볼 또는 원장 ID",
+    addTokenHint:
+      "ICPSwap에 상장된 토큰을 심볼로 검색하거나 원장 ID를 붙여넣으세요. 추가한 토큰은 이 브라우저에 저장되며 이 선택기에만 표시됩니다.",
+    addTokenSubmit: "추가",
+    addTokenReading: "토큰 원장을 읽는 중…",
+    addTokenListLoading: "ICPSwap 토큰 목록을 읽는 중…",
+    addTokenListError:
+      "ICPSwap 토큰 목록을 읽을 수 없습니다. 대신 원장 ID를 붙여넣으세요.",
+    addTokenNoMatch:
+      "이 심볼과 일치하는 ICPSwap 상장 토큰이 없습니다. 대신 원장 ID를 붙여넣으세요.",
+    addTokenInvalidId: "유효하지 않은 원장 ID입니다.",
+    addTokenNotIcrc:
+      "이 canister가 ICRC-1 토큰 메타데이터를 반환하지 않았습니다. 추가할 수 없습니다.",
+    addTokenAlready: (symbol: string) => `${symbol}은 이미 목록에 있습니다.`,
+    addTokenDone: (symbol: string) => `${symbol}을 추가했습니다.`,
+    addedTokens: "추가한 토큰",
+    removeToken: (symbol: string) => `${symbol} 제거`,
+    closeAddToken: "닫기",
   },
   "pa-Guru": {
     description:
-      "ਆਪਣੇ ਵਾਲਿਟ ਤੋਂ ICPSwap ਪੂਲ ਰਾਹੀਂ ICP, ckBTC, ckUSDC ਅਤੇ ckUSDT ਵਿਚਕਾਰ ਸਵੈਪ ਕਰੋ।",
+      "ਆਪਣੇ ਵਾਲਿਟ ਤੋਂ ICPSwap ਪੂਲ ਰਾਹੀਂ ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT ਅਤੇ ਤੁਹਾਡੇ ਵੱਲੋਂ ਜੋੜੇ ICPSwap-ਸੂਚੀਬੱਧ ਟੋਕਨ ਸਵੈਪ ਕਰੋ।",
     from: "ਤੋਂ",
     to: "ਨੂੰ",
     switchTokens: "ਦੋਵੇਂ ਟੋਕਨ ਬਦਲੋ",
@@ -478,6 +597,26 @@ export const SWAP_TEXT = defineDict({
     withdrawing: "ਕਢਵਾਇਆ ਜਾ ਰਿਹਾ ਹੈ…",
     withdrawDone: "ਬਕਾਇਆ ਤੁਹਾਡੇ ਵਾਲਿਟ ਵਿੱਚ ਕਢਵਾਇਆ ਗਿਆ।",
     withdrawFailed: (detail: string) => `ਕਢਵਾਉਣਾ ਅਸਫਲ ਰਿਹਾ: ${detail}`,
+    feeError: "ਟੋਕਨ ਲੈਜਰ ਦੀ ਫੀਸ ਪੜ੍ਹੀ ਨਹੀਂ ਜਾ ਸਕੀ। ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+    addToken: "ਟੋਕਨ ਜੋੜੋ",
+    addTokenLabel: "ਚਿੰਨ੍ਹ ਜਾਂ ਲੈਜਰ ID",
+    addTokenHint:
+      "ICPSwap 'ਤੇ ਸੂਚੀਬੱਧ ਟੋਕਨ ਨੂੰ ਚਿੰਨ੍ਹ ਨਾਲ ਖੋਜੋ, ਜਾਂ ਉਸਦੀ ਲੈਜਰ ID ਪੇਸਟ ਕਰੋ। ਜੋੜੇ ਟੋਕਨ ਇਸ ਬ੍ਰਾਊਜ਼ਰ ਵਿੱਚ ਰੱਖੇ ਜਾਂਦੇ ਹਨ ਅਤੇ ਸਿਰਫ਼ ਇਸ ਚੋਣਕਾਰ ਵਿੱਚ ਦਿਖਦੇ ਹਨ।",
+    addTokenSubmit: "ਜੋੜੋ",
+    addTokenReading: "ਟੋਕਨ ਲੈਜਰ ਪੜ੍ਹਿਆ ਜਾ ਰਿਹਾ ਹੈ…",
+    addTokenListLoading: "ICPSwap ਟੋਕਨ ਸੂਚੀ ਪੜ੍ਹੀ ਜਾ ਰਹੀ ਹੈ…",
+    addTokenListError:
+      "ICPSwap ਟੋਕਨ ਸੂਚੀ ਪੜ੍ਹੀ ਨਹੀਂ ਜਾ ਸਕੀ। ਇਸਦੀ ਥਾਂ ਲੈਜਰ ID ਪੇਸਟ ਕਰੋ।",
+    addTokenNoMatch:
+      "ਕੋਈ ICPSwap-ਸੂਚੀਬੱਧ ਟੋਕਨ ਇਸ ਚਿੰਨ੍ਹ ਨਾਲ ਮੇਲ ਨਹੀਂ ਖਾਂਦਾ। ਇਸਦੀ ਥਾਂ ਲੈਜਰ ID ਪੇਸਟ ਕਰੋ।",
+    addTokenInvalidId: "ਅਵੈਧ ਲੈਜਰ ID।",
+    addTokenNotIcrc:
+      "ਇਸ canister ਨੇ ICRC-1 ਟੋਕਨ ਮੈਟਾਡੇਟਾ ਨਹੀਂ ਦਿੱਤਾ। ਇਸਨੂੰ ਜੋੜਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ।",
+    addTokenAlready: (symbol: string) => `${symbol} ਪਹਿਲਾਂ ਹੀ ਸੂਚੀ ਵਿੱਚ ਹੈ।`,
+    addTokenDone: (symbol: string) => `${symbol} ਜੋੜਿਆ ਗਿਆ।`,
+    addedTokens: "ਜੋੜੇ ਟੋਕਨ",
+    removeToken: (symbol: string) => `${symbol} ਹਟਾਓ`,
+    closeAddToken: "ਬੰਦ ਕਰੋ",
   },
 });
 

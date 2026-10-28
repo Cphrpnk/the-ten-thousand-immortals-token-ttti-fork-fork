@@ -20,9 +20,7 @@
 - Amounts accept both '.' and ',' as the decimal separator
 - Ne toucher à aucun solde ni bloc existant
 - Backend limited to the contract's essentials
-- Withdrawals of reserve excess go only to the configured treasury account
 - The 2 ICP floor always stays available for cycles
-- The TTTI-T transfer-fee collector account stays non-withdrawable; only the ICP cycles reserve excess above the floor can be moved, and only to the treasury
 - Ne supprimer rien d'autre que ce qui est explicitement listé
 - Ne modifier aucun solde ni bloc existant
 - Phrases du site et du whitepaper reprises mot pour mot telles que fournies
@@ -32,9 +30,6 @@
 - State facts only; no promotional wording
 - Plan presented before building when the user asks for it
 - 1 % de frais partout
-- Envoyer les frais en ckBTC en premier pour garder un maximum d'ICP pour les cycles
-- Envoi direct des ck à la trésorerie pour l'instant
-- Retrait de l'excédent ICP bloqué jusqu'à ce que les cycles soient couverts
 - Répondre en français
 - Textes factuels, non promotionnels et minimaux
 - English is authoritative; translations state 'In case of conflict, the English version prevails.'
@@ -131,6 +126,27 @@
 - Ne toucher à rien d'autre que les points du lot 9 ; partir du code actuel
 - Ne pas nommer le créateur
 - Le nom du portefeuille est traduit dans les 7 langues : Portefeuille en français
+- Keep the hamburger menu visible on desktop
+- Alléger l'interface de l'en-tête, pas l'alourdir : liens de menu sous le hamburger, seul le bouton Mint TTTI-T reste dans la barre
+- L'échange via ICPSwap inclut TTTI-T (paires TTTI-T/ICP et TTTI-T/ckBTC) ; les jetons ajoutés le sont uniquement dans le sélecteur de l'échange
+- Ne toucher à rien d'autre que les points du lot 1 du DEX ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261112_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Écran admin en anglais ; aucun changement visuel au-delà du strict nécessaire
+- Le protocole ne passe jamais d'ordre lié au prix et ne crée aucun TTTI-T pour les pools
+- Ne toucher à rien d'autre que les points du lot 2 du DEX ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261113_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Sous-compte de dépôt DEX sans secret, recalculable par tous, comme ICPSwap
+- Ne toucher à rien d'autre que les points du lot 3 du DEX ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261114_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Textes factuels dans les 7 langues
+- Ne toucher à rien d'autre que les points du lot 4 du DEX ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261115_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Écran admin en anglais ; textes factuels dans les 7 langues ; pas de mot « APY », rendement constaté seulement
+- Le protocole ne passe jamais d'ordre lié au prix
+- Ne toucher à rien d'autre que les points (1) à (5) de la correction du revenu du mint ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261116_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Écran admin en anglais ; textes factuels dans les 7 langues ; créateur non nommé
+- Les revenus du mint (100/101) vont automatiquement au wallet de destination configuré par l'admin pour chaque jeton
 
 ## Accepted Requirements
 
@@ -151,7 +167,6 @@
 - TTTI-T section with the stated terms
 - Creator disclosures as stated, creator unnamed; creator does not list TTTI on any other exchange
 - Footer without 'not an investment, a security'; keep no returns, final purchases, afford to lose
-- Remove the adjustable seller margin; small fixed fee to pay for the canister's own cycles, with an estimate of the needed margin
 - No fallback rate; refuse purchase when the rate is stale
 - No one, admin included, can mint tokens outside the buy-to-mint logic
 - Collected TTTI transfer fees are reissued only at the end, after fresh minting reaches the cap
@@ -178,13 +193,9 @@
 - Admin shows the rate source in force, the last fetch error (exact text and date) and the last success date
 - Buy page: 'Rate for this hour: 1 ICP = X USD (source) · valid until HH:MM'; 'Refreshed at purchase' removed
 - refreshPolicy, oracleSources, corrected whitepaper and FAQ carry the hourly-rate text
-- RESERVE_FLOOR_E8S = 2 ICP always kept for cycles; the excess above it is withdrawable
-- 6-hour timer that tops up the canister's cycles via the CMC (transfer with TPUP memo, block_index saved before notify_top_up, notify retried without a second transfer) when under 3 T cycles
 - The top-up may use reserve funds below the floor
-- Admin-only withdrawReserveExcess, capped at reserve − floor − ICP fee, to the treasury account only, refused without a ledger call if over the cap; shared lock with the top-up; each withdrawal logged
 - Public getCyclesStatus query with cycles, threshold, reserve, floor, excess, last top-up and withdrawal history
 - Timers re-armed on every install and upgrade
-- Admin card showing the reserve, the withdrawable excess and a withdraw button
 - Given fee text; whitepaper and Technical details carry the exact rule and the reserve subaccount
 - Suppression des profils (getCallerUserProfile, saveCallerUserProfile, profileState, ProfileSetup.tsx, hooks)
 - Suppression de getMySetupStatus, setMySetupStatus et setupStatuses ; « flow déjà vu » gardé dans localStorage (try/catch)
@@ -218,10 +229,6 @@
 - Achat de TTTI-T avec ckUSDC et ckUSDT (les deux stablecoins sur ICP), sur le même principe que l'achat en ICP
 - Whitepaper et textes du site ajustés à la réalité des jetons de paiement et des frais
 - Frais de 1 % partout (ICP, ckBTC, ckUSDC, ckUSDT)
-- La part des frais ICP non convertie en cycles reste un solde ICP transférable
-- Envoyer les frais en ckBTC en premier pour garder un maximum d'ICP pour les cycles
-- Envoi direct des ck à la trésorerie pour l'instant
-- Retrait de l'excédent ICP bloqué jusqu'à ce que les cycles soient couverts
 - Achat BTC → ckBTC → TTTI-T avec adresse Bitcoin par acheteur et QR code
 - Conversion BTC → ckBTC seule dans le portefeuille, ckBTC dans le wallet de l'utilisateur
 - Widget de suivi de la progression pour les deux parcours
@@ -322,7 +329,6 @@
 - Textes du rachat ajustés pour toutes les options de compte de financement, au libre choix de l'admin
 - Équivalent en USD affiché dans l'UI du rachat pour expliquer la règle du plus bas des deux
 - Explication claire, avant d'appuyer sur le bouton, de ce que l'utilisateur signe comme échange
-- Échange entre les jetons acceptés (ICP, ckBTC, ckUSDC, ckUSDT) via ICPSwap uniquement, pour l'instant
 - Le bouton Échanger du portefeuille ouvre l'échange
 - Une fonction d'achat distincte dans le portefeuille, en plus de l'échange
 - Achat (Onramper) disponible pour tous les jetons, pas seulement ICP
@@ -400,6 +406,58 @@
 - White paper corrigé : « No guaranteed price support. » et la nouvelle phrase sur le rachat ; l'original archivé ne change pas
 - getApiDoc, entités OQL et mocks mis à jour
 - Mise en aperçu seulement, jamais en version publique
+- Paires TTTI-T/ckBTC et TTTI-T/ICP d'ICPSwap ajoutées au widget d'échange
+- Ajout de jetons listés sur ICPSwap pour créer d'autres paires dans l'échange
+- Options de menu retirées de la barre d'en-tête et placées sous le hamburger, sauf le bouton Mint TTTI-T
+- Module de pools v2 à produit constant séparé, dans le contrat actuel
+- Registre de 7 paires vides : TTTI-T/ICP, TTTI-T/ckBTC, TTTI-T/ckUSDC, TTTI-T/ckUSDT, ckBTC/ICP, ckUSDC/ICP, ckUSDT/ICP
+- Pool vide « en attente de première liquidité »
+- Liquidité minimale bloquée : 0,0001 TTTI-T pour les paires TTTI-T, minimum par jeton fixé par l'admin pour les paires utilitaires ; premier dépôt ≥ 10 fois ce minimum
+- Demande de paire avec ID du ledger, jeton en face, palier de frais, message et dépôt de 0,0005 TTTI-T
+- Contrôles automatiques : ICRC-1/2, métadonnées, paire pas déjà existante, symbole copié signalé
+- 1 à 2 demandes en attente au plus par utilisateur et délai après un refus
+- Statuts publics en attente / approuvée / refusée avec le motif
+- Refus : dépôt gardé ; approbation : dépôt rendu (memo DQ), pool créé, badge « nouvelle paire » pendant 30 jours, l'approbation n'est pas une recommandation
+- Retrait d'une paire par l'admin : échanges et dépôts bloqués, retraits LP toujours ouverts
+- Le protocole ne passe aucun ordre lié au prix
+- Mise en aperçu seulement avec le numéro de version
+- Un sous-compte DEX-POOL-<id> par pool, avec un préfixe séparé qui ne chevauche aucun compte existant
+- Un sous-compte de dépôt par utilisateur, tiré de son principal sans secret et recalculable par tous
+- Soldes internes par utilisateur et par jeton (TTTI-T, ICP, ckBTC, ckUSDC, ckUSDT)
+- Dépôt DD pris par le contrat avec l'autorisation ICRC-2 de l'utilisateur
+- Retrait DW vers l'utilisateur
+- Remboursement DQ du dépôt de 0,0005 TTTI-T d'une demande de paire approuvée
+- Memos TTTI-<préfixe>-<n>, avec created_at_time et memo pour la déduplication via lib/retry.mo
+- Positions et soldes publics, avec le texte « Les positions de liquidité sont publiques et liées à ton identifiant sur TTTI. » et la mention que le dépôt reste visible sur la chaîne
+- Nouveaux textes d'interface dans les 7 langues
+- Lot 2 du DEX mis en aperçu seulement, avec le numéro de version
+- Pool vide approuvé « en remplissage » : plusieurs utilisateurs apportent de la liquidité ; échanges fermés jusqu'à 100 USD au total (deux côtés), ouverture dès 100 USD
+- Valeur USD : TTTI-T à 10 000 USD ; autres jetons au taux horaire valable 1 h + 5 min ; taux absent ou expiré : pas d'ouverture, jauge « valeur momentanément indisponible »
+- Le premier apport fixe le rapport ; les apports suivants le suivent ; prix ICPSwap affiché comme repère, avertissement au-delà de 2 % d'écart
+- Jauge sur chaque carte de pool, par ex. « 37 / 100 USD — encore 63 USD pour ouvrir le pool », dans les 7 langues
+- Les minimums existants restent valables
+- Ajout et retrait de liquidité depuis les soldes internes
+- Parts LP v2 : √(A×B) au premier dépôt, parts minimales au contrat pour toujours
+- Gels par position : 24 h minimum, jusqu'à 5 ans, prolongeables, jamais raccourcissables
+- Positions du créateur/admin soumises aux mêmes règles et marquées « créateur » ; aucune fonction admin sur les positions des autres
+- Paire retirée : retraits ouverts même pour les positions gelées
+- Positions publiques (principal, montant, gel, date de déblocage)
+- Devis et échanges avec slippage et date limite de 5 minutes, seulement sur un pool ouvert (≥ 100 USD)
+- Frais de 0,3 % pour les 7 paires de départ, paliers 0,05 / 0,3 / 1 % pour les paires ajoutées ; conversions du contrat gratuites
+- Arrondis toujours en faveur du pool ; pas de prix instantané comme oracle
+- Nouveaux textes dans les 7 langues, écran admin en anglais
+- Lot 3 du DEX mis en aperçu seulement, avec le numéro de version
+- Autonomie = réserve de cycles ÷ la plus haute des moyennes de consommation sur 7 et 30 jours ; cible 90 jours
+- Pas de rachat ni de soutien de prix ; rendement constaté seulement, pas d'« APY »
+- Lot 4 du DEX mis en aperçu seulement, avec le numéro de version
+- Le mint encaisse 101 pour 100 ; 100/101 partent automatiquement, dans le jeton payé, vers un wallet de destination configuré par l'admin pour chaque jeton, avec historique et statut des envois
+- Sans destination configurée, la part s'accumule puis part dès la configuration ; envois via lib/retry.mo
+- Les fonds déjà présents dans les trésoreries internes du mint retournent au propriétaire, après avoir complété une fois la réserve de cycles jusqu'à 2 ICP avec l'ICP qu'elles contiennent
+- Frais de 1/101 en deux moitiés, dans le jeton payé, toujours pour la paire TTTI-T la moins liquide : moitié A aux LP au prorata (mise de côté s'il n'y a aucun LP), moitié B en liquidité permanente
+- Sommes mises de côté accumulées jusqu'à 0,001 TTTI-T, puis 50 % échangés en TTTI-T (ICPSwap, puis pools natifs) et appariés aux 50 % restants ; taux absent ou expiré : attente ; slippage borné ; jamais conditionné au prix ; aucun TTTI-T créé
+- Frais d'échange natifs : 70 % aux LP, 30 % en liquidité permanente, rien aux cycles ; suppression de DC, de la part cycles dynamique, du bonus des LP gelés payé sur les frais d'échange (bonus gagnés gardés) et de l'allocation hebdomadaire
+- Seuil de recharge des cycles via le CMC relevé de 3 T à 20 T
+- Textes dans les 7 langues, getApiDoc et contrat simulé mis à jour ; nouvelle migration après 20261116_000000 ; mise en aperçu seulement avec le numéro de version
 
 ## Verified Commands
 
@@ -409,28 +467,28 @@
 
 ## Learnings
 
-- Frontend lot 5: lib/buyback.ts canCancelBuyback, payoutOutcomeLabel, cancelBlockTarget; shared components/buyback/BuybackCancelButton.tsx; buyback slider cap uses balance minus 2 TTTI-T fees, or 3 when an approve is needed.
-- Known minor: markBuybackCancelled refuses only when an attempt succeeded, not when a legacy record has an attempt with unknown outcome.
-- Migration 20261110_000000.mo (lot 6: cyclesReserve.pendingTopUp, reservedReconciliations) is the latest; never modify it once in draft; any new migration must sort after it.
-- Lot 6 pause guards: buyback-api (requestBuyback, retryBuybackPayout, cancelBuyback return #salesPaused first), BuybackLib.runRetries(ctx, sale), RetryLib step functions and runRetries, stepBtcRefund, retryBtcCosts; runTopUp has no pause guard by design.
-- Cycles top-up attempt is cyclesReserve.pendingTopUp (TPUP memo, 23 h resend then needsReview); ReserveLock is only { var busy }; a needsReview attempt blocks new top-ups and reserve withdrawals and no admin endpoint resolves it yet (known minor).
-- getUpgradeReadiness and reconcileReserved live in mixins/upgrade-readiness-api.mo; reconcileReserved is the only place besides RetryLib traces that writes sale.reserved; OQL entities reservedReconciliation and cyclesTopUpAttempt are admin-only.
-- Frontend lot 6: components/admin/UpgradeReadinessCard.tsx and hooks/useUpgradeReadiness.ts mounted in AdminPage; errSalesPaused in i18n/pages/buyback.ts for 7 languages.
-- Migration 20261111_000000.mo (lot 7: removes BTC trackings without deposits, touches only btcDeposits) is the latest; never modify it once in draft; any new migration must sort after it.
-- Lot 7: BTC address endpoints store nothing and return an unsaved #addressShown tracking; checks with no deposit return #Ok with an unsaved tracking; a tracking is stored only when a check detects a deposit; the 600 s timer polls only trackings with deposits, purchases first then most recently active.
-- Lot 7 frontend: panels show checkMutation.data ?? getAddressMutation.data before a deposit; useQueries rememberBtcAddressShown/btcAddressShownBefore (localStorage ttti.btcAddressShown.<path>.<principal>) re-fetches the address on return; keep-page-open sentence key in BUY_BTC_TEXT of i18n/pages/buy.ts.
-- Known minor: users whose address was shown before lot 7 have no localStorage hint, so one click on Get address restores it.
-- Visual QA cannot reach the BTC deposit screen anonymously; verify deposit-screen text by source review.
-- Migration 20261112_000000.mo (lot 8: purchaseAcknowledgements Int -> { acceptedAt; version = 1 }) is the latest; never modify it once in draft; any new migration must sort after it.
-- Lot 8: SaleLib.CURRENT_ACK_VERSION = 2; hasAccepted compares the stored version, covering purchaseWith, purchaseFromDeposit, purchaseAddress and checkPurchase; getMyPurchaseAcknowledgement keeps { accepted; acceptedAt } and reports accepted only for the current version.
-- Lot 8 frontend: browser key ttti.walletAck.v2.<principal> in hooks/useSignerWallet.ts; simulated contract stores { acceptedAt; version }, seeded at version 1, ACK_VERSION 2n.
-- With a stored BTC purchase tracking, checkPurchase skips the ack check, but purchaseFromDeposit still refuses version 1 before taking any ckBTC.
-- Anonymous /buy does not render the six acknowledgements; verify acknowledgement text changes by source review.
-- Lot 9: caffeineai-oql 0.8.0 Entity.manual has no description field; OQL buyback wording lives in getApiDoc only, main.mo unchanged.
-- Lot 9: BuybackResult shows resultPayoutFailed only for legacy records; other payoutFailed records show resultEscrowPayoutFailed (i18n/pages/buyback.ts).
-- Lot 9: corrected white paper creator disclosures are JSX in WhitePaperPage.tsx; archived const original stays separate and unchanged.
-- Known minor: Korean disclosure1 in landing.ts uses 되사기 for buyback while buyback.ts uses 환매.
-- /exchange redirects to /buy; the anonymous buyback section renders there and can be checked visually.
-- Wallet name translated: navWallet (i18n/common/layout.ts), WALLET title (i18n/pages/wallet.ts) and FAQ whereLink (i18n/pages/landing.ts) use fr Portefeuille, es Billetera, pt-BR Carteira, zh-Hans 钱包, ko 지갑, pa-Guru ਵਾਲਿਟ; en Wallet.
-- Korean disclosure1 in landing.ts now uses 환매 like buyback.ts.
-- Known minor: i18n/pages/buy.ts line 401 (ko) still uses 되살; French common-noun 'wallet' remains in many dictionary strings (e.g. 'Connecter mon wallet').
+- Known minor: public lockedSharesRule in i18n/pages/dex.ts omits sqrt(A x B); only the backend LOCKED_SHARES_STATEMENT includes it.
+- Migration 20261114_000000.mo (DEX lot 2: refundStatus from refundBlock, empty dexBalances and dexTransfers) is the latest; never modify it once in draft; any new migration must sort after it.
+- DEX lot 2 backend: per-user deposit subaccount [0xDD, len, principal bytes, zero pad] (DexLib.userDepositSubaccount); endpoints getDexTokens, getDexDepositAccount, getDexPoolAccount, getDexBalances, getDexTransfers, depositToDex, withdrawFromDex.
+- DEX lot 2 retry: lib/retry.mo has #DD/#DW/#DQ with DexContext, dexLockKey(owner, token) shared by endpoints and runDexRetries; DQ memo uses global n, pairRefunds keyed by request id.
+- DEX lot 2 frontend: hooks useDexTokens/useDexBalances/useDexTransfers/useDepositToDex/useWithdrawFromDex in hooks/useDex.ts; components/dex/DexBalancesPanel, DexAmountDialog, DexBalanceLookup, DexTransfersList, DexDepositSubaccount; ToReviewCard handles DD/DW/DQ.
+- Known minor: mocks/backend.ts builds the DQ memo as TTTI-DQ-<request id> instead of the backend global n.
+- Migration 20261115_000000.mo (DEX lot 3: #awaitingFirstLiquidity becomes #filling, new pool numbers reserve0/1, totalShares, lockedShares, protocolFee0/1 start at 0, positions empty) is the latest; never modify it once in draft; any new migration must sort after it.
+- DEX lot 3 backend: DexApi mixin receives oracle and tokenRates (private usdRateOf); lib/dex.mo has usdGauge, effectiveStatus, refreshOpening, quoteAddLiquidity, addLiquidity, removeLiquidity, extendLock, quoteSwap, swap, amountOut, splitFee, isqrt; endpoints quoteAddLiquidity, addLiquidity, removeLiquidity, extendLock, getDexPosition, listPoolPositions, listDexPositionsOf, quoteSwap, swap.
+- DEX lot 3: first-deposit lockedShares stay in pool.totalShares with no position; swap fee taken from tokenIn, 80 % stays in reserves, 20 % in protocolFee0/1 outside reserves.
+- DEX lot 3 frontend: components/dex AddLiquidityDialog, SwapDialog, PoolPositionsDialog, MyPositions (under DexBalancesPanel), ExtendLockDialog, IcpswapReference, LockDurationPicker; PoolCard opens them via onAction.
+- Mock DEX lot 3 seeds TTTI-T/ckUSDT at 37/100 USD; added pair TCFHR/ICP shows the value momentarily unavailable gauge.
+- Known minor (lot 3): extendLock caps at now + 5 years instead of createdAt + 5 years; a pool opened only on read is not saved as #active until an add or swap.
+- Known minor (lot 3): IcpswapReference compares the token0 side only; ExtendLockDialog keeps the old unlock date until reopened.
+- DEX lot 4: fee conversions move funds on the ledgers (fee token from source pool to the ICP pool subaccount, then ICP to DEX-PROTOCOL-FEES-ICP-0000000001); DL claims and DC sends are paid from that subaccount; cycles ICP is held in cyclesHeldE8s until sent with memo TTTI-DC.
+- Mint forwards (FW) in lib/retry.mo forwardPlan target TreasuryLib.mintTreasuryAccount(ctx.canister, token); legacy external accounts are read-only.
+- Motoko module-level public let must be static literals, not expressions using other modules' constants.
+- mocks/backend.ts mockUpgradeReadiness must include bonusClaimsInFlight, protocolFeeLocks and dcSendsInFlight.
+- formatIcpE8s already appends ' ICP'; do not add the unit again.
+- Lot 4 migration is migrations/20261116_000000.mo; TTTI-T from refused pair-request deposits is not yet tracked for the weekly allocation.
+- Mint revenue: 100/101 of each mint is sent in the paid token to the admin-set owner destination per token (OwnerDestinationsCard, OwnerSendsCard, TreasurySweepCard in components/admin); it accumulates when no destination is set.
+- Mint fee 1/101 is routed by protocol-fees.mo routeMintFee to the lowest-liquidity TTTI-T pair of the paid token; injection gate planFor; pools UI MintFeePanel and SetAsideInjections.
+- Native swap fees split 70% LPs / 30% permanent liquidity; DC batches, the dynamic cycles share and the weekly allocation are read-only history only.
+- mocks/backend.ts mockUpgradeReadiness must include ownerSendsInFlight, sweepStatus, mintFeeClaimsInFlight and injectionsInFlight.
+- Cycles top-up threshold is 20 T cycles; the 2 ICP floor is unchanged.
+- MintPaymentBreakdown needs a signed-in quote on /buy; visual QA while signed out cannot reach it.

@@ -21,6 +21,7 @@ import CyclesReserveLib "cycles-reserve";
 import CanisterInfoLib "canister-info";
 import CkbtcMinterLib "ckbtc-minter";
 import RetryLib "retry";
+import ProtocolFeesLib "protocol-fees";
 
 // TTTI-T sale: status, buy-to-mint purchase pipeline, delivery addresses and
 // the balance snapshot export.
@@ -61,6 +62,8 @@ module {
     cyclesReserve : CyclesReserveLib.CyclesReserveStore;
     // Retry module context for the purchase's forward (FW) and reserve share (SH).
     transfers : RetryLib.TransferContext;
+    // Mint revenue correction: routes the 1/101 fee (ProtocolFeesLib.routeMintFee).
+    protocolFees : ProtocolFeesLib.ProtocolFeeContext;
   };
 
   // Minimum purchase: 0.0001 TTTI-T (1.01 USD with the 1% fee in ICP, ckBTC,
@@ -98,7 +101,8 @@ module {
           minimumUsdE8 = PayTokenLib.minimumUsdE8(token);
           buyerPriceUsd = PayTokenLib.buyerPriceUsd(token);
           fundsCycles = PayTokenLib.fundsCycles(token);
-          treasuryConfigured = TreasuryLib.tokenAccount(treasury, token) != null;
+          // Mint revenue: the owner share goes to the owner destination or accumulates.
+          treasuryConfigured = true;
           priceUsdE8 = rate.usdE8;
           priceSource = rate.source;
           priceFetchedAt = rate.fetchedAt;
@@ -256,10 +260,6 @@ module {
     if (treasury.config == null) {
       return ?refusal(#notConfigured, "The TTTI-T sale is not configured yet");
     };
-    if (TreasuryLib.tokenAccount(treasury, token) == null) {
-      let sym = PayTokenLib.symbol(token);
-      return ?refusal(#tokenNotConfigured({ token }), "Purchases with " # sym # " are not open: no treasury account is set for " # sym # "; no " # sym # " was taken");
-    };
     if (amount == 0) {
       return ?refusal(#invalidAmount, "The amount must be greater than zero");
     };
@@ -363,7 +363,9 @@ module {
     if (delivery == IcrcLib.feeCollectorAccount(ctx.canister) or delivery == IcrcLib.burnAccount(ctx.canister)) {
       return #Err(refusal(#invalidAmount, "This delivery account cannot receive TTTI-T" # stays));
     };
-    let target = TreasuryLib.tokenAccount(ctx.treasury, token) ?? (return #Err(refusal(#tokenNotConfigured({ token }), "No treasury account is set for " # sym # stays)));
+    // Mint revenue correction: the cost goes to the canister default account
+    // (owner share sent from there, fee routed by lib/protocol-fees.mo).
+    let target : Account = { owner = ctx.canister; subaccount = null };
 
     // Purchase trace (memo TTTI-PC-<n>, created_at_time) and its reservation,
     // written before the ledger await. A trap after it -> payment to refund.
@@ -457,7 +459,12 @@ module {
         let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with minted; fromCollector; mintBlock = firstBlock(blockIndices) });
         RetryLib.setBtcCostConversion(ctx.transfers, trace.n, recorded.id);
         RetryLib.closeTrace(ctx.transfers, trace.n);
-        #Ok(recorded);
+        // The cost (minus the BC ledger fee) is in the canister default
+        // account: the owner share (net) is sent or accumulated, and the fee
+        // minus that ledger fee is routed by lib/protocol-fees.mo.
+        let ledgerFee = PayTokenLib.expectedFee(token);
+        await payOwnerShare(ctx, token, recorded.id, Nat.sub(cost, fee), if (fee > ledgerFee) Nat.sub(fee, ledgerFee) else 0);
+        #Ok(ctx.treasury.conversions.get(recorded.id) ?? recorded);
       };
       case (#err(reason)) {
         let message = "TTTI-T delivery failed (" # reason # ") after the " # sym # " was moved to the treasury; this purchase needs admin review for a refund";
@@ -466,6 +473,21 @@ module {
         RetryLib.closeTrace(ctx.transfers, trace.n);
         #Err({ code = #deliveryFailedRefundFailed; message; conversion = ?recorded });
       };
+    };
+  };
+
+  // Mint revenue of a delivered mint (`conversionId`): `routedFee` (held in
+  // the canister default account) goes to ProtocolFeesLib.routeMintFee; the
+  // owner share `net` is recorded as an OW send (memo TTTI-OW-<n>, sent once
+  // here, then by the retry timer) or accumulated when the token has no
+  // owner destination.
+  func payOwnerShare(ctx : PurchaseContext, token : PayToken, conversionId : Nat, net : Nat, routedFee : Nat) : async () {
+    if (routedFee > 0) {
+      ignore ProtocolFeesLib.routeMintFee(ctx.protocolFees, token, routedFee, conversionId, Time.now());
+    };
+    switch (RetryLib.openOwnerSend(ctx.transfers, token, net, #mint(conversionId), null)) {
+      case (?s) { await RetryLib.sendOwner(ctx.transfers, s.id) };
+      case null {};
     };
   };
 
@@ -568,7 +590,6 @@ module {
     if (delivery == IcrcLib.feeCollectorAccount(ctx.canister) or delivery == IcrcLib.burnAccount(ctx.canister)) {
       return #Err(refusal(#invalidAmount, "This delivery account cannot receive TTTI-T; no " # sym # " was taken"));
     };
-    ignore TreasuryLib.tokenAccount(ctx.treasury, token) ?? (return #Err(refusal(#tokenNotConfigured({ token }), "No treasury account is set for " # sym # "; no " # sym # " was taken")));
 
     // Purchase trace (memo TTTI-PC-<n>, created_at_time) and its reservation,
     // written before the collect await. A trap after it -> payment to refund.
@@ -631,7 +652,7 @@ module {
       usedFallback = false;
       minted = 0;
       fromCollector = 0;
-      forward = #pending;
+      forward = #notRequired;
       message = null;
       feeAmount = ?fee;
       netAmount = ?Nat.sub(cost, fee);
@@ -644,19 +665,11 @@ module {
         ctx.sale.sold += tttiAmount;
         let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with minted; fromCollector; mintBlock = firstBlock(blockIndices) });
         RetryLib.closeTrace(ctx.transfers, trace.n);
-        // ICP: the fee share cost * feeBps / (10_000 + feeBps) goes to the
-        // cycles reserve (ledger fee paid on top by the canister account) and
-        // the rest to the treasury. ck tokens: the whole cost goes to the
-        // token's treasury account (minus its ledger fee); no cycles funded.
-        // One send each (SH, then FW) of the request recorded by the retry
-        // module; later resends come only from its 10-minute timer. A
-        // zero-amount forward is recorded #notRequired with no send.
-        if (PayTokenLib.fundsCycles(token)) {
-          let treasuryE8s = CyclesReserveLib.treasuryShare(cost, fee);
-          ignore CyclesReserveLib.recordShare(ctx.cyclesReserve, recorded.id, fee, treasuryE8s);
-          await RetryLib.sendShare(ctx.transfers, recorded.id);
-        };
-        await RetryLib.sendForward(ctx.transfers, recorded.id);
+        // Mint revenue: the 1/101 fee stays in the canister default account
+        // and is routed by lib/protocol-fees.mo; the owner share (net) goes to
+        // the token's owner destination (OW) or accumulates. No forward to
+        // the internal mint treasury and no cycles reserve share any more.
+        await payOwnerShare(ctx, token, recorded.id, Nat.sub(cost, fee), fee);
         #Ok(ctx.treasury.conversions.get(recorded.id) ?? recorded);
       };
       case (#err(reason)) {

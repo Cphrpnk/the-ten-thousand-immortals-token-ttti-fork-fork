@@ -1,20 +1,28 @@
+import { Globe } from "lucide-react";
 import { LANG_NAMES, LANG_SHORT_LABELS, SITE_TEXT } from "../i18n/common/site";
 import { LANGS, useDict, useLanguage } from "../i18n/core";
 import { Button } from "./ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 interface LanguagePickerProps {
-  /** Layout classes for the group (e.g. responsive visibility). */
+  /** Layout classes for the trigger wrapper (e.g. responsive visibility). */
   className?: string;
-  /** Size classes for each language button. */
+  /** Size classes for the trigger button. */
   buttonClassName?: string;
   /** data-ocid prefix, e.g. "header.language" or "header.mobile_language". */
   ocid: string;
 }
 
 /**
- * EN / FR / ES / 中文 / PT / 한국어 / ਪੰਜਾਬੀ switch; applies instantly and
- * remembers the visitor's choice. Wraps onto a second line when its container
- * is narrower than the seven entries (mobile menu).
+ * Compact language submenu: one trigger showing the current language's short
+ * label; the menu lists every site language. Applies instantly and remembers
+ * the visitor's choice.
  */
 export function LanguagePicker({
   className = "",
@@ -25,36 +33,38 @@ export function LanguagePicker({
   const t = useDict(SITE_TEXT);
 
   return (
-    <fieldset
-      aria-label={t.languagePicker}
-      className={`m-0 flex flex-wrap items-center gap-x-0.5 gap-y-1 border-0 p-0 ${className}`}
-      data-ocid={`${ocid}.toggle`}
-    >
-      {LANGS.map((code, index) => (
-        <span key={code} className="flex items-center gap-0.5">
-          {index > 0 && (
-            <span
-              aria-hidden="true"
-              className="text-xs text-muted-foreground/60"
-            >
-              /
-            </span>
-          )}
+    <div className={`flex items-center ${className}`}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            lang={code}
-            aria-label={LANG_NAMES[code]}
-            aria-pressed={lang === code}
-            onClick={() => setLang(code)}
-            className={`${buttonClassName} text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-smooth hover:bg-secondary hover:text-foreground aria-pressed:text-primary${code === "pa-Guru" ? " tracking-normal" : ""}`}
-            data-ocid={`${ocid}.${code.toLowerCase()}_button`}
+            aria-label={t.languagePicker}
+            className={`${buttonClassName} gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-smooth hover:bg-secondary hover:text-foreground data-[state=open]:text-primary${lang === "pa-Guru" ? " tracking-normal" : ""}`}
+            data-ocid={`${ocid}.toggle`}
           >
-            {LANG_SHORT_LABELS[code]}
+            <Globe aria-hidden="true" className="h-3.5 w-3.5" />
+            <span lang={lang}>{LANG_SHORT_LABELS[lang]}</span>
           </Button>
-        </span>
-      ))}
-    </fieldset>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" data-ocid={`${ocid}.dropdown_menu`}>
+          <DropdownMenuRadioGroup value={lang}>
+            {LANGS.map((code) => (
+              <DropdownMenuRadioItem
+                key={code}
+                value={code}
+                lang={code}
+                onSelect={() => setLang(code)}
+                className="text-sm"
+                data-ocid={`${ocid}.${code.toLowerCase()}_button`}
+              >
+                {LANG_NAMES[code]}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }

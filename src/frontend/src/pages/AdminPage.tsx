@@ -7,18 +7,24 @@ import {
   ShieldAlert,
   TrendingUp,
 } from "lucide-react";
-import { PayToken } from "../backend";
 import { BuybackFundingCard } from "../components/admin/BuybackFundingCard";
 import { ConversionsCard } from "../components/admin/ConversionsCard";
+import { CyclesAutonomyCard } from "../components/admin/CyclesAutonomyCard";
 import { CyclesReserveCard } from "../components/admin/CyclesReserveCard";
-import { IcpAccountCard } from "../components/admin/IcpAccountCard";
+import { DcBatchesCard } from "../components/admin/DcBatchesCard";
+import { DexPairsCard } from "../components/admin/DexPairsCard";
 import { LaunchControls } from "../components/admin/LaunchControls";
-import { PayTokenAccountCard } from "../components/admin/PayTokenAccountCard";
+import { MintTreasuryAccounts } from "../components/admin/MintTreasuryAccounts";
+import { OwnerDestinationsCard } from "../components/admin/OwnerDestinationsCard";
+import { OwnerSendsCard } from "../components/admin/OwnerSendsCard";
+import { ProtocolLiquidityCard } from "../components/admin/ProtocolLiquidityCard";
 import { SnapshotExport } from "../components/admin/SnapshotExport";
 import { ToReviewCard } from "../components/admin/ToReviewCard";
 import { TokenRatesCard } from "../components/admin/TokenRatesCard";
 import { TransferFeeCard } from "../components/admin/TransferFeeCard";
+import { TreasurySweepCard } from "../components/admin/TreasurySweepCard";
 import { UpgradeReadinessCard } from "../components/admin/UpgradeReadinessCard";
+import { WeeklyAllocationCard } from "../components/admin/WeeklyAllocationCard";
 import { GOLD_CARD } from "../components/admin/styles";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
@@ -38,12 +44,6 @@ import {
   useTokenInfo,
 } from "../hooks/useQueries";
 import { TTTI_SYMBOL, formatTtti } from "../lib/token";
-
-const CK_PAY_TOKENS: ReadonlyArray<PayToken> = [
-  PayToken.ckbtc,
-  PayToken.ckusdc,
-  PayToken.ckusdt,
-];
 
 function toHex(bytes: Uint8Array | undefined): string {
   if (!bytes) return "";
@@ -73,7 +73,7 @@ function AdminOnlyNotice() {
           <AlertTitle>Access denied</AlertTitle>
           <AlertDescription>
             Sign in with an administrator identity to pause sales, refresh the
-            rates, set the test transfer fee, set the receiving accounts, or
+            rates, set the test transfer fee, review the protocol treasury, or
             export the balance snapshot.
           </AlertDescription>
         </Alert>
@@ -135,8 +135,8 @@ export function AdminPage() {
           </Badge>
         </div>
         <p className="text-muted-foreground">
-          Pause sales, refresh the rates, set the test transfer fee and the
-          receiving account of each pay token, and export the balance snapshot.
+          Pause sales, refresh the rates, set the test transfer fee, review the
+          mint treasuries and protocol fees, and export the balance snapshot.
         </p>
       </header>
 
@@ -264,19 +264,25 @@ export function AdminPage() {
         data-ocid="admin.treasury_accounts_section"
       >
         <div className="space-y-1">
-          <h2 className="font-display text-xl">Receiving Accounts</h2>
+          <h2 className="font-display text-xl">Mint Treasury Accounts</h2>
           <p className="text-sm text-muted-foreground">
-            One account per pay token. Purchases in a token stay closed until
-            its account is set.
+            Internal accounts of the contract, one per pay token. The funds they
+            held are emptied once to the owner destinations. Former external
+            accounts are shown read-only.
           </p>
         </div>
-        <div className="grid gap-10 lg:grid-cols-2">
-          <IcpAccountCard />
-          {CK_PAY_TOKENS.map((token) => (
-            <PayTokenAccountCard key={token} token={token} />
-          ))}
-        </div>
+        <MintTreasuryAccounts />
       </section>
+
+      <OwnerDestinationsCard />
+
+      <OwnerSendsCard />
+
+      <TreasurySweepCard />
+
+      <CyclesAutonomyCard />
+
+      <ProtocolLiquidityCard />
 
       <SnapshotExport />
 
@@ -285,6 +291,12 @@ export function AdminPage() {
       <ToReviewCard className={GOLD_CARD} />
 
       <ConversionsCard className={GOLD_CARD} />
+
+      <DexPairsCard />
+
+      <WeeklyAllocationCard />
+
+      <DcBatchesCard />
     </div>
   );
 }

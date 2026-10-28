@@ -6,6 +6,7 @@ import RetryLib "../lib/retry";
 import BtcDepositLib "../lib/btc-deposit";
 import BuybackLib "../lib/buyback";
 import IcrcLib "../lib/icrc";
+import ProtocolFeesLib "../lib/protocol-fees";
 
 // Admin review ("To review") of forwards (FW), reserve shares (SH) and
 // purchase refunds (RF) whose outcome is unknown after 23 h, payments to
@@ -18,21 +19,28 @@ mixin (
   accessControlState : AccessControl.AccessControlState,
   buybacks : BuybackTypes.BuybackStore,
   ledger : IcrcLib.Ledger,
+  dexContext : RetryLib.DexContext,
+  // DEX lot 4: DC sends and DL claims (`purchaseId` = n). Mint revenue
+  // correction: MF mint-fee claims (`purchaseId` = n); OW owner sends
+  // (`purchaseId` = owner send id) and SR reserve top-up (attempt n) go
+  // through RetryLib.
+  protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
 ) {
   // Admin only: every FW, SH, RF transfer needing review, every payment to
   // refund, every BR / BC send under review, every BM cost to refund and
-  // every BB buyback payout to check.
+  // every BB buyback payout to check, plus DEX DD / DW / DQ rows to review.
   public query ({ caller }) func listTransfersToReview() : async [RetryTypes.TransferReview] {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: only admins can review transfers");
     };
-    RetryLib.toReview(transferContext).concat(BtcDepositLib.btcReview(btcDeposits, transferContext)).concat(BuybackLib.reviewRows(buybacks));
+    RetryLib.toReview(transferContext).concat(BtcDepositLib.btcReview(btcDeposits, transferContext)).concat(BuybackLib.reviewRows(buybacks)).concat(RetryLib.dexToReview(dexContext)).concat(ProtocolFeesLib.toReview(protocolFeeContext));
   };
 
   // Admin only, only on a #FW / #SH / #RF / #BR / #BC / #BB transfer needing
   // review: it arrived in `block` (#RF sets the purchase #refunded; #BB
   // releases the escrowed TTTI-T to the funder and completes the buyback).
-  // #PC / #BM -> #notApplicable.
+  // #DD credits the DEX balance; #DW is the final debit; #DQ sets the request
+  // refunded. #PC / #BM -> #notApplicable.
   public shared ({ caller }) func markTransferArrived(kind : RetryTypes.TransferKind, purchaseId : Nat, block : Nat) : async RetryTypes.ReviewResult {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       return #err(#notAdmin);
@@ -40,6 +48,8 @@ mixin (
     switch (kind) {
       case (#BR or #BC or #BM) { BtcDepositLib.markBtcArrived(btcDeposits, transferContext, kind, purchaseId, block) };
       case (#BB) { BuybackLib.markArrived(buybacks, ledger, transferContext.canister, purchaseId, block) };
+      case (#DD or #DW or #DQ) { RetryLib.markDexArrived(dexContext, kind, purchaseId, block) };
+      case (#DC or #DL or #MF) { ProtocolFeesLib.markArrived(protocolFeeContext, kind, purchaseId, block) };
       case (_) { RetryLib.markArrived(transferContext, kind, purchaseId, block) };
     };
   };
@@ -50,7 +60,9 @@ mixin (
   // deposit is converted again by the timer. #PC (`purchaseId` = trace
   // number n): the payment never happened; it is removed from the list. #BB
   // (`purchaseId` = buyback id): the attempt is marked failed, so the buyer
-  // can retry or cancel. #BM -> #notApplicable.
+  // can retry or cancel. #DD: nothing credited; #DW: the balance is given
+  // back; #DQ (`purchaseId` = request id): new attempt sent by the timer.
+  // #BM -> #notApplicable.
   public shared ({ caller }) func markTransferNotArrived(kind : RetryTypes.TransferKind, purchaseId : Nat) : async RetryTypes.ReviewResult {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       return #err(#notAdmin);
@@ -58,6 +70,8 @@ mixin (
     switch (kind) {
       case (#BR or #BC or #BM) { BtcDepositLib.markBtcNotArrived(btcDeposits, transferContext, kind, purchaseId) };
       case (#BB) { BuybackLib.markNotArrived(buybacks, purchaseId) };
+      case (#DD or #DW or #DQ) { RetryLib.markDexNotArrived(dexContext, kind, purchaseId) };
+      case (#DC or #DL or #MF) { ProtocolFeesLib.markNotArrived(protocolFeeContext, kind, purchaseId) };
       case (_) { RetryLib.markNotArrived(transferContext, kind, purchaseId) };
     };
   };
@@ -80,6 +94,7 @@ mixin (
         if (result == #ok) ignore BtcDepositLib.costRefunded(btcDeposits, purchaseId, block);
         result;
       };
+      case (#DC or #DL or #MF) { #err(#notApplicable) };
       case (_) { RetryLib.markRefunded(transferContext, kind, purchaseId, block) };
     };
   };

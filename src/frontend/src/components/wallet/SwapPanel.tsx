@@ -6,9 +6,11 @@ import { toast } from "sonner";
 import type { Account } from "../../backend";
 import { SIGNER_NAMES, useAccountSigner } from "../../hooks/useAccountSigner";
 import {
+  useAddedSwapTokens,
   useSwapPool,
   useSwapQuote,
   useSwapUnusedBalance,
+  useTttiLedgerId,
 } from "../../hooks/useIcpSwap";
 import { walletFailureMessage } from "../../hooks/useSignerWallet";
 import { useWalletBalance } from "../../hooks/useWallet";
@@ -33,8 +35,16 @@ import {
   zeroForOne,
 } from "../../lib/icpswap";
 import {
+  addSwapToken,
+  readLiveFee,
+  removeSwapToken,
+} from "../../lib/swapTokens";
+import {
   PAY_TOKENS,
   PAY_TOKEN_ORDER,
+  TOKEN_NAME,
+  TTTI_DECIMALS,
+  TTTI_SYMBOL,
   amountForPercentWithFees,
   formatDecimal,
   parseUnits,
@@ -55,7 +65,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+import { AddSwapToken } from "./AddSwapToken";
 import {
+  AddTokenTrigger,
   ConfirmStep,
   QuoteDetails,
   SwapNotice,
@@ -95,8 +107,20 @@ interface SwapPanelProps {
 /** Approval refused or failed in the wallet (message already localized). */
 class ApproveFailure extends Error {}
 
-function swapTokens(tokens: Array<TokenDescriptor>): Array<TokenDescriptor> {
-  return PAY_TOKEN_ORDER.map((token) => {
+const PAY_LEDGER_IDS = new Set<string>(
+  PAY_TOKEN_ORDER.map((token) => PAY_TOKENS[token].ledgerCanisterId),
+);
+
+/**
+ * Swap selector tokens: ICP, TTTI-T (backend canister ledger), ckBTC,
+ * ckUSDC, ckUSDT, then the tokens added in this browser.
+ */
+function swapTokens(
+  tokens: Array<TokenDescriptor>,
+  tttiId: string | undefined,
+  added: Array<TokenDescriptor>,
+): Array<TokenDescriptor> {
+  const pay = PAY_TOKEN_ORDER.map((token) => {
     const d = PAY_TOKENS[token];
     const found = tokens.find(
       (tk) => tk.canisterId.toText() === d.ledgerCanisterId,
@@ -111,13 +135,32 @@ function swapTokens(tokens: Array<TokenDescriptor>): Array<TokenDescriptor> {
       }
     );
   });
+  const base = [...pay];
+  if (tttiId) {
+    const ttti = tokens.find((tk) => tk.canisterId.toText() === tttiId) ?? {
+      canisterId: Principal.fromText(tttiId),
+      name: TOKEN_NAME,
+      symbol: TTTI_SYMBOL,
+      decimals: TTTI_DECIMALS,
+      fee: 0n,
+    };
+    base.splice(1, 0, ttti);
+  }
+  const known = new Set(base.map((tk) => tk.canisterId.toText()));
+  return [...base, ...added.filter((tk) => !known.has(tk.canisterId.toText()))];
+}
+
+/** Token with its live ledger fee (TTTI-T and added tokens). */
+async function withLiveFee(token: TokenDescriptor): Promise<TokenDescriptor> {
+  if (PAY_LEDGER_IDS.has(token.canisterId.toText())) return token;
+  return { ...token, fee: await readLiveFee(token.canisterId) };
 }
 
 function isDefaultSubaccount(sub: Uint8Array | undefined): boolean {
   return !sub || sub.every((b) => b === 0);
 }
 
-/** Swap between ICP, ckBTC, ckUSDC and ckUSDT through an ICPSwap pool. */
+/** Swap between the selector tokens through an ICPSwap pool. */
 export function SwapPanel({
   tokens: rawTokens,
   account,
@@ -131,7 +174,11 @@ export function SwapPanel({
   const ts = useDict(WALLET_SIGNING_TEXT);
   const { lang } = useLanguage();
   const queryClient = useQueryClient();
-  const tokens = swapTokens(rawTokens);
+  const { data: tttiId } = useTttiLedgerId();
+  const added = useAddedSwapTokens();
+  const tokens = swapTokens(rawTokens, tttiId, added);
+  const [showAdd, setShowAdd] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [fromId, setFromId] = useState(initialFrom ?? ICP_ID);
   const [toId, setToId] = useState(
     initialTo ?? (initialFrom === CKBTC_ID ? ICP_ID : CKBTC_ID),
@@ -227,6 +274,13 @@ export function SwapPanel({
     resetResult();
   };
 
+  /** Remove an added token; a side that used it goes back to the default. */
+  const removeAdded = (canisterId: string) => {
+    removeSwapToken(canisterId);
+    if (fromId === canisterId) pickFrom(toId === ICP_ID ? CKBTC_ID : ICP_ID);
+    if (toId === canisterId) pickTo(fromId === CKBTC_ID ? ICP_ID : CKBTC_ID);
+  };
+
   const handleAmount = (value: string) => {
     setAmount(value);
     resetResult();
@@ -270,14 +324,33 @@ export function SwapPanel({
     !expired &&
     minOut !== null &&
     !tooSmall &&
-    !running;
+    !running &&
+    !reviewing;
 
   const review = () => {
     if (!canReview || !from || !to || !pool || amountIn === null) return;
     if (minOut === null) return;
+    const planMinOut = minOut;
     setChecked(false);
     resetResult();
-    setPlan({ from, to, pool, amountIn, minOut });
+    setReviewing(true);
+    // TTTI-T and added tokens: the chain uses each ledger's current fee.
+    void Promise.all([withLiveFee(from), withLiveFee(to)])
+      .then(([liveFrom, liveTo]) => {
+        if (planMinOut <= liveTo.fee) {
+          setError(pickDict(SWAP_TEXT).tooSmall);
+          return;
+        }
+        setPlan({
+          from: liveFrom,
+          to: liveTo,
+          pool,
+          amountIn,
+          minOut: planMinOut,
+        });
+      })
+      .catch(() => setError(pickDict(SWAP_TEXT).feeError))
+      .finally(() => setReviewing(false));
   };
 
   const describeFailure = (failure: unknown): string => {
@@ -308,8 +381,11 @@ export function SwapPanel({
     setStep("approve");
     setError(null);
     const run = async () => {
-      if (plugSigner) await preparePlugForSwap(current.pool.poolId);
       const fromLedger = current.from.canisterId.toText();
+      const toLedger = current.to.canisterId.toText();
+      if (plugSigner) {
+        await preparePlugForSwap(current.pool.poolId, [fromLedger, toLedger]);
+      }
       const outcome = await signer.approve(
         current.from,
         buildApproveArgs(
@@ -323,6 +399,7 @@ export function SwapPanel({
         current.pool.poolId,
         plugSigner,
         signer.ledgerAgent,
+        [fromLedger, toLedger],
       );
       setStep("deposit");
       unwrapNat(
@@ -406,6 +483,7 @@ export function SwapPanel({
         pool.poolId,
         plugSigner,
         signer.ledgerAgent,
+        [pool.token0, pool.token1],
       );
       for (const entry of entries) {
         unwrapNat(
@@ -607,7 +685,25 @@ export function SwapPanel({
       <div className="flex flex-col gap-2">
         <Label htmlFor="swap-to">{t.to}</Label>
         {tokenSelect("swap-to", toId, pickTo, "wallet.swap.to_select")}
+        <AddTokenTrigger
+          open={showAdd}
+          disabled={running}
+          onToggle={() => setShowAdd((open) => !open)}
+        />
       </div>
+
+      {showAdd && (
+        <AddSwapToken
+          existing={tokens}
+          added={added}
+          onAdd={(token) => {
+            addSwapToken(token);
+            pickTo(token.canisterId.toText());
+          }}
+          onRemove={removeAdded}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
 
       {from && (
         <div className="flex flex-col gap-2">
@@ -745,6 +841,7 @@ export function SwapPanel({
         data-ocid="wallet.swap.review_button"
       >
         <ArrowLeftRight className="h-4 w-4" />
+        {reviewing && <Loader2 className="h-4 w-4 animate-spin" />}
         {t.review}
       </Button>
       {!account ? (

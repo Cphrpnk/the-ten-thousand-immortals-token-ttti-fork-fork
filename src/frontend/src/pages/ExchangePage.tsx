@@ -19,6 +19,7 @@ import { BtcPurchasePanel } from "../components/exchange/BtcPurchasePanel";
 import { DeliveryAddressCard } from "../components/exchange/DeliveryAddressCard";
 import { GetIcpFirstPanel } from "../components/exchange/GetIcpFirstPanel";
 import { MigrationNotice } from "../components/exchange/MigrationNotice";
+import { MintPaymentBreakdown } from "../components/exchange/MintPaymentBreakdown";
 import {
   type OrderMode,
   OrderModeToggle,
@@ -1050,6 +1051,11 @@ export function ExchangePage() {
                     </div>
                   </div>
                 )}
+
+                <MintPaymentBreakdown
+                  token={token}
+                  payAmount={hasAmount ? orderPay : 0n}
+                />
 
                 <WalletPercentBar
                   token={token}

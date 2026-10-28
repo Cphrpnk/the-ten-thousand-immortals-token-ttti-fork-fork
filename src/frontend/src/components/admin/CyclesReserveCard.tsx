@@ -1,25 +1,13 @@
-import { ArrowUpRight, Battery, Copy, Loader2, Lock } from "lucide-react";
-import { useState } from "react";
+import { Battery, Copy, Lock } from "lucide-react";
 import { toast } from "sonner";
-import type {
-  CyclesStatus,
-  TopUpStatus,
-  WithdrawReserveResult,
-} from "../../backend";
-import { WithdrawalBlockedReason } from "../../backend";
-import {
-  useCyclesStatus,
-  useWithdrawReserveExcess,
-  withdrawReserveMessage,
-} from "../../hooks/useQueries";
+import type { TopUpStatus } from "../../backend";
+import { useCyclesStatus } from "../../hooks/useQueries";
 import { icpDashboardTxUrl } from "../../lib/explorer";
 import {
   ICP_LEDGER_ID,
   RESERVE_FLOOR_E8S,
   encodeAccountText,
   formatIcpE8s,
-  formatUnits,
-  parseIcp,
 } from "../../lib/token";
 import { ExplorerLink } from "../ExplorerLink";
 import { Alert, AlertDescription } from "../ui/alert";
@@ -31,11 +19,9 @@ import {
   CardHeader,
   CardTitle,
 } from "../ui/card";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
 import { formatTimestamp } from "./ConversionsCard";
-import { GOLD_CARD, PRIMARY_GOLD } from "./styles";
+import { GOLD_CARD } from "./styles";
 
 function formatCycles(cycles: bigint): string {
   return `${(Number(cycles) / 1e12).toFixed(3)} T cycles`;
@@ -51,8 +37,6 @@ function topUpStatusText(status: TopUpStatus): string {
       return `Failed: ${status.failed}`;
   }
 }
-
-type Feedback = { ok: boolean; text: string } | null;
 
 /** ICP ledger block index linked to its ICP Dashboard transaction page. */
 function IcpBlockLink({
@@ -78,43 +62,10 @@ function IcpBlockLink({
   );
 }
 
-function formatTeraCycles(cycles: bigint): string {
-  return `${(Number(cycles) / 1e12).toLocaleString("en-US", { maximumFractionDigits: 3 })} T`;
-}
-
-/** Factual reason the backend currently refuses a reserve withdrawal. */
-function blockedReasonText(status: CyclesStatus): string {
-  switch (status.withdrawalBlockedReason) {
-    case WithdrawalBlockedReason.cyclesBelowThreshold:
-      return `Transfer blocked: cycles are below ${formatTeraCycles(status.topUpThreshold)} (current balance ${formatTeraCycles(status.cyclesBalance)}).`;
-    case WithdrawalBlockedReason.topUpRunning:
-      return "Transfer blocked: a cycles top-up is running.";
-    case WithdrawalBlockedReason.topUpAwaitingConfirmation:
-      return "Transfer blocked: a cycles top-up is awaiting confirmation.";
-    default:
-      return "Transfer blocked by the canister.";
-  }
-}
-
 export function CyclesReserveCard() {
   const { data: status, isLoading, isError, refetch } = useCyclesStatus();
-  const withdraw = useWithdrawReserveExcess();
-  const [amountText, setAmountText] = useState("");
-  const [feedback, setFeedback] = useState<Feedback>(null);
 
-  const excess = status?.withdrawableExcessE8s ?? 0n;
   const floor = status?.reserveFloorE8s ?? RESERVE_FLOOR_E8S;
-  const amount = amountText.trim() === "" ? null : parseIcp(amountText);
-  const invalid = amountText.trim() !== "" && amount === null;
-  const tooLarge = amount !== null && amount > excess;
-  const blocked = status ? !status.withdrawalAllowed : false;
-  const disabled =
-    withdraw.isPending ||
-    blocked ||
-    excess === 0n ||
-    amount === null ||
-    amount <= 0n ||
-    tooLarge;
   const accountText = status ? encodeAccountText(status.reserveAccount) : "";
 
   const handleCopy = async () => {
@@ -126,30 +77,6 @@ export function CyclesReserveCard() {
     }
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (disabled || amount === null) return;
-    setFeedback(null);
-    withdraw.mutate(amount, {
-      onSuccess: (result: WithdrawReserveResult) => {
-        const text = withdrawReserveMessage(result);
-        const ok = result.__kind__ === "ok";
-        setFeedback({ ok, text });
-        if (ok) {
-          setAmountText("");
-          toast.success(text);
-        } else {
-          toast.error(text);
-        }
-      },
-      onError: (error) => {
-        const text = error.message || "The transfer failed.";
-        setFeedback({ ok: false, text });
-        toast.error(text);
-      },
-    });
-  };
-
   return (
     <Card className={GOLD_CARD} data-ocid="admin.cycles_reserve_card">
       <CardHeader>
@@ -158,8 +85,9 @@ export function CyclesReserveCard() {
           Cycles Reserve
         </CardTitle>
         <CardDescription>
-          ICP from the 1% fee on ICP purchases, converted to cycles when the
-          balance runs low.
+          ICP held for cycles, converted through the CMC when the cycles balance
+          falls below the{" "}
+          {status ? formatCycles(status.topUpThreshold) : "top-up"} threshold.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -221,13 +149,6 @@ export function CyclesReserveCard() {
               <dt className="text-muted-foreground">Floor</dt>
               <dd className="text-right font-mono tabular-nums">
                 {formatIcpE8s(floor)}
-              </dd>
-              <dt className="text-muted-foreground">Withdrawable excess</dt>
-              <dd
-                className="text-right font-mono tabular-nums text-primary"
-                data-ocid="admin.reserve_excess"
-              >
-                {formatIcpE8s(excess)}
               </dd>
               <dt className="text-muted-foreground">Cycles balance</dt>
               <dd
@@ -312,87 +233,6 @@ export function CyclesReserveCard() {
                 </ul>
               )}
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <Label htmlFor="reserve-amount">Amount (ICP)</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="reserve-amount"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="0.00"
-                  value={amountText}
-                  onChange={(e) => setAmountText(e.target.value)}
-                  aria-invalid={invalid || tooLarge}
-                  data-ocid="admin.reserve_amount_input"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    setAmountText(formatUnits(excess, 8, 0).replace(/,/g, ""))
-                  }
-                  disabled={excess === 0n}
-                  data-ocid="admin.reserve_max_button"
-                >
-                  Max
-                </Button>
-              </div>
-              {(invalid || tooLarge) && (
-                <p
-                  className="text-sm text-destructive"
-                  data-ocid="admin.reserve_amount_error"
-                >
-                  {invalid
-                    ? "Enter a valid ICP amount."
-                    : "The amount exceeds the withdrawable excess."}
-                </p>
-              )}
-              <Button
-                type="submit"
-                className={PRIMARY_GOLD}
-                disabled={disabled}
-                data-ocid="admin.reserve_withdraw_button"
-              >
-                {withdraw.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowUpRight className="h-4 w-4" />
-                )}
-                Transfer to treasury
-              </Button>
-              {blocked ? (
-                <p
-                  className="text-xs text-muted-foreground"
-                  data-ocid="admin.reserve_withdraw_blocked_state"
-                >
-                  {blockedReasonText(status)}
-                </p>
-              ) : (
-                excess === 0n && (
-                  <p className="text-xs text-muted-foreground">
-                    No excess above the floor to transfer.
-                  </p>
-                )
-              )}
-              {feedback && (
-                <p
-                  className={
-                    feedback.ok
-                      ? "text-sm text-primary"
-                      : "text-sm text-destructive"
-                  }
-                  aria-live="polite"
-                  data-ocid={
-                    feedback.ok
-                      ? "admin.reserve_withdraw.success_state"
-                      : "admin.reserve_withdraw.error_state"
-                  }
-                >
-                  {feedback.text}
-                </p>
-              )}
-            </form>
           </>
         )}
         <p
@@ -403,8 +243,7 @@ export function CyclesReserveCard() {
             className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary"
             aria-hidden="true"
           />
-          Transfers go only to the configured treasury account. The{" "}
-          {formatIcpE8s(RESERVE_FLOOR_E8S)} floor always stays available for
+          The {formatIcpE8s(RESERVE_FLOOR_E8S)} floor always stays available for
           cycles.
         </p>
       </CardContent>

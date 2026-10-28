@@ -8,10 +8,15 @@ import Types "../types/upgrade-readiness";
 import RetryTypes "../types/retry";
 import CyclesReserveLib "../lib/cycles-reserve";
 import SaleLib "../lib/presale";
+import ProtocolFeesLib "../lib/protocol-fees";
+import ProtocolFeeTypes "../types/protocol-fees";
+import OwnerTypes "../types/owner-revenue";
+import MintFeeTypes "../types/mint-fee";
 
 // Admin upgrade readiness: pause, purchases and BTC lock in flight, buybacks
 // in flight, reserve lock and stored top-up attempt, open purchase traces,
-// sale.reserved and its reconciliation.
+// sale.reserved and its reconciliation, plus (DEX lot 4) the DC / DL /
+// weekly locks and the DC sends and DL claims still in flight.
 mixin (
   sale : SaleLib.SaleStore,
   purchasesInFlight : Set.Set<Principal>,
@@ -21,9 +26,30 @@ mixin (
   retry : RetryTypes.RetryStore,
   reservedReconciliations : Types.ReconciliationStore,
   accessControlState : AccessControl.AccessControlState,
+  protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
+  // Mint revenue correction: owner sends and the one-time treasury sweep.
+  ownerRevenue : OwnerTypes.OwnerRevenueStore,
 ) {
+  type UpgradeReadiness = Types.UpgradeReadiness and {
+    // Mint revenue correction: owner sends (OW) still #pending, by id.
+    ownerSendsInFlight : [Nat];
+    // One-time treasury sweep state.
+    sweepStatus : OwnerTypes.SweepStatus;
+    // Mint-fee claims (MF) still #inProgress, by n.
+    mintFeeClaimsInFlight : [Nat];
+    // Liquidity injections still #swapping or #addingLiquidity, by id.
+    injectionsInFlight : [Nat];
+    // DEX lot 4: held DC / DL / WEEKLY lock keys (transient).
+    protocolFeeLocks : [Text];
+    // DC sends (ICP to the cycles reserve, pools or the bonus subaccount)
+    // still #inProgress, by n.
+    dcSendsInFlight : [Nat];
+    // DL bonus claims still #inProgress, by n.
+    bonusClaimsInFlight : [Nat];
+  };
+
   // Admin only (trap "Unauthorized: admin only" otherwise).
-  public shared query ({ caller }) func getUpgradeReadiness() : async Types.UpgradeReadiness {
+  public shared query ({ caller }) func getUpgradeReadiness() : async UpgradeReadiness {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: admin only");
     };
@@ -40,6 +66,18 @@ mixin (
       openTraces = retry.traces.values().toArray();
       reserved = sale.reserved;
       lastReconciliation = reservedReconciliations.last;
+      protocolFeeLocks = protocolFeeContext.locks.toArray();
+      dcSendsInFlight = protocolFeeContext.store.dcSends.values().filter(func(s : ProtocolFeeTypes.DcSend) : Bool = s.status == #inProgress).map(func(s : ProtocolFeeTypes.DcSend) : Nat = s.n).toArray();
+      bonusClaimsInFlight = protocolFeeContext.store.bonusClaims.values().filter(func(c : ProtocolFeeTypes.BonusClaim) : Bool = c.status == #inProgress).map(func(c : ProtocolFeeTypes.BonusClaim) : Nat = c.n).toArray();
+      ownerSendsInFlight = ownerRevenue.sends.values().filter(func(s : OwnerTypes.OwnerSend) : Bool = s.status == #pending).map(func(s : OwnerTypes.OwnerSend) : Nat = s.id).toArray();
+      sweepStatus = ownerRevenue.sweep.status;
+      mintFeeClaimsInFlight = protocolFeeContext.mintFees.claims.values().filter(func(c : MintFeeTypes.MintFeeClaim) : Bool = c.status == #inProgress).map(func(c : MintFeeTypes.MintFeeClaim) : Nat = c.n).toArray();
+      injectionsInFlight = protocolFeeContext.mintFees.injections.values().filter(
+        func(i : MintFeeTypes.LiquidityInjection) : Bool = switch (i.status) {
+          case (#swapping or #addingLiquidity) { true };
+          case (_) { false };
+        }
+      ).map(func(i : MintFeeTypes.LiquidityInjection) : Nat = i.id).toArray();
     };
   };
 

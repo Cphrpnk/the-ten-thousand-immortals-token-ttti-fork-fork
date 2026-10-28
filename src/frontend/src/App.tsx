@@ -22,6 +22,7 @@ import { BuyIcpPage } from "./pages/BuyIcpPage";
 import { ExchangePage } from "./pages/ExchangePage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LandingPage } from "./pages/LandingPage";
+import { PoolsPage } from "./pages/PoolsPage";
 import { TransferPage } from "./pages/TransferPage";
 import { WalletPage } from "./pages/WalletPage";
 
@@ -106,6 +107,12 @@ const walletRoute = createRoute({
   component: WalletPage,
 });
 
+const poolsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pools",
+  component: PoolsPage,
+});
+
 const whitePaperRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/white-paper",
@@ -121,6 +128,7 @@ const routeTree = rootRoute.addChildren([
   adminRoute,
   transferRoute,
   walletRoute,
+  poolsRoute,
   whitePaperRoute,
 ]);
 

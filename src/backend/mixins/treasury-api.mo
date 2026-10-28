@@ -12,12 +12,16 @@ import OracleLib "../lib/oracle";
 import CyclesReserveLib "../lib/cycles-reserve";
 import PayTokenLib "../lib/pay-token";
 import RetryLib "../lib/retry";
+import ProtocolFeesLib "../lib/protocol-fees";
+import OwnerTypes "../types/owner-revenue";
+import Time "mo:core/Time";
 
-// Treasury configuration (the accounts that receive the creator's ICP, ckBTC,
-// ckUSDC and ckUSDT), conversion history and the buy-to-mint purchase
+// Mint treasuries (internal subaccounts of this contract for ICP, ckBTC,
+// ckUSDC and ckUSDT, no withdrawal path; DEX lot 4), the weekly allocation
+// views, conversion history and the buy-to-mint purchase
 // endpoints. Each delivered ICP purchase sends its 1% fee share to the cycles
-// reserve and the rest to the treasury; ck-token purchases (1% fee included)
-// go fully to that token's treasury account; the TTTI-T fee collector can never be
+// reserve and the rest to the ICP mint treasury; ck-token purchases (1% fee
+// included) go fully to that token's mint treasury; the TTTI-T fee collector can never be
 // withdrawn.
 mixin (
   treasury : TreasuryLib.TreasuryStore,
@@ -34,6 +38,10 @@ mixin (
   purchasesInFlight : Set.Set<Principal>,
   // FW / SH retry context of the purchase pipeline. Transient, owned by main.mo.
   transferContext : RetryLib.TransferContext,
+  // DEX lot 4: weekly allocation state and cached mint treasury balances.
+  treasuryAllocation : TreasuryLib.AllocationStore,
+  // Mint revenue correction: mint-fee routing context. Transient, owned by main.mo.
+  protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
 ) {
   // The ICP ledger canister (mainnet). Transient: a capability handle.
   transient let icpLedger : TreasuryLib.IcpLedger = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai");
@@ -62,28 +70,36 @@ mixin (
       canister = canisterPrincipal;
       cyclesReserve;
       transfers = transferContext;
+      protocolFees = protocolFeeContext;
     };
   };
 
   // --- Configuration ---------------------------------------------------------
 
-  // Admin only: the account that receives the creator's ICP.
-  public shared ({ caller }) func setTreasuryConfig(config : Treasury.TreasuryConfig) : async Treasury.TreasuryConfigResult {
-    requireAdmin(caller);
-    TreasuryLib.setConfig(treasury, config);
-  };
-
-  // Admin only: the full configuration.
+  // Admin only: the legacy configuration (old external ICP account, no
+  // longer settable; its funds stay where they are).
   public query ({ caller }) func getTreasuryConfig() : async ?Treasury.TreasuryConfig {
     requireAdmin(caller);
     TreasuryLib.getConfig(treasury);
   };
 
-  // Admin only: the receiving account of one pay token (#icp updates the
-  // treasury ICP account). ck-token purchases are refused until it is set.
-  public shared ({ caller }) func setPayTokenAccount(token : Treasury.PayToken, account : Common.Account) : async Treasury.TokenAccountResult {
+  // Admin only: the internal mint treasuries (ICP, ckBTC, ckUSDC, ckUSDT)
+  // that receive new forwards (FW); no withdrawal path.
+  public query ({ caller }) func getMintTreasuryAccounts() : async [Treasury.MintTreasuryAccount] {
     requireAdmin(caller);
-    TreasuryLib.setTokenAccount(treasury, token, account);
+    TreasuryLib.mintTreasuryAccounts(treasury, treasuryAllocation, canisterPrincipal);
+  };
+
+  // Admin only: the last weekly allocation calculation.
+  public query ({ caller }) func getLastWeeklyAllocation() : async ?Treasury.WeeklyAllocation {
+    requireAdmin(caller);
+    TreasuryLib.lastAllocation(treasuryAllocation);
+  };
+
+  // Admin only: every weekly allocation calculation, newest first.
+  public query ({ caller }) func listWeeklyAllocations() : async [Treasury.WeeklyAllocation] {
+    requireAdmin(caller);
+    TreasuryLib.allocations(treasuryAllocation);
   };
 
   // Public: what the Buy page needs (no buyer data).
@@ -141,5 +157,56 @@ mixin (
   // TTTI-T to deliver (payAmount = approved maximum), or null.
   public shared ({ caller }) func convertDepositWith(token : Treasury.PayToken, recipient : ?Common.Account, payAmount : Nat, tttiTarget : ?Nat) : async Sale.PurchaseResult {
     await* purchaseLocked(caller, token, recipient, payAmount, tttiTarget);
+  };
+
+  // --- Mint owner revenue (admin only) ---------------------------------------
+
+  // Sets the owner destination of `token` (ICRC account), then sends the
+  // amount accumulated for that token (OW) and resumes a waiting sweep.
+  public shared ({ caller }) func setOwnerDestination(token : Treasury.PayToken, account : Common.Account) : async OwnerTypes.OwnerDestinationResult {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      return #err(#notAdmin);
+    };
+    let result = TreasuryLib.setOwnerDestination(transferContext.ownerRevenue, canisterPrincipal, token, account, caller, Time.now());
+    switch (result) {
+      case (#ok(view)) {
+        // Sends the accumulated share now; a failure is retried by the timer.
+        try { await RetryLib.flushOwnerAccumulated(transferContext, token) } catch (_) {};
+        #ok(TreasuryLib.ownerDestinations(transferContext.ownerRevenue).find(func v = v.token == token) ?? view);
+      };
+      case (#err(_)) { result };
+    };
+  };
+
+  // Clears the owner destination of `token`; later shares accumulate.
+  public shared ({ caller }) func clearOwnerDestination(token : Treasury.PayToken) : async OwnerTypes.OwnerDestinationResult {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      return #err(#notAdmin);
+    };
+    TreasuryLib.clearOwnerDestination(transferContext.ownerRevenue, token, caller, Time.now());
+  };
+
+  // One row per pay token with its destination and accumulated amount.
+  public query ({ caller }) func listOwnerDestinations() : async [OwnerTypes.OwnerDestinationView] {
+    requireAdmin(caller);
+    TreasuryLib.ownerDestinations(transferContext.ownerRevenue);
+  };
+
+  // Owner send history, newest first, `limit` capped at 100.
+  public query ({ caller }) func listOwnerSends(offset : Nat, limit : Nat) : async OwnerTypes.OwnerSendPage {
+    requireAdmin(caller);
+    TreasuryLib.ownerSends(transferContext.ownerRevenue, offset, limit);
+  };
+
+  // Per-token owner share accumulated and not yet sent.
+  public query ({ caller }) func getOwnerAccumulated() : async [OwnerTypes.OwnerAccumulated] {
+    requireAdmin(caller);
+    TreasuryLib.ownerAccumulated(transferContext.ownerRevenue);
+  };
+
+  // Status of the one-time treasury sweep.
+  public query ({ caller }) func getTreasurySweepStatus() : async OwnerTypes.TreasurySweepView {
+    requireAdmin(caller);
+    TreasuryLib.sweepView(transferContext.ownerRevenue);
   };
 };

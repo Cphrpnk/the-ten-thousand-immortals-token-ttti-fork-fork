@@ -1,6 +1,7 @@
 import { CheckCircle2, ClipboardCheck, Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { ReservedReconciliation, TopUpAttempt } from "../../backend";
+import { SweepStatus } from "../../backend";
 import {
   useReconcileReserved,
   useUpgradeReadiness,
@@ -32,6 +33,13 @@ import { formatTimestamp } from "./ConversionsCard";
 import { GOLD_CARD, PRIMARY_GOLD, SECONDARY_GOLD } from "./styles";
 
 const memoText = (memo: Uint8Array) => new TextDecoder().decode(memo);
+
+const SWEEP_LABELS: Record<SweepStatus, string> = {
+  [SweepStatus.notStarted]: "Not started",
+  [SweepStatus.toppingUpReserve]: "Topping up the cycles reserve",
+  [SweepStatus.sending]: "Sending",
+  [SweepStatus.completed]: "Completed",
+};
 
 function outcomeText(outcome: TopUpAttempt["outcome"]): string {
   switch (outcome.__kind__) {
@@ -76,7 +84,7 @@ function Flag({
 
 function List({ items, ocid }: { items: string[]; ocid: string }) {
   if (items.length === 0)
-    return <span className="text-muted-foreground">None</span>;
+    return <span className="block text-muted-foreground">None</span>;
   return (
     <ul className="space-y-1 font-mono text-xs" data-ocid={ocid}>
       {items.map((item) => (
@@ -166,7 +174,7 @@ export function UpgradeReadinessCard() {
               />
             </Row>
             <Row label="Purchases in flight">
-              <span className="font-mono">
+              <span className="block font-mono">
                 {data.purchasesInFlightCount.toString()}
               </span>
               <List
@@ -181,7 +189,7 @@ export function UpgradeReadinessCard() {
               />
             </Row>
             <Row label="Buybacks in flight">
-              <span className="font-mono">
+              <span className="block font-mono">
                 {data.buybacksInFlightCount.toString()}
               </span>
               <List
@@ -202,7 +210,7 @@ export function UpgradeReadinessCard() {
                   data-ocid="admin.upgrade_readiness.top_up"
                 >
                   <span className="block">
-                    Amount: {formatIcpE8s(topUp.amount)} ICP
+                    Amount: {formatIcpE8s(topUp.amount, "en")}
                   </span>
                   <span className="block font-mono text-xs">
                     created_at_time: {topUp.created_at_time.toString()}
@@ -234,6 +242,31 @@ export function UpgradeReadinessCard() {
               ) : (
                 <span className="text-muted-foreground">None</span>
               )}
+            </Row>
+            <Row label="Owner sends in flight">
+              <List
+                items={data.ownerSendsInFlight.map((n) => `#${n.toString()}`)}
+                ocid="admin.upgrade_readiness.owner_sends_list"
+              />
+            </Row>
+            <Row label="Treasury sweep">
+              <span data-ocid="admin.upgrade_readiness.sweep_status">
+                {SWEEP_LABELS[data.sweepStatus]}
+              </span>
+            </Row>
+            <Row label="Mint fee claims in flight">
+              <List
+                items={data.mintFeeClaimsInFlight.map(
+                  (n) => `#${n.toString()}`,
+                )}
+                ocid="admin.upgrade_readiness.mint_fee_claims_list"
+              />
+            </Row>
+            <Row label="Liquidity injections in flight">
+              <List
+                items={data.injectionsInFlight.map((n) => `#${n.toString()}`)}
+                ocid="admin.upgrade_readiness.injections_list"
+              />
             </Row>
             <Row label="Open purchase traces">
               <span className="font-mono">

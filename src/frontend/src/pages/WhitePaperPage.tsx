@@ -9,13 +9,12 @@ import {
   useGetLegacyBlockInfo,
   useTechnicalDetails,
 } from "../hooks/useQueries";
-import { SITE_TEXT } from "../i18n/common";
+import { MINT_REVENUE_TEXT, SITE_TEXT } from "../i18n/common";
 import { useDict } from "../i18n/core";
 import { MINT_INFO_EN } from "../i18n/pages/buy";
 import { FAQ_TEXT } from "../i18n/pages/landing";
 import { WHITE_PAPER_TEXT } from "../i18n/pages/whitePaper";
 import {
-  CYCLES_FEE_TEXT,
   MIN_PURCHASE,
   PRICE_TEXT,
   TTTI_DECIMALS,
@@ -115,15 +114,8 @@ const originalParagraphs = original.split("\n").map((line, index) => ({
   position: index + 1,
 }));
 
-const contents = [
-  { id: "reading-notice", labelKey: "contentsReading" },
-  { id: "present-ledger", labelKey: "contentsLedger" },
-  { id: "purchase-mechanics", labelKey: "contentsMechanics" },
-  { id: "controls-risk", labelKey: "contentsControls" },
-  { id: "creator-disclosures", labelKey: "contentsDisclosures" },
-  { id: "privacy", labelKey: "contentsPrivacy" },
-  { id: "verification", labelKey: "contentsVerification" },
-] as const;
+/** English mint revenue sentences; sections 02 to 08 stay in English. */
+const REVENUE_EN = MINT_REVENUE_TEXT.en;
 
 /** Maximum supply of the future TTTI version. */
 const FUTURE_MAX_SUPPLY = 10_000;
@@ -139,6 +131,17 @@ function formatFetchedAt(timestamp: bigint | undefined): string {
 export function WhitePaperPage() {
   const t = useDict(WHITE_PAPER_TEXT);
   const site = useDict(SITE_TEXT);
+  const revenue = useDict(MINT_REVENUE_TEXT);
+  const contents = [
+    { id: "reading-notice", label: t.contentsReading },
+    { id: "present-ledger", label: t.contentsLedger },
+    { id: "purchase-mechanics", label: t.contentsMechanics },
+    { id: "mint-revenue", label: revenue.wpContentsRevenue },
+    { id: "controls-risk", label: t.contentsControls },
+    { id: "creator-disclosures", label: t.contentsDisclosures },
+    { id: "privacy", label: t.contentsPrivacy },
+    { id: "verification", label: t.contentsVerification },
+  ];
   const [edition, setEdition] = useState<"corrected" | "original">("corrected");
   const technicalDetails = useTechnicalDetails();
   const legacyInfo = useGetLegacyBlockInfo();
@@ -278,7 +281,7 @@ export function WhitePaperPage() {
                       data-ocid={`white_paper.contents.link.${index + 1}`}
                     >
                       <span className="mr-2 text-primary">0{index + 1} /</span>
-                      {t[item.labelKey]}
+                      {item.label}
                     </a>
                   </li>
                 ))}
@@ -302,6 +305,9 @@ export function WhitePaperPage() {
                   </h2>
                   <p>{t.readingP1}</p>
                   <p>{t.readingP2}</p>
+                  <p data-ocid="white_paper.reading_revenue.text">
+                    {revenue.wpReadingP3}
+                  </p>
                 </section>
                 {t.englishOnlyNotice ? (
                   <div
@@ -378,37 +384,6 @@ export function WhitePaperPage() {
                     page. A smaller purchase is accepted only when it takes
                     everything that remains available.
                   </p>
-                  <p data-ocid="white_paper.cycles_fee.text">
-                    {CYCLES_FEE_TEXT}
-                  </p>
-                  <div
-                    className="border-l paper-rule pl-5"
-                    data-ocid="white_paper.cycles_reserve.panel"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em]">
-                      Cycles reserve account
-                    </p>
-                    {reserveAccount ? (
-                      <p className="mt-1 break-all font-mono text-sm">
-                        {reserveAccount}
-                      </p>
-                    ) : technicalDetails.isError ? (
-                      <p
-                        className="mt-1 text-sm"
-                        data-ocid="white_paper.cycles_reserve.error_state"
-                      >
-                        The reserve account could not be loaded. It is listed
-                        under Technical details.
-                      </p>
-                    ) : (
-                      <p
-                        className="mt-1 text-sm"
-                        data-ocid="white_paper.cycles_reserve.loading_state"
-                      >
-                        Loading reserve account…
-                      </p>
-                    )}
-                  </div>
                 </section>
                 <section
                   id="purchase-mechanics"
@@ -445,9 +420,8 @@ export function WhitePaperPage() {
                     any funds are taken. The amount of the paid token for a
                     given number of tokens therefore depends on the rate in
                     force. No amount of the paid token beyond the cost of what
-                    is delivered is taken. Purchases can be paused, the
-                    receiving account may be unconfigured, and ledger operations
-                    may fail.
+                    is delivered is taken. Purchases can be paused, and ledger
+                    operations may fail.
                   </p>
                   {oracleSources.length > 0 ? (
                     <p data-ocid="white_paper.oracle_sources.text">
@@ -459,9 +433,8 @@ export function WhitePaperPage() {
                     After collection, delivery can fail; the code then refunds
                     the paid amount minus the paid token's ledger fee, and the
                     refund itself can fail. The routing of the paid amount and
-                    of the fee is described in section 02. The recipient and
-                    subsequent use of funds are not verified here. Review the
-                    current quote and transaction before approving any payment.
+                    of the fee is described in section 04. Review the current
+                    quote and transaction before approving any payment.
                   </p>
                   <p data-ocid="white_paper.purchase_rules.text">
                     Each account can run one purchase at a time; a purchase
@@ -505,22 +478,88 @@ export function WhitePaperPage() {
                   </p>
                 </section>
                 <section
+                  id="mint-revenue"
+                  className="scroll-mt-24 space-y-4 border-t paper-rule pt-9"
+                  aria-labelledby="revenue-title"
+                >
+                  <h2 id="revenue-title" className="font-display text-3xl">
+                    04 / {revenue.wpRevenueHeading}
+                  </h2>
+                  <p data-ocid="white_paper.mint_price.text">
+                    {REVENUE_EN.priceRule} {REVENUE_EN.ownerShare} The
+                    destination account is configured by the administrators for
+                    each paid token, and the share is sent automatically.{" "}
+                    {REVENUE_EN.ownerAccumulates} Each send is recorded with its
+                    status; a failed send is retried.
+                  </p>
+                  <p data-ocid="white_paper.treasury_return.text">
+                    Funds already held in the internal mint treasuries are
+                    returned once to the owner, after the ICP they hold has
+                    topped the cycles reserve up to 2 ICP.
+                  </p>
+                  <p data-ocid="white_paper.mint_fee.text">
+                    {REVENUE_EN.feeShare} {REVENUE_EN.halfLp}{" "}
+                    {REVENUE_EN.halfPermanent} The swap goes through ICPSwap
+                    first, then the native pools; while the rate of the paid
+                    token is absent or expired, the amount waits. The addition
+                    is never conditioned on price. {REVENUE_EN.noTttiCreated}
+                  </p>
+                  <p data-ocid="white_paper.swap_fee.text">
+                    {REVENUE_EN.swapFeeSplit} Nothing goes to cycles.{" "}
+                    {REVENUE_EN.bonusEarnedNote}
+                  </p>
+                  <p data-ocid="white_paper.cycles_topup.text">
+                    {REVENUE_EN.cyclesRule} The conversion goes through the
+                    Cycles Minting Canister from the published CYCLES_RESERVE
+                    subaccount. The reserve has no withdrawal path. Past
+                    purchases keep the fee recorded at the time.
+                  </p>
+                  <div
+                    className="border-l paper-rule pl-5"
+                    data-ocid="white_paper.cycles_reserve.panel"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em]">
+                      Cycles reserve account
+                    </p>
+                    {reserveAccount ? (
+                      <p className="mt-1 break-all font-mono text-sm">
+                        {reserveAccount}
+                      </p>
+                    ) : technicalDetails.isError ? (
+                      <p
+                        className="mt-1 text-sm"
+                        data-ocid="white_paper.cycles_reserve.error_state"
+                      >
+                        The reserve account could not be loaded. It is listed
+                        under Technical details.
+                      </p>
+                    ) : (
+                      <p
+                        className="mt-1 text-sm"
+                        data-ocid="white_paper.cycles_reserve.loading_state"
+                      >
+                        Loading reserve account…
+                      </p>
+                    )}
+                  </div>
+                </section>
+                <section
                   id="controls-risk"
                   className="scroll-mt-24 space-y-4 border-t paper-rule pt-9"
                   aria-labelledby="controls-title"
                 >
                   <h2 id="controls-title" className="font-display text-3xl">
-                    04 / Controls &amp; risk
+                    05 / Controls &amp; risk
                   </h2>
                   <p>
                     Administrators cannot mint tokens and cannot freeze
-                    transfers. The TTTI-T transfer-fee collector account cannot
-                    be withdrawn. The code also lets administrators pause or
-                    resume sales, set the treasury account that receives
-                    payments, and export a balance snapshot. The ledger transfer
-                    fee can be changed within fixed bounds only in this test
-                    (TTTI-T) version. Ledger transactions carry the current
-                    transfer fee.
+                    transfers. The TTTI-T transfer-fee collector account and the
+                    cycles reserve cannot be withdrawn. The code also lets
+                    administrators pause or resume sales, set the destination
+                    account of each paid token, and export a balance snapshot.
+                    The ledger transfer fee can be changed within fixed bounds
+                    only in this test (TTTI-T) version. Ledger transactions
+                    carry the current transfer fee.
                   </p>
                   <p data-ocid="white_paper.upgrade.text">
                     This canister can be upgraded by its controllers. The
@@ -543,7 +582,7 @@ export function WhitePaperPage() {
                   aria-labelledby="disclosures-title"
                 >
                   <h2 id="disclosures-title" className="font-display text-3xl">
-                    05 / Creator disclosures
+                    06 / Creator disclosures
                   </h2>
                   <p>TTTI and THAT have the same creator.</p>
                   <p>
@@ -577,7 +616,7 @@ export function WhitePaperPage() {
                   aria-labelledby="privacy-title"
                 >
                   <h2 id="privacy-title" className="font-display text-3xl">
-                    06 / Privacy
+                    07 / Privacy
                   </h2>
                   <p data-ocid="white_paper.privacy.text">
                     {FAQ_TEXT.en.privacyA}
@@ -589,7 +628,7 @@ export function WhitePaperPage() {
                   aria-labelledby="verification-title"
                 >
                   <h2 id="verification-title" className="font-display text-3xl">
-                    07 / Verification
+                    08 / Verification
                   </h2>
                   <p>
                     The canister ID, controllers and module hash are read from

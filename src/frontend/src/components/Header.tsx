@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   BookOpen,
+  Droplets,
   History,
   Home,
   LogIn,
@@ -66,6 +67,12 @@ const BASE_NAV: Array<NavItem> = [
     ocid: "header.wallet_link",
   },
   {
+    to: "/pools",
+    labelKey: "navPools",
+    icon: Droplets,
+    ocid: "header.pools_link",
+  },
+  {
     to: "/history",
     labelKey: "navHistory",
     icon: History,
@@ -79,9 +86,6 @@ const ADMIN_NAV: NavItem = {
   icon: ShieldCheck,
   ocid: "header.admin_link",
 };
-
-const desktopLinkClass =
-  "relative rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-smooth hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:inset-x-3 after:-bottom-px after:h-px after:origin-center after:scale-x-0 after:bg-primary after:transition-transform after:duration-300 hover:after:scale-x-100 data-[status=active]:text-primary data-[status=active]:after:scale-x-100";
 
 const mobileLinkClass =
   "flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground transition-smooth hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[status=active]:bg-secondary data-[status=active]:text-primary";
@@ -155,36 +159,8 @@ export function Header() {
           </span>
         </Link>
 
-        <nav
-          className="hidden items-center gap-1 xl:flex"
-          aria-label={t.mainNav}
-        >
-          {navItems.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              activeOptions={{ exact: item.exact ?? false }}
-              className={desktopLinkClass}
-              data-ocid={item.ocid}
-            >
-              {t[item.labelKey]}
-            </Link>
-          ))}
-        </nav>
-
         <div className="flex shrink-0 items-center gap-2">
           <LanguagePicker className="hidden xl:flex" ocid="header.language" />
-          <Button
-            type="button"
-            onClick={openSetup}
-            variant="ghost"
-            size="sm"
-            className="hidden h-9 gap-2 text-muted-foreground transition-smooth hover:bg-secondary hover:text-foreground xl:inline-flex"
-            data-ocid="header.setup_wallet_button"
-          >
-            <WalletCards className="h-4 w-4" />
-            <span>{t.setupWallet}</span>
-          </Button>
           <Button
             type="button"
             onClick={handleAuth}
@@ -205,7 +181,7 @@ export function Header() {
                 variant="ghost"
                 size="icon"
                 aria-label={t.openMenu}
-                className="h-11 w-11 text-foreground transition-smooth hover:bg-secondary hover:text-primary xl:hidden"
+                className="h-11 w-11 text-foreground transition-smooth hover:bg-secondary hover:text-primary"
                 data-ocid="header.menu_button"
               >
                 <Menu className="h-5 w-5" />

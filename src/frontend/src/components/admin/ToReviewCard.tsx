@@ -9,6 +9,8 @@ import type {
 import {
   BtcRefundPurpose,
   CollectState,
+  DexToken,
+  PayToken,
   ReviewError,
   TransferKind,
 } from "../../backend";
@@ -21,7 +23,13 @@ import {
   useTransfersToReview,
 } from "../../hooks/useTransferReview";
 import { buybackFailureMessage } from "../../lib/buyback";
-import { formatPayAmount, payTokenSymbol } from "../../lib/token";
+import {
+  TTTI_DECIMALS,
+  TTTI_SYMBOL,
+  formatPayAmount,
+  formatUnits,
+  payTokenSymbol,
+} from "../../lib/token";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import {
@@ -46,7 +54,36 @@ const KIND_LABELS: Record<TransferKind, string> = {
   [TransferKind.BC]: "BTC cost send to treasury (BC)",
   [TransferKind.BM]: "Delivery-failure cost to refund (BM)",
   [TransferKind.BB]: "Buyback payment (BB)",
+  [TransferKind.DD]: "DEX deposit (DD)",
+  [TransferKind.DW]: "DEX withdrawal (DW)",
+  [TransferKind.DQ]: "Pair request deposit refund (DQ)",
+  [TransferKind.DC]: "Converted fees sent to the cycles reserve (DC)",
+  [TransferKind.DL]: "ICP bonus claim paid to an LP (DL)",
+  [TransferKind.OW]: "Mint revenue send to the owner destination (OW)",
+  [TransferKind.SR]: "Treasury sweep send (SR)",
+  [TransferKind.MF]: "Mint fee claim paid to an LP (MF)",
 };
+
+/** Pay tokens matching each DEX token; TTTI-T is not a pay token. */
+const DEX_PAY_TOKENS: Record<DexToken, PayToken | null> = {
+  [DexToken.icp]: PayToken.icp,
+  [DexToken.ckbtc]: PayToken.ckbtc,
+  [DexToken.ckusdc]: PayToken.ckusdc,
+  [DexToken.ckusdt]: PayToken.ckusdt,
+  [DexToken.tttiT]: null,
+};
+
+function tokenSymbol(token: DexToken): string {
+  const pay = DEX_PAY_TOKENS[token];
+  return pay === null ? TTTI_SYMBOL : payTokenSymbol(pay);
+}
+
+function formatTokenAmount(value: bigint, token: DexToken): string {
+  const pay = DEX_PAY_TOKENS[token];
+  return pay === null
+    ? `${formatUnits(value, TTTI_DECIMALS, 2, "en")} ${TTTI_SYMBOL}`
+    : formatPayAmount(value, pay, "en");
+}
 
 const PURPOSE_LABELS: Record<BtcRefundPurpose, string> = {
   [BtcRefundPurpose.excess]: "Excess",
@@ -77,6 +114,14 @@ const ID_LABELS: Record<TransferKind, string> = {
   [TransferKind.BC]: "Trace",
   [TransferKind.BM]: "Conversion",
   [TransferKind.BB]: "Buyback",
+  [TransferKind.DD]: "Transfer",
+  [TransferKind.DW]: "Transfer",
+  [TransferKind.DQ]: "Pair request",
+  [TransferKind.DC]: "DC send",
+  [TransferKind.DL]: "Bonus claim",
+  [TransferKind.OW]: "Owner send",
+  [TransferKind.SR]: "Sweep send",
+  [TransferKind.MF]: "Claim",
 };
 
 const COLLECT_LABELS: Record<CollectState, string> = {
@@ -108,12 +153,12 @@ interface Field {
 }
 
 function amountText(value: bigint, t: TransferReview): string {
-  return `${formatPayAmount(value, t.token, "en")} (${value.toString()} base units)`;
+  return `${formatTokenAmount(value, t.token)} (${value.toString()} base units)`;
 }
 
 function commonFields(t: TransferReview): Field[] {
   return [
-    { label: "Token", value: payTokenSymbol(t.token) },
+    { label: "Token", value: tokenSymbol(t.token) },
     { label: "Memo (text)", value: t.memoText ?? "—" },
     { label: "Memo (hex)", value: t.memoHex ?? "—" },
     {
@@ -161,7 +206,7 @@ function reviewFields(t: TransferReview, legacy: boolean): Field[] {
     return [
       { label: "Deposit index", value: t.depositIndex?.toString() ?? "—" },
       { label: "Principal", value: t.buyer?.toText() ?? "—" },
-      { label: "Token", value: payTokenSymbol(t.token) },
+      { label: "Token", value: tokenSymbol(t.token) },
       { label: "Amount", value: amountText(t.amount, t) },
       { label: "Conversion id", value: t.conversionId?.toString() ?? "—" },
     ];
@@ -176,6 +221,37 @@ function reviewFields(t: TransferReview, legacy: boolean): Field[] {
       },
       ...commonFields(t),
       { label: "Block", value: t.block?.toString() ?? "Unknown" },
+      { label: "Outcome", value: outcomeText(t.outcome) },
+    ];
+  }
+  if (
+    t.kind === TransferKind.DD ||
+    t.kind === TransferKind.DW ||
+    t.kind === TransferKind.DQ
+  ) {
+    return [
+      {
+        label: t.kind === TransferKind.DQ ? "Pair request id" : "Transfer n",
+        value: t.purchaseId.toString(),
+      },
+      { label: "Owner", value: t.buyer?.toText() ?? "—" },
+      ...commonFields(t),
+      {
+        label: "Fee",
+        value: t.fee === undefined ? "—" : amountText(t.fee, t),
+      },
+      {
+        label: "Destination owner",
+        value: t.destination?.owner.toText() ?? "—",
+      },
+      {
+        label: "Destination subaccount (hex)",
+        value: t.destination
+          ? toHex(t.destination.subaccount) || "Default"
+          : "—",
+      },
+      { label: "Sends", value: t.sends.toString() },
+      { label: "Last error", value: t.lastError ?? "—" },
       { label: "Outcome", value: outcomeText(t.outcome) },
     ];
   }
@@ -219,6 +295,48 @@ const NOT_ARRIVED_SUCCESS: Record<TransferKind, string> = {
   [TransferKind.BM]: "This action does not apply to this item",
   [TransferKind.BB]:
     "Marked as not arrived. The buyer can retry the payout or cancel the buyback.",
+  [TransferKind.DD]:
+    "Marked as not arrived. The deposit is failed; no balance was credited.",
+  [TransferKind.DW]:
+    "Marked as not arrived. The amount is back in the owner's DEX balance.",
+  [TransferKind.DQ]:
+    "Marked as not arrived. A new refund attempt with a new memo is pending.",
+  [TransferKind.DC]: "Marked as not arrived. A new attempt is pending.",
+  [TransferKind.DL]: "Marked as not arrived. A new attempt is pending.",
+  [TransferKind.OW]: "Marked as not arrived. A new attempt is pending.",
+  [TransferKind.SR]: "Marked as not arrived. A new attempt is pending.",
+  [TransferKind.MF]: "Marked as not arrived. A new attempt is pending.",
+};
+
+const ARRIVED_SUCCESS: Partial<Record<TransferKind, string>> = {
+  [TransferKind.DD]: "The owner's DEX balance was credited once.",
+  [TransferKind.DW]: "The withdrawal debit is final.",
+  [TransferKind.DQ]: "The pair request deposit refund is complete.",
+  [TransferKind.DC]: "The ICP send to the cycles reserve is recorded.",
+  [TransferKind.DL]: "The ICP bonus claim is paid.",
+  [TransferKind.OW]: "The send to the owner destination is recorded.",
+  [TransferKind.SR]: "The treasury sweep send is recorded.",
+  [TransferKind.MF]: "The mint fee claim is paid.",
+};
+
+/** Short effect of each button for the DEX kinds. */
+const DEX_HINTS: Partial<Record<TransferKind, string>> = {
+  [TransferKind.DD]:
+    "Enter the ledger block of the deposit. Arrived credits the owner's DEX balance once. Not arrived marks the deposit as failed with no credit.",
+  [TransferKind.DW]:
+    "Enter the ledger block of the withdrawal. Arrived makes the debit final. Not arrived gives the amount back to the owner's DEX balance.",
+  [TransferKind.DQ]:
+    "Enter the ledger block of the refund. Arrived closes the refund. Not arrived opens a new attempt with a new memo.",
+  [TransferKind.DC]:
+    "Enter the ICP ledger block of the send to the cycles reserve. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.DL]:
+    "Enter the ICP ledger block of the bonus payment. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.OW]:
+    "Enter the ledger block of the send to the owner destination. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.SR]:
+    "Enter the ledger block of the treasury sweep send. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.MF]:
+    "Enter the ledger block of the mint fee claim payment. Arrived records the block. Not arrived opens a new attempt.",
 };
 
 function ReviewRow({
@@ -273,7 +391,12 @@ function ReviewRow({
       { kind, purchaseId, block: BigInt(trimmed) },
       {
         onSuccess: (result) =>
-          report(result, `Marked as arrived in block ${trimmed}.`),
+          report(
+            result,
+            `Marked as arrived in block ${trimmed}.${
+              ARRIVED_SUCCESS[kind] ? ` ${ARRIVED_SUCCESS[kind]}` : ""
+            }`,
+          ),
         onError: reportError,
       },
     );
@@ -434,17 +557,19 @@ function ReviewRow({
         </p>
       ) : trimmed === "" ? (
         <p className="text-xs text-muted-foreground">
-          {kind === TransferKind.PC
-            ? "Enter the ledger block of the manual refund to mark it as refunded. Not arrived removes a payment that never happened."
-            : kind === TransferKind.BM
-              ? "Refund this cost by hand, then enter the ledger block of the refund to mark it as refunded."
-              : kind === TransferKind.RF
-                ? "Enter the ledger block number to mark the refund as arrived or as refunded manually."
-                : canCancel
-                  ? "Enter the ledger block of the payment to mark it as arrived, or the TTTI-T block of the TTTI-T returned by hand to mark the buyback as cancelled. Not arrived lets the buyer retry."
-                  : kind === TransferKind.BB
-                    ? "Enter the ledger block of the payment to mark it as arrived. Not arrived lets the buyer retry or cancel."
-                    : "Enter the ledger block number to mark the transfer as arrived."}
+          {DEX_HINTS[kind]
+            ? DEX_HINTS[kind]
+            : kind === TransferKind.PC
+              ? "Enter the ledger block of the manual refund to mark it as refunded. Not arrived removes a payment that never happened."
+              : kind === TransferKind.BM
+                ? "Refund this cost by hand, then enter the ledger block of the refund to mark it as refunded."
+                : kind === TransferKind.RF
+                  ? "Enter the ledger block number to mark the refund as arrived or as refunded manually."
+                  : canCancel
+                    ? "Enter the ledger block of the payment to mark it as arrived, or the TTTI-T block of the TTTI-T returned by hand to mark the buyback as cancelled. Not arrived lets the buyer retry."
+                    : kind === TransferKind.BB
+                      ? "Enter the ledger block of the payment to mark it as arrived. Not arrived lets the buyer retry or cancel."
+                      : "Enter the ledger block number to mark the transfer as arrived."}
         </p>
       ) : null}
       {feedback && (
@@ -494,7 +619,12 @@ export function ToReviewCard({ className }: { className: string }) {
           refunded with the block. Buyback payments (BB) with no confirmed
           outcome after 23 h are marked as arrived or not arrived; legacy
           buybacks whose payout failed (before the escrow) can also be marked as
-          cancelled with the block of the TTTI-T returned by hand.
+          cancelled with the block of the TTTI-T returned by hand. DEX deposits
+          (DD), DEX withdrawals (DW) and pair request deposit refunds (DQ) are
+          checked the same way. Converted fees sent to the cycles reserve (DC)
+          and ICP bonus claims (DL) are marked as arrived or not arrived. Owner
+          sends (OW), treasury sweep sends (SR) and mint fee claims (MF) are
+          checked the same way.
         </CardDescription>
       </CardHeader>
       <CardContent>

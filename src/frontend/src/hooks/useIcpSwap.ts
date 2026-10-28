@@ -1,5 +1,7 @@
+import { loadConfig } from "@caffeineai/core-infrastructure";
 import type { Principal } from "@icp-sdk/core/principal";
 import { useQuery } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
 import {
   QUOTE_TTL_MS,
   type SwapPoolInfo,
@@ -7,6 +9,15 @@ import {
   readUnusedBalance,
   resolveSwapPool,
 } from "../lib/icpswap";
+import {
+  type ListedToken,
+  addedSwapTokensSnapshot,
+  readIcpSwapTokenList,
+  subscribeAddedSwapTokens,
+} from "../lib/swapTokens";
+import type { TokenDescriptor } from "../lib/tokenRegistry";
+
+const noTokens: Array<TokenDescriptor> = [];
 
 /** Direct ICPSwap pool of a pair; null when ICPSwap has none. */
 export function useSwapPool(fromLedger: string, toLedger: string) {
@@ -49,6 +60,35 @@ export function useSwapUnusedBalance(
       return readUnusedBalance(pool, owner);
     },
     enabled: !!pool && !!owner,
+    retry: 1,
+  });
+}
+
+/** Tokens added to the swap selector in this browser. */
+export function useAddedSwapTokens(): Array<TokenDescriptor> {
+  return useSyncExternalStore(
+    subscribeAddedSwapTokens,
+    addedSwapTokensSnapshot,
+    () => noTokens,
+  );
+}
+
+/** TTTI-T ledger ID: the backend canister ID read from the runtime config. */
+export function useTttiLedgerId() {
+  return useQuery<string>({
+    queryKey: ["tttiLedgerId"],
+    queryFn: async () => (await loadConfig()).backend_canister_id,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** ICPSwap's on-chain token list, for symbol search. */
+export function useIcpSwapTokenList(enabled: boolean) {
+  return useQuery<Array<ListedToken>>({
+    queryKey: ["icpswapTokenList"],
+    queryFn: readIcpSwapTokenList,
+    enabled,
+    staleTime: 60 * 60 * 1000,
     retry: 1,
   });
 }

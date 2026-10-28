@@ -6,6 +6,7 @@ import {
   useTechnicalDetails,
   useTokenInfo,
 } from "../hooks/useQueries";
+import { MINT_REVENUE_TEXT } from "../i18n/common";
 import { type Lang, toIntlLocale, useDict, useLanguage } from "../i18n/core";
 import {
   TECH_BACKEND_TEXT,
@@ -444,6 +445,7 @@ function formatNs(ns: bigint, lang: Lang, unavailable: string): string {
 
 function PayTokens({ details }: { details: TechnicalDetails }) {
   const t = useDict(TOKEN_INFO_TEXT);
+  const cyclesFeeText = useCyclesFeeText();
   const ex = useDict(TECH_EXPLORER_TEXT);
   return (
     <div className="min-w-0 sm:col-span-2" data-ocid="token.pay_tokens.panel">
@@ -486,6 +488,12 @@ function PayTokens({ details }: { details: TechnicalDetails }) {
             </li>
           ))}
         </ul>
+        <p
+          className="mt-3 text-sm leading-relaxed text-foreground"
+          data-ocid="token.pay_tokens.fee_rule"
+        >
+          {cyclesFeeText}
+        </p>
       </dd>
     </div>
   );
@@ -495,7 +503,7 @@ function CyclesReserve({ details }: { details: TechnicalDetails }) {
   const { data: cycles, isLoading } = useCyclesStatus();
   const t = useDict(TOKEN_INFO_TEXT);
   const { lang } = useLanguage();
-  const cyclesFeeText = useCyclesFeeText();
+  const mintRevenue = useDict(MINT_REVENUE_TEXT);
   const lastTopUp = cycles?.lastTopUp;
   const balanceText = isLoading
     ? t.loading
@@ -528,7 +536,7 @@ function CyclesReserve({ details }: { details: TechnicalDetails }) {
           className="text-sm leading-relaxed text-foreground"
           data-ocid="token.cycles_reserve.rule"
         >
-          {cyclesFeeText}
+          {mintRevenue.cyclesRule}
         </p>
         <div className="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-3">
           <p>

@@ -16,24 +16,88 @@ export interface Account {
 }
 export type AcknowledgedAt = bigint;
 export type AcknowledgementError = { 'anonymousCaller' : null };
+export interface AddLiquidityArgs {
+  'side' : PoolSide,
+  'lockDurationNs' : bigint,
+  'counterAmount' : [] | [bigint],
+  'amount' : bigint,
+  'poolId' : PoolId,
+}
+export type AddLiquidityError = {
+    'insufficientBalance' : {
+      'token' : DexToken,
+      'available' : bigint,
+      'required' : bigint,
+    }
+  } |
+  { 'poolRemoved' : null } |
+  {
+    'belowMinimum' : {
+      'token0Minimum' : [] | [bigint],
+      'token1Minimum' : [] | [bigint],
+    }
+  } |
+  { 'minimumsNotSet' : null } |
+  { 'lockTooLong' : { 'maximumNs' : bigint } } |
+  { 'counterAmountRequired' : null } |
+  { 'lockTooShort' : { 'minimumNs' : bigint } } |
+  { 'zeroAmount' : null } |
+  { 'poolNotFound' : null } |
+  { 'anonymous' : null } |
+  { 'operationInProgress' : null } |
+  { 'zeroShares' : null } |
+  { 'unsupportedToken' : null } |
+  { 'ratioMismatch' : { 'requiredCounterAmount' : bigint } };
+export interface AddLiquidityQuote {
+  'shares' : bigint,
+  'gaugeAfter' : UsdGauge,
+  'lockedShares' : bigint,
+  'opensPool' : boolean,
+  'isFirstDeposit' : boolean,
+  'amount0' : bigint,
+  'amount1' : bigint,
+  'totalSharesAfter' : bigint,
+  'poolId' : PoolId,
+}
+export interface AddLiquidityQuoteArgs {
+  'side' : PoolSide,
+  'counterAmount' : [] | [bigint],
+  'amount' : bigint,
+  'poolId' : PoolId,
+}
+export interface AddLiquidityResult {
+  'shares' : bigint,
+  'lockedShares' : bigint,
+  'pool' : PoolView,
+  'amount0' : bigint,
+  'amount1' : bigint,
+  'position' : PositionView,
+}
 export type AddressBookError = { 'invalidInput' : InvalidReason } |
   { 'anonymous' : null } |
   { 'notFound' : null } |
   { 'duplicateNickname' : null } |
   { 'limitReached' : { 'max' : bigint } };
+export interface AllocationPoolAdd {
+  'shares' : bigint,
+  'amount0' : bigint,
+  'amount1' : bigint,
+  'poolId' : bigint,
+}
+export interface AllocationSkip { 'poolId' : bigint, 'reason' : string }
 export interface Allowance {
   'allowance' : bigint,
-  'expires_at' : [] | [Timestamp__2],
+  'expires_at' : [] | [Timestamp__6],
 }
 export interface AllowanceArgs { 'account' : Account, 'spender' : Account }
 export interface ApproveArgs {
   'fee' : [] | [bigint],
   'memo' : [] | [Uint8Array],
   'from_subaccount' : [] | [Subaccount],
-  'created_at_time' : [] | [Timestamp__2],
+  'created_at_time' : [] | [Timestamp__6],
   'amount' : bigint,
   'expected_allowance' : [] | [bigint],
-  'expires_at' : [] | [Timestamp__2],
+  'expires_at' : [] | [Timestamp__6],
   'spender' : Account,
 }
 export type ApproveError = {
@@ -41,13 +105,21 @@ export type ApproveError = {
   } |
   { 'TemporarilyUnavailable' : null } |
   { 'Duplicate' : { 'duplicate_of' : bigint } } |
-  { 'ExpiredFrom' : { 'ledger_time' : Timestamp__2 } } |
+  { 'ExpiredFrom' : { 'ledger_time' : Timestamp__6 } } |
   { 'BadFee' : { 'expected_fee' : bigint } } |
   { 'AllowanceChanged' : { 'current_allowance' : bigint } } |
-  { 'CreatedInFuture' : { 'ledger_time' : Timestamp__2 } } |
+  { 'CreatedInFuture' : { 'ledger_time' : Timestamp__6 } } |
   { 'TooOld' : null } |
-  { 'Expired' : { 'ledger_time' : Timestamp__2 } } |
+  { 'Expired' : { 'ledger_time' : Timestamp__6 } } |
   { 'InsufficientFunds' : { 'balance' : bigint } };
+export type ApprovePairError = { 'minimumsNotAllowed' : null } |
+  { 'refundFailed' : string } |
+  { 'notAuthorized' : null } |
+  { 'requestNotFound' : null } |
+  { 'minimumsRequired' : null } |
+  { 'invalidMinimums' : null } |
+  { 'notPending' : null } |
+  { 'pairExists' : { 'poolId' : PoolId } };
 export type ApproveResult = { 'Ok' : bigint } |
   { 'Err' : ApproveError };
 export interface ArchiveInfo {
@@ -59,14 +131,34 @@ export type AttemptOutcome = { 'pending' : null } |
   { 'unknown' : null } |
   { 'failed' : string } |
   { 'succeeded' : bigint };
+export interface AutonomyView {
+  'avg30dCyclesPerDay' : [] | [bigint],
+  'computedAt' : Timestamp,
+  'totalCycles' : bigint,
+  'sampleCount' : bigint,
+  'autonomyDays' : [] | [bigint],
+  'reserveBalanceE8s' : bigint,
+  'reserveCyclesEstimate' : [] | [bigint],
+  'avg7dCyclesPerDay' : [] | [bigint],
+  'targetDays' : bigint,
+  'cyclesBalance' : bigint,
+  'oldestSampleAt' : [] | [Timestamp],
+}
 export interface BalanceSnapshot {
   'decimals' : number,
   'totalSupply' : bigint,
-  'exportedAt' : Timestamp__2,
+  'exportedAt' : Timestamp__6,
   'holders' : Array<SnapshotEntry>,
 }
 export interface Block { 'id' : bigint, 'block' : Value__1 }
 export type BlockIndex = bigint;
+export interface BonusClaimView {
+  'n' : bigint,
+  'status' : DexTransferStatus,
+  'createdAt' : Timestamp,
+  'memoText' : string,
+  'amountE8s' : bigint,
+}
 export interface BtcCostToRefund {
   'amount' : bigint,
   'refundedBlock' : [] | [bigint],
@@ -234,6 +326,18 @@ export type BuybackStatus = { 'payoutFailed' : null } |
   { 'completed' : null } |
   { 'inProgress' : null };
 export interface Cell { 'value' : Value__2, 'name' : string }
+export type ClaimBonusError = { 'belowMinimum' : { 'minimumE8s' : bigint } } |
+  { 'nothingToClaim' : null } |
+  { 'anonymous' : null } |
+  { 'claimInProgress' : null };
+export type ClaimBonusResult = { 'ok' : BonusClaimView } |
+  { 'err' : ClaimBonusError };
+export type ClaimMintFeeError = { 'belowLedgerFee' : { 'fee' : bigint } } |
+  { 'nothingToClaim' : null } |
+  { 'anonymous' : null } |
+  { 'claimInProgress' : null };
+export type ClaimMintFeeResult = { 'ok' : MintFeeClaimView } |
+  { 'err' : ClaimMintFeeError };
 export type CollectState = { 'confirmed' : null } |
   { 'unknown' : null };
 export interface Contact {
@@ -263,7 +367,7 @@ export interface Conversion {
   'recipient' : Account,
   'paymentBlock' : [] | [bigint],
   'message' : [] | [string],
-  'timestamp' : Timestamp__2,
+  'timestamp' : Timestamp__6,
   'payAmount' : bigint,
   'tttiAmount' : bigint,
   'mintBlock' : [] | [bigint],
@@ -277,15 +381,31 @@ export type ConversionStatus = { 'refundFailed' : null } |
   { 'completed' : null } |
   { 'refunded' : null } |
   { 'failed' : null };
+export type CounterToken = { 'icp' : null } |
+  { 'tttiT' : null } |
+  { 'ckbtc' : null } |
+  { 'ckusdc' : null } |
+  { 'ckusdt' : null } |
+  { 'poolToken' : Principal };
+export interface CyclesShareView {
+  'shareBps' : bigint,
+  'targetShareBps' : bigint,
+  'lastAdjustAt' : [] | [Timestamp],
+  'nextAdjustAfter' : [] | [Timestamp],
+  'autonomyDays' : [] | [bigint],
+  'minShareBps' : bigint,
+  'minAdjustIntervalNs' : bigint,
+  'maxShareBps' : bigint,
+  'lowAutonomyDays' : bigint,
+  'highAutonomyDays' : bigint,
+  'maxStepBps' : bigint,
+}
 export interface CyclesStatus {
-  'withdrawableExcessE8s' : bigint,
-  'withdrawalAllowed' : boolean,
   'lastTopUp' : [] | [TopUpRecord],
   'reserveFloorE8s' : bigint,
   'reserveAccount' : Account,
   'reserveBalanceE8s' : bigint,
   'withdrawals' : Array<ReserveWithdrawal>,
-  'withdrawalBlockedReason' : [] | [WithdrawalBlockedReason],
   'cyclesBalance' : bigint,
   'topUpThreshold' : bigint,
 }
@@ -293,6 +413,32 @@ export interface DataCertificate {
   'certificate' : Uint8Array,
   'hash_tree' : Uint8Array,
 }
+export interface DcBatch {
+  'at' : Timestamp,
+  'id' : bigint,
+  'toBonusE8s' : bigint,
+  'status' : DcBatchStatus,
+  'trigger' : DcTrigger,
+  'legs' : Array<DcLeg>,
+  'toCyclesE8s' : bigint,
+}
+export type DcBatchStatus = { 'sent' : bigint } |
+  { 'nothingToConvert' : null } |
+  { 'sending' : null } |
+  { 'needsReview' : null } |
+  { 'failed' : string } |
+  { 'waitingPriceDeviation' : null };
+export interface DcLeg {
+  'deviationBps' : bigint,
+  'amountIn' : bigint,
+  'tokenSymbol' : string,
+  'executionIcpOutE8s' : bigint,
+  'converted' : boolean,
+  'referenceIcpOutE8s' : bigint,
+  'poolId' : PoolId,
+}
+export type DcTrigger = { 'threshold' : null } |
+  { 'daily' : null };
 export interface DeliveryAddressError {
   'code' : DeliveryAddressErrorCode,
   'message' : string,
@@ -348,6 +494,94 @@ export interface DepositTracking {
   'btcAddress' : string,
   'deposits' : Array<DepositEntry>,
 }
+export interface DexAccount {
+  'owner' : Principal,
+  'subaccount' : [] | [Uint8Array],
+}
+export interface DexAmountArgs { 'token' : DexToken, 'amount' : bigint }
+export interface DexBalanceView {
+  'token' : DexToken,
+  'ledgerId' : Principal,
+  'reserved' : bigint,
+  'available' : bigint,
+  'symbol' : string,
+}
+export interface DexConfig {
+  'approvalStatement' : string,
+  'rateValidForNs' : bigint,
+  'refusalCooldownNs' : bigint,
+  'newPairBadgeNs' : bigint,
+  'feeTiers' : Array<FeeTier>,
+  'launchMinimumTotalUsdE8' : bigint,
+  'messageMaxChars' : bigint,
+  'protocolStatement' : string,
+  'tttiMinimumLocked' : bigint,
+  'firstDepositMultiplier' : bigint,
+  'depositAccount' : DexAccount,
+  'tttiTUsdE8' : bigint,
+  'maxLockNs' : bigint,
+  'usdRateScale' : bigint,
+  'rateGraceNs' : bigint,
+  'lockedSharesStatement' : string,
+  'minLockNs' : bigint,
+  'launchDepthStatement' : string,
+  'swapDeadlineMaxNs' : bigint,
+  'lpFeeSharePercent' : bigint,
+  'maxPendingPerUser' : bigint,
+  'reasonMaxChars' : bigint,
+  'requestDeposit' : bigint,
+  'protocolFeeSharePercent' : bigint,
+}
+export type DexDepositError = { 'amountTooSmall' : { 'minimum' : bigint } } |
+  { 'insufficientFunds' : { 'balance' : bigint } } |
+  { 'insufficientAllowance' : { 'required' : bigint, 'allowance' : bigint } } |
+  { 'anonymous' : null } |
+  { 'transferInProgress' : null } |
+  { 'ledgerError' : string };
+export type DexToken = { 'icp' : null } |
+  { 'tttiT' : null } |
+  { 'ckbtc' : null } |
+  { 'ckusdc' : null } |
+  { 'ckusdt' : null };
+export interface DexTokenInfo {
+  'fee' : bigint,
+  'decimals' : number,
+  'token' : DexToken,
+  'ledgerId' : Principal,
+  'minimumDeposit' : bigint,
+  'minimumWithdrawal' : bigint,
+  'symbol' : string,
+}
+export type DexTransferDirection = { 'deposit' : null } |
+  { 'withdrawal' : null };
+export type DexTransferStatus = { 'completed' : bigint } |
+  { 'needsReview' : null } |
+  { 'inProgress' : null } |
+  { 'failed' : string };
+export interface DexTransferView {
+  'n' : bigint,
+  'to' : DexAccount,
+  'fee' : bigint,
+  'status' : DexTransferStatus,
+  'direction' : DexTransferDirection,
+  'token' : DexToken,
+  'createdAtTimeNs' : bigint,
+  'attempt' : bigint,
+  'owner' : Principal,
+  'from' : DexAccount,
+  'memoText' : string,
+  'sends' : bigint,
+  'ledgerAmount' : bigint,
+  'lastError' : [] | [string],
+  'amount' : bigint,
+}
+export type DexWithdrawError = {
+    'insufficientBalance' : { 'available' : bigint }
+  } |
+  { 'amountTooSmall' : { 'minimum' : bigint } } |
+  { 'anonymous' : null } |
+  { 'transferInProgress' : null } |
+  { 'ledgerError' : string };
 export type Error = { 'FrontendOriginsNotConfigured' : null } |
   {
     'MixedSsoSources' : {
@@ -363,8 +597,17 @@ export type Error = { 'FrontendOriginsNotConfigured' : null } |
   { 'UntrustedSsoSource' : { 'domain' : string } } |
   { 'MissingField' : string } |
   { 'FrontendOriginMismatch' : { 'got' : string, 'expected' : Array<string> } };
+export type ExtendLockError = { 'notPositionOwner' : null } |
+  { 'lockTooLong' : { 'maximumUnlockAt' : Timestamp } } |
+  { 'cannotShortenLock' : { 'unlockAt' : Timestamp } } |
+  { 'anonymous' : null } |
+  { 'operationInProgress' : null } |
+  { 'positionNotFound' : null };
 export interface FeeBounds { 'max' : bigint, 'min' : bigint }
 export interface FeeCollectorInfo { 'balance' : bigint, 'account' : Account }
+export type FeeTier = { 'bps5' : null } |
+  { 'bps30' : null } |
+  { 'bps100' : null };
 export type ForwardStatus = { 'forwarded' : bigint } |
   { 'pending' : null } |
   { 'needsReview' : null } |
@@ -477,6 +720,16 @@ export interface IndexTransfer {
   'amount' : Tokens,
   'spender' : [] | [Account],
 }
+export interface InjectionPage {
+  'total' : bigint,
+  'offset' : bigint,
+  'items' : Array<LiquidityInjection>,
+}
+export type InjectionStatus = { 'completed' : null } |
+  { 'addingLiquidity' : null } |
+  { 'swapping' : null } |
+  { 'needsReview' : null } |
+  { 'failed' : string };
 export type InvalidReason = { 'nicknameTooLong' : { 'maxChars' : bigint } } |
   { 'principalNotAllowed' : null } |
   { 'memoTooLong' : { 'maxBytes' : bigint } } |
@@ -486,17 +739,133 @@ export interface LegacyBlockInfo {
   'currentDecimals' : number,
   'legacyDecimals' : number,
 }
+export interface LiquidityInjection {
+  'id' : bigint,
+  'status' : InjectionStatus,
+  'minTttiOut' : bigint,
+  'startedAt' : Timestamp,
+  'token' : PayToken,
+  'venue' : SwapVenue,
+  'amountIn' : bigint,
+  'error' : [] | [string],
+  'updatedAt' : Timestamp,
+  'tttiReceived' : bigint,
+  'pairAmountIn' : bigint,
+  'used0' : bigint,
+  'used1' : bigint,
+  'swapAmountIn' : bigint,
+  'liquidityShares' : bigint,
+  'poolId' : PoolId,
+}
 export interface ListSubaccountsArgs {
   'owner' : Principal,
   'start' : [] | [Subaccount],
+}
+export interface LpBonusView {
+  'claims' : Array<BonusClaimView>,
+  'claimedE8s' : bigint,
+  'positions' : Array<PositionBonusWeight>,
+  'claimableE8s' : bigint,
 }
 export type MetadataValue = { 'Int' : bigint } |
   { 'Nat' : bigint } |
   { 'Blob' : Uint8Array } |
   { 'Text' : string };
+export interface MintFeeBalance {
+  'token' : PayToken,
+  'claimed' : bigint,
+  'claimable' : bigint,
+}
+export type MintFeeClaimStatus = { 'completed' : bigint } |
+  { 'needsReview' : null } |
+  { 'inProgress' : null } |
+  { 'failed' : string };
+export interface MintFeeClaimView {
+  'n' : bigint,
+  'status' : MintFeeClaimStatus,
+  'token' : PayToken,
+  'createdAt' : Timestamp,
+  'memoText' : string,
+  'amount' : bigint,
+}
+export interface MintFeeLpView {
+  'claims' : Array<MintFeeClaimView>,
+  'balances' : Array<MintFeeBalance>,
+}
+export interface MintTreasuryAccount {
+  'token' : PayToken,
+  'balance' : [] | [bigint],
+  'legacyExternalAccount' : [] | [Account],
+  'account' : Account,
+}
 export interface MyBtcDeposits {
   'wallet' : [] | [DepositTracking],
   'purchase' : [] | [DepositTracking],
+}
+export interface OwnerAccumulated { 'token' : PayToken, 'amount' : bigint }
+export type OwnerDestinationResult = { 'ok' : OwnerDestinationView } |
+  { 'err' : OwnerRevenueError };
+export interface OwnerDestinationView {
+  'token' : PayToken,
+  'setAt' : [] | [Timestamp],
+  'account' : [] | [Account],
+  'accumulated' : bigint,
+}
+export type OwnerRevenueError = { 'notConfigured' : null } |
+  { 'notAdmin' : null } |
+  { 'invalidSubaccount' : null } |
+  { 'anonymousOwner' : null } |
+  { 'contractAccount' : null };
+export interface OwnerSendPage {
+  'total' : bigint,
+  'offset' : bigint,
+  'items' : Array<OwnerSendView>,
+}
+export type OwnerSendSource = { 'mint' : bigint } |
+  { 'treasurySweep' : null } |
+  { 'accumulated' : null };
+export type OwnerSendStatus = { 'pending' : null } |
+  { 'sent' : bigint } |
+  { 'needsReview' : null } |
+  { 'failed' : string };
+export interface OwnerSendView {
+  'id' : bigint,
+  'fee' : [] | [bigint],
+  'status' : OwnerSendStatus,
+  'destination' : Account,
+  'token' : PayToken,
+  'createdAtTimeNs' : bigint,
+  'attempt' : bigint,
+  'source' : OwnerSendSource,
+  'createdAt' : Timestamp,
+  'memoText' : string,
+  'sends' : bigint,
+  'updatedAt' : Timestamp,
+  'block' : [] | [bigint],
+  'lastError' : [] | [string],
+  'amount' : bigint,
+}
+export type PairRefundStatus = { 'none' : null } |
+  { 'refunded' : bigint } |
+  { 'needsReview' : null } |
+  { 'inProgress' : null };
+export interface PairRequestView {
+  'id' : RequestId,
+  'status' : RequestStatus,
+  'depositAmount' : bigint,
+  'token' : RequestedToken,
+  'requester' : Principal,
+  'counter' : PoolTokenView,
+  'refundStatus' : PairRefundStatus,
+  'feeBps' : bigint,
+  'kind' : PoolKind,
+  'createdAt' : Timestamp,
+  'feeTier' : FeeTier,
+  'depositBlock' : bigint,
+  'refundBlock' : [] | [bigint],
+  'message' : string,
+  'checks' : RequestChecks,
+  'copiedSymbol' : boolean,
 }
 export type PayToken = { 'icp' : null } |
   { 'ckbtc' : null } |
@@ -520,12 +889,101 @@ export interface PayTokenStatus {
   'liveRate' : [] | [bigint],
   'symbol' : string,
 }
+export type PoolId = bigint;
+export type PoolKind = { 'tttiPair' : null } |
+  { 'utilityPair' : null };
+export interface PoolMinimums {
+  'token0' : [] | [bigint],
+  'token1' : [] | [bigint],
+}
+export type PoolSide = { 'token0' : null } |
+  { 'token1' : null };
+export type PoolStatus = { 'filling' : null } |
+  { 'active' : null } |
+  { 'removed' : null };
+export interface PoolTokenView {
+  'decimals' : number,
+  'ledgerId' : Principal,
+  'isTttiT' : boolean,
+  'symbol' : string,
+}
+export interface PoolView {
+  'id' : PoolId,
+  'approvalStatement' : [] | [string],
+  'status' : PoolStatus,
+  'subaccountText' : string,
+  'requestId' : [] | [RequestId],
+  'minimumLocked' : PoolMinimums,
+  'feeBps' : bigint,
+  'acceptsWithdrawals' : boolean,
+  'lockedShares' : bigint,
+  'kind' : PoolKind,
+  'acceptsSwaps' : boolean,
+  'createdAt' : Timestamp,
+  'reserve0' : bigint,
+  'reserve1' : bigint,
+  'launchMinimumTotalUsdE8' : bigint,
+  'subaccount' : Uint8Array,
+  'feeTier' : FeeTier,
+  'minimumsSet' : boolean,
+  'acceptsDeposits' : boolean,
+  'gauge' : UsdGauge,
+  'newPairBadgeActive' : boolean,
+  'token0' : PoolTokenView,
+  'token1' : PoolTokenView,
+  'firstDepositMinimum' : PoolMinimums,
+  'lockedSharesStatement' : string,
+  'protocolFee0' : bigint,
+  'protocolFee1' : bigint,
+  'poolAccount' : DexAccount,
+  'removedAt' : [] | [Timestamp],
+  'totalShares' : bigint,
+  'newPairBadgeUntil' : [] | [Timestamp],
+}
+export interface PositionBonusWeight {
+  'weight' : bigint,
+  'valueIcpE8s' : bigint,
+  'positionId' : bigint,
+  'remainingLockNs' : bigint,
+  'poolId' : PoolId,
+}
+export type PositionId = bigint;
+export interface PositionView {
+  'id' : PositionId,
+  'isCreator' : boolean,
+  'shares' : bigint,
+  'owner' : Principal,
+  'createdAt' : Timestamp,
+  'unlockAt' : Timestamp,
+  'unlocked' : boolean,
+  'lockDurationNs' : bigint,
+  'amount0' : bigint,
+  'amount1' : bigint,
+  'withdrawable' : boolean,
+  'token0Symbol' : string,
+  'token1Symbol' : string,
+  'poolId' : PoolId,
+}
 export interface PriceError { 'at' : Timestamp, 'message' : string }
 export type PriceResult = { 'Ok' : IcpPrice } |
   { 'Err' : string };
 export type PriceSource = { 'none' : null } |
   { 'coinbase' : null } |
   { 'coingecko' : null };
+export interface ProtocolLiquidityView {
+  'shares' : bigint,
+  'fromTreasury0' : bigint,
+  'fromTreasury1' : bigint,
+  'lastAddedAt' : [] | [Timestamp],
+  'amount0' : bigint,
+  'amount1' : bigint,
+  'fromFees0' : bigint,
+  'fromFees1' : bigint,
+  'token0Symbol' : string,
+  'totalShares' : bigint,
+  'token1Symbol' : string,
+  'poolId' : PoolId,
+}
 export interface PublicTreasuryInfo {
   'tokenAccounts' : Array<TokenAccountInfo>,
   'icpAccount' : Account,
@@ -589,6 +1047,67 @@ export type ReconcileError = { 'notPaused' : null } |
   { 'openTraces' : null } |
   { 'purchaseInFlight' : null } |
   { 'notAdmin' : null };
+export type RefusePairError = { 'notAuthorized' : null } |
+  { 'requestNotFound' : null } |
+  { 'reasonTooLong' : { 'max' : bigint } } |
+  { 'reasonRequired' : null } |
+  { 'notPending' : null };
+export type RemoveLiquidityError = { 'notPositionOwner' : null } |
+  { 'poolNotFound' : null } |
+  { 'anonymous' : null } |
+  { 'operationInProgress' : null } |
+  { 'positionLocked' : { 'unlockAt' : Timestamp } } |
+  { 'positionNotFound' : null };
+export interface RemoveLiquidityResult {
+  'shares' : bigint,
+  'pool' : PoolView,
+  'positionId' : PositionId,
+  'amount0' : bigint,
+  'amount1' : bigint,
+  'poolId' : PoolId,
+}
+export type RemovePairError = { 'notAuthorized' : null } |
+  { 'alreadyRemoved' : null } |
+  { 'poolNotFound' : null };
+export interface RequestChecks {
+  'metadataRead' : boolean,
+  'pairUnique' : boolean,
+  'icrc1' : boolean,
+  'icrc2' : boolean,
+  'copiedSymbolOf' : [] | [string],
+}
+export type RequestId = bigint;
+export interface RequestPairArgs {
+  'ledgerId' : Principal,
+  'counter' : CounterToken,
+  'feeTier' : FeeTier,
+  'message' : string,
+}
+export type RequestPairError = { 'depositFailed' : string } |
+  { 'tooManyPending' : { 'max' : bigint } } |
+  { 'messageTooLong' : { 'max' : bigint } } |
+  { 'missingStandards' : { 'icrc1' : boolean, 'icrc2' : boolean } } |
+  { 'insufficientFunds' : { 'balance' : bigint } } |
+  { 'insufficientAllowance' : { 'required' : bigint, 'allowance' : bigint } } |
+  { 'anonymous' : null } |
+  { 'ledgerUnreachable' : string } |
+  { 'metadataUnavailable' : string } |
+  { 'invalidToken' : string } |
+  { 'unknownCounterToken' : null } |
+  { 'cooldown' : { 'until' : Timestamp } } |
+  {
+    'pairExists' : { 'requestId' : [] | [RequestId], 'poolId' : [] | [PoolId] }
+  };
+export type RequestStatus = { 'pending' : null } |
+  { 'approved' : { 'at' : Timestamp, 'poolId' : PoolId } } |
+  { 'refused' : { 'at' : Timestamp, 'reason' : string } };
+export interface RequestedToken {
+  'fee' : bigint,
+  'decimals' : number,
+  'ledgerId' : Principal,
+  'name' : string,
+  'symbol' : string,
+}
 export interface ReserveWithdrawal {
   'blockIndex' : bigint,
   'timestamp' : Timestamp,
@@ -599,24 +1118,50 @@ export interface ReservedReconciliation {
   'reconciledAt' : bigint,
   'previousReserved' : bigint,
 }
-export type Result = { 'ok' : Contact } |
+export type Result = { 'ok' : DexTransferView } |
+  { 'err' : DexWithdrawError };
+export type Result_1 = { 'ok' : Contact } |
   { 'err' : AddressBookError };
-export type Result_1 = { 'ok' : Buyback } |
+export type Result_10 = { 'ok' : SwapQuote } |
+  { 'err' : SwapError };
+export type Result_11 = { 'ok' : BuybackQuote } |
   { 'err' : BuybackError };
-export type Result_2 = { 'ok' : ReservedReconciliation } |
-  { 'err' : ReconcileError };
-export type Result_3 = { 'ok' : BuybackQuote } |
-  { 'err' : BuybackError };
-export type Result_4 = { 'ok' : Array<Contact> } |
+export type Result_12 = { 'ok' : AddLiquidityQuote } |
+  { 'err' : AddLiquidityError };
+export type Result_13 = { 'ok' : Array<Contact> } |
   { 'err' : AddressBookError };
-export type Result_5 = { 'ok' : Array<Buyback> } |
+export type Result_14 = { 'ok' : Array<Buyback> } |
   { 'err' : BuybackError };
-export type Result_6 = { 'ok' : Array<BuybackMass> } |
+export type Result_15 = { 'ok' : Array<BuybackMass> } |
   { 'err' : BuybackError };
-export type Result_7 = { 'ok' : null } |
+export type Result_16 = { 'ok' : PositionView } |
+  { 'err' : ExtendLockError };
+export type Result_17 = { 'ok' : DexTransferView } |
+  { 'err' : DexDepositError };
+export type Result_18 = { 'ok' : null } |
   { 'err' : AddressBookError };
-export type Result_8 = { 'ok' : null } |
+export type Result_19 = { 'ok' : PoolView } |
+  { 'err' : ApprovePairError };
+export type Result_2 = { 'ok' : SwapResult } |
+  { 'err' : SwapError };
+export type Result_20 = { 'ok' : AddLiquidityResult } |
+  { 'err' : AddLiquidityError };
+export type Result_21 = { 'ok' : null } |
   { 'err' : Error };
+export type Result_3 = { 'ok' : PoolView } |
+  { 'err' : SetMinimumsError };
+export type Result_4 = { 'ok' : Buyback } |
+  { 'err' : BuybackError };
+export type Result_5 = { 'ok' : PairRequestView } |
+  { 'err' : RequestPairError };
+export type Result_6 = { 'ok' : PoolView } |
+  { 'err' : RemovePairError };
+export type Result_7 = { 'ok' : RemoveLiquidityResult } |
+  { 'err' : RemoveLiquidityError };
+export type Result_8 = { 'ok' : PairRequestView } |
+  { 'err' : RefusePairError };
+export type Result_9 = { 'ok' : ReservedReconciliation } |
+  { 'err' : ReconcileError };
 export interface Result__1 { 'hasMore' : boolean, 'rows' : Array<Array<Cell>> }
 export type ReviewError = { 'notFound' : null } |
   { 'notAdmin' : null } |
@@ -646,8 +1191,30 @@ export interface SaleStatus {
   'maxSupply' : bigint,
   'mintableRemaining' : bigint,
 }
+export interface SetAsideView {
+  'token' : PayToken,
+  'totalReceived' : bigint,
+  'lastInjectionAt' : [] | [Timestamp],
+  'thresholdUsdE8' : bigint,
+  'valueUsdE8' : [] | [bigint],
+  'totalInjected' : bigint,
+  'targetPoolId' : [] | [PoolId],
+  'amount' : bigint,
+}
 export type SetFeeResult = { 'ok' : null } |
   { 'err' : string };
+export type SetMinimumsError = { 'poolRemoved' : null } |
+  { 'notAuthorized' : null } |
+  { 'liquidityAlreadyAdded' : null } |
+  { 'invalidMinimums' : null } |
+  { 'poolNotFound' : null } |
+  { 'notUtilityPair' : null };
+export interface ShareChange {
+  'at' : Timestamp,
+  'newShareBps' : bigint,
+  'autonomyDays' : [] | [bigint],
+  'oldShareBps' : bigint,
+}
 export interface SnapshotEntry {
   'deliveryAddress' : [] | [Account],
   'balance' : bigint,
@@ -658,6 +1225,64 @@ export interface SnapshotEntry {
 export type Subaccount = Uint8Array;
 export interface SupportedBlockType { 'url' : string, 'block_type' : string }
 export interface SupportedStandard { 'url' : string, 'name' : string }
+export type SwapError = { 'insufficientBalance' : { 'available' : bigint } } |
+  { 'tokenNotInPool' : null } |
+  { 'poolRemoved' : null } |
+  { 'poolFilling' : { 'gauge' : UsdGauge } } |
+  { 'deadlineTooFar' : { 'maximum' : Timestamp } } |
+  { 'invalidSlippage' : { 'maximumBps' : bigint } } |
+  { 'poolNotOpen' : null } |
+  { 'zeroAmount' : null } |
+  { 'poolNotFound' : null } |
+  { 'anonymous' : null } |
+  { 'rateUnavailable' : null } |
+  { 'operationInProgress' : null } |
+  { 'slippageExceeded' : { 'amountOut' : bigint, 'minAmountOut' : bigint } } |
+  { 'unsupportedToken' : null } |
+  { 'deadlineExceeded' : { 'now' : Timestamp, 'deadline' : Timestamp } } |
+  { 'insufficientLiquidity' : null };
+export interface SwapQuote {
+  'fee' : bigint,
+  'tokenIn' : DexToken,
+  'slippageBps' : bigint,
+  'maxDeadlineNs' : bigint,
+  'tokenOut' : DexToken,
+  'protocolFee' : bigint,
+  'feeBps' : bigint,
+  'amountIn' : bigint,
+  'lpFee' : bigint,
+  'minimumReceived' : bigint,
+  'priceImpactBps' : bigint,
+  'amountOut' : bigint,
+  'poolId' : PoolId,
+}
+export interface SwapResult {
+  'fee' : bigint,
+  'tokenIn' : DexToken,
+  'tokenOut' : DexToken,
+  'protocolFee' : bigint,
+  'pool' : PoolView,
+  'amountIn' : bigint,
+  'lpFee' : bigint,
+  'amountOut' : bigint,
+  'poolId' : PoolId,
+}
+export type SwapVenue = { 'native' : PoolId } |
+  { 'icpswap' : Principal };
+export type SweepStatus = { 'notStarted' : null } |
+  { 'completed' : null } |
+  { 'toppingUpReserve' : null } |
+  { 'sending' : null };
+export interface SweepToken {
+  'status' : SweepTokenStatus,
+  'token' : PayToken,
+  'balance' : [] | [bigint],
+}
+export type SweepTokenStatus = { 'pending' : null } |
+  { 'sent' : bigint } |
+  { 'nothingToSend' : null } |
+  { 'waitingDestination' : null } |
+  { 'sending' : bigint };
 export interface TechnicalDetails {
   'decimals' : number,
   'buyerPriceUsd' : bigint,
@@ -692,13 +1317,18 @@ export interface TechnicalDetails {
   'cyclesReserveAccount' : Account,
 }
 export type Timestamp = bigint;
-export type Timestamp__2 = bigint;
+export type Timestamp__6 = bigint;
 export interface TokenAccountInfo {
   'token' : PayToken,
   'account' : [] | [Account],
 }
-export type TokenAccountResult = { 'Ok' : TokenAccountInfo } |
-  { 'Err' : string };
+export interface TokenAmounts {
+  'icp' : bigint,
+  'ckbtc' : bigint,
+  'ckusdc' : bigint,
+  'ckusdt' : bigint,
+}
+export interface TokenMinimums { 'token0' : bigint, 'token1' : bigint }
 export interface TokenPrice {
   'lastSuccessAt' : [] | [Timestamp],
   'token' : PayToken,
@@ -754,7 +1384,7 @@ export interface TransferArgs {
   'fee' : [] | [bigint],
   'memo' : [] | [Uint8Array],
   'from_subaccount' : [] | [Subaccount],
-  'created_at_time' : [] | [Timestamp__2],
+  'created_at_time' : [] | [Timestamp__6],
   'amount' : bigint,
 }
 export interface TransferAttempt {
@@ -774,7 +1404,7 @@ export type TransferError = {
   { 'BadBurn' : { 'min_burn_amount' : bigint } } |
   { 'Duplicate' : { 'duplicate_of' : bigint } } |
   { 'BadFee' : { 'expected_fee' : bigint } } |
-  { 'CreatedInFuture' : { 'ledger_time' : Timestamp__2 } } |
+  { 'CreatedInFuture' : { 'ledger_time' : Timestamp__6 } } |
   { 'TooOld' : null } |
   { 'InsufficientFunds' : { 'balance' : bigint } };
 export interface TransferFromArgs {
@@ -783,7 +1413,7 @@ export interface TransferFromArgs {
   'spender_subaccount' : [] | [Subaccount],
   'from' : Account,
   'memo' : [] | [Uint8Array],
-  'created_at_time' : [] | [Timestamp__2],
+  'created_at_time' : [] | [Timestamp__6],
   'amount' : bigint,
 }
 export type TransferFromError = {
@@ -794,7 +1424,7 @@ export type TransferFromError = {
   { 'BadBurn' : { 'min_burn_amount' : bigint } } |
   { 'Duplicate' : { 'duplicate_of' : bigint } } |
   { 'BadFee' : { 'expected_fee' : bigint } } |
-  { 'CreatedInFuture' : { 'ledger_time' : Timestamp__2 } } |
+  { 'CreatedInFuture' : { 'ledger_time' : Timestamp__6 } } |
   { 'TooOld' : null } |
   { 'InsufficientFunds' : { 'balance' : bigint } };
 export type TransferFromResult = { 'Ok' : bigint } |
@@ -803,10 +1433,18 @@ export type TransferKind = { 'BB' : null } |
   { 'BC' : null } |
   { 'BM' : null } |
   { 'BR' : null } |
+  { 'DC' : null } |
+  { 'DD' : null } |
+  { 'DL' : null } |
+  { 'DQ' : null } |
+  { 'DW' : null } |
   { 'FW' : null } |
+  { 'MF' : null } |
+  { 'OW' : null } |
   { 'PC' : null } |
   { 'RF' : null } |
-  { 'SH' : null };
+  { 'SH' : null } |
+  { 'SR' : null };
 export interface TransferRequest {
   'to' : Account,
   'fee' : [] | [bigint],
@@ -819,7 +1457,7 @@ export type TransferResult = { 'Ok' : bigint } |
 export interface TransferReview {
   'fee' : [] | [bigint],
   'destination' : [] | [Account],
-  'token' : PayToken,
+  'token' : DexToken,
   'createdAtTimeNs' : [] | [bigint],
   'memoHex' : [] | [string],
   'kind' : TransferKind,
@@ -846,21 +1484,42 @@ export interface TransformationOutput {
   'headers' : Array<HttpHeader>,
 }
 export interface TreasuryConfig { 'icpAccount' : Account }
-export type TreasuryConfigResult = { 'Ok' : TreasuryConfig } |
-  { 'Err' : string };
+export interface TreasurySweepView {
+  'status' : SweepStatus,
+  'completedAt' : [] | [Timestamp],
+  'startedAt' : [] | [Timestamp],
+  'reserveTopUpBlock' : [] | [bigint],
+  'reserveTopUpE8s' : bigint,
+  'tokens' : Array<SweepToken>,
+  'reserveTopUpMemo' : [] | [string],
+}
 export interface UpgradeReadiness {
   'reserveLockBusy' : boolean,
   'purchasesInFlightCount' : bigint,
   'salesPaused' : boolean,
+  'mintFeeClaimsInFlight' : Array<bigint>,
   'openTraceCount' : bigint,
   'reserved' : bigint,
+  'ownerSendsInFlight' : Array<bigint>,
   'purchasesInFlight' : Array<Principal>,
   'btcLockHeld' : boolean,
+  'sweepStatus' : SweepStatus,
+  'bonusClaimsInFlight' : Array<bigint>,
   'buybacksInFlight' : Array<string>,
   'openTraces' : Array<PurchaseTrace>,
+  'protocolFeeLocks' : Array<string>,
   'buybacksInFlightCount' : bigint,
   'pendingTopUp' : [] | [TopUpAttempt],
+  'injectionsInFlight' : Array<bigint>,
   'lastReconciliation' : [] | [ReservedReconciliation],
+  'dcSendsInFlight' : Array<bigint>,
+}
+export interface UsdGauge {
+  'targetUsdE8' : bigint,
+  'remainingUsdE8' : [] | [bigint],
+  'missingRate' : { 'token0' : boolean, 'token1' : boolean },
+  'valueAvailable' : boolean,
+  'currentUsdE8' : [] | [bigint],
 }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
@@ -877,46 +1536,52 @@ export type Value__2 = { 'int' : bigint } |
   { 'bool' : boolean } |
   { 'null' : null } |
   { 'text' : string };
-export type WithdrawReserveResult = { 'ok' : bigint } |
-  { 'busy' : null } |
-  { 'amountExceedsExcess' : { 'withdrawableE8s' : bigint } } |
-  { 'topUpPendingNotify' : null } |
-  {
-    'cyclesBelowThreshold' : {
-      'cyclesBalance' : bigint,
-      'topUpThreshold' : bigint,
-    }
-  } |
-  { 'noExcess' : null } |
-  { 'ledgerError' : string } |
-  { 'treasuryNotConfigured' : null };
-export type WithdrawalBlockedReason = { 'cyclesBelowThreshold' : null } |
-  { 'topUpRunning' : null } |
-  { 'topUpAwaitingConfirmation' : null };
+export interface WeeklyAllocation {
+  'at' : bigint,
+  'id' : bigint,
+  'toBonusE8s' : bigint,
+  'stockPayoutCap' : TokenAmounts,
+  'skipped' : Array<AllocationSkip>,
+  'note' : string,
+  'surplusE8s' : bigint,
+  'treasuryBalances' : TokenAmounts,
+  'autonomyDays' : [] | [bigint],
+  'toLiquidity' : TokenAmounts,
+  'poolAdds' : Array<AllocationPoolAdd>,
+  'waiting' : TokenAmounts,
+  'toCyclesReserveE8s' : bigint,
+}
 export interface _SERVICE {
   '_initialize_access_control' : ActorMethod<[], undefined>,
-  '_internet_identity_sign_in_finish' : ActorMethod<[], Result_8>,
+  '_internet_identity_sign_in_finish' : ActorMethod<[], Result_21>,
   '_internet_identity_sign_in_start' : ActorMethod<[], Uint8Array>,
   'acceptPurchaseAcknowledgements' : ActorMethod<
     [],
     { 'ok' : PurchaseAcknowledgement } |
       { 'err' : AcknowledgementError }
   >,
-  'addContact' : ActorMethod<[ContactInput], Result>,
+  'addContact' : ActorMethod<[ContactInput], Result_1>,
+  'addLiquidity' : ActorMethod<[AddLiquidityArgs], Result_20>,
+  'approvePair' : ActorMethod<[bigint, [] | [TokenMinimums]], Result_19>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
-  'cancelBuyback' : ActorMethod<[BuybackId], Result_1>,
+  'cancelBuyback' : ActorMethod<[BuybackId], Result_4>,
   'checkBtcPurchaseDeposit' : ActorMethod<[], BtcDepositResult>,
   'checkBtcWalletDeposit' : ActorMethod<[], BtcDepositResult>,
   'checkBtcWalletDepositFor' : ActorMethod<[Principal], BtcDepositResult>,
+  'claimLpBonus' : ActorMethod<[], ClaimBonusResult>,
+  'claimMintFee' : ActorMethod<[PayToken], ClaimMintFeeResult>,
   'clearDeliveryAddress' : ActorMethod<[], boolean>,
+  'clearOwnerDestination' : ActorMethod<[PayToken], OwnerDestinationResult>,
   'convertDeposit' : ActorMethod<[[] | [Account], bigint], PurchaseResult>,
   'convertDepositWith' : ActorMethod<
     [PayToken, [] | [Account], bigint, [] | [bigint]],
     PurchaseResult
   >,
-  'deleteContact' : ActorMethod<[ContactId], Result_7>,
+  'deleteContact' : ActorMethod<[ContactId], Result_18>,
+  'depositToDex' : ActorMethod<[DexAmountArgs], Result_17>,
   'execute' : ActorMethod<[string], Result__1>,
   'exportBalanceSnapshot' : ActorMethod<[], BalanceSnapshot>,
+  'extendLock' : ActorMethod<[bigint, bigint], Result_16>,
   'getApiDoc' : ActorMethod<[], string>,
   'getBtcDepositInfo' : ActorMethod<[], BtcDepositInfo>,
   'getBtcPurchaseAddress' : ActorMethod<[], BtcDepositResult>,
@@ -930,19 +1595,39 @@ export interface _SERVICE {
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getCanisterPrincipal' : ActorMethod<[], Principal>,
   'getConversions' : ActorMethod<[], Array<Conversion>>,
+  'getCyclesAutonomy' : ActorMethod<[], AutonomyView>,
+  'getCyclesShare' : ActorMethod<[], CyclesShareView>,
+  'getCyclesShareHistory' : ActorMethod<[], Array<ShareChange>>,
   'getCyclesStatus' : ActorMethod<[], CyclesStatus>,
   'getDeliveryAddress' : ActorMethod<[], [] | [Account]>,
+  'getDexBalances' : ActorMethod<[Principal], Array<DexBalanceView>>,
+  'getDexConfig' : ActorMethod<[], DexConfig>,
+  'getDexDepositAccount' : ActorMethod<[Principal], DexAccount>,
+  'getDexPool' : ActorMethod<[bigint], [] | [PoolView]>,
+  'getDexPoolAccount' : ActorMethod<[bigint], [] | [DexAccount]>,
+  'getDexPosition' : ActorMethod<[bigint], [] | [PositionView]>,
+  'getDexTokens' : ActorMethod<[], Array<DexTokenInfo>>,
+  'getDexTransfers' : ActorMethod<[Principal], Array<DexTransferView>>,
   'getFeeCollector' : ActorMethod<[], FeeCollectorInfo>,
   'getIcpPrice' : ActorMethod<[], IcpPrice>,
+  'getLastWeeklyAllocation' : ActorMethod<[], [] | [WeeklyAllocation]>,
   'getLegacyBlockInfo' : ActorMethod<[], LegacyBlockInfo>,
+  'getMintTreasuryAccounts' : ActorMethod<[], Array<MintTreasuryAccount>>,
   'getMyBtcDeposits' : ActorMethod<[], MyBtcDeposits>,
   'getMyConversions' : ActorMethod<[], Array<Conversion>>,
+  'getMyLpBonus' : ActorMethod<[], LpBonusView>,
+  'getMyMintFees' : ActorMethod<[], MintFeeLpView>,
+  'getMyPairRequests' : ActorMethod<[], Array<PairRequestView>>,
   'getMyPurchaseAcknowledgement' : ActorMethod<[], PurchaseAcknowledgement>,
+  'getOwnerAccumulated' : ActorMethod<[], Array<OwnerAccumulated>>,
+  'getProtocolLiquidity' : ActorMethod<[], Array<ProtocolLiquidityView>>,
   'getPublicTreasuryInfo' : ActorMethod<[], [] | [PublicTreasuryInfo]>,
   'getSaleStatus' : ActorMethod<[], SaleStatus>,
+  'getSetAsideAmounts' : ActorMethod<[], Array<SetAsideView>>,
   'getTechnicalDetails' : ActorMethod<[], TechnicalDetails>,
   'getTokenPrices' : ActorMethod<[], Array<TokenPrice>>,
   'getTreasuryConfig' : ActorMethod<[], [] | [TreasuryConfig]>,
+  'getTreasurySweepStatus' : ActorMethod<[], TreasurySweepView>,
   'getUpgradeReadiness' : ActorMethod<[], UpgradeReadiness>,
   'get_account_transactions' : ActorMethod<
     [GetAccountTransactionsArgs],
@@ -973,12 +1658,21 @@ export interface _SERVICE {
   'ledger_id' : ActorMethod<[], Principal>,
   'listAllBuybackMasses' : ActorMethod<[], Array<BuybackMass>>,
   'listAllBuybacks' : ActorMethod<[], Array<Buyback>>,
-  'listMyBuybackMasses' : ActorMethod<[], Result_6>,
-  'listMyBuybacks' : ActorMethod<[], Result_5>,
-  'listMyContacts' : ActorMethod<[], Result_4>,
+  'listDcBatches' : ActorMethod<[], Array<DcBatch>>,
+  'listDexPools' : ActorMethod<[], Array<PoolView>>,
+  'listDexPositionsOf' : ActorMethod<[Principal], Array<PositionView>>,
+  'listLiquidityInjections' : ActorMethod<[bigint, bigint], InjectionPage>,
+  'listMyBuybackMasses' : ActorMethod<[], Result_15>,
+  'listMyBuybacks' : ActorMethod<[], Result_14>,
+  'listMyContacts' : ActorMethod<[], Result_13>,
+  'listOwnerDestinations' : ActorMethod<[], Array<OwnerDestinationView>>,
+  'listOwnerSends' : ActorMethod<[bigint, bigint], OwnerSendPage>,
+  'listPairRequests' : ActorMethod<[], Array<PairRequestView>>,
+  'listPoolPositions' : ActorMethod<[bigint], Array<PositionView>>,
   'listTransfersToReview' : ActorMethod<[], Array<TransferReview>>,
+  'listWeeklyAllocations' : ActorMethod<[], Array<WeeklyAllocation>>,
   'list_subaccounts' : ActorMethod<[ListSubaccountsArgs], Array<Subaccount>>,
-  'markBuybackCancelled' : ActorMethod<[BuybackId, bigint], Result_1>,
+  'markBuybackCancelled' : ActorMethod<[BuybackId, bigint], Result_4>,
   'markRefundedManually' : ActorMethod<
     [TransferKind, bigint, bigint],
     ReviewResult
@@ -988,26 +1682,36 @@ export interface _SERVICE {
     ReviewResult
   >,
   'markTransferNotArrived' : ActorMethod<[TransferKind, bigint], ReviewResult>,
-  'quoteBuyback' : ActorMethod<[PayToken, bigint, PayToken], Result_3>,
-  'reconcileReserved' : ActorMethod<[], Result_2>,
+  'quoteAddLiquidity' : ActorMethod<[AddLiquidityQuoteArgs], Result_12>,
+  'quoteBuyback' : ActorMethod<[PayToken, bigint, PayToken], Result_11>,
+  'quoteSwap' : ActorMethod<[bigint, DexToken, bigint, bigint], Result_10>,
+  'reconcileReserved' : ActorMethod<[], Result_9>,
   'refreshIcpPrice' : ActorMethod<[], PriceResult>,
   'refreshTokenPrice' : ActorMethod<[PayToken], TokenPriceResult>,
+  'refusePair' : ActorMethod<[bigint, string], Result_8>,
+  'removeLiquidity' : ActorMethod<[bigint], Result_7>,
+  'removePair' : ActorMethod<[bigint], Result_6>,
   'requestBuyback' : ActorMethod<
     [PayToken, bigint, PayToken, [] | [Uint8Array]],
-    Result_1
+    Result_4
   >,
-  'retryBuybackPayout' : ActorMethod<[BuybackId], Result_1>,
+  'requestPair' : ActorMethod<[RequestPairArgs], Result_5>,
+  'retryBuybackPayout' : ActorMethod<[BuybackId], Result_4>,
   'schema' : ActorMethod<[], string>,
   'setBuybackAdminAccount' : ActorMethod<[Account], undefined>,
   'setDeliveryAddress' : ActorMethod<[string], DeliveryAddressResult>,
-  'setPayTokenAccount' : ActorMethod<[PayToken, Account], TokenAccountResult>,
+  'setOwnerDestination' : ActorMethod<
+    [PayToken, Account],
+    OwnerDestinationResult
+  >,
   'setSalesPaused' : ActorMethod<[boolean], undefined>,
-  'setTreasuryConfig' : ActorMethod<[TreasuryConfig], TreasuryConfigResult>,
+  'setUtilityPairMinimums' : ActorMethod<[bigint, TokenMinimums], Result_3>,
   'set_fee' : ActorMethod<[bigint], SetFeeResult>,
   'status' : ActorMethod<[], IndexStatus>,
+  'swap' : ActorMethod<[bigint, DexToken, bigint, bigint, bigint], Result_2>,
   'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
-  'updateContact' : ActorMethod<[ContactId, ContactInput], Result>,
-  'withdrawReserveExcess' : ActorMethod<[bigint], WithdrawReserveResult>,
+  'updateContact' : ActorMethod<[ContactId, ContactInput], Result_1>,
+  'withdrawFromDex' : ActorMethod<[DexAmountArgs], Result>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

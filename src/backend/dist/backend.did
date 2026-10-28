@@ -1,22 +1,18 @@
-type WithdrawalBlockedReason = 
- variant {
-   cyclesBelowThreshold;
-   topUpAwaitingConfirmation;
-   topUpRunning;
- };
-type WithdrawReserveResult = 
- variant {
-   amountExceedsExcess: record {withdrawableE8s: nat;};
-   busy;
-   cyclesBelowThreshold: record {
-                           cyclesBalance: nat;
-                           topUpThreshold: nat;
-                         };
-   ledgerError: text;
-   noExcess;
-   ok: nat;
-   topUpPendingNotify;
-   treasuryNotConfigured;
+type WeeklyAllocation = 
+ record {
+   at: int;
+   autonomyDays: opt nat;
+   id: nat;
+   note: text;
+   poolAdds: vec AllocationPoolAdd;
+   skipped: vec AllocationSkip;
+   stockPayoutCap: TokenAmounts;
+   surplusE8s: nat;
+   toBonusE8s: nat;
+   toCyclesReserveE8s: nat;
+   toLiquidity: TokenAmounts;
+   treasuryBalances: TokenAmounts;
+   waiting: TokenAmounts;
  };
 type Value__2 = 
  variant {
@@ -45,25 +41,48 @@ type UserRole =
    guest;
    user;
  };
+type UsdGauge = 
+ record {
+   currentUsdE8: opt nat;
+   missingRate: record {
+                  token0: bool;
+                  token1: bool;
+                };
+   remainingUsdE8: opt nat;
+   targetUsdE8: nat;
+   valueAvailable: bool;
+ };
 type UpgradeReadiness = 
  record {
+   bonusClaimsInFlight: vec nat;
    btcLockHeld: bool;
    buybacksInFlight: vec text;
    buybacksInFlightCount: nat;
+   dcSendsInFlight: vec nat;
+   injectionsInFlight: vec nat;
    lastReconciliation: opt ReservedReconciliation;
+   mintFeeClaimsInFlight: vec nat;
    openTraceCount: nat;
    openTraces: vec PurchaseTrace;
+   ownerSendsInFlight: vec nat;
    pendingTopUp: opt TopUpAttempt;
+   protocolFeeLocks: vec text;
    purchasesInFlight: vec principal;
    purchasesInFlightCount: nat;
    reserveLockBusy: bool;
    "reserved": nat;
    salesPaused: bool;
+   sweepStatus: SweepStatus;
  };
-type TreasuryConfigResult = 
- variant {
-   Err: text;
-   Ok: TreasuryConfig;
+type TreasurySweepView = 
+ record {
+   completedAt: opt Timestamp;
+   reserveTopUpBlock: opt nat;
+   reserveTopUpE8s: nat;
+   reserveTopUpMemo: opt text;
+   startedAt: opt Timestamp;
+   status: SweepStatus;
+   tokens: vec SweepToken;
  };
 type TreasuryConfig = record {icpAccount: Account;};
 type TransformationOutput = 
@@ -96,7 +115,7 @@ type TransferReview =
    purchaseId: nat;
    refundPurpose: opt BtcRefundPurpose;
    sends: nat;
-   token: PayToken;
+   token: DexToken;
  };
 type TransferResult = 
  variant {
@@ -117,10 +136,18 @@ type TransferKind =
    BC;
    BM;
    BR;
+   DC;
+   DD;
+   DL;
+   DQ;
+   DW;
    FW;
+   MF;
+   OW;
    PC;
    RF;
    SH;
+   SR;
  };
 type TransferFromResult = 
  variant {
@@ -131,7 +158,7 @@ type TransferFromError =
  variant {
    BadBurn: record {min_burn_amount: nat;};
    BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: Timestamp__2;};
+   CreatedInFuture: record {ledger_time: Timestamp__6;};
    Duplicate: record {duplicate_of: nat;};
    GenericError: record {
                    error_code: nat;
@@ -145,7 +172,7 @@ type TransferFromError =
 type TransferFromArgs = 
  record {
    amount: nat;
-   created_at_time: opt Timestamp__2;
+   created_at_time: opt Timestamp__6;
    fee: opt nat;
    from: Account;
    memo: opt blob;
@@ -156,7 +183,7 @@ type TransferError =
  variant {
    BadBurn: record {min_burn_amount: nat;};
    BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: Timestamp__2;};
+   CreatedInFuture: record {ledger_time: Timestamp__6;};
    Duplicate: record {duplicate_of: nat;};
    GenericError: record {
                    error_code: nat;
@@ -180,7 +207,7 @@ type TransferAttempt =
 type TransferArgs = 
  record {
    amount: nat;
-   created_at_time: opt Timestamp__2;
+   created_at_time: opt Timestamp__6;
    fee: opt nat;
    from_subaccount: opt Subaccount;
    memo: opt blob;
@@ -250,17 +277,24 @@ type TokenPrice =
    usdE8: nat;
    validUntil: Timestamp;
  };
-type TokenAccountResult = 
- variant {
-   Err: text;
-   Ok: TokenAccountInfo;
+type TokenMinimums = 
+ record {
+   token0: nat;
+   token1: nat;
+ };
+type TokenAmounts = 
+ record {
+   ckbtc: nat;
+   ckusdc: nat;
+   ckusdt: nat;
+   icp: nat;
  };
 type TokenAccountInfo = 
  record {
    account: opt Account;
    token: PayToken;
  };
-type Timestamp__2 = nat64;
+type Timestamp__6 = nat64;
 type Timestamp = int;
 type TechnicalDetails = 
  record {
@@ -296,6 +330,85 @@ type TechnicalDetails =
    totalSupply: nat;
    transferFee: nat;
  };
+type SweepTokenStatus = 
+ variant {
+   nothingToSend;
+   pending;
+   sending: nat;
+   sent: nat;
+   waitingDestination;
+ };
+type SweepToken = 
+ record {
+   balance: opt nat;
+   status: SweepTokenStatus;
+   token: PayToken;
+ };
+type SweepStatus = 
+ variant {
+   completed;
+   notStarted;
+   sending;
+   toppingUpReserve;
+ };
+type SwapVenue = 
+ variant {
+   icpswap: principal;
+   native: PoolId;
+ };
+type SwapResult = 
+ record {
+   amountIn: nat;
+   amountOut: nat;
+   fee: nat;
+   lpFee: nat;
+   pool: PoolView;
+   poolId: PoolId;
+   protocolFee: nat;
+   tokenIn: DexToken;
+   tokenOut: DexToken;
+ };
+type SwapQuote = 
+ record {
+   amountIn: nat;
+   amountOut: nat;
+   fee: nat;
+   feeBps: nat;
+   lpFee: nat;
+   maxDeadlineNs: nat;
+   minimumReceived: nat;
+   poolId: PoolId;
+   priceImpactBps: nat;
+   protocolFee: nat;
+   slippageBps: nat;
+   tokenIn: DexToken;
+   tokenOut: DexToken;
+ };
+type SwapError = 
+ variant {
+   anonymous;
+   deadlineExceeded: record {
+                       deadline: Timestamp;
+                       now: Timestamp;
+                     };
+   deadlineTooFar: record {maximum: Timestamp;};
+   insufficientBalance: record {available: nat;};
+   insufficientLiquidity;
+   invalidSlippage: record {maximumBps: nat;};
+   operationInProgress;
+   poolFilling: record {gauge: UsdGauge;};
+   poolNotFound;
+   poolNotOpen;
+   poolRemoved;
+   rateUnavailable;
+   slippageExceeded: record {
+                       amountOut: nat;
+                       minAmountOut: nat;
+                     };
+   tokenNotInPool;
+   unsupportedToken;
+   zeroAmount;
+ };
 type SupportedStandard = 
  record {
    name: text;
@@ -315,10 +428,37 @@ type SnapshotEntry =
    kind: HolderKind;
    needsMigration: bool;
  };
+type ShareChange = 
+ record {
+   at: Timestamp;
+   autonomyDays: opt nat;
+   newShareBps: nat;
+   oldShareBps: nat;
+ };
+type SetMinimumsError = 
+ variant {
+   invalidMinimums;
+   liquidityAlreadyAdded;
+   notAuthorized;
+   notUtilityPair;
+   poolNotFound;
+   poolRemoved;
+ };
 type SetFeeResult = 
  variant {
    err: text;
    ok;
+ };
+type SetAsideView = 
+ record {
+   amount: nat;
+   lastInjectionAt: opt Timestamp;
+   targetPoolId: opt PoolId;
+   thresholdUsdE8: nat;
+   token: PayToken;
+   totalInjected: nat;
+   totalReceived: nat;
+   valueUsdE8: opt nat;
  };
 type SaleStatus = 
  record {
@@ -360,50 +500,115 @@ type Result__1 =
    hasMore: bool;
    rows: vec vec Cell;
  };
-type Result_8 = 
- variant {
-   err: Error;
-   ok;
- };
-type Result_7 = 
- variant {
-   err: AddressBookError;
-   ok;
- };
-type Result_6 = 
- variant {
-   err: BuybackError;
-   ok: vec BuybackMass;
- };
-type Result_5 = 
- variant {
-   err: BuybackError;
-   ok: vec Buyback;
- };
-type Result_4 = 
- variant {
-   err: AddressBookError;
-   ok: vec Contact;
- };
-type Result_3 = 
- variant {
-   err: BuybackError;
-   ok: BuybackQuote;
- };
-type Result_2 = 
+type Result_9 = 
  variant {
    err: ReconcileError;
    ok: ReservedReconciliation;
  };
-type Result_1 = 
+type Result_8 = 
+ variant {
+   err: RefusePairError;
+   ok: PairRequestView;
+ };
+type Result_7 = 
+ variant {
+   err: RemoveLiquidityError;
+   ok: RemoveLiquidityResult;
+ };
+type Result_6 = 
+ variant {
+   err: RemovePairError;
+   ok: PoolView;
+ };
+type Result_5 = 
+ variant {
+   err: RequestPairError;
+   ok: PairRequestView;
+ };
+type Result_4 = 
  variant {
    err: BuybackError;
    ok: Buyback;
  };
-type Result = 
+type Result_3 = 
+ variant {
+   err: SetMinimumsError;
+   ok: PoolView;
+ };
+type Result_21 = 
+ variant {
+   err: Error;
+   ok;
+ };
+type Result_20 = 
+ variant {
+   err: AddLiquidityError;
+   ok: AddLiquidityResult;
+ };
+type Result_2 = 
+ variant {
+   err: SwapError;
+   ok: SwapResult;
+ };
+type Result_19 = 
+ variant {
+   err: ApprovePairError;
+   ok: PoolView;
+ };
+type Result_18 = 
+ variant {
+   err: AddressBookError;
+   ok;
+ };
+type Result_17 = 
+ variant {
+   err: DexDepositError;
+   ok: DexTransferView;
+ };
+type Result_16 = 
+ variant {
+   err: ExtendLockError;
+   ok: PositionView;
+ };
+type Result_15 = 
+ variant {
+   err: BuybackError;
+   ok: vec BuybackMass;
+ };
+type Result_14 = 
+ variant {
+   err: BuybackError;
+   ok: vec Buyback;
+ };
+type Result_13 = 
+ variant {
+   err: AddressBookError;
+   ok: vec Contact;
+ };
+type Result_12 = 
+ variant {
+   err: AddLiquidityError;
+   ok: AddLiquidityQuote;
+ };
+type Result_11 = 
+ variant {
+   err: BuybackError;
+   ok: BuybackQuote;
+ };
+type Result_10 = 
+ variant {
+   err: SwapError;
+   ok: SwapQuote;
+ };
+type Result_1 = 
  variant {
    err: AddressBookError;
    ok: Contact;
+ };
+type Result = 
+ variant {
+   err: DexWithdrawError;
+   ok: DexTransferView;
  };
 type ReservedReconciliation = 
  record {
@@ -416,6 +621,99 @@ type ReserveWithdrawal =
    amountE8s: nat;
    blockIndex: nat;
    timestamp: Timestamp;
+ };
+type RequestedToken = 
+ record {
+   decimals: nat8;
+   fee: nat;
+   ledgerId: principal;
+   name: text;
+   symbol: text;
+ };
+type RequestStatus = 
+ variant {
+   approved: record {
+               at: Timestamp;
+               poolId: PoolId;
+             };
+   pending;
+   refused: record {
+              at: Timestamp;
+              reason: text;
+            };
+ };
+type RequestPairError = 
+ variant {
+   anonymous;
+   cooldown: record {until: Timestamp;};
+   depositFailed: text;
+   insufficientAllowance: record {
+                            allowance: nat;
+                            required: nat;
+                          };
+   insufficientFunds: record {balance: nat;};
+   invalidToken: text;
+   ledgerUnreachable: text;
+   messageTooLong: record {max: nat;};
+   metadataUnavailable: text;
+   missingStandards: record {
+                       icrc1: bool;
+                       icrc2: bool;
+                     };
+   pairExists: record {
+                 poolId: opt PoolId;
+                 requestId: opt RequestId;
+               };
+   tooManyPending: record {max: nat;};
+   unknownCounterToken;
+ };
+type RequestPairArgs = 
+ record {
+   counter: CounterToken;
+   feeTier: FeeTier;
+   ledgerId: principal;
+   message: text;
+ };
+type RequestId = nat;
+type RequestChecks = 
+ record {
+   copiedSymbolOf: opt text;
+   icrc1: bool;
+   icrc2: bool;
+   metadataRead: bool;
+   pairUnique: bool;
+ };
+type RemovePairError = 
+ variant {
+   alreadyRemoved;
+   notAuthorized;
+   poolNotFound;
+ };
+type RemoveLiquidityResult = 
+ record {
+   amount0: nat;
+   amount1: nat;
+   pool: PoolView;
+   poolId: PoolId;
+   positionId: PositionId;
+   shares: nat;
+ };
+type RemoveLiquidityError = 
+ variant {
+   anonymous;
+   notPositionOwner;
+   operationInProgress;
+   poolNotFound;
+   positionLocked: record {unlockAt: Timestamp;};
+   positionNotFound;
+ };
+type RefusePairError = 
+ variant {
+   notAuthorized;
+   notPending;
+   reasonRequired;
+   reasonTooLong: record {max: nat;};
+   requestNotFound;
  };
 type ReconcileError = 
  variant {
@@ -498,6 +796,21 @@ type PublicTreasuryInfo =
    icpAccount: Account;
    tokenAccounts: vec TokenAccountInfo;
  };
+type ProtocolLiquidityView = 
+ record {
+   amount0: nat;
+   amount1: nat;
+   fromFees0: nat;
+   fromFees1: nat;
+   fromTreasury0: nat;
+   fromTreasury1: nat;
+   lastAddedAt: opt Timestamp;
+   poolId: PoolId;
+   shares: nat;
+   token0Symbol: text;
+   token1Symbol: text;
+   totalShares: nat;
+ };
 type PriceSource = 
  variant {
    coinbase;
@@ -514,6 +827,95 @@ type PriceError =
    at: Timestamp;
    message: text;
  };
+type PositionView = 
+ record {
+   amount0: nat;
+   amount1: nat;
+   createdAt: Timestamp;
+   id: PositionId;
+   isCreator: bool;
+   lockDurationNs: nat;
+   owner: principal;
+   poolId: PoolId;
+   shares: nat;
+   token0Symbol: text;
+   token1Symbol: text;
+   unlockAt: Timestamp;
+   unlocked: bool;
+   withdrawable: bool;
+ };
+type PositionId = nat;
+type PositionBonusWeight = 
+ record {
+   poolId: PoolId;
+   positionId: nat;
+   remainingLockNs: nat;
+   valueIcpE8s: nat;
+   weight: nat;
+ };
+type PoolView = 
+ record {
+   acceptsDeposits: bool;
+   acceptsSwaps: bool;
+   acceptsWithdrawals: bool;
+   approvalStatement: opt text;
+   createdAt: Timestamp;
+   feeBps: nat;
+   feeTier: FeeTier;
+   firstDepositMinimum: PoolMinimums;
+   gauge: UsdGauge;
+   id: PoolId;
+   kind: PoolKind;
+   launchMinimumTotalUsdE8: nat;
+   lockedShares: nat;
+   lockedSharesStatement: text;
+   minimumLocked: PoolMinimums;
+   minimumsSet: bool;
+   newPairBadgeActive: bool;
+   newPairBadgeUntil: opt Timestamp;
+   poolAccount: DexAccount;
+   protocolFee0: nat;
+   protocolFee1: nat;
+   removedAt: opt Timestamp;
+   requestId: opt RequestId;
+   reserve0: nat;
+   reserve1: nat;
+   status: PoolStatus;
+   subaccount: blob;
+   subaccountText: text;
+   token0: PoolTokenView;
+   token1: PoolTokenView;
+   totalShares: nat;
+ };
+type PoolTokenView = 
+ record {
+   decimals: nat8;
+   isTttiT: bool;
+   ledgerId: principal;
+   symbol: text;
+ };
+type PoolStatus = 
+ variant {
+   active;
+   filling;
+   removed;
+ };
+type PoolSide = 
+ variant {
+   token0;
+   token1;
+ };
+type PoolMinimums = 
+ record {
+   token0: opt nat;
+   token1: opt nat;
+ };
+type PoolKind = 
+ variant {
+   tttiPair;
+   utilityPair;
+ };
+type PoolId = nat;
 type PayTokenStatus = 
  record {
    buyerPriceUsd: nat;
@@ -540,10 +942,132 @@ type PayToken =
    ckusdt;
    icp;
  };
+type PairRequestView = 
+ record {
+   checks: RequestChecks;
+   copiedSymbol: bool;
+   counter: PoolTokenView;
+   createdAt: Timestamp;
+   depositAmount: nat;
+   depositBlock: nat;
+   feeBps: nat;
+   feeTier: FeeTier;
+   id: RequestId;
+   kind: PoolKind;
+   message: text;
+   refundBlock: opt nat;
+   refundStatus: PairRefundStatus;
+   requester: principal;
+   status: RequestStatus;
+   token: RequestedToken;
+ };
+type PairRefundStatus = 
+ variant {
+   inProgress;
+   needsReview;
+   none;
+   refunded: nat;
+ };
+type OwnerSendView = 
+ record {
+   amount: nat;
+   attempt: nat;
+   block: opt nat;
+   createdAt: Timestamp;
+   createdAtTimeNs: nat64;
+   destination: Account;
+   fee: opt nat;
+   id: nat;
+   lastError: opt text;
+   memoText: text;
+   sends: nat;
+   source: OwnerSendSource;
+   status: OwnerSendStatus;
+   token: PayToken;
+   updatedAt: Timestamp;
+ };
+type OwnerSendStatus = 
+ variant {
+   failed: text;
+   needsReview;
+   pending;
+   sent: nat;
+ };
+type OwnerSendSource = 
+ variant {
+   accumulated;
+   mint: nat;
+   treasurySweep;
+ };
+type OwnerSendPage = 
+ record {
+   items: vec OwnerSendView;
+   offset: nat;
+   total: nat;
+ };
+type OwnerRevenueError = 
+ variant {
+   anonymousOwner;
+   contractAccount;
+   invalidSubaccount;
+   notAdmin;
+   notConfigured;
+ };
+type OwnerDestinationView = 
+ record {
+   account: opt Account;
+   accumulated: nat;
+   setAt: opt Timestamp;
+   token: PayToken;
+ };
+type OwnerDestinationResult = 
+ variant {
+   err: OwnerRevenueError;
+   ok: OwnerDestinationView;
+ };
+type OwnerAccumulated = 
+ record {
+   amount: nat;
+   token: PayToken;
+ };
 type MyBtcDeposits = 
  record {
    purchase: opt DepositTracking;
    wallet: opt DepositTracking;
+ };
+type MintTreasuryAccount = 
+ record {
+   account: Account;
+   balance: opt nat;
+   legacyExternalAccount: opt Account;
+   token: PayToken;
+ };
+type MintFeeLpView = 
+ record {
+   balances: vec MintFeeBalance;
+   claims: vec MintFeeClaimView;
+ };
+type MintFeeClaimView = 
+ record {
+   amount: nat;
+   createdAt: Timestamp;
+   memoText: text;
+   n: nat;
+   status: MintFeeClaimStatus;
+   token: PayToken;
+ };
+type MintFeeClaimStatus = 
+ variant {
+   completed: nat;
+   failed: text;
+   inProgress;
+   needsReview;
+ };
+type MintFeeBalance = 
+ record {
+   claimable: nat;
+   claimed: nat;
+   token: PayToken;
  };
 type MetadataValue = 
  variant {
@@ -552,10 +1076,36 @@ type MetadataValue =
    Nat: nat;
    Text: text;
  };
+type LpBonusView = 
+ record {
+   claimableE8s: nat;
+   claimedE8s: nat;
+   claims: vec BonusClaimView;
+   positions: vec PositionBonusWeight;
+ };
 type ListSubaccountsArgs = 
  record {
    owner: principal;
    start: opt Subaccount;
+ };
+type LiquidityInjection = 
+ record {
+   amountIn: nat;
+   error: opt text;
+   id: nat;
+   liquidityShares: nat;
+   minTttiOut: nat;
+   pairAmountIn: nat;
+   poolId: PoolId;
+   startedAt: Timestamp;
+   status: InjectionStatus;
+   swapAmountIn: nat;
+   token: PayToken;
+   tttiReceived: nat;
+   updatedAt: Timestamp;
+   used0: nat;
+   used1: nat;
+   venue: SwapVenue;
  };
 type LegacyBlockInfo = 
  record {
@@ -569,6 +1119,20 @@ type InvalidReason =
    nicknameEmpty;
    nicknameTooLong: record {maxChars: nat;};
    principalNotAllowed;
+ };
+type InjectionStatus = 
+ variant {
+   addingLiquidity;
+   completed;
+   failed: text;
+   needsReview;
+   swapping;
+ };
+type InjectionPage = 
+ record {
+   items: vec LiquidityInjection;
+   offset: nat;
+   total: nat;
  };
 type IndexTransfer = 
  record {
@@ -715,6 +1279,12 @@ type ForwardStatus =
    notRequired;
    pending;
  };
+type FeeTier = 
+ variant {
+   bps100;
+   bps30;
+   bps5;
+ };
 type FeeCollectorInfo = 
  record {
    account: Account;
@@ -724,6 +1294,15 @@ type FeeBounds =
  record {
    max: nat;
    min: nat;
+ };
+type ExtendLockError = 
+ variant {
+   anonymous;
+   cannotShortenLock: record {unlockAt: Timestamp;};
+   lockTooLong: record {maximumUnlockAt: Timestamp;};
+   notPositionOwner;
+   operationInProgress;
+   positionNotFound;
  };
 type Error = 
  variant {
@@ -746,6 +1325,119 @@ type Error =
    Stale: record {ageNs: nat;};
    UnknownNonce;
    UntrustedSsoSource: record {domain: text;};
+ };
+type DexWithdrawError = 
+ variant {
+   amountTooSmall: record {minimum: nat;};
+   anonymous;
+   insufficientBalance: record {available: nat;};
+   ledgerError: text;
+   transferInProgress;
+ };
+type DexTransferView = 
+ record {
+   amount: nat;
+   attempt: nat;
+   createdAtTimeNs: nat64;
+   direction: DexTransferDirection;
+   fee: nat;
+   from: DexAccount;
+   lastError: opt text;
+   ledgerAmount: nat;
+   memoText: text;
+   n: nat;
+   owner: principal;
+   sends: nat;
+   status: DexTransferStatus;
+   to: DexAccount;
+   token: DexToken;
+ };
+type DexTransferStatus = 
+ variant {
+   completed: nat;
+   failed: text;
+   inProgress;
+   needsReview;
+ };
+type DexTransferDirection = 
+ variant {
+   deposit;
+   withdrawal;
+ };
+type DexTokenInfo = 
+ record {
+   decimals: nat8;
+   fee: nat;
+   ledgerId: principal;
+   minimumDeposit: nat;
+   minimumWithdrawal: nat;
+   symbol: text;
+   token: DexToken;
+ };
+type DexToken = 
+ variant {
+   ckbtc;
+   ckusdc;
+   ckusdt;
+   icp;
+   tttiT;
+ };
+type DexDepositError = 
+ variant {
+   amountTooSmall: record {minimum: nat;};
+   anonymous;
+   insufficientAllowance: record {
+                            allowance: nat;
+                            required: nat;
+                          };
+   insufficientFunds: record {balance: nat;};
+   ledgerError: text;
+   transferInProgress;
+ };
+type DexConfig = 
+ record {
+   approvalStatement: text;
+   depositAccount: DexAccount;
+   feeTiers: vec FeeTier;
+   firstDepositMultiplier: nat;
+   launchDepthStatement: text;
+   launchMinimumTotalUsdE8: nat;
+   lockedSharesStatement: text;
+   lpFeeSharePercent: nat;
+   maxLockNs: nat;
+   maxPendingPerUser: nat;
+   messageMaxChars: nat;
+   minLockNs: nat;
+   newPairBadgeNs: int;
+   protocolFeeSharePercent: nat;
+   protocolStatement: text;
+   rateGraceNs: nat;
+   rateValidForNs: nat;
+   reasonMaxChars: nat;
+   refusalCooldownNs: int;
+   requestDeposit: nat;
+   swapDeadlineMaxNs: nat;
+   tttiMinimumLocked: nat;
+   tttiTUsdE8: nat;
+   usdRateScale: nat;
+ };
+type DexBalanceView = 
+ record {
+   available: nat;
+   ledgerId: principal;
+   "reserved": nat;
+   symbol: text;
+   token: DexToken;
+ };
+type DexAmountArgs = 
+ record {
+   amount: nat;
+   token: DexToken;
+ };
+type DexAccount = 
+ record {
+   owner: principal;
+   subaccount: opt blob;
  };
 type DepositTracking = 
  record {
@@ -823,6 +1515,40 @@ type DeliveryAddressError =
    code: DeliveryAddressErrorCode;
    message: text;
  };
+type DcTrigger = 
+ variant {
+   daily;
+   threshold;
+ };
+type DcLeg = 
+ record {
+   amountIn: nat;
+   converted: bool;
+   deviationBps: nat;
+   executionIcpOutE8s: nat;
+   poolId: PoolId;
+   referenceIcpOutE8s: nat;
+   tokenSymbol: text;
+ };
+type DcBatchStatus = 
+ variant {
+   failed: text;
+   needsReview;
+   nothingToConvert;
+   sending;
+   sent: nat;
+   waitingPriceDeviation;
+ };
+type DcBatch = 
+ record {
+   at: Timestamp;
+   id: nat;
+   legs: vec DcLeg;
+   status: DcBatchStatus;
+   toBonusE8s: nat;
+   toCyclesE8s: nat;
+   trigger: DcTrigger;
+ };
 type DataCertificate = 
  record {
    certificate: blob;
@@ -836,10 +1562,30 @@ type CyclesStatus =
    reserveBalanceE8s: nat;
    reserveFloorE8s: nat;
    topUpThreshold: nat;
-   withdrawableExcessE8s: nat;
-   withdrawalAllowed: bool;
-   withdrawalBlockedReason: opt WithdrawalBlockedReason;
    withdrawals: vec ReserveWithdrawal;
+ };
+type CyclesShareView = 
+ record {
+   autonomyDays: opt nat;
+   highAutonomyDays: nat;
+   lastAdjustAt: opt Timestamp;
+   lowAutonomyDays: nat;
+   maxShareBps: nat;
+   maxStepBps: nat;
+   minAdjustIntervalNs: nat;
+   minShareBps: nat;
+   nextAdjustAfter: opt Timestamp;
+   shareBps: nat;
+   targetShareBps: nat;
+ };
+type CounterToken = 
+ variant {
+   ckbtc;
+   ckusdc;
+   ckusdt;
+   icp;
+   poolToken: principal;
+   tttiT;
  };
 type ConversionStatus = 
  variant {
@@ -868,7 +1614,7 @@ type Conversion =
    priceUsdE8: nat;
    recipient: Account;
    status: ConversionStatus;
-   timestamp: Timestamp__2;
+   timestamp: Timestamp__6;
    tttiAmount: nat;
    usedFallback: bool;
  };
@@ -892,6 +1638,30 @@ type CollectState =
  variant {
    confirmed;
    unknown;
+ };
+type ClaimMintFeeResult = 
+ variant {
+   err: ClaimMintFeeError;
+   ok: MintFeeClaimView;
+ };
+type ClaimMintFeeError = 
+ variant {
+   anonymous;
+   belowLedgerFee: record {fee: nat;};
+   claimInProgress;
+   nothingToClaim;
+ };
+type ClaimBonusResult = 
+ variant {
+   err: ClaimBonusError;
+   ok: BonusClaimView;
+ };
+type ClaimBonusError = 
+ variant {
+   anonymous;
+   belowMinimum: record {minimumE8s: nat;};
+   claimInProgress;
+   nothingToClaim;
  };
 type Cell = 
  record {
@@ -1091,6 +1861,14 @@ type BtcCostToRefund =
    conversionId: opt nat;
    refundedBlock: opt nat;
  };
+type BonusClaimView = 
+ record {
+   amountE8s: nat;
+   createdAt: Timestamp;
+   memoText: text;
+   n: nat;
+   status: DexTransferStatus;
+ };
 type BlockIndex = nat;
 type Block = 
  record {
@@ -1100,9 +1878,23 @@ type Block =
 type BalanceSnapshot = 
  record {
    decimals: nat8;
-   exportedAt: Timestamp__2;
+   exportedAt: Timestamp__6;
    holders: vec SnapshotEntry;
    totalSupply: nat;
+ };
+type AutonomyView = 
+ record {
+   autonomyDays: opt nat;
+   avg30dCyclesPerDay: opt nat;
+   avg7dCyclesPerDay: opt nat;
+   computedAt: Timestamp;
+   cyclesBalance: nat;
+   oldestSampleAt: opt Timestamp;
+   reserveBalanceE8s: nat;
+   reserveCyclesEstimate: opt nat;
+   sampleCount: nat;
+   targetDays: nat;
+   totalCycles: nat;
  };
 type AttemptOutcome = 
  variant {
@@ -1122,14 +1914,25 @@ type ApproveResult =
    Err: ApproveError;
    Ok: nat;
  };
+type ApprovePairError = 
+ variant {
+   invalidMinimums;
+   minimumsNotAllowed;
+   minimumsRequired;
+   notAuthorized;
+   notPending;
+   pairExists: record {poolId: PoolId;};
+   refundFailed: text;
+   requestNotFound;
+ };
 type ApproveError = 
  variant {
    AllowanceChanged: record {current_allowance: nat;};
    BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: Timestamp__2;};
+   CreatedInFuture: record {ledger_time: Timestamp__6;};
    Duplicate: record {duplicate_of: nat;};
-   Expired: record {ledger_time: Timestamp__2;};
-   ExpiredFrom: record {ledger_time: Timestamp__2;};
+   Expired: record {ledger_time: Timestamp__6;};
+   ExpiredFrom: record {ledger_time: Timestamp__6;};
    GenericError: record {
                    error_code: nat;
                    message: text;
@@ -1141,9 +1944,9 @@ type ApproveError =
 type ApproveArgs = 
  record {
    amount: nat;
-   created_at_time: opt Timestamp__2;
+   created_at_time: opt Timestamp__6;
    expected_allowance: opt nat;
-   expires_at: opt Timestamp__2;
+   expires_at: opt Timestamp__6;
    fee: opt nat;
    from_subaccount: opt Subaccount;
    memo: opt blob;
@@ -1157,7 +1960,19 @@ type AllowanceArgs =
 type Allowance = 
  record {
    allowance: nat;
-   expires_at: opt Timestamp__2;
+   expires_at: opt Timestamp__6;
+ };
+type AllocationSkip = 
+ record {
+   poolId: nat;
+   reason: text;
+ };
+type AllocationPoolAdd = 
+ record {
+   amount0: nat;
+   amount1: nat;
+   poolId: nat;
+   shares: nat;
  };
 type AddressBookError = 
  variant {
@@ -1166,6 +1981,67 @@ type AddressBookError =
    invalidInput: InvalidReason;
    limitReached: record {max: nat;};
    notFound;
+ };
+type AddLiquidityResult = 
+ record {
+   amount0: nat;
+   amount1: nat;
+   lockedShares: nat;
+   pool: PoolView;
+   position: PositionView;
+   shares: nat;
+ };
+type AddLiquidityQuoteArgs = 
+ record {
+   amount: nat;
+   counterAmount: opt nat;
+   poolId: PoolId;
+   side: PoolSide;
+ };
+type AddLiquidityQuote = 
+ record {
+   amount0: nat;
+   amount1: nat;
+   gaugeAfter: UsdGauge;
+   isFirstDeposit: bool;
+   lockedShares: nat;
+   opensPool: bool;
+   poolId: PoolId;
+   shares: nat;
+   totalSharesAfter: nat;
+ };
+type AddLiquidityError = 
+ variant {
+   anonymous;
+   belowMinimum: record {
+                   token0Minimum: opt nat;
+                   token1Minimum: opt nat;
+                 };
+   counterAmountRequired;
+   insufficientBalance:
+    record {
+      available: nat;
+      required: nat;
+      token: DexToken;
+    };
+   lockTooLong: record {maximumNs: nat;};
+   lockTooShort: record {minimumNs: nat;};
+   minimumsNotSet;
+   operationInProgress;
+   poolNotFound;
+   poolRemoved;
+   ratioMismatch: record {requiredCounterAmount: nat;};
+   unsupportedToken;
+   zeroAmount;
+   zeroShares;
+ };
+type AddLiquidityArgs = 
+ record {
+   amount: nat;
+   counterAmount: opt nat;
+   lockDurationNs: nat;
+   poolId: PoolId;
+   side: PoolSide;
  };
 type AcknowledgementError = variant {anonymousCaller;};
 type AcknowledgedAt = int;
@@ -1176,27 +2052,34 @@ type Account =
  };
 service : {
   _initialize_access_control: () -> ();
-  _internet_identity_sign_in_finish: () -> (Result_8);
+  _internet_identity_sign_in_finish: () -> (Result_21);
   _internet_identity_sign_in_start: () -> (blob);
   acceptPurchaseAcknowledgements: () ->
    (variant {
       err: AcknowledgementError;
       ok: PurchaseAcknowledgement;
     });
-  addContact: (input: ContactInput) -> (Result);
+  addContact: (input: ContactInput) -> (Result_1);
+  addLiquidity: (args: AddLiquidityArgs) -> (Result_20);
+  approvePair: (requestId: nat, minimums: opt TokenMinimums) -> (Result_19);
   assignCallerUserRole: (user: principal, role: UserRole) -> ();
-  cancelBuyback: (id: BuybackId) -> (Result_1);
+  cancelBuyback: (id: BuybackId) -> (Result_4);
   checkBtcPurchaseDeposit: () -> (BtcDepositResult);
   checkBtcWalletDeposit: () -> (BtcDepositResult);
   checkBtcWalletDepositFor: (owner: principal) -> (BtcDepositResult);
+  claimLpBonus: () -> (ClaimBonusResult);
+  claimMintFee: (token: PayToken) -> (ClaimMintFeeResult);
   clearDeliveryAddress: () -> (bool);
+  clearOwnerDestination: (token: PayToken) -> (OwnerDestinationResult);
   convertDeposit: (recipient: opt Account, icpAmount: nat) ->
    (PurchaseResult);
   convertDepositWith: (token: PayToken, recipient: opt Account, payAmount:
    nat, tttiTarget: opt nat) -> (PurchaseResult);
-  deleteContact: (id: ContactId) -> (Result_7);
+  deleteContact: (id: ContactId) -> (Result_18);
+  depositToDex: (args: DexAmountArgs) -> (Result_17);
   execute: (qJson: text) -> (Result__1) query;
   exportBalanceSnapshot: () -> (BalanceSnapshot) query;
+  extendLock: (positionId: nat, newUnlockAt: int) -> (Result_16);
   getApiDoc: () -> (text) query;
   getBtcDepositInfo: () -> (BtcDepositInfo) query;
   getBtcPurchaseAddress: () -> (BtcDepositResult);
@@ -1210,19 +2093,39 @@ service : {
   getCallerUserRole: () -> (UserRole) query;
   getCanisterPrincipal: () -> (principal) query;
   getConversions: () -> (vec Conversion) query;
+  getCyclesAutonomy: () -> (AutonomyView) query;
+  getCyclesShare: () -> (CyclesShareView) query;
+  getCyclesShareHistory: () -> (vec ShareChange) query;
   getCyclesStatus: () -> (CyclesStatus) query;
   getDeliveryAddress: () -> (opt Account) query;
+  getDexBalances: (owner: principal) -> (vec DexBalanceView) query;
+  getDexConfig: () -> (DexConfig) query;
+  getDexDepositAccount: (owner: principal) -> (DexAccount) query;
+  getDexPool: (poolId: nat) -> (opt PoolView) query;
+  getDexPoolAccount: (poolId: nat) -> (opt DexAccount) query;
+  getDexPosition: (positionId: nat) -> (opt PositionView) query;
+  getDexTokens: () -> (vec DexTokenInfo) query;
+  getDexTransfers: (owner: principal) -> (vec DexTransferView) query;
   getFeeCollector: () -> (FeeCollectorInfo) query;
   getIcpPrice: () -> (IcpPrice) query;
+  getLastWeeklyAllocation: () -> (opt WeeklyAllocation) query;
   getLegacyBlockInfo: () -> (LegacyBlockInfo) query;
+  getMintTreasuryAccounts: () -> (vec MintTreasuryAccount) query;
   getMyBtcDeposits: () -> (MyBtcDeposits) query;
   getMyConversions: () -> (vec Conversion) query;
+  getMyLpBonus: () -> (LpBonusView) query;
+  getMyMintFees: () -> (MintFeeLpView) query;
+  getMyPairRequests: () -> (vec PairRequestView) query;
   getMyPurchaseAcknowledgement: () -> (PurchaseAcknowledgement) query;
+  getOwnerAccumulated: () -> (vec OwnerAccumulated) query;
+  getProtocolLiquidity: () -> (vec ProtocolLiquidityView) query;
   getPublicTreasuryInfo: () -> (opt PublicTreasuryInfo) query;
   getSaleStatus: () -> (SaleStatus) query;
+  getSetAsideAmounts: () -> (vec SetAsideView) query;
   getTechnicalDetails: () -> (TechnicalDetails) query;
   getTokenPrices: () -> (vec TokenPrice) query;
   getTreasuryConfig: () -> (opt TreasuryConfig) query;
+  getTreasurySweepStatus: () -> (TreasurySweepView) query;
   getUpgradeReadiness: () -> (UpgradeReadiness) query;
   get_account_transactions: (args: GetAccountTransactionsArgs) ->
    (GetTransactionsResult) query;
@@ -1254,36 +2157,55 @@ service : {
   ledger_id: () -> (principal) query;
   listAllBuybackMasses: () -> (vec BuybackMass) query;
   listAllBuybacks: () -> (vec Buyback) query;
-  listMyBuybackMasses: () -> (Result_6) query;
-  listMyBuybacks: () -> (Result_5) query;
-  listMyContacts: () -> (Result_4) query;
+  listDcBatches: () -> (vec DcBatch) query;
+  listDexPools: () -> (vec PoolView) query;
+  listDexPositionsOf: (owner: principal) -> (vec PositionView) query;
+  listLiquidityInjections: (offset: nat, limit: nat) -> (InjectionPage) query;
+  listMyBuybackMasses: () -> (Result_15) query;
+  listMyBuybacks: () -> (Result_14) query;
+  listMyContacts: () -> (Result_13) query;
+  listOwnerDestinations: () -> (vec OwnerDestinationView) query;
+  listOwnerSends: (offset: nat, limit: nat) -> (OwnerSendPage) query;
+  listPairRequests: () -> (vec PairRequestView) query;
+  listPoolPositions: (poolId: nat) -> (vec PositionView) query;
   listTransfersToReview: () -> (vec TransferReview) query;
+  listWeeklyAllocations: () -> (vec WeeklyAllocation) query;
   list_subaccounts: (args: ListSubaccountsArgs) -> (vec Subaccount) query;
-  markBuybackCancelled: (id: BuybackId, block: nat) -> (Result_1);
+  markBuybackCancelled: (id: BuybackId, block: nat) -> (Result_4);
   markRefundedManually: (kind: TransferKind, purchaseId: nat, block: 
    nat) -> (ReviewResult);
   markTransferArrived: (kind: TransferKind, purchaseId: nat, block: nat) ->
    (ReviewResult);
   markTransferNotArrived: (kind: TransferKind, purchaseId: nat) ->
    (ReviewResult);
+  quoteAddLiquidity: (args: AddLiquidityQuoteArgs) -> (Result_12) query;
   quoteBuyback: (massToken: PayToken, percent: nat, receiveToken:
-   PayToken) -> (Result_3) query;
-  reconcileReserved: () -> (Result_2);
+   PayToken) -> (Result_11) query;
+  quoteSwap: (poolId: nat, tokenIn: DexToken, amountIn: nat, slippageBps:
+   nat) -> (Result_10) query;
+  reconcileReserved: () -> (Result_9);
   refreshIcpPrice: () -> (PriceResult);
   refreshTokenPrice: (token: PayToken) -> (TokenPriceResult);
+  refusePair: (requestId: nat, reason: text) -> (Result_8);
+  removeLiquidity: (positionId: nat) -> (Result_7);
+  removePair: (poolId: nat) -> (Result_6);
   requestBuyback: (massToken: PayToken, percent: nat, receiveToken: PayToken,
-   fromSubaccount: opt blob) -> (Result_1);
-  retryBuybackPayout: (buybackId: BuybackId) -> (Result_1);
+   fromSubaccount: opt blob) -> (Result_4);
+  requestPair: (args: RequestPairArgs) -> (Result_5);
+  retryBuybackPayout: (buybackId: BuybackId) -> (Result_4);
   schema: () -> (text) query;
   setBuybackAdminAccount: (account: Account) -> ();
   setDeliveryAddress: (principalText: text) -> (DeliveryAddressResult);
-  setPayTokenAccount: (token: PayToken, account: Account) ->
-   (TokenAccountResult);
+  setOwnerDestination: (token: PayToken, account: Account) ->
+   (OwnerDestinationResult);
   setSalesPaused: (paused: bool) -> ();
-  setTreasuryConfig: (config: TreasuryConfig) -> (TreasuryConfigResult);
+  setUtilityPairMinimums: (poolId: nat, minimums: TokenMinimums) ->
+   (Result_3);
   set_fee: (newFee: nat) -> (SetFeeResult);
   status: () -> (IndexStatus) query;
+  swap: (poolId: nat, tokenIn: DexToken, amountIn: nat, minAmountOut: 
+   nat, deadline: int) -> (Result_2);
   transform: (input: TransformationInput) -> (TransformationOutput) query;
-  updateContact: (id: ContactId, input: ContactInput) -> (Result);
-  withdrawReserveExcess: (amount: nat) -> (WithdrawReserveResult);
+  updateContact: (id: ContactId, input: ContactInput) -> (Result_1);
+  withdrawFromDex: (args: DexAmountArgs) -> (Result);
 }

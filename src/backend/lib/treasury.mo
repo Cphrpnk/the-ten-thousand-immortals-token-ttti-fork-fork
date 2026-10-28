@@ -8,20 +8,23 @@ import Text "mo:core/Text";
 import Time "mo:core/Time";
 import Treasury "../types/treasury";
 import PayTokenLib "pay-token";
+import OwnerTypes "../types/owner-revenue";
 
 module {
   public type TreasuryConfig = Treasury.TreasuryConfig;
   public type Conversion = Treasury.Conversion;
   public type ConversionStatus = Treasury.ConversionStatus;
   public type ForwardStatus = Treasury.ForwardStatus;
-  public type TreasuryConfigResult = Treasury.TreasuryConfigResult;
   public type Account = Treasury.Account;
   public type CollectResult = Treasury.CollectResult;
   public type PublicTreasuryInfo = Treasury.PublicTreasuryInfo;
   public type TokenAccounts = Treasury.TokenAccounts;
   public type TokenAccountInfo = Treasury.TokenAccountInfo;
-  public type TokenAccountResult = Treasury.TokenAccountResult;
   public type PayToken = Treasury.PayToken;
+  public type MintTreasuryAccount = Treasury.MintTreasuryAccount;
+  public type TokenAmounts = Treasury.TokenAmounts;
+  public type WeeklyAllocation = Treasury.WeeklyAllocation;
+  public type AllocationStore = Treasury.AllocationStore;
 
   // The ICP ledger canister (mainnet) exposed through its ICRC-1 interface.
   public func icpLedger() : Principal = Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai");
@@ -61,24 +64,167 @@ module {
   // per TTTI-T. ck-token purchases use PayTokenLib.CK_FEE_BPS (also 1%).
   public let CYCLES_FEE_BPS : Nat = 100;
 
-  // Stores the account that receives the creator's ICP.
-  public func setConfig(store : TreasuryStore, config : TreasuryConfig) : TreasuryConfigResult {
-    store.config := ?config;
-    #Ok(config);
-  };
+  // --- DEX lot 4: internal mint treasuries (no withdrawal path) --------------
 
-  // Sets the receiving account of `token` (#icp updates config.icpAccount).
-  public func setTokenAccount(store : TreasuryStore, token : PayToken, account : Account) : TokenAccountResult {
+  // Fixed 32-byte subaccount of this canister holding the mint treasury of
+  // `token` (printable ASCII, never overlapping an existing subaccount).
+  public func mintTreasurySubaccount(token : PayToken) : Blob {
+    // Each text is exactly 32 ASCII bytes; the "MINT-TREASURY-" prefix is used
+    // by no other subaccount of this canister.
     switch (token) {
-      case (#icp) { store.config := ?{ icpAccount = account } };
-      case (#ckbtc) { store.tokenAccounts := { store.tokenAccounts with ckbtc = ?account } };
-      case (#ckusdc) { store.tokenAccounts := { store.tokenAccounts with ckusdc = ?account } };
-      case (#ckusdt) { store.tokenAccounts := { store.tokenAccounts with ckusdt = ?account } };
+      case (#icp) { "MINT-TREASURY-ICP-TTTI-T-0000001" };
+      case (#ckbtc) { "MINT-TREASURY-CKBTC-TTTI-T-00001" };
+      case (#ckusdc) { "MINT-TREASURY-CKUSDC-TTTI-T-0001" };
+      case (#ckusdt) { "MINT-TREASURY-CKUSDT-TTTI-T-0001" };
     };
-    #Ok({ token; account = ?account });
   };
 
-  // The receiving account of `token`, or null while not configured.
+  // canister + mintTreasurySubaccount(token): where new forwards (FW) go.
+  public func mintTreasuryAccount(canister : Principal, token : PayToken) : Account {
+    { owner = canister; subaccount = ?mintTreasurySubaccount(token) };
+  };
+
+  public func amountOf(amounts : TokenAmounts, token : PayToken) : Nat {
+    switch (token) {
+      case (#icp) { amounts.icp };
+      case (#ckbtc) { amounts.ckbtc };
+      case (#ckusdc) { amounts.ckusdc };
+      case (#ckusdt) { amounts.ckusdt };
+    };
+  };
+
+  public let ZERO_AMOUNTS : TokenAmounts = { icp = 0; ckbtc = 0; ckusdc = 0; ckusdt = 0 };
+
+  // Every mint treasury (ICP, ckBTC, ckUSDC, ckUSDT) with its cached balance
+  // and the old external account, if any.
+  public func mintTreasuryAccounts(store : TreasuryStore, allocation : AllocationStore, canister : Principal) : [MintTreasuryAccount] {
+    PayTokenLib.ALL.map(
+      func token = ({
+        token;
+        account = mintTreasuryAccount(canister, token);
+        balance = if (allocation.lastRunAt == null) null else ?amountOf(allocation.balances, token);
+        legacyExternalAccount = tokenAccount(store, token);
+      } : MintTreasuryAccount)
+    );
+  };
+
+  // --- DEX lot 4: weekly allocation ------------------------------------------
+
+  func sat(a : Nat, b : Nat) : Nat = if (a > b) Nat.sub(a, b) else 0;
+
+  func ceilDiv(a : Nat, b : Nat) : Nat = (a + b - 1) / b;
+
+  // Per-token split of a treasury balance: (cap paid from the accumulated
+  // stock this week, new funds received after the stock was fixed).
+  func stockSplit(allocation : AllocationStore, balances : TokenAmounts, token : PayToken) : (Nat, Nat) {
+    let base = amountOf(allocation.stockBase ?? balances, token);
+    let balance = amountOf(balances, token);
+    let remaining = sat(base, amountOf(allocation.stockPaid, token));
+    let stockPart = Nat.min(balance, remaining);
+    let cap = Nat.min(stockPart, ceilDiv(base, 12));
+    (cap, sat(balance, stockPart));
+  };
+
+  func amounts(f : PayToken -> Nat) : TokenAmounts {
+    { icp = f(#icp); ckbtc = f(#ckbtc); ckusdc = f(#ckusdc); ckusdt = f(#ckusdt) };
+  };
+
+  // Target that keeps the planned surplus "beyond about 100 days".
+  public let SURPLUS_AFTER_DAYS : Nat = 100;
+  public let AUTONOMY_TARGET_DAYS : Nat = 90;
+
+  // Decision of one weekly calculation (no transfer): below 90 days of
+  // autonomy, ICP to the cycles reserve first; ICP beyond about 100 days is
+  // surplus, 50 % DL bonus / 50 % fixed protocol liquidity; the accumulated
+  // stock is paid out at most 1/12 per week. Pool adds are filled by the run.
+  public func planWeeklyAllocation(allocation : AllocationStore, balances : TokenAmounts, autonomyDays : ?Nat, cyclesPerDay : ?Nat, cyclesPerIcp : ?Nat, now : Int) : WeeklyAllocation {
+    let stockPayoutCap = amounts(func t = stockSplit(allocation, balances, t).0);
+    let spendable = amounts(func t { let (cap, fresh) = stockSplit(allocation, balances, t); cap + fresh });
+    let base = {
+      id = allocation.nextId;
+      at = now;
+      autonomyDays;
+      treasuryBalances = balances;
+      stockPayoutCap;
+      poolAdds = [];
+      skipped = [];
+      waiting = ZERO_AMOUNTS;
+    };
+    switch (autonomyDays, cyclesPerDay, cyclesPerIcp) {
+      case (?days, ?perDay, ?perIcp) {
+        if (perDay == 0 or perIcp == 0) {
+          return { base with toCyclesReserveE8s = 0; surplusE8s = 0; toBonusE8s = 0; toLiquidity = ZERO_AMOUNTS; note = "Consumption or CMC rate is zero; nothing allocated this week" };
+        };
+        // ICP e8s worth `d` days of consumption at the CMC rate (rounded up).
+        func icpForDays(d : Nat) : Nat = ceilDiv(d * perDay * ICP_DECIMALS, perIcp);
+        let toCycles = Nat.min(spendable.icp, icpForDays(sat(AUTONOMY_TARGET_DAYS, days)));
+        let rest = sat(spendable.icp, toCycles);
+        let daysAfter = days + toCycles * perIcp / ICP_DECIMALS / perDay;
+        let hold = Nat.min(rest, icpForDays(sat(SURPLUS_AFTER_DAYS, daysAfter)));
+        let surplus = sat(rest, hold);
+        let toBonus = surplus / 2;
+        let hasSurplus = daysAfter >= SURPLUS_AFTER_DAYS;
+        let toLiquidity : TokenAmounts = {
+          icp = sat(surplus, toBonus);
+          ckbtc = if (hasSurplus) spendable.ckbtc else 0;
+          ckusdc = if (hasSurplus) spendable.ckusdc else 0;
+          ckusdt = if (hasSurplus) spendable.ckusdt else 0;
+        };
+        let note = if (toCycles > 0 and surplus == 0) {
+          "Autonomy " # days.toText() # " days: treasury ICP sent to the cycles reserve first; no surplus beyond " # SURPLUS_AFTER_DAYS.toText() # " days";
+        } else if (surplus > 0) {
+          "Autonomy " # days.toText() # " days: surplus beyond " # SURPLUS_AFTER_DAYS.toText() # " days split 50 % DL bonus / 50 % fixed protocol liquidity";
+        } else {
+          "Autonomy " # days.toText() # " days: no transfer to the cycles reserve and no surplus this week";
+        };
+        { base with toCyclesReserveE8s = toCycles; surplusE8s = surplus; toBonusE8s = toBonus; toLiquidity; note };
+      };
+      case _ {
+        { base with toCyclesReserveE8s = 0; surplusE8s = 0; toBonusE8s = 0; toLiquidity = ZERO_AMOUNTS; note = "Autonomy, consumption or CMC rate unknown; treasury funds wait" };
+      };
+    };
+  };
+
+  // Records a completed weekly calculation (the run fills poolAdds, skipped
+  // and waiting first). The part spent beyond new funds counts as stock paid.
+  public func recordAllocation(allocation : AllocationStore, result : WeeklyAllocation) {
+    let balances = result.treasuryBalances;
+    let spent = amounts(
+      func t {
+        let liquidity = sat(amountOf(result.toLiquidity, t), amountOf(result.waiting, t));
+        switch (t) {
+          case (#icp) { result.toCyclesReserveE8s + result.toBonusE8s + liquidity };
+          case (_) { liquidity };
+        };
+      }
+    );
+    let paidNow = amounts(
+      func t {
+        let (cap, fresh) = stockSplit(allocation, balances, t);
+        Nat.min(cap, sat(amountOf(spent, t), fresh));
+      }
+    );
+    if (allocation.stockBase == null) {
+      allocation.stockBase := ?balances;
+    };
+    allocation.stockPaid := amounts(func t = amountOf(allocation.stockPaid, t) + amountOf(paidNow, t));
+    allocation.history.add(result);
+    allocation.nextId := Nat.max(allocation.nextId, result.id) + 1;
+    allocation.lastRunAt := ?result.at;
+  };
+
+  // Latest weekly calculation, null before the first one.
+  public func lastAllocation(allocation : AllocationStore) : ?WeeklyAllocation {
+    allocation.history.last();
+  };
+
+  // Weekly calculations, newest first.
+  public func allocations(allocation : AllocationStore) : [WeeklyAllocation] {
+    allocation.history.reverseValues().toArray();
+  };
+
+  // The old external (legacy, read-only) account of `token`, null when none
+  // was set. New forwards use mintTreasuryAccount.
   public func tokenAccount(store : TreasuryStore, token : PayToken) : ?Account {
     switch (token) {
       case (#icp) { do ? { store.config!.icpAccount } };
@@ -184,5 +330,111 @@ module {
   // icrc1_transfer errors are a subset of the transfer_from errors.
   public func transferErrorMessage(err : Treasury.IcpTransferError) : Text {
     transferFromErrorMessage(err);
+  };
+
+  // --- Mint owner revenue: destinations and views ----------------------------
+
+  // "icp", "ckbtc", "ckusdc", "ckusdt": key of the per-token owner maps.
+  public func tokenKey(token : PayToken) : Text {
+    switch (token) {
+      case (#icp) { "icp" };
+      case (#ckbtc) { "ckbtc" };
+      case (#ckusdc) { "ckusdc" };
+      case (#ckusdt) { "ckusdt" };
+    };
+  };
+
+  func destinationView(store : OwnerTypes.OwnerRevenueStore, token : PayToken) : OwnerTypes.OwnerDestinationView {
+    let key = tokenKey(token);
+    let dest = store.destinations.get(key);
+    {
+      token;
+      account = switch (dest) { case (?d) { ?d.account }; case null { null } };
+      setAt = switch (dest) { case (?d) { ?d.setAt }; case null { null } };
+      accumulated = store.accumulated.get(key) ?? 0;
+    };
+  };
+
+  // Admin-only callers: validates and stores the destination of `token`
+  // (records a DestinationChange). Does not send; the caller flushes.
+  public func setOwnerDestination(store : OwnerTypes.OwnerRevenueStore, canister : Principal, token : PayToken, account : Account, caller : Principal, now : Int) : OwnerTypes.OwnerDestinationResult {
+    if (account.owner.isAnonymous()) {
+      return #err(#anonymousOwner);
+    };
+    switch (account.subaccount) {
+      case (?s) { if (s.size() != 32) { return #err(#invalidSubaccount) } };
+      case null {};
+    };
+    if (account.owner == canister) {
+      return #err(#contractAccount);
+    };
+    store.destinations.add(tokenKey(token), { token; account; setAt = now; setBy = caller });
+    store.destinationHistory.add({ token; account = ?account; at = now; by = caller });
+    #ok(destinationView(store, token));
+  };
+
+  public func clearOwnerDestination(store : OwnerTypes.OwnerRevenueStore, token : PayToken, caller : Principal, now : Int) : OwnerTypes.OwnerDestinationResult {
+    let key = tokenKey(token);
+    if (not store.destinations.containsKey(key)) {
+      return #err(#notConfigured);
+    };
+    store.destinations.remove(key);
+    store.destinationHistory.add({ token; account = null; at = now; by = caller });
+    #ok(destinationView(store, token));
+  };
+
+  // One row per pay token (ICP, ckBTC, ckUSDC, ckUSDT), configured or not.
+  public func ownerDestinations(store : OwnerTypes.OwnerRevenueStore) : [OwnerTypes.OwnerDestinationView] {
+    PayTokenLib.ALL.map(func token = destinationView(store, token));
+  };
+
+  public func ownerAccumulated(store : OwnerTypes.OwnerRevenueStore) : [OwnerTypes.OwnerAccumulated] {
+    PayTokenLib.ALL.map(func token = ({ token; amount = store.accumulated.get(tokenKey(token)) ?? 0 } : OwnerTypes.OwnerAccumulated));
+  };
+
+  func sendView(s : OwnerTypes.OwnerSend) : OwnerTypes.OwnerSendView {
+    {
+      id = s.id;
+      token = s.token;
+      amount = s.attempt.request.amount;
+      fee = s.attempt.request.fee;
+      destination = s.attempt.request.to;
+      source = s.source;
+      status = s.status;
+      block = switch (s.status) { case (#sent(b)) { ?b }; case _ { null } };
+      memoText = s.attempt.memo.decodeUtf8() ?? "";
+      createdAtTimeNs = s.attempt.created_at_time;
+      attempt = s.attempt.attempt;
+      sends = s.attempt.sends;
+      lastError = s.attempt.lastError;
+      createdAt = s.createdAt;
+      updatedAt = s.updatedAt;
+    };
+  };
+
+  // Newest first; `limit` capped at 100.
+  public func ownerSends(store : OwnerTypes.OwnerRevenueStore, offset : Nat, limit : Nat) : OwnerTypes.OwnerSendPage {
+    let cap = Nat.min(limit, 100);
+    let items = store.sends.reverseEntries().map(func((_, s) : (Nat, OwnerTypes.OwnerSend)) : OwnerTypes.OwnerSend = s).drop(offset).take(cap).map(sendView).toArray();
+    { items; total = store.sends.size(); offset };
+  };
+
+  public func sweepView(store : OwnerTypes.OwnerRevenueStore) : OwnerTypes.TreasurySweepView {
+    let sweep = store.sweep;
+    {
+      status = sweep.status;
+      startedAt = sweep.startedAt;
+      completedAt = sweep.completedAt;
+      reserveTopUpE8s = sweep.reserveTopUpE8s;
+      reserveTopUpBlock = switch (sweep.reserveTopUp) {
+        case (?a) { switch (a.outcome) { case (#succeeded(b)) { ?b }; case _ { null } } };
+        case null { null };
+      };
+      reserveTopUpMemo = switch (sweep.reserveTopUp) {
+        case (?a) { a.memo.decodeUtf8() };
+        case null { null };
+      };
+      tokens = sweep.tokens;
+    };
   };
 };

@@ -1,20 +1,20 @@
 {
-  "overview": "A token site for The Ten Thousand Immortals (TTTI-T test version) with minting, a built-in wallet, optional limited buybacks and a corrected white paper in seven languages.",
+  "overview": "The Ten Thousand Immortals test token (TTTI-T): mint with ICP, ckBTC, ckUSDC, ckUSDT or BTC, a built-in wallet, buyback, and native liquidity pools.",
   "features": [
     "Mint TTTI-T with ICP, ckBTC, ckUSDC, ckUSDT or BTC",
-    "Built-in wallet with send, receive, swap and history",
-    "Optional, limited buybacks held in the contract's holding account until payout succeeds",
-    "Corrected white paper and archived original",
-    "Site in seven languages with English authoritative",
-    "Admin review screen for transfers, refunds and buybacks"
+    "Mint revenue sent automatically to an owner wallet set per token in the admin screen, with send history",
+    "Mint fee split between liquidity providers and permanent liquidity of the least liquid TTTI-T pair",
+    "Native liquidity pools with swap fees split 70% to providers and 30% to permanent liquidity",
+    "Automatic cycles top-up with a 2 ICP reserve",
+    "Built-in wallet, buyback, history and corrected white paper in 7 languages"
   ],
   "category": "token-platform",
   "tags": [
-    "crypto",
-    "internet-computer",
+    "defi",
     "token",
-    "wallet",
+    "liquidity-pools",
+    "internet-computer",
     "multilingual"
   ],
-  "last_updated": "2026-10-27T16:33:10.585Z"
+  "last_updated": "2026-10-28T03:16:24.914Z"
 }
