@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TransferKind } from "../backend";
-import type { Buyback, ReviewResult, TransferReview } from "../backend";
+import type {
+  Buyback,
+  DexToken,
+  ReviewResult,
+  TransferReview,
+} from "../backend";
 import { BuybackFailure } from "../lib/buyback";
 import { useActor } from "./useActor";
 import { useIsCallerAdmin } from "./useQueries";
@@ -20,10 +25,37 @@ export function useTransfersToReview() {
   });
 }
 
+/**
+ * Transfers to review filtered by kind and token (admin only). An empty kind
+ * list returns every kind.
+ */
+export function useTransfersToReviewFiltered(
+  kinds: ReadonlyArray<TransferKind>,
+  token: DexToken | null,
+) {
+  const { actor, isFetching } = useActor();
+  const { data: isAdmin } = useIsCallerAdmin();
+
+  return useQuery<Array<TransferReview>>({
+    queryKey: ["transfersToReview", "filtered", [...kinds].join(","), token],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listTransfersToReviewFiltered({
+        kinds: [...kinds],
+        token: token ?? undefined,
+      });
+    },
+    enabled: !!actor && !isFetching && isAdmin === true,
+    placeholderData: (previous) => previous,
+  });
+}
+
 function useInvalidateReview() {
   const queryClient = useQueryClient();
   return () => {
     void queryClient.invalidateQueries({ queryKey: ["transfersToReview"] });
+    void queryClient.invalidateQueries({ queryKey: ["adminHistory"] });
+    void queryClient.invalidateQueries({ queryKey: ["settlementStatus"] });
     void queryClient.invalidateQueries({ queryKey: ["conversions"] });
     void queryClient.invalidateQueries({ queryKey: ["cyclesStatus"] });
     void queryClient.invalidateQueries({ queryKey: ["allBuybacks"] });
@@ -33,9 +65,10 @@ function useInvalidateReview() {
     void queryClient.invalidateQueries({ queryKey: ["dexBalances"] });
     void queryClient.invalidateQueries({ queryKey: ["dexTransfers"] });
     void queryClient.invalidateQueries({ queryKey: ["pairRequests"] });
-    void queryClient.invalidateQueries({ queryKey: ["dcBatches"] });
     void queryClient.invalidateQueries({ queryKey: ["myLpBonus"] });
     void queryClient.invalidateQueries({ queryKey: ["cyclesAutonomy"] });
+    void queryClient.invalidateQueries({ queryKey: ["adminRoutedSwaps"] });
+    void queryClient.invalidateQueries({ queryKey: ["adminRouterFees"] });
   };
 }
 

@@ -42,6 +42,7 @@ import BuybackTypes "types/buyback";
 import BuybackApi "mixins/buyback-api";
 import BuybackLib "lib/buyback";
 import Timer "mo:core/Timer";
+import Time "mo:core/Time";
 import Iter "mo:core/Iter";
 import RetryTypes "types/retry";
 import RetryLib "lib/retry";
@@ -51,11 +52,23 @@ import UpgradeReadinessApi "mixins/upgrade-readiness-api";
 import DexTypes "types/dex";
 import DexApi "mixins/dex-api";
 import DexLib "lib/dex";
+import DexReserveTypes "types/dex-reserve";
+import DexReserveApi "mixins/dex-reserve-api";
+import DexReserveLib "lib/dex-reserve";
+import DexIndicatorTypes "types/dex-indicators";
+import DexIndicatorsApi "mixins/dex-indicators-api";
+import DexIndicatorsLib "lib/dex-indicators";
 import ProtocolFeesLib "lib/protocol-fees";
 import ProtocolFeesApi "mixins/protocol-fees-api";
 import ProtocolFeeTypes "types/protocol-fees";
 import OwnerRevenueTypes "types/owner-revenue";
 import MintFeeTypes "types/mint-fee";
+import RouterTypes "types/router";
+import RouterLib "lib/router";
+import RouterApi "mixins/router-api";
+import SettlementLib "lib/settlement";
+import AdminHistoryLib "lib/admin-history";
+import AdminHistoryApi "mixins/admin-history-api";
 import Nat8 "mo:core/Nat8";
 import List "mo:core/List";
 import Nat "mo:core/Nat";
@@ -104,13 +117,32 @@ actor TTTIToken {
   let protocolFees : ProtocolFeesLib.ProtocolFeeStore;
   // DEX lot 4: weekly allocation calculations and mint treasury balances.
   let treasuryAllocation : TreasuryLib.AllocationStore;
-  // Mint revenue correction: owner destinations, accumulated owner shares,
-  // owner sends (OW) and the one-time treasury sweep.
+  // Mint revenue: owner sends (OW: direct mint sends, settlement legs and
+  // earlier withdrawals), the legacy accumulated counter and the one-time
+  // treasury sweep (history).
   let ownerRevenue : OwnerRevenueTypes.OwnerRevenueStore;
   // Mint revenue correction: 1/101 mint fee routing, LP claimable balances,
   // set-aside amounts and liquidity injections.
   let mintFees : MintFeeTypes.MintFeeStore;
+  // DEX lot 5: ICPSwap router (routed swaps, 0.1 % totals, set-aside LP share
+  // and 70 % LP share redirected to the least liquid TTTI-T pool).
+  let router : RouterTypes.RouterStore;
+  // Refused pair-request deposits already fed to the protocol liquidity (one
+  // record per pair request id, so each deposit counts exactly once).
+  let refusedDepositFeeds : Map.Map<Nat, DexTypes.RefusedDepositFeed>;
+  // DEX lot 6: last reserve check, mismatch history and the DEX-specific pause.
+  let dexReserve : DexReserveTypes.DexReserveStore;
+  // DEX lot 7: stored public indicators snapshot, its status and the hourly
+  // swap activity buckets.
+  let dexIndicators : DexIndicatorTypes.IndicatorsStore;
+  // Mint revenue routing: receiving wallet per pay token, wallet changes,
+  // one-time settlements and fee-account moves (ST).
+  let mintRevenue : OwnerRevenueTypes.MintRevenueStore;
 
+  // One reserve check at a time. Transient.
+  transient let dexReserveLock : DexReserveTypes.CheckLock = { var busy = false };
+  // One lock per routed ICPSwap swap ("IR/<id>"). Transient.
+  transient let routerInFlight = Set.empty<Text>();
   // One DD / DW in flight per (principal, token) and one DQ per request. Transient.
   transient let dexInFlight = Set.empty<Text>();
   // One lock per outgoing transfer (RetryLib.lockKey), released in a finally. Transient.
@@ -146,6 +178,7 @@ actor TTTIToken {
     canister = canisterPrincipal;
     sale;
     ownerRevenue;
+    mintRevenue;
   };
 
   // DEX lot 4: DC / DL / protocol liquidity context (references); mint-fee
@@ -160,6 +193,8 @@ actor TTTIToken {
     mintFees;
     oracle;
     tokenRates;
+    refusedFeeds = refusedDepositFeeds;
+    pause = dexReserve.pause;
   };
 
   // Purchase pipeline stores for the BTC deposit finalization (references the
@@ -187,6 +222,33 @@ actor TTTIToken {
     ledger;
     locks = dexInFlight;
     canister = canisterPrincipal;
+    pause = dexReserve.pause;
+    indicators = dexIndicators;
+  };
+
+  // DEX lot 5: router context (references). Transient.
+  transient let routerContext : RouterLib.RouterContext = {
+    store = router;
+    dex = dexContext;
+    locks = routerInFlight;
+  };
+
+  // DEX lot 6: reserve check context (references). Transient.
+  transient let dexReserveContext : DexReserveLib.ReserveContext = {
+    store = dexReserve;
+    lock = dexReserveLock;
+    dex = dexContext;
+    fees = protocolFeeContext;
+    router = routerContext;
+  };
+
+  // DEX lot 7: indicators context (references; hourly USD rates). Transient.
+  transient let dexIndicatorsContext : DexIndicatorsLib.IndicatorsContext = {
+    store = dexIndicators;
+    dex;
+    reserve = dexReserve;
+    protocolLiquidity = protocolFees.protocolLiquidity;
+    rateOf = func(now : Int) : DexLib.UsdRateOf = ProtocolFeesLib.rateOf(protocolFeeContext, now);
   };
 
   // DEX lot 4: weekly allocation context (references). Transient.
@@ -196,6 +258,23 @@ actor TTTIToken {
     treasury;
     cyclesReserve;
     autonomy = cyclesAutonomy;
+  };
+
+  // Mint revenue routing: wallets, fee account and settlement (references). Transient.
+  transient let settlementContext : SettlementLib.SettlementContext = {
+    transfers = transferContext;
+    fees = protocolFeeContext;
+    allocation = treasuryAllocation;
+  };
+
+  // Unified admin history (references). Transient.
+  transient let historyContext : AdminHistoryLib.HistoryContext = {
+    transfers = transferContext;
+    btcDeposits;
+    buybacks;
+    dex = dexContext;
+    fees = protocolFeeContext;
+    router = routerContext;
   };
 
   // The outcall transform callback for the ICP/BTC/USDC/USDT USD price feeds: keeps only
@@ -211,17 +290,21 @@ actor TTTIToken {
   include IcrcApi(ledger, canisterPrincipal);
   include IndexApi(ledger, canisterPrincipal);
   include ManagementApi(ledger, accessControlState);
-  include TreasuryApi(treasury, sale, ledger, accessControlState, canisterPrincipal, oracle, purchaseAcknowledgements, cyclesReserve, tokenRates, purchasesInFlight, transferContext, treasuryAllocation, protocolFeeContext);
+  include TreasuryApi(treasury, sale, ledger, accessControlState, canisterPrincipal, oracle, purchaseAcknowledgements, cyclesReserve, tokenRates, purchasesInFlight, transferContext, treasuryAllocation, protocolFeeContext, settlementContext);
   include SaleApi(sale, treasury, ledger, oracle, accessControlState, canisterPrincipal, purchaseAcknowledgements, canisterInfo, tokenRates);
   include OracleApi(oracle, accessControlState, transform, tokenRates);
   include CyclesReserveApi(cyclesReserve, cyclesAutonomy, accessControlState, canisterPrincipal);
   include BtcDepositApi(btcDeposits, btcPurchaseContext, purchasesInFlight, canisterPrincipal);
   include AddressBookApi(addressBook, canisterPrincipal);
   include BuybackApi(buybacks, buybacksInFlight, treasury, ledger, oracle, tokenRates, accessControlState, canisterPrincipal, retry, sale);
-  include TransferReviewApi(transferContext, btcDeposits, accessControlState, buybacks, ledger, dexContext, protocolFeeContext);
-  include UpgradeReadinessApi(sale, purchasesInFlight, buybacksInFlight, reserveLock, cyclesReserve, retry, reservedReconciliations, accessControlState, protocolFeeContext, ownerRevenue);
+  include TransferReviewApi(transferContext, btcDeposits, accessControlState, buybacks, ledger, dexContext, protocolFeeContext, routerContext, settlementContext);
+  include UpgradeReadinessApi(sale, purchasesInFlight, buybacksInFlight, reserveLock, cyclesReserve, retry, reservedReconciliations, accessControlState, protocolFeeContext, ownerRevenue, mintRevenue, dexReserve, dexInFlight, routerInFlight);
+  include AdminHistoryApi(historyContext, accessControlState);
   include DexApi(dex, ledger, accessControlState, canisterPrincipal, dexContext, oracle, tokenRates);
+  include DexReserveApi(dexReserveContext, accessControlState);
+  include DexIndicatorsApi(dexIndicators, accessControlState);
   include ProtocolFeesApi(protocolFeeContext, accessControlState);
+  include RouterApi(routerContext, accessControlState, oracle, tokenRates);
   // OQL: purchase history (conversions) and BTC deposit trackings, readable
   // by controllers and app admins only; address book contacts, readable by
   // controllers, app admins and their owner.
@@ -404,6 +487,88 @@ actor TTTIToken {
     unlockAt = 0;
     isCreator = false;
   };
+  transient let refusedDepositFeedSample : DexTypes.RefusedDepositFeed = { requestId = 0; poolId = 0; amount = 0; fee = 0; block = 0; at = 0 };
+  transient let dexReserveMismatchSample : DexReserveTypes.Mismatch = { id = 0; at = 0; token = #tttiT; internalTotal = 0; ledgerTotal = 0 };
+  type DexPauseRow = { key : Text; paused : Bool; reasonToken : ?Text; reasonInternalTotal : ?Nat; reasonLedgerTotal : ?Nat; pausedAt : ?Int; resumedBy : ?Text; resumedAt : ?Int };
+  transient let dexReserveResultSample : DexReserveTypes.TokenReserveResult = { token = #tttiT; internalTotal = 0; ledgerTotal = 0; difference = 0; status = #ok };
+  transient let dexIndicatorSample : DexIndicatorTypes.IndicatorRow = {
+    poolId = 0;
+    computedAt = 0;
+    token0Symbol = "";
+    token1Symbol = "";
+    isOpen = false;
+    reserve0 = 0;
+    reserve1 = 0;
+    valueUsdE8 = null;
+    depth1PctToken0In = 0;
+    depth1PctToken1In = 0;
+    depth2PctToken0In = 0;
+    depth2PctToken1In = 0;
+    depth5PctToken0In = 0;
+    depth5PctToken1In = 0;
+    totalShares = 0;
+    firmShares = 0;
+    freeShares = 0;
+    firmBps = 0;
+    freeBps = 0;
+    unlockThisWeekShares = 0;
+    unlock30dShares = 0;
+    unlock90dShares = 0;
+    unlock1yShares = 0;
+    unlockOver1yShares = 0;
+    permanentShares = 0;
+    positionCount = 0;
+    largestPositionBps = 0;
+    topFiveBps = 0;
+    permanentProtocolBps = 0;
+    swaps24h = 0;
+    volume0In24h = 0;
+    volume1In24h = 0;
+    volumeUsdE8In24h = null;
+    swaps7d = 0;
+    volume0In7d = 0;
+    volume1In7d = 0;
+    volumeUsdE8In7d = null;
+    fees7dCollected0 = 0;
+    fees7dCollected1 = 0;
+    feesCumulativeCollected0 = 0;
+    feesCumulativeCollected1 = 0;
+    observedFeeToLiquidityBps = null;
+  };
+  type DexActivityRow = { key : Text; poolId : Nat; hour : Nat; swapCount : Nat; volume0 : Nat; volume1 : Nat; fee0 : Nat; fee1 : Nat };
+  transient let dexActivitySample : DexActivityRow = { key = ""; poolId = 0; hour = 0; swapCount = 0; volume0 = 0; volume1 = 0; fee0 = 0; fee1 = 0 };
+  func dexActivityRows() : [DexActivityRow] {
+    let rows = List.empty<DexActivityRow>();
+    for ((poolId, activity) in dexIndicators.activity.entries()) {
+      for (b in activity.buckets.values()) {
+        rows.add({ key = poolId.toText() # "/" # b.hour.toText(); poolId; hour = b.hour; swapCount = b.swapCount; volume0 = b.volume0; volume1 = b.volume1; fee0 = b.fee0; fee1 = b.fee1 });
+      };
+    };
+    rows.toArray();
+  };
+  transient let dexPauseSample : DexPauseRow = { key = ""; paused = false; reasonToken = null; reasonInternalTotal = null; reasonLedgerTotal = null; pausedAt = null; resumedBy = null; resumedAt = null };
+  func dexReserveStatusText(status : DexReserveTypes.ReserveStatus) : Text = switch (status) {
+    case (#ok) "ok";
+    case (#surplus) "surplus";
+    case (#shortfall) "shortfall";
+  };
+  func dexPauseRows() : [DexPauseRow] {
+    let pause = dexReserve.pause;
+    [{
+      key = "dexPause";
+      paused = pause.paused;
+      reasonToken = switch (pause.reason) { case (?r) ?DexLib.tokenSymbol(r.token); case null null };
+      reasonInternalTotal = switch (pause.reason) { case (?r) ?r.internalTotal; case null null };
+      reasonLedgerTotal = switch (pause.reason) { case (?r) ?r.ledgerTotal; case null null };
+      pausedAt = switch (pause.reason) { case (?r) ?r.at; case null null };
+      resumedBy = switch (pause.resumed) { case (?r) ?r.by.toText(); case null null };
+      resumedAt = switch (pause.resumed) { case (?r) ?r.at; case null null };
+    }];
+  };
+  func dexReserveResultRows() : [DexReserveTypes.TokenReserveResult] = switch (dexReserve.lastCheck) {
+    case (?c) c.results;
+    case null [];
+  };
   transient let dexRequestSample : DexTypes.PairRequest = {
     id = 0;
     requester = canisterPrincipal;
@@ -507,6 +672,7 @@ actor TTTIToken {
         case (?r) (r.requester, DexLib.refundStatusText(r.refundStatus));
         case null (a.request.to.owner, "unknown");
       };
+      // Review row of a DQ refund: id = pair request number (memo TTTI-DQ-<pair request number>).
       rows.add({ key = "DQ-" # requestId.toText(); kind = "DQ"; id = requestId; owner; amount = a.request.amount; attempt = a; status });
     };
     rows.toArray();
@@ -604,14 +770,17 @@ actor TTTIToken {
     reserveTopUpBlock : ?Nat;
     tokenCount : Nat;
     tokensSent : Nat;
+    // History of the one-time sweep: tokens that stayed in the legacy
+    // #waitingDestination state (no destination exists anymore).
     tokensWaitingDestination : Nat;
   };
   type MintFeeBalanceRow = { key : Text; owner : Principal; token : Text; claimable : Nat; claimed : Nat };
-  transient let ownerDestinationSample : OwnerRevenueTypes.OwnerDestination = {
-    token = #icp;
-    account = { owner = canisterPrincipal; subaccount = null };
-    setAt = 0;
-    setBy = canisterPrincipal;
+  transient let routerRedirectSample : RouterTypes.RouterRedirect = {
+    poolId = 0;
+    redirected0 = 0;
+    redirected1 = 0;
+    lastTargetPoolId = ?0;
+    lastAt = ?0;
   };
   transient let ownerSendSample : OwnerRevenueTypes.OwnerSend = {
     id = 0;
@@ -691,10 +860,82 @@ actor TTTIToken {
     case (#mint(_)) "mint";
     case (#accumulated) "accumulated";
     case (#treasurySweep) "treasurySweep";
+    case (#withdrawal(_)) "withdrawal";
+    case (#settlement(_)) "settlement";
   };
   func ownerSourceConversion(s : OwnerRevenueTypes.OwnerSendSource) : ?Nat = switch (s) {
     case (#mint(id)) ?id;
     case _ null;
+  };
+  // Mint revenue routing OQL helpers and samples.
+  func optAccountText(a : ?OwnerRevenueTypes.Account) : ?Text = switch (a) {
+    case (?acc) ?SettlementLib.accountText(acc);
+    case null null;
+  };
+  func legPurposeText(p : OwnerRevenueTypes.SettlementLegPurpose) : Text = switch (p) {
+    case (#ownerAccumulated) "ownerAccumulated";
+    case (#ownerMintTreasury) "ownerMintTreasury";
+    case (#feePending) "feePending";
+    case (#feeLegacy) "feeLegacy";
+  };
+  func settlementStatusText(s : OwnerRevenueTypes.SettlementStatus) : Text = switch (s) {
+    case (#pendingWallet) "pendingWallet";
+    case (#sending) "sending";
+    case (#sent(_)) "sent";
+    case (#failed(_)) "failed";
+    case (#toReview) "toReview";
+  };
+  func feeMovePurposeText(p : OwnerRevenueTypes.FeeMovePurpose) : Text = switch (p) {
+    case (#mintFee(_)) "mintFee";
+    case (#settlement(l)) "settlement:" # legPurposeText(l);
+  };
+  func feeMoveConversion(p : OwnerRevenueTypes.FeeMovePurpose) : ?Nat = switch (p) {
+    case (#mintFee(id)) ?id;
+    case _ null;
+  };
+  func legsTotal(legs : [OwnerRevenueTypes.SettlementLeg], owner : Bool) : Nat {
+    var total = 0;
+    for (l in legs.values()) {
+      let isOwner = switch (l.purpose) {
+        case (#ownerAccumulated or #ownerMintTreasury) true;
+        case _ false;
+      };
+      if (isOwner == owner) total += l.amount;
+    };
+    total;
+  };
+  transient let sampleAccount : OwnerRevenueTypes.Account = { owner = canisterPrincipal; subaccount = null };
+  transient let receivingWalletSample : OwnerRevenueTypes.ReceivingWallet = {
+    token = #icp;
+    account = sampleAccount;
+    setAt = 0;
+    setBy = canisterPrincipal;
+  };
+  transient let walletChangeSample : OwnerRevenueTypes.WalletChange = {
+    id = 0;
+    token = #icp;
+    oldAccount = ?sampleAccount;
+    newAccount = sampleAccount;
+    at = 0;
+    by = canisterPrincipal;
+  };
+  transient let tokenSettlementSample : OwnerRevenueTypes.TokenSettlement = {
+    token = #icp;
+    status = #pendingWallet;
+    destination = ?sampleAccount;
+    legs = [];
+    startedAt = ?0;
+    completedAt = ?0;
+    lastError = ?"";
+  };
+  transient let feeMoveSample : OwnerRevenueTypes.FeeMove = {
+    n = 0;
+    token = #icp;
+    purpose = #mintFee(0);
+    attempt = attemptSample.1;
+    status = #pending;
+    createdAt = 0;
+    updatedAt = 0;
   };
   func sweepStatusText(s : OwnerRevenueTypes.SweepStatus) : Text = switch (s) {
     case (#notStarted) "notStarted";
@@ -776,6 +1017,70 @@ actor TTTIToken {
     rows.toArray();
   };
   func isAppAdmin(caller : Principal) : Bool = accessControlState.userRoles.get(caller) == ?#admin;
+  // DEX lot 5: router OQL rows.
+  transient let routedSwapSample : RouterTypes.RoutedSwap = {
+    id = 0;
+    owner = canisterPrincipal;
+    createdAt = 0;
+    updatedAt = 0;
+    route = #icpswap({ poolCanisterId = canisterPrincipal });
+    tokenIn = #icp;
+    tokenOut = #tttiT;
+    amountIn = 0;
+    amountOut = 0;
+    minAmountOut = 0;
+    deadline = 0;
+    fees = #native({ feeBps = 0; fee = 0 });
+    nativePoolId = ?0;
+    zeroForOne = false;
+    stage = #done;
+    status = #completed;
+    move = null;
+    lastError = ?"";
+  };
+  transient let routerFeeSample : RouterTypes.RouterFeeTotals = {
+    poolId = 0;
+    collected0 = 0;
+    collected1 = 0;
+    lpPaid0 = 0;
+    lpPaid1 = 0;
+    lpSetAside0 = 0;
+    lpSetAside1 = 0;
+    permanent0 = 0;
+    permanent1 = 0;
+  };
+  func routeText(r : RouterTypes.Route) : Text = switch (r) {
+    case (#native(_)) "native";
+    case (#icpswap(_)) "icpswap";
+  };
+  func routePool(r : RouterTypes.Route) : Text = switch (r) {
+    case (#native({ poolId })) poolId.toText();
+    case (#icpswap({ poolCanisterId })) poolCanisterId.toText();
+  };
+  func routeFeeTotal(f : RouterTypes.RouteFees) : Nat = switch (f) {
+    case (#native({ fee })) fee;
+    case (#icpswap({ icpswapFee; protocolFee })) icpswapFee + protocolFee;
+  };
+  func routeProtocolFee(f : RouterTypes.RouteFees) : Nat = switch (f) {
+    case (#native(_)) 0;
+    case (#icpswap({ protocolFee })) protocolFee;
+  };
+  func routedStageText(s : RouterTypes.RoutedSwapStage) : Text = switch (s) {
+    case (#recorded) "recorded";
+    case (#movingIn) "movingIn";
+    case (#depositing) "depositing";
+    case (#swapping) "swapping";
+    case (#withdrawing) "withdrawing";
+    case (#done) "done";
+  };
+  func routedStatusText(s : RouterTypes.RoutedSwapStatus) : Text = switch (s) {
+    case (#inProgress) "inProgress";
+    case (#completed) "completed";
+    case (#failedReturned(_)) "failedReturned";
+    case (#needsReview) "needsReview";
+    case (#reviewedArrived(_)) "reviewedArrived";
+    case (#reviewedNotArrived) "reviewedNotArrived";
+  };
   include Expose({
     entities = [
       OQL.Entity.manual<(Nat, RetryTypes.TransferAttempt)>("forwardAttempt", func() = retry.forwards.entries(), "ForwardAttempt", "purchaseId")
@@ -1253,18 +1558,7 @@ actor TTTIToken {
         .payload("reserve1", func r = r.reserve1)
         .public_()
         .build(),
-      // --- Mint revenue correction --------------------------------------------
-      OQL.Entity.manual<OwnerRevenueTypes.OwnerDestination>("ownerDestination", func() = ownerRevenue.destinations.values(), "OwnerDestination", "token")
-        .sample(ownerDestinationSample)
-        .payload("token", func d = attemptTokenText(d.token))
-        .payload("owner", func d = d.account.owner)
-        .payload("hasSubaccount", func d = d.account.subaccount != null)
-        .payload("setAt", func d = d.setAt)
-        .payload("setBy", func d = d.setBy)
-        .payload("accumulated", func d = ownerRevenue.accumulated.get(attemptTokenText(d.token)) ?? 0)
-        .ownedByWith("token", func(caller, _) = isAppAdmin(caller))
-        .controllerOrScoped()
-        .build(),
+      // --- Mint revenue: owner sends and the earlier sweep (admin only) ------
       OQL.Entity.manual<OwnerRevenueTypes.OwnerSend>("ownerSend", func() = ownerRevenue.sends.values(), "OwnerSend", "id")
         .sample(ownerSendSample)
         .payload("id", func s = s.id)
@@ -1301,6 +1595,64 @@ actor TTTIToken {
         .payload("tokensSent", func r = r.tokensSent)
         .payload("tokensWaitingDestination", func r = r.tokensWaitingDestination)
         .ownedByWith("key", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      // --- Mint revenue routing: receiving wallets, settlement, fee account --
+      OQL.Entity.manual<OwnerRevenueTypes.ReceivingWallet>("receivingWallet", func() = mintRevenue.wallets.values(), "ReceivingWallet", "token")
+        .sample(receivingWalletSample)
+        .payload("token", func w = attemptTokenText(w.token))
+        .payload("owner", func w = w.account.owner)
+        .payload("accountText", func w = SettlementLib.accountText(w.account))
+        .payload("setAt", func w = w.setAt)
+        .payload("setBy", func w = w.setBy)
+        .ownedByWith("token", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<OwnerRevenueTypes.WalletChange>("walletChange", func() = mintRevenue.walletChanges.values(), "WalletChange", "id")
+        .sample(walletChangeSample)
+        .payload("id", func c = c.id)
+        .payload("token", func c = attemptTokenText(c.token))
+        .payload("oldAccountText", func c = optAccountText(c.oldAccount))
+        .payload("newOwner", func c = c.newAccount.owner)
+        .payload("newAccountText", func c = SettlementLib.accountText(c.newAccount))
+        .payload("at", func c = c.at)
+        .payload("by", func c = c.by)
+        .ownedByWith("id", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<OwnerRevenueTypes.TokenSettlement>("revenueSettlement", func() = mintRevenue.settlements.values(), "RevenueSettlement", "token")
+        .sample(tokenSettlementSample)
+        .payload("token", func s = attemptTokenText(s.token))
+        .payload("status", func s = settlementStatusText(s.status))
+        .payload("destinationText", func s = optAccountText(s.destination))
+        .payload("legCount", func s = s.legs.size())
+        .payload("ownerAmount", func s = legsTotal(s.legs, true))
+        .payload("feeAmount", func s = legsTotal(s.legs, false))
+        .payload("startedAt", func s = s.startedAt)
+        .payload("completedAt", func s = s.completedAt)
+        .payload("lastError", func s = s.lastError)
+        .ownedByWith("token", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<OwnerRevenueTypes.FeeMove>("feeMove", func() = mintRevenue.feeMoves.values(), "FeeMove", "n")
+        .sample(feeMoveSample)
+        .payload("n", func m = m.n)
+        .payload("token", func m = attemptTokenText(m.token))
+        .payload("purpose", func m = feeMovePurposeText(m.purpose))
+        .payload("conversionId", func m = feeMoveConversion(m.purpose))
+        .payload("amount", func m = m.attempt.request.amount)
+        .payload("fee", func m = m.attempt.request.fee)
+        .payload("attempt", func m = m.attempt.attempt)
+        .payload("memo", func m = m.attempt.memo.decodeUtf8())
+        .payload("createdAtTime", func m = m.attempt.created_at_time)
+        .payload("sends", func m = m.attempt.sends)
+        .payload("lastError", func m = m.attempt.lastError)
+        .payload("outcome", func m = attemptOutcomeText(m.attempt.outcome))
+        .payload("status", func m = ownerSendStatusText(m.status))
+        .payload("block", func m = ownerSendBlock(m.status))
+        .payload("createdAt", func m = m.createdAt)
+        .payload("updatedAt", func m = m.updatedAt)
+        .ownedByWith("n", func(caller, _) = isAppAdmin(caller))
         .controllerOrScoped()
         .build(),
       OQL.Entity.manual<MintFeeTypes.MintFeeRouting>("mintFeeRouting", func() = mintFees.routings.values(), "MintFeeRouting", "id")
@@ -1376,19 +1728,184 @@ actor TTTIToken {
         .payload("updatedAt", func i = i.updatedAt)
         .public_()
         .build(),
+      // --- DEX lot 5: ICPSwap router ------------------------------------------
+      OQL.Entity.manual<RouterTypes.RoutedSwap>("routedSwap", func() = router.swaps.values(), "RoutedSwap", "id")
+        .sample(routedSwapSample)
+        .payload("id", func s = s.id)
+        .payload("owner", func s = s.owner)
+        .payload("createdAt", func s = s.createdAt)
+        .payload("updatedAt", func s = s.updatedAt)
+        .payload("route", func s = routeText(s.route))
+        .payload("routePool", func s = routePool(s.route))
+        .payload("tokenIn", func s = DexLib.tokenSymbol(s.tokenIn))
+        .payload("tokenOut", func s = DexLib.tokenSymbol(s.tokenOut))
+        .payload("amountIn", func s = s.amountIn)
+        .payload("amountOut", func s = s.amountOut)
+        .payload("minAmountOut", func s = s.minAmountOut)
+        .payload("deadline", func s = s.deadline)
+        .payload("feeTotal", func s = routeFeeTotal(s.fees))
+        .payload("protocolFee", func s = routeProtocolFee(s.fees))
+        .payload("nativePoolId", func s = s.nativePoolId)
+        .payload("stage", func s = routedStageText(s.stage))
+        .payload("status", func s = routedStatusText(s.status))
+        .payload("memo", func s = switch (s.move) { case (?a) a.memo.decodeUtf8(); case null null })
+        .payload("lastError", func s = s.lastError)
+        .ownedByWith("id", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<RouterTypes.RouterFeeTotals>("routerFeeTotals", func() = router.feeTotals.values(), "RouterFeeTotals", "poolId")
+        .sample(routerFeeSample)
+        .payload("poolId", func t = t.poolId)
+        .payload("collected0", func t = t.collected0)
+        .payload("collected1", func t = t.collected1)
+        .payload("lpPaid0", func t = t.lpPaid0)
+        .payload("lpPaid1", func t = t.lpPaid1)
+        .payload("lpSetAside0", func t = t.lpSetAside0)
+        .payload("lpSetAside1", func t = t.lpSetAside1)
+        .payload("permanent0", func t = t.permanent0)
+        .payload("permanent1", func t = t.permanent1)
+        .payload("waiting0", func t = switch (router.setAside.get(t.poolId)) { case (?sa) sa.amount0; case null 0 })
+        .payload("waiting1", func t = switch (router.setAside.get(t.poolId)) { case (?sa) sa.amount1; case null 0 })
+        .ownedByWith("poolId", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<DexTypes.RefusedDepositFeed>("refusedDepositFeed", func() = refusedDepositFeeds.values(), "RefusedDepositFeed", "requestId")
+        .sample(refusedDepositFeedSample)
+        .payload("requestId", func r = r.requestId)
+        .payload("poolId", func r = r.poolId)
+        .payload("amount", func r = r.amount)
+        .payload("fee", func r = r.fee)
+        .payload("block", func r = r.block)
+        .payload("at", func r = r.at)
+        .ownedByWith("requestId", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<RouterTypes.RouterRedirect>("routerRedirect", func() = router.redirected.values(), "RouterRedirect", "poolId")
+        .sample(routerRedirectSample)
+        .payload("poolId", func r = r.poolId)
+        .payload("redirected0", func r = r.redirected0)
+        .payload("redirected1", func r = r.redirected1)
+        .payload("lastTargetPoolId", func r = r.lastTargetPoolId)
+        .payload("lastAt", func r = r.lastAt)
+        .ownedByWith("poolId", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      // --- DEX lot 6: reserve check ------------------------------------------
+      OQL.Entity.manual<DexReserveTypes.Mismatch>("dexReserveMismatch", func() = dexReserve.history.values(), "DexReserveMismatch", "id")
+        .sample(dexReserveMismatchSample)
+        .payload("id", func m = m.id)
+        .payload("at", func m = m.at)
+        .payload("token", func m = DexLib.tokenSymbol(m.token))
+        .payload("internalTotal", func m = m.internalTotal)
+        .payload("ledgerTotal", func m = m.ledgerTotal)
+        .ownedByWith("id", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<DexReserveTypes.TokenReserveResult>("dexReserveResult", func() = dexReserveResultRows().values(), "DexReserveResult", "token")
+        .sample(dexReserveResultSample)
+        .payload("token", func r = DexLib.tokenSymbol(r.token))
+        .payload("internalTotal", func r = r.internalTotal)
+        .payload("ledgerTotal", func r = r.ledgerTotal)
+        .payload("difference", func r = r.difference)
+        .payload("status", func r = dexReserveStatusText(r.status))
+        .ownedByWith("token", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<DexPauseRow>("dexPause", func() = dexPauseRows().values(), "DexPause", "key")
+        .sample(dexPauseSample)
+        .payload("key", func r = r.key)
+        .payload("paused", func r = r.paused)
+        .payload("reasonToken", func r = r.reasonToken)
+        .payload("reasonInternalTotal", func r = r.reasonInternalTotal)
+        .payload("reasonLedgerTotal", func r = r.reasonLedgerTotal)
+        .payload("pausedAt", func r = r.pausedAt)
+        .payload("resumedBy", func r = r.resumedBy)
+        .payload("resumedAt", func r = r.resumedAt)
+        .ownedByWith("key", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      // --- DEX lot 7: indicators (stored hourly snapshot, public) ------------
+      OQL.Entity.manual<DexIndicatorTypes.IndicatorRow>("dexIndicator", func() = DexIndicatorsLib.rows(dexIndicators).values(), "DexIndicator", "poolId")
+        .sample(dexIndicatorSample)
+        .payload("poolId", func r = r.poolId)
+        .payload("computedAt", func r = r.computedAt)
+        .payload("token0Symbol", func r = r.token0Symbol)
+        .payload("token1Symbol", func r = r.token1Symbol)
+        .payload("isOpen", func r = r.isOpen)
+        .payload("reserve0", func r = r.reserve0)
+        .payload("reserve1", func r = r.reserve1)
+        .payload("valueUsdE8", func r = r.valueUsdE8)
+        .payload("depth1PctToken0In", func r = r.depth1PctToken0In)
+        .payload("depth1PctToken1In", func r = r.depth1PctToken1In)
+        .payload("depth2PctToken0In", func r = r.depth2PctToken0In)
+        .payload("depth2PctToken1In", func r = r.depth2PctToken1In)
+        .payload("depth5PctToken0In", func r = r.depth5PctToken0In)
+        .payload("depth5PctToken1In", func r = r.depth5PctToken1In)
+        .payload("totalShares", func r = r.totalShares)
+        .payload("firmShares", func r = r.firmShares)
+        .payload("freeShares", func r = r.freeShares)
+        .payload("firmBps", func r = r.firmBps)
+        .payload("freeBps", func r = r.freeBps)
+        .payload("unlockThisWeekShares", func r = r.unlockThisWeekShares)
+        .payload("unlock30dShares", func r = r.unlock30dShares)
+        .payload("unlock90dShares", func r = r.unlock90dShares)
+        .payload("unlock1yShares", func r = r.unlock1yShares)
+        .payload("unlockOver1yShares", func r = r.unlockOver1yShares)
+        .payload("permanentShares", func r = r.permanentShares)
+        .payload("positionCount", func r = r.positionCount)
+        .payload("largestPositionBps", func r = r.largestPositionBps)
+        .payload("topFiveBps", func r = r.topFiveBps)
+        .payload("permanentProtocolBps", func r = r.permanentProtocolBps)
+        .payload("swaps24h", func r = r.swaps24h)
+        .payload("volume0In24h", func r = r.volume0In24h)
+        .payload("volume1In24h", func r = r.volume1In24h)
+        .payload("volumeUsdE8In24h", func r = r.volumeUsdE8In24h)
+        .payload("swaps7d", func r = r.swaps7d)
+        .payload("volume0In7d", func r = r.volume0In7d)
+        .payload("volume1In7d", func r = r.volume1In7d)
+        .payload("volumeUsdE8In7d", func r = r.volumeUsdE8In7d)
+        .payload("fees7dCollected0", func r = r.fees7dCollected0)
+        .payload("fees7dCollected1", func r = r.fees7dCollected1)
+        .payload("feesCumulativeCollected0", func r = r.feesCumulativeCollected0)
+        .payload("feesCumulativeCollected1", func r = r.feesCumulativeCollected1)
+        .payload("observedFeeToLiquidityBps", func r = r.observedFeeToLiquidityBps)
+        .public_()
+        .build(),
+      OQL.Entity.manual<DexActivityRow>("dexSwapActivity", func() = dexActivityRows().values(), "DexSwapActivity", "key")
+        .sample(dexActivitySample)
+        .payload("key", func r = r.key)
+        .payload("poolId", func r = r.poolId)
+        .payload("hour", func r = r.hour)
+        .payload("swapCount", func r = r.swapCount)
+        .payload("volume0", func r = r.volume0)
+        .payload("volume1", func r = r.volume1)
+        .payload("fee0", func r = r.fee0)
+        .payload("fee1", func r = r.fee1)
+        .public_()
+        .build(),
     ];
   });
   include ApiDocMixin();
+
+  // Persists every filling pool that now reaches the launch target at the
+  // usable stored rates (absent or expired rates open nothing).
+  func openReadyPools() {
+    ignore DexLib.openReadyPools(dex, ProtocolFeesLib.rateOf(protocolFeeContext, Time.now()));
+  };
 
   // Runs on every install and upgrade: re-certify the ICRC-3 tip so
   // icrc3_get_tip_certificate works immediately after an upgrade.
   IcrcLib.certifyTip(ledger);
 
   // Runs on every install and upgrade: re-arm the hourly ICP/USD rate timer.
-  OracleLib.startTimer<system>(oracle, transform);
+  OracleLib.startTimer<system>(oracle, transform, openReadyPools);
 
   // Runs on every install and upgrade: re-arm the BTC/USDC/USDT rate timers.
-  OracleLib.startTokenTimers<system>(tokenRates, transform);
+  OracleLib.startTokenTimers<system>(tokenRates, transform, openReadyPools);
+
+  // Runs on every install and upgrade: a 1-minute sweep persists the opening
+  // of filling pools after a rate stored outside the timers (admin refresh).
+  ignore Timer.recurringTimer<system>(#seconds 60, func() : async () { openReadyPools() });
 
   // Runs on every install and upgrade: re-arm the 6-hour cycles top-up timer
   // (also records the cycles sample and adjusts the cycles share once a day).
@@ -1413,6 +1930,26 @@ actor TTTIToken {
   // which run before the pause check; owner sends follow the pause).
   RetryLib.startTimer<system>(transferContext);
   RetryLib.startDexTimer<system>(dexContext);
+
+  // Mint revenue routing: 10-minute one-time settlement pass, re-armed on
+  // every install and upgrade.
+  SettlementLib.startTimer<system>(settlementContext);
+
+  // DEX lot 6: hourly reserve check, re-armed on every install and upgrade.
+  DexReserveLib.startReserveTimer<system>(dexReserveContext);
+
+  // DEX lot 7: the hourly snapshot timer is re-armed on every install and
+  // upgrade and runs once shortly after start when no snapshot exists.
+  DexIndicatorsLib.startTimer<system>(dexIndicatorsContext);
+
+  // Runs on every install and upgrade (DEX lot 5): every 10 minutes, pays the
+  // set-aside 70 % of the router's 0.1 % to native pools that now have LPs.
+  ignore Timer.recurringTimer<system>(
+    #seconds(RetryLib.TIMER_INTERVAL_SECONDS),
+    func() : async () {
+      RouterLib.paySetAside(routerContext);
+    },
+  );
 
   // Runs on every install and upgrade: re-arm the 10-minute buyback payout
   // retry (resend within 23 h, new attempt after a ledger Err, under the

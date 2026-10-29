@@ -20,7 +20,9 @@ module {
   // (locked-LP bonus claim).
   // Mint revenue correction: OW (owner revenue send), SR (one-time sweep top-up
   // of the cycles reserve from MINT-TREASURY-ICP), MF (mint-fee LP claim).
-  public type TransferPrefix = { #PC; #RF; #FW; #SH; #BB; #BR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF };
+  // DEX lot 5: IR (ICPSwap route transfer of a routed swap).
+  // Mint revenue routing: ST (settlement / mint-fee move into the fee account).
+  public type TransferPrefix = { #PC; #RF; #FW; #SH; #BB; #BR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST };
 
   // Transfer types handled by the admin review ("To review"): forwards (FW),
   // reserve shares (SH), purchase refunds (RF, keyed by purchase id),
@@ -34,7 +36,9 @@ module {
   // DEX lot 4: DC sends and DL claims, both keyed by n.
   // Mint revenue correction: OW (keyed by owner send id), SR (keyed by 0, the
   // one-time sweep) and MF (keyed by claim n).
-  public type TransferKind = { #FW; #SH; #RF; #PC; #BR; #BC; #BM; #BB; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF };
+  // DEX lot 5: IR (keyed by routed swap id).
+  // Mint revenue routing: ST (fee-account move, keyed by n).
+  public type TransferKind = { #FW; #SH; #RF; #PC; #BR; #BC; #BM; #BB; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST };
 
   // Why a BTC (ckBTC) refund is sent from the buyer's deposit subaccount:
   // #excess       = R1, the excess above the delivered cost;
@@ -149,9 +153,14 @@ module {
   };
 
   public type DexTransferAttempt = {
-    n : Nat; // global number (RetryStore.nextN)
+    // DD / DW: global number (RetryStore.nextN). DQ: the pair request number
+    // (PairRequest id) for attempts created from the pair request number
+    // scheme; attempts recorded earlier keep their global number.
+    n : Nat;
     attempt : Nat; // m: 1 for the first attempt
-    memo : Blob; // "TTTI-DD-<n>", "TTTI-DW-<n>", "TTTI-DQ-<n>" (or "-<m>")
+    // "TTTI-DD-<n>", "TTTI-DW-<n>" (n = global number), "TTTI-DQ-<n>" (n = pair
+    // request number); renewals add "-<m>".
+    memo : Blob;
     created_at_time : Nat64; // ns, never null
     request : DexTransferRequest;
     sends : Nat;

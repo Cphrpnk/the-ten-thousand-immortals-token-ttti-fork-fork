@@ -446,6 +446,7 @@ function formatNs(ns: bigint, lang: Lang, unavailable: string): string {
 function PayTokens({ details }: { details: TechnicalDetails }) {
   const t = useDict(TOKEN_INFO_TEXT);
   const cyclesFeeText = useCyclesFeeText();
+  const mintRevenue = useDict(MINT_REVENUE_TEXT);
   const ex = useDict(TECH_EXPLORER_TEXT);
   return (
     <div className="min-w-0 sm:col-span-2" data-ocid="token.pay_tokens.panel">
@@ -493,6 +494,12 @@ function PayTokens({ details }: { details: TechnicalDetails }) {
           data-ocid="token.pay_tokens.fee_rule"
         >
           {cyclesFeeText}
+        </p>
+        <p
+          className="mt-3 text-sm leading-relaxed text-foreground"
+          data-ocid="token.pay_tokens.router_fee_rule"
+        >
+          {mintRevenue.routerFeeRule}
         </p>
       </dd>
     </div>

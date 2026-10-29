@@ -22,8 +22,10 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { DexPausedHint, useDexPaused } from "./DexPausedNotice";
 import {
   type DexText,
+  dexCallErrorText,
   dexTransferErrorText,
   formatDexUnits,
 } from "./dexFormat";
@@ -71,6 +73,7 @@ export function DexAmountDialog({
   onClose: () => void;
 }) {
   const t = useDict(DEX_TEXT);
+  const dexPaused = useDexPaused();
   const deposit = useDepositToDex(owner);
   const withdraw = useWithdrawFromDex();
   const [text, setText] = useState("");
@@ -78,6 +81,7 @@ export function DexAmountDialog({
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const isDeposit = kind === "deposit";
+  const blocked = isDeposit && dexPaused;
   const pending = deposit.isPending || withdraw.isPending;
   const amount = parseUnits(text, token.decimals);
   const valid = amount !== null && amount > 0n;
@@ -91,15 +95,17 @@ export function DexAmountDialog({
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (amount === null || amount <= 0n || pending) return;
+    if (amount === null || amount <= 0n || pending || blocked) return;
     setFeedback(null);
     const captured = text;
     const onFailure = (err: Error) =>
       setFeedback({
         tone: "danger",
-        text: isDeposit
-          ? t.errDexApprovalFailed(err.message)
-          : t.errLedger(err.message),
+        text: dexCallErrorText(
+          t,
+          err.message,
+          isDeposit ? t.errDexApprovalFailed : t.errLedger,
+        ),
       });
     if (isDeposit) {
       deposit.mutate(
@@ -248,20 +254,22 @@ export function DexAmountDialog({
             >
               {t.cancel}
             </Button>
-            <Button
-              type="submit"
-              disabled={!valid || pending}
-              className="min-h-11"
-              data-ocid="pools.balances.dialog.confirm_button"
-            >
-              {pending
-                ? isDeposit
-                  ? t.depositing
-                  : t.withdrawing
-                : isDeposit
-                  ? t.confirmDeposit
-                  : t.confirmWithdraw}
-            </Button>
+            <DexPausedHint paused={blocked}>
+              <Button
+                type="submit"
+                disabled={!valid || pending || blocked}
+                className="min-h-11"
+                data-ocid="pools.balances.dialog.confirm_button"
+              >
+                {pending
+                  ? isDeposit
+                    ? t.depositing
+                    : t.withdrawing
+                  : isDeposit
+                    ? t.confirmDeposit
+                    : t.confirmWithdraw}
+              </Button>
+            </DexPausedHint>
           </DialogFooter>
         </form>
       </DialogContent>

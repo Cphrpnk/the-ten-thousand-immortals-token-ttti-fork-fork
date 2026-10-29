@@ -23,8 +23,9 @@ import {
 } from "../ui/dialog";
 import { AddLiquidityQuotePanel } from "./AddLiquidityQuotePanel";
 import { DexAmountField } from "./DexAmountField";
+import { DexPausedHint, useDexPaused } from "./DexPausedNotice";
 import { LockDurationPicker } from "./LockDurationPicker";
-import { formatDexUnits } from "./dexFormat";
+import { dexCallErrorText, formatDexUnits } from "./dexFormat";
 import { DAY_NS, addLiquidityErrorText } from "./liquidityFormat";
 
 type Feedback = { tone: "info" | "danger"; text: string };
@@ -44,6 +45,7 @@ export function AddLiquidityDialog({
   onClose: () => void;
 }) {
   const t = useDict(DEX_TEXT);
+  const dexPaused = useDexPaused();
   const balances = useDexBalances(owner);
   const add = useAddLiquidity();
   const [side, setSide] = useState<PoolSide>(PoolSide.token0);
@@ -77,7 +79,7 @@ export function AddLiquidityDialog({
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!quoteArgs || lockNs === null || pending) return;
+    if (!quoteArgs || lockNs === null || pending || dexPaused) return;
     setFeedback(null);
     add.mutate(
       { ...quoteArgs, lockDurationNs: lockNs },
@@ -98,7 +100,10 @@ export function AddLiquidityDialog({
           }
         },
         onError: (err) =>
-          setFeedback({ tone: "danger", text: t.errCall(err.message) }),
+          setFeedback({
+            tone: "danger",
+            text: dexCallErrorText(t, err.message),
+          }),
       },
     );
   };
@@ -241,14 +246,16 @@ export function AddLiquidityDialog({
             >
               {t.cancel}
             </Button>
-            <Button
-              type="submit"
-              disabled={!quoteOk || lockNs === null || pending}
-              className="min-h-11"
-              data-ocid="pools.add.confirm_button"
-            >
-              {pending ? t.adding : t.confirmAdd}
-            </Button>
+            <DexPausedHint paused={dexPaused}>
+              <Button
+                type="submit"
+                disabled={!quoteOk || lockNs === null || pending || dexPaused}
+                className="min-h-11"
+                data-ocid="pools.add.confirm_button"
+              >
+                {pending ? t.adding : t.confirmAdd}
+              </Button>
+            </DexPausedHint>
           </DialogFooter>
         </form>
       </DialogContent>

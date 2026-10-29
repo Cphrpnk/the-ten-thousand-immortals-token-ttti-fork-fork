@@ -154,11 +154,17 @@ module {
   // Arms the ck-token rate timers (called from the actor body on every install
   // and upgrade): immediate check, then every 5 minutes; fetches when a rate
   // is absent or under 5 minutes of validity remain.
-  public func startTokenTimers<system>(rates : TokenRateStore, transform : OutCall.Transform) : () {
+  // `onRateStored` runs synchronously after each newly stored rate (the actor
+  // uses it to persist the opening of filling pools); it is not an import of
+  // the DEX modules, so there is no import cycle.
+  public func startTokenTimers<system>(rates : TokenRateStore, transform : OutCall.Transform, onRateStored : () -> ()) : () {
     func tick() : async () {
       for ((store, token) in [(rates.ckbtc, #ckbtc), (rates.ckusdc, #ckusdc), (rates.ckusdt, #ckusdt)].values()) {
         if (needsFetch(store, Time.now())) {
-          ignore await fetchAndStoreToken(store, token, transform);
+          switch (await fetchAndStoreToken(store, token, transform)) {
+            case (#Ok(_)) { onRateStored() };
+            case (#Err(_)) {};
+          };
         };
       };
     };
@@ -266,11 +272,15 @@ module {
   // fetches when no rate exists or less than 5 minutes of validity remain, so
   // a successful rate is refetched once an hour and a failed fetch is retried
   // every 5 minutes.
-  public func startTimer<system>(store : OracleStore, transform : OutCall.Transform) : () {
+  // `onRateStored` runs synchronously after each newly stored rate.
+  public func startTimer<system>(store : OracleStore, transform : OutCall.Transform, onRateStored : () -> ()) : () {
     func tick() : async () {
       let now = Time.now();
       if (store.fetchedAt == 0 or store.usdE8 == 0 or now + RETRY_SECONDS * 1_000_000_000 > store.validUntil) {
-        ignore await fetchAndStore(store, transform);
+        switch (await fetchAndStore(store, transform)) {
+          case (#Ok(_)) { onRateStored() };
+          case (#Err(_)) {};
+        };
       };
     };
     ignore Timer.setTimer<system>(#seconds(0), tick);

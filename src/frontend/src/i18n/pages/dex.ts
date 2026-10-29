@@ -31,11 +31,11 @@ export const DEX_TEXT = defineDict({
     launchDepthRule: (amount: string) =>
       `A pool stays in filling until its liquidity reaches ${amount} USD in total, both sides combined. Swaps open from that value.`,
     lockedSharesRule:
-      "The minimum locked shares belong to the contract forever.",
+      "The minimum locked shares, computed as √(A×B) at the first deposit, belong to the contract forever.",
     removedNotice:
       "This pair has been removed. New swaps and deposits are blocked. LP withdrawals stay open.",
     protocolStatement:
-      "The protocol places no price-based order and mints no TTTI-T for pools.",
+      "The protocol places no price-linked order and creates no TTTI-T for pools. The mint fee (1/101) buys TTTI-T without any price condition to feed liquidity.",
     loading: "Loading pools…",
     loadError: "The pools could not be loaded.",
     requestTitle: "Request a pair",
@@ -180,7 +180,8 @@ export const DEX_TEXT = defineDict({
     swapsClosedFilling: (gauge: string) =>
       `Swaps are closed while the pool is filling: ${gauge}`,
     addTitle: (pair: string) => `Add liquidity · ${pair}`,
-    addIntro: "The amounts are taken from your available DEX balances.",
+    addIntro:
+      "The amounts are taken from your available DEX balances. Liquidity positions are public and linked to your identifier on TTTI. Your deposit stays visible on the chain.",
     sideLabel: "Token entered",
     tokenAmountLabel: (symbol: string) => `${symbol} amount`,
     firstDepositNote:
@@ -364,6 +365,12 @@ export const DEX_TEXT = defineDict({
     protocolLiquidityShare: (pct: string) => `${pct} % of the pool shares`,
     protocolLiquidityLastAdded: (date: string) => `Last added: ${date}`,
     protocolLiquidityNone: "No protocol liquidity in this pool.",
+    dexPausedTitle: "DEX paused",
+    dexPausedNotice: (token: string) =>
+      `The DEX is paused after a reserve check found a shortfall for ${token}. Swaps, deposits and liquidity additions are unavailable. Withdrawals and liquidity removal remain available.`,
+    dexPausedTooltip: "Unavailable while the DEX is paused.",
+    errDexPaused:
+      "The DEX is paused after a reserve check. Swaps, deposits and liquidity additions are unavailable. Withdrawals and liquidity removal remain available.",
   },
   fr: {
     title: "Pools",
@@ -391,11 +398,11 @@ export const DEX_TEXT = defineDict({
     launchDepthRule: (amount: string) =>
       `Un pool reste en remplissage jusqu'à ce que sa liquidité atteigne ${amount} USD au total, les deux côtés additionnés. Les échanges ouvrent à partir de cette valeur.`,
     lockedSharesRule:
-      "Les parts minimales bloquées appartiennent au contrat pour toujours.",
+      "Les parts minimales bloquées, calculées comme √(A×B) au premier dépôt, appartiennent au contrat pour toujours.",
     removedNotice:
       "Cette paire a été retirée. Les nouveaux échanges et dépôts sont bloqués. Les retraits LP restent ouverts.",
     protocolStatement:
-      "Le protocole ne passe aucun ordre lié au prix et ne crée aucun TTTI-T pour les pools.",
+      "Le protocole ne passe aucun ordre lié au prix et ne crée aucun TTTI-T pour les pools. Les frais de mint (1/101) achètent du TTTI-T sans aucune condition de prix pour alimenter la liquidité.",
     loading: "Chargement des pools…",
     loadError: "Les pools n'ont pas pu être chargés.",
     requestTitle: "Demander une paire",
@@ -538,7 +545,8 @@ export const DEX_TEXT = defineDict({
     swapsClosedFilling: (gauge: string) =>
       `Les échanges sont fermés tant que le pool est en remplissage : ${gauge}`,
     addTitle: (pair: string) => `Ajouter de la liquidité · ${pair}`,
-    addIntro: "Les montants sont pris sur vos soldes DEX disponibles.",
+    addIntro:
+      "Les montants sont pris sur vos soldes DEX disponibles. Les positions de liquidité sont publiques et liées à ton identifiant sur TTTI. Ton dépôt reste visible sur la chaîne.",
     sideLabel: "Jeton saisi",
     tokenAmountLabel: (symbol: string) => `Montant en ${symbol}`,
     firstDepositNote:
@@ -726,6 +734,12 @@ export const DEX_TEXT = defineDict({
     protocolLiquidityShare: (pct: string) => `${pct} % des parts du pool`,
     protocolLiquidityLastAdded: (date: string) => `Dernier ajout : ${date}`,
     protocolLiquidityNone: "Aucune liquidité du protocole dans ce pool.",
+    dexPausedTitle: "DEX en pause",
+    dexPausedNotice: (token: string) =>
+      `Le DEX est en pause : un contrôle des réserves a constaté un déficit pour ${token}. Les échanges, les dépôts et les ajouts de liquidité sont indisponibles. Les retraits et les retraits de liquidité restent disponibles.`,
+    dexPausedTooltip: "Indisponible tant que le DEX est en pause.",
+    errDexPaused:
+      "Le DEX est en pause après un contrôle des réserves. Les échanges, les dépôts et les ajouts de liquidité sont indisponibles. Les retraits et les retraits de liquidité restent disponibles.",
   },
   es: {
     title: "Pools",
@@ -753,11 +767,11 @@ export const DEX_TEXT = defineDict({
     launchDepthRule: (amount: string) =>
       `Un pool permanece en llenado hasta que su liquidez alcanza ${amount} USD en total, sumando ambos lados. Los intercambios se abren a partir de ese valor.`,
     lockedSharesRule:
-      "Las participaciones mínimas bloqueadas pertenecen al contrato para siempre.",
+      "Las participaciones mínimas bloqueadas, calculadas como √(A×B) en el primer depósito, pertenecen al contrato para siempre.",
     removedNotice:
       "Este par ha sido retirado. Los nuevos intercambios y depósitos están bloqueados. Los retiros LP siguen abiertos.",
     protocolStatement:
-      "El protocolo no coloca ninguna orden basada en el precio y no crea ningún TTTI-T para los pools.",
+      "El protocolo no coloca ninguna orden vinculada al precio y no crea ningún TTTI-T para los pools. La comisión de mint (1/101) compra TTTI-T sin ninguna condición de precio para alimentar la liquidez.",
     loading: "Cargando los pools…",
     loadError: "No se pudieron cargar los pools.",
     requestTitle: "Solicitar un par",
@@ -900,7 +914,8 @@ export const DEX_TEXT = defineDict({
     swapsClosedFilling: (gauge: string) =>
       `Los intercambios están cerrados mientras el pool está en llenado: ${gauge}`,
     addTitle: (pair: string) => `Añadir liquidez · ${pair}`,
-    addIntro: "Los importes se toman de sus saldos DEX disponibles.",
+    addIntro:
+      "Los importes se toman de sus saldos DEX disponibles. Las posiciones de liquidez son públicas y están vinculadas a su identificador en TTTI. Su depósito sigue siendo visible en la cadena.",
     sideLabel: "Token introducido",
     tokenAmountLabel: (symbol: string) => `Importe en ${symbol}`,
     firstDepositNote:
@@ -1091,6 +1106,12 @@ export const DEX_TEXT = defineDict({
       `${pct} % de las participaciones del pool`,
     protocolLiquidityLastAdded: (date: string) => `Último aporte: ${date}`,
     protocolLiquidityNone: "No hay liquidez del protocolo en este pool.",
+    dexPausedTitle: "DEX en pausa",
+    dexPausedNotice: (token: string) =>
+      `El DEX está en pausa: una verificación de reservas detectó un déficit de ${token}. Los intercambios, los depósitos y las adiciones de liquidez no están disponibles. Los retiros y la retirada de liquidez siguen disponibles.`,
+    dexPausedTooltip: "No disponible mientras el DEX está en pausa.",
+    errDexPaused:
+      "El DEX está en pausa tras una verificación de reservas. Los intercambios, los depósitos y las adiciones de liquidez no están disponibles. Los retiros y la retirada de liquidez siguen disponibles.",
   },
   "zh-Hans": {
     title: "流动性池",
@@ -1116,11 +1137,12 @@ export const DEX_TEXT = defineDict({
       `首笔存入必须至少为最低值的 ${multiplier} 倍。`,
     launchDepthRule: (amount: string) =>
       `池的流动性在两侧合计总价值达到 ${amount} USD 之前保持注入中状态。达到该价值后开放兑换。`,
-    lockedSharesRule: "最低锁定份额永久归合约所有。",
+    lockedSharesRule:
+      "最低锁定份额在首次存入时按 √(A×B) 计算，永久归合约所有。",
     removedNotice:
       "该交易对已被移除。新的兑换和存入已被阻止。LP 提取仍然开放。",
     protocolStatement:
-      "协议不会下达任何与价格相关的订单，也不会为流动性池铸造任何 TTTI-T。",
+      "协议不会下达任何与价格挂钩的订单，也不会为流动性池创建任何 TTTI-T。铸造费用（1/101）在不附带任何价格条件的情况下购买 TTTI-T，用于补充流动性。",
     loading: "正在加载流动性池…",
     loadError: "无法加载流动性池。",
     requestTitle: "申请交易对",
@@ -1248,7 +1270,8 @@ export const DEX_TEXT = defineDict({
     pairTokensUnsupported: "该交易对的代币不支持流动性和兑换。",
     swapsClosedFilling: (gauge: string) => `池在注入中期间兑换关闭：${gauge}`,
     addTitle: (pair: string) => `添加流动性 · ${pair}`,
-    addIntro: "金额从您可用的 DEX 余额中扣除。",
+    addIntro:
+      "金额从您可用的 DEX 余额中扣除。流动性头寸是公开的，并与您在 TTTI 上的标识符相关联。您的存入在链上仍然可见。",
     sideLabel: "输入的代币",
     tokenAmountLabel: (symbol: string) => `${symbol} 金额`,
     firstDepositNote: "首笔存入：请输入两个金额。其比例确定池的比例。",
@@ -1413,6 +1436,12 @@ export const DEX_TEXT = defineDict({
     protocolLiquidityShare: (pct: string) => `占池份额的 ${pct} %`,
     protocolLiquidityLastAdded: (date: string) => `最近一次添加：${date}`,
     protocolLiquidityNone: "此池中没有协议流动性。",
+    dexPausedTitle: "DEX 已暂停",
+    dexPausedNotice: (token: string) =>
+      `DEX 已暂停：储备核对发现 ${token} 出现缺口。兑换、存入和添加流动性暂不可用。提取和移除流动性仍然可用。`,
+    dexPausedTooltip: "DEX 暂停期间不可用。",
+    errDexPaused:
+      "储备核对后 DEX 已暂停。兑换、存入和添加流动性暂不可用。提取和移除流动性仍然可用。",
   },
   "pt-BR": {
     title: "Pools",
@@ -1439,11 +1468,11 @@ export const DEX_TEXT = defineDict({
     launchDepthRule: (amount: string) =>
       `Um pool permanece em preenchimento até que sua liquidez atinja ${amount} USD no total, somando os dois lados. As trocas abrem a partir desse valor.`,
     lockedSharesRule:
-      "As cotas mínimas bloqueadas pertencem ao contrato para sempre.",
+      "As cotas mínimas bloqueadas, calculadas como √(A×B) no primeiro depósito, pertencem ao contrato para sempre.",
     removedNotice:
       "Este par foi removido. Novas trocas e depósitos estão bloqueados. Os saques LP continuam abertos.",
     protocolStatement:
-      "O protocolo não coloca nenhuma ordem baseada em preço e não cria nenhum TTTI-T para os pools.",
+      "O protocolo não coloca nenhuma ordem vinculada ao preço e não cria nenhum TTTI-T para os pools. A taxa de mint (1/101) compra TTTI-T sem nenhuma condição de preço para alimentar a liquidez.",
     loading: "Carregando os pools…",
     loadError: "Não foi possível carregar os pools.",
     requestTitle: "Solicitar um par",
@@ -1584,7 +1613,8 @@ export const DEX_TEXT = defineDict({
     swapsClosedFilling: (gauge: string) =>
       `As trocas ficam fechadas enquanto o pool está em preenchimento: ${gauge}`,
     addTitle: (pair: string) => `Adicionar liquidez · ${pair}`,
-    addIntro: "Os valores são retirados dos seus saldos DEX disponíveis.",
+    addIntro:
+      "Os valores são retirados dos seus saldos DEX disponíveis. As posições de liquidez são públicas e vinculadas ao seu identificador no TTTI. Seu depósito continua visível na cadeia.",
     sideLabel: "Token informado",
     tokenAmountLabel: (symbol: string) => `Valor em ${symbol}`,
     firstDepositNote:
@@ -1772,6 +1802,12 @@ export const DEX_TEXT = defineDict({
     protocolLiquidityShare: (pct: string) => `${pct} % das cotas do pool`,
     protocolLiquidityLastAdded: (date: string) => `Última adição: ${date}`,
     protocolLiquidityNone: "Nenhuma liquidez do protocolo neste pool.",
+    dexPausedTitle: "DEX pausada",
+    dexPausedNotice: (token: string) =>
+      `A DEX está pausada: uma verificação de reservas encontrou um déficit em ${token}. Trocas, depósitos e adições de liquidez estão indisponíveis. Saques e remoções de liquidez continuam disponíveis.`,
+    dexPausedTooltip: "Indisponível enquanto a DEX estiver pausada.",
+    errDexPaused:
+      "A DEX está pausada após uma verificação de reservas. Trocas, depósitos e adições de liquidez estão indisponíveis. Saques e remoções de liquidez continuam disponíveis.",
   },
   ko: {
     title: "풀",
@@ -1797,11 +1833,12 @@ export const DEX_TEXT = defineDict({
       `첫 예치는 최소값의 ${multiplier}배 이상이어야 합니다.`,
     launchDepthRule: (amount: string) =>
       `풀은 양쪽을 합친 유동성이 총 ${amount} USD에 도달할 때까지 채우는 중 상태로 유지됩니다. 이 금액부터 스왑이 열립니다.`,
-    lockedSharesRule: "최소 잠금 지분은 영구적으로 컨트랙트에 귀속됩니다.",
+    lockedSharesRule:
+      "최소 잠금 지분은 첫 예치 시 √(A×B)로 계산되며 영구적으로 컨트랙트에 귀속됩니다.",
     removedNotice:
       "이 페어는 제거되었습니다. 새로운 스왑과 예치는 차단됩니다. LP 인출은 계속 가능합니다.",
     protocolStatement:
-      "프로토콜은 가격에 따른 주문을 하지 않으며 풀을 위해 TTTI-T를 발행하지 않습니다.",
+      "프로토콜은 가격과 연동된 주문을 하지 않으며 풀을 위해 TTTI-T를 생성하지 않습니다. 민트 수수료(1/101)는 어떠한 가격 조건도 없이 TTTI-T를 구매하여 유동성을 보충합니다.",
     loading: "풀을 불러오는 중…",
     loadError: "풀을 불러올 수 없습니다.",
     requestTitle: "페어 요청",
@@ -1941,7 +1978,8 @@ export const DEX_TEXT = defineDict({
     swapsClosedFilling: (gauge: string) =>
       `풀이 채우는 중인 동안 스왑은 닫혀 있습니다: ${gauge}`,
     addTitle: (pair: string) => `유동성 추가 · ${pair}`,
-    addIntro: "금액은 사용 가능한 DEX 잔액에서 차감됩니다.",
+    addIntro:
+      "금액은 사용 가능한 DEX 잔액에서 차감됩니다. 유동성 포지션은 공개되며 TTTI에서의 귀하의 식별자에 연결됩니다. 귀하의 예치금은 체인에서 계속 확인할 수 있습니다.",
     sideLabel: "입력한 토큰",
     tokenAmountLabel: (symbol: string) => `${symbol} 금액`,
     firstDepositNote:
@@ -2120,6 +2158,12 @@ export const DEX_TEXT = defineDict({
     protocolLiquidityShare: (pct: string) => `풀 지분의 ${pct} %`,
     protocolLiquidityLastAdded: (date: string) => `마지막 추가: ${date}`,
     protocolLiquidityNone: "이 풀에는 프로토콜 유동성이 없습니다.",
+    dexPausedTitle: "DEX 일시 중지됨",
+    dexPausedNotice: (token: string) =>
+      `준비금 점검에서 ${token}의 부족분이 확인되어 DEX가 일시 중지되었습니다. 스왑, 입금, 유동성 추가는 사용할 수 없습니다. 출금과 유동성 제거는 계속 사용할 수 있습니다.`,
+    dexPausedTooltip: "DEX가 일시 중지된 동안에는 사용할 수 없습니다.",
+    errDexPaused:
+      "준비금 점검 후 DEX가 일시 중지되었습니다. 스왑, 입금, 유동성 추가는 사용할 수 없습니다. 출금과 유동성 제거는 계속 사용할 수 있습니다.",
   },
   "pa-Guru": {
     title: "ਪੂਲ",
@@ -2145,11 +2189,12 @@ export const DEX_TEXT = defineDict({
       `ਪਹਿਲੀ ਜਮ੍ਹਾਂ ਰਕਮ ਘੱਟੋ-ਘੱਟ ਦੀ ਘੱਟੋ-ਘੱਟ ${multiplier} ਗੁਣਾ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।`,
     launchDepthRule: (amount: string) =>
       `ਪੂਲ ਉਦੋਂ ਤੱਕ ਭਰਿਆ ਜਾਂਦਾ ਰਹਿੰਦਾ ਹੈ ਜਦੋਂ ਤੱਕ ਉਸ ਦੀ ਤਰਲਤਾ, ਦੋਵੇਂ ਪਾਸੇ ਮਿਲਾ ਕੇ, ਕੁੱਲ ${amount} USD ਤੱਕ ਨਹੀਂ ਪਹੁੰਚ ਜਾਂਦੀ। ਇਸ ਮੁੱਲ ਤੋਂ ਸਵੈਪ ਖੁੱਲ੍ਹਦੇ ਹਨ।`,
-    lockedSharesRule: "ਘੱਟੋ-ਘੱਟ ਲਾਕ ਕੀਤੇ ਹਿੱਸੇ ਹਮੇਸ਼ਾ ਲਈ ਕੰਟਰੈਕਟ ਦੇ ਹਨ।",
+    lockedSharesRule:
+      "ਘੱਟੋ-ਘੱਟ ਲਾਕ ਕੀਤੇ ਹਿੱਸੇ, ਜੋ ਪਹਿਲੀ ਜਮ੍ਹਾਂ ਰਕਮ ਸਮੇਂ √(A×B) ਵਜੋਂ ਗਿਣੇ ਜਾਂਦੇ ਹਨ, ਹਮੇਸ਼ਾ ਲਈ ਕੰਟਰੈਕਟ ਦੇ ਹਨ।",
     removedNotice:
       "ਇਹ ਜੋੜਾ ਹਟਾ ਦਿੱਤਾ ਗਿਆ ਹੈ। ਨਵੇਂ ਸਵੈਪ ਅਤੇ ਜਮ੍ਹਾਂ ਰੋਕੇ ਗਏ ਹਨ। LP ਨਿਕਾਸੀ ਖੁੱਲ੍ਹੀ ਰਹਿੰਦੀ ਹੈ।",
     protocolStatement:
-      "ਪ੍ਰੋਟੋਕੋਲ ਕੀਮਤ ਨਾਲ ਜੁੜਿਆ ਕੋਈ ਆਰਡਰ ਨਹੀਂ ਦਿੰਦਾ ਅਤੇ ਪੂਲਾਂ ਲਈ ਕੋਈ TTTI-T ਨਹੀਂ ਬਣਾਉਂਦਾ।",
+      "ਪ੍ਰੋਟੋਕੋਲ ਕੀਮਤ ਨਾਲ ਜੁੜਿਆ ਕੋਈ ਆਰਡਰ ਨਹੀਂ ਦਿੰਦਾ ਅਤੇ ਪੂਲਾਂ ਲਈ ਕੋਈ TTTI-T ਨਹੀਂ ਬਣਾਉਂਦਾ। ਮਿੰਟ ਫੀਸ (1/101) ਕਿਸੇ ਵੀ ਕੀਮਤ ਸ਼ਰਤ ਤੋਂ ਬਿਨਾਂ TTTI-T ਖਰੀਦਦੀ ਹੈ ਤਾਂ ਜੋ ਲਿਕਵਿਡਿਟੀ ਨੂੰ ਭਰਿਆ ਜਾ ਸਕੇ।",
     loading: "ਪੂਲ ਲੋਡ ਹੋ ਰਹੇ ਹਨ…",
     loadError: "ਪੂਲ ਲੋਡ ਨਹੀਂ ਹੋ ਸਕੇ।",
     requestTitle: "ਜੋੜੇ ਦੀ ਬੇਨਤੀ ਕਰੋ",
@@ -2283,7 +2328,8 @@ export const DEX_TEXT = defineDict({
     pairTokensUnsupported: "ਇਸ ਜੋੜੀ ਦੇ ਟੋਕਨਾਂ ਲਈ ਤਰਲਤਾ ਅਤੇ ਸਵੈਪ ਉਪਲਬਧ ਨਹੀਂ ਹਨ।",
     swapsClosedFilling: (gauge: string) => `ਪੂਲ ਭਰੇ ਜਾਣ ਦੌਰਾਨ ਸਵੈਪ ਬੰਦ ਹਨ: ${gauge}`,
     addTitle: (pair: string) => `ਤਰਲਤਾ ਜੋੜੋ · ${pair}`,
-    addIntro: "ਰਕਮਾਂ ਤੁਹਾਡੇ ਉਪਲਬਧ DEX ਬਕਾਇਆਂ ਵਿੱਚੋਂ ਲਈਆਂ ਜਾਂਦੀਆਂ ਹਨ।",
+    addIntro:
+      "ਰਕਮਾਂ ਤੁਹਾਡੇ ਉਪਲਬਧ DEX ਬਕਾਇਆਂ ਵਿੱਚੋਂ ਲਈਆਂ ਜਾਂਦੀਆਂ ਹਨ। ਤਰਲਤਾ ਪੁਜ਼ੀਸ਼ਨਾਂ ਜਨਤਕ ਹਨ ਅਤੇ TTTI 'ਤੇ ਤੁਹਾਡੇ ਪਛਾਣਕਰਤਾ ਨਾਲ ਜੁੜੀਆਂ ਹਨ। ਤੁਹਾਡੀ ਜਮ੍ਹਾਂ ਰਕਮ ਚੇਨ 'ਤੇ ਦਿਖਾਈ ਦਿੰਦੀ ਰਹਿੰਦੀ ਹੈ।",
     sideLabel: "ਦਰਜ ਕੀਤਾ ਟੋਕਨ",
     tokenAmountLabel: (symbol: string) => `${symbol} ਰਕਮ`,
     firstDepositNote:
@@ -2455,5 +2501,11 @@ export const DEX_TEXT = defineDict({
     protocolLiquidityShare: (pct: string) => `ਪੂਲ ਦੇ ਸ਼ੇਅਰਾਂ ਦਾ ${pct} %`,
     protocolLiquidityLastAdded: (date: string) => `ਆਖਰੀ ਵਾਰ ਜੋੜਿਆ: ${date}`,
     protocolLiquidityNone: "ਇਸ ਪੂਲ ਵਿੱਚ ਕੋਈ ਪ੍ਰੋਟੋਕੋਲ ਤਰਲਤਾ ਨਹੀਂ।",
+    dexPausedTitle: "DEX ਰੋਕਿਆ ਗਿਆ",
+    dexPausedNotice: (token: string) =>
+      `ਰਿਜ਼ਰਵ ਜਾਂਚ ਵਿੱਚ ${token} ਦੀ ਕਮੀ ਮਿਲਣ ਤੋਂ ਬਾਅਦ DEX ਰੋਕਿਆ ਗਿਆ ਹੈ। ਸਵੈਪ, ਜਮ੍ਹਾਂ ਅਤੇ ਤਰਲਤਾ ਜੋੜਨਾ ਉਪਲਬਧ ਨਹੀਂ ਹਨ। ਕਢਵਾਉਣਾ ਅਤੇ ਤਰਲਤਾ ਹਟਾਉਣਾ ਉਪਲਬਧ ਰਹਿੰਦੇ ਹਨ।`,
+    dexPausedTooltip: "DEX ਰੋਕੇ ਜਾਣ ਦੌਰਾਨ ਉਪਲਬਧ ਨਹੀਂ।",
+    errDexPaused:
+      "ਰਿਜ਼ਰਵ ਜਾਂਚ ਤੋਂ ਬਾਅਦ DEX ਰੋਕਿਆ ਗਿਆ ਹੈ। ਸਵੈਪ, ਜਮ੍ਹਾਂ ਅਤੇ ਤਰਲਤਾ ਜੋੜਨਾ ਉਪਲਬਧ ਨਹੀਂ ਹਨ। ਕਢਵਾਉਣਾ ਅਤੇ ਤਰਲਤਾ ਹਟਾਉਣਾ ਉਪਲਬਧ ਰਹਿੰਦੇ ਹਨ।",
   },
 });

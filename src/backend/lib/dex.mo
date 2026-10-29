@@ -2,6 +2,7 @@ import Array "mo:core/Array";
 import Blob "mo:core/Blob";
 import Error "mo:core/Error";
 import Int "mo:core/Int";
+import List "mo:core/List";
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
@@ -9,6 +10,7 @@ import Principal "mo:core/Principal";
 import Result "mo:core/Result";
 import Text "mo:core/Text";
 import Types "../types/dex";
+import IndicatorTypes "../types/dex-indicators";
 
 // v2 constant-product pool registry and pair requests (DEX lot 1).
 // No Caffeine-specific dependency: ledger transfers and authorization are
@@ -57,8 +59,8 @@ module {
   // Fixed 32-byte ASCII request deposit subaccount. Never change these bytes.
   public let REQUEST_DEPOSIT_SUBACCOUNT : Blob = "DEX-REQUEST-DEPOSIT-TTTI-T-00001";
   public let FEE_TIERS : [Types.FeeTier] = [#bps5, #bps30, #bps100];
-  public let PROTOCOL_STATEMENT : Text = "The protocol places no price-based order and mints no TTTI-T for pools.";
-  public let LOCKED_SHARES_STATEMENT : Text = "The minimum locked shares sqrt(A x B) belong to the contract forever.";
+  public let PROTOCOL_STATEMENT : Text = "The protocol places no price-linked order and creates no TTTI-T; the mint fee (1/101) buys TTTI-T without any price condition to feed pool liquidity.";
+  public let LOCKED_SHARES_STATEMENT : Text = "The minimum locked shares √(A×B) belong to the contract forever.";
   public let APPROVAL_STATEMENT : Text = "Approval of a pair is not a recommendation.";
 
   // Launch depth: the first deposit that launches a pool must total at least
@@ -599,6 +601,9 @@ module {
 
   // --- DEX lot 2: per-user deposit subaccounts and internal balances --------
 
+  // Error text of the calls refused while the DEX is paused (DEX lot 6).
+  public let PAUSED_MESSAGE : Text = "The DEX is paused after a reserve mismatch. Withdrawals and liquidity removals remain available.";
+
   public let DEX_TOKENS : [Types.DexToken] = [#tttiT, #icp, #ckbtc, #ckusdc, #ckusdt];
   // Per-user DEX deposit subaccount tag: [0xDD, principal length, principal
   // bytes, zero padding] (32 bytes). No secret: anyone can recompute it. The
@@ -874,6 +879,28 @@ module {
     };
   };
 
+  // Persists #filling -> #active for every filling pool whose reserves now
+  // reach the launch target at usable rates (called after a new rate is
+  // stored). An absent or expired rate, or an unavailable gauge, opens
+  // nothing. Returns the number of pools opened.
+  public func openReadyPools(store : DexStore, rateOf : UsdRateOf) : Nat {
+    var opened = 0;
+    for (poolId in store.pools.keys().toArray().values()) {
+      switch (store.pools.get(poolId)) {
+        case (?pool) {
+          if (pool.status == #filling) {
+            switch (refreshOpening(store, poolId, rateOf)) {
+              case (?after) { if (after.status == #active) opened += 1 };
+              case null {};
+            };
+          };
+        };
+        case null {};
+      };
+    };
+    opened;
+  };
+
   // Lock key of a position (one operation at a time per position).
   public func positionLockKey(positionId : Types.PositionId) : Text {
     "DEXPOS/" # positionId.toText();
@@ -1101,7 +1128,8 @@ module {
     });
   };
 
-  // Owner only; newUnlockAt >= current unlockAt and <= now + MAX_LOCK_NS.
+  // Owner only; newUnlockAt >= current unlockAt and <= position creation date +
+  // MAX_LOCK_NS (5 years from creation, never from now).
   public func extendLock(store : DexStore, canister : Principal, owner : Principal, positionId : Types.PositionId, newUnlockAt : Timestamp, now : Timestamp) : Result.Result<PositionView, Types.ExtendLockError> {
     let position = switch (store.positions.get(positionId)) {
       case (?p) p;
@@ -1109,7 +1137,7 @@ module {
     };
     if (position.owner != owner) return #err(#notPositionOwner);
     if (newUnlockAt < position.unlockAt) return #err(#cannotShortenLock({ unlockAt = position.unlockAt }));
-    let maximumUnlockAt = now + MAX_LOCK_NS;
+    let maximumUnlockAt = position.createdAt + MAX_LOCK_NS;
     if (newUnlockAt > maximumUnlockAt) return #err(#lockTooLong({ maximumUnlockAt }));
     let updated : Position = {
       position with
@@ -1177,6 +1205,65 @@ module {
   public func splitFee(fee : Nat) : { lpFee : Nat; protocolFee : Nat } {
     let protocolFee = fee * PROTOCOL_FEE_SHARE_PERCENT / 100;
     { lpFee = fee - protocolFee; protocolFee };
+  };
+
+  // --- DEX lot 7: swap activity recording -------------------------------------
+
+  // The indicators store is passed to swap by its callers (DexContext.indicators).
+
+  public let HOUR_NS : Nat = 3_600_000_000_000;
+  // Hourly activity buckets are kept for 7 days.
+  public let ACTIVITY_HOURS : Nat = 168;
+
+  // Adds one swap to the pool's current hourly bucket and the running totals,
+  // then prunes buckets older than 7 days. Touches only the indicators store.
+  func recordSwap(store : IndicatorTypes.IndicatorsStore, poolId : PoolId, zeroForOne : Bool, amountIn : Nat, fee : Nat, now : Timestamp) {
+    if (now < 0) return;
+    let hour = Int.abs(now) / HOUR_NS;
+    if (store.recordingSince == null) store.recordingSince := ?now;
+    let activity : IndicatorTypes.PoolActivity = switch (store.activity.get(poolId)) {
+      case (?a) a;
+      case null {
+        let a : IndicatorTypes.PoolActivity = {
+          buckets = List.empty();
+          var totalSwaps = 0;
+          var totalVolume0 = 0;
+          var totalVolume1 = 0;
+          var totalFee0 = 0;
+          var totalFee1 = 0;
+        };
+        store.activity.add(poolId, a);
+        a;
+      };
+    };
+    let bucket : IndicatorTypes.HourBucket = switch (activity.buckets.last()) {
+      case (?b) {
+        if (b.hour == hour) b else {
+          let n : IndicatorTypes.HourBucket = { hour; var swapCount = 0; var volume0 = 0; var volume1 = 0; var fee0 = 0; var fee1 = 0 };
+          activity.buckets.add(n);
+          activity.buckets.retain(func(x : IndicatorTypes.HourBucket) : Bool = x.hour + ACTIVITY_HOURS > hour);
+          n;
+        };
+      };
+      case null {
+        let n : IndicatorTypes.HourBucket = { hour; var swapCount = 0; var volume0 = 0; var volume1 = 0; var fee0 = 0; var fee1 = 0 };
+        activity.buckets.add(n);
+        n;
+      };
+    };
+    bucket.swapCount += 1;
+    activity.totalSwaps += 1;
+    if (zeroForOne) {
+      bucket.volume0 += amountIn;
+      bucket.fee0 += fee;
+      activity.totalVolume0 += amountIn;
+      activity.totalFee0 += fee;
+    } else {
+      bucket.volume1 += amountIn;
+      bucket.fee1 += fee;
+      activity.totalVolume1 += amountIn;
+      activity.totalFee1 += fee;
+    };
   };
 
   type SwapCalc = {
@@ -1272,6 +1359,7 @@ module {
     feeFree : Bool,
     rateOf : UsdRateOf,
     now : Timestamp,
+    indicators : IndicatorTypes.IndicatorsStore,
   ) : Result.Result<Types.SwapResult, Types.SwapError> {
     if (now > deadline) return #err(#deadlineExceeded({ deadline; now }));
     let maximum = now + SWAP_DEADLINE_MAX_NS;
@@ -1306,6 +1394,7 @@ module {
       };
     };
     store.pools.add(poolId, updated);
+    recordSwap(indicators, poolId, c.zeroForOne, amountIn, c.fee, now);
     #ok({
       poolId;
       tokenIn;

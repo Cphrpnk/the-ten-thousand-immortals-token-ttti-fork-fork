@@ -1,20 +1,21 @@
 {
-  "overview": "The Ten Thousand Immortals test token (TTTI-T): mint with ICP, ckBTC, ckUSDC, ckUSDT or BTC, a built-in wallet, buyback, and native liquidity pools.",
+  "overview": "The Ten Thousand Immortals token app: mint TTTI-T with ICP, ckBTC, ckUSDC, ckUSDT or BTC, manage a wallet, trade on native pools, with an organized English admin console.",
   "features": [
     "Mint TTTI-T with ICP, ckBTC, ckUSDC, ckUSDT or BTC",
-    "Mint revenue sent automatically to an owner wallet set per token in the admin screen, with send history",
-    "Mint fee split between liquidity providers and permanent liquidity of the least liquid TTTI-T pair",
-    "Native liquidity pools with swap fees split 70% to providers and 30% to permanent liquidity",
-    "Automatic cycles top-up with a 2 ICP reserve",
-    "Built-in wallet, buyback, history and corrected white paper in 7 languages"
+    "Mint revenue sent directly to the admin's wallet for each payment token",
+    "Mint fee kept in a dedicated contract account and shared with liquidity providers and permanent liquidity",
+    "Admin console grouped into clear sections with a single token selector",
+    "One filterable admin history and one filterable review list",
+    "Wallet, buyback, native pools and white paper in 7 languages"
   ],
-  "category": "token-platform",
+  "category": "crypto-token",
   "tags": [
-    "defi",
-    "token",
-    "liquidity-pools",
     "internet-computer",
+    "token",
+    "icrc",
+    "dex",
+    "admin-console",
     "multilingual"
   ],
-  "last_updated": "2026-10-28T03:16:24.914Z"
+  "last_updated": "2026-10-28T18:43:19.453Z"
 }

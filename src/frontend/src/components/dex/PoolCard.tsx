@@ -6,6 +6,7 @@ import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { DexPausedHint, useDexPaused } from "./DexPausedNotice";
 import { DexPairLogos } from "./DexTokenLogo";
 import { ProtocolLiquidityInfo } from "./ProtocolLiquidityInfo";
 import {
@@ -51,6 +52,7 @@ export function PoolCard({
   tradeNote?: string;
 }) {
   const t = useDict(DEX_TEXT);
+  const paused = useDexPaused();
   const isTtti = pool.kind === PoolKind.tttiPair;
   const removed = pool.status === PoolStatus.removed;
   const sides: Array<{ token: PoolTokenView; min: bigint | undefined }> = [
@@ -188,26 +190,30 @@ export function PoolCard({
       <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
         <div className="flex flex-wrap gap-2">
           {!removed && (
+            <DexPausedHint paused={paused}>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onAction("add")}
+                disabled={!canTrade || paused}
+                data-ocid={`pools.add_liquidity_button.${index}`}
+              >
+                {t.addLiquidityButton}
+              </Button>
+            </DexPausedHint>
+          )}
+          <DexPausedHint paused={paused}>
             <Button
               type="button"
               size="sm"
-              onClick={() => onAction("add")}
-              disabled={!canTrade}
-              data-ocid={`pools.add_liquidity_button.${index}`}
+              variant="outline"
+              onClick={() => onAction("swap")}
+              disabled={!canTrade || paused}
+              data-ocid={`pools.swap_button.${index}`}
             >
-              {t.addLiquidityButton}
+              {t.swapButton}
             </Button>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => onAction("swap")}
-            disabled={!canTrade}
-            data-ocid={`pools.swap_button.${index}`}
-          >
-            {t.swapButton}
-          </Button>
+          </DexPausedHint>
           <Button
             type="button"
             size="sm"

@@ -71,6 +71,7 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
 import { Textarea } from "../ui/textarea";
+import { AdminAccordion } from "./AdminUi";
 import { formatTimestamp } from "./ConversionsCard";
 import { GOLD_CARD, PRIMARY_GOLD, SECONDARY_GOLD } from "./styles";
 
@@ -735,9 +736,6 @@ export function DexPairsCard() {
           className="space-y-4"
           data-ocid="admin.dex_pairs.requests_section"
         >
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Pending requests ({pending.length})
-          </h3>
           {requests.isLoading ? (
             <Skeleton
               className="h-40 w-full"
@@ -760,16 +758,25 @@ export function DexPairsCard() {
               No pending pair requests.
             </p>
           ) : (
-            <ul className="space-y-8" data-ocid="admin.dex_pairs.requests_list">
-              {pending.map((request, i) => (
-                <RequestItem
-                  key={request.id.toString()}
-                  request={request}
-                  index={i + 1}
-                  notify={setFeedback}
-                />
-              ))}
-            </ul>
+            <AdminAccordion
+              label="Pending pair requests"
+              count={pending.length}
+              ocid="admin.dex_pairs.requests_accordion"
+            >
+              <ul
+                className="space-y-8"
+                data-ocid="admin.dex_pairs.requests_list"
+              >
+                {pending.map((request, i) => (
+                  <RequestItem
+                    key={request.id.toString()}
+                    request={request}
+                    index={i + 1}
+                    notify={setFeedback}
+                  />
+                ))}
+              </ul>
+            </AdminAccordion>
           )}
         </section>
 
@@ -777,9 +784,6 @@ export function DexPairsCard() {
           className="space-y-4 border-t border-border pt-6"
           data-ocid="admin.dex_pairs.pools_section"
         >
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Pairs ({pools.data?.length ?? 0})
-          </h3>
           {pools.isLoading ? (
             <Skeleton
               className="h-40 w-full"
@@ -802,16 +806,22 @@ export function DexPairsCard() {
               No pairs yet.
             </p>
           ) : (
-            <ul className="space-y-6" data-ocid="admin.dex_pairs.pools_list">
-              {(pools.data ?? []).map((pool, i) => (
-                <PoolItem
-                  key={pool.id.toString()}
-                  pool={pool}
-                  index={i + 1}
-                  notify={setFeedback}
-                />
-              ))}
-            </ul>
+            <AdminAccordion
+              label="Pairs"
+              count={(pools.data ?? []).length}
+              ocid="admin.dex_pairs.pools_accordion"
+            >
+              <ul className="space-y-6" data-ocid="admin.dex_pairs.pools_list">
+                {(pools.data ?? []).map((pool, i) => (
+                  <PoolItem
+                    key={pool.id.toString()}
+                    pool={pool}
+                    index={i + 1}
+                    notify={setFeedback}
+                  />
+                ))}
+              </ul>
+            </AdminAccordion>
           )}
         </section>
       </CardContent>

@@ -12,6 +12,7 @@ import Time "mo:core/Time";
 import Timer "mo:core/Timer";
 import Types "../types/protocol-fees";
 import DexTypes "../types/dex";
+import DexReserveTypes "../types/dex-reserve";
 import RetryTypes "../types/retry";
 import Treasury "../types/treasury";
 import CyclesTypes "../types/cycles-reserve";
@@ -84,6 +85,11 @@ module {
     mintFees : MintFeeTypes.MintFeeStore;
     oracle : OracleLib.OracleStore;
     tokenRates : OracleLib.TokenRateStore;
+    // Refused pair-request deposits already fed to the protocol liquidity
+    // (keyed by pair request id; stable, so each deposit counts exactly once).
+    refusedFeeds : Map.Map<DexTypes.RequestId, DexTypes.RefusedDepositFeed>;
+    // DEX lot 6 pause: automatic fee, injection and recycling processing skips while paused.
+    pause : DexReserveTypes.PauseState;
   };
 
   // Weekly allocation run context. Transient.
@@ -328,6 +334,7 @@ module {
   // Adds the recycle buckets as protocol liquidity at the pool ratio; the
   // part beyond the ratio waits in the bucket.
   func recycleFees(ctx : ProtocolFeeContext, now : Int) {
+    if (ctx.pause.paused) return;
     for ((poolId, b) in ctx.store.buckets.entries().toArray().values()) {
       if (b.recycle0 > 0 and b.recycle1 > 0) {
         switch (addProtocolLiquidity(ctx, poolId, b.recycle0, b.recycle1, false, now)) {
@@ -662,6 +669,7 @@ module {
       #seconds INJECTION_SECONDS,
       func() : async () {
         let now = Time.now();
+        feedRefusedDeposits(ctx.fees, now);
         for (poolId in ctx.fees.dex.pools.keys().toArray().values()) {
           recyclePoolFees(ctx.fees, poolId, now);
         };
@@ -682,9 +690,10 @@ module {
   // account of this canister is the TTTI-T minting account): canister +
   // 32-byte ASCII subaccount, distinct from every other subaccount.
   public let INJECTION_SUBACCOUNT : Blob = "DEX-INJECTION-TTTI-T-00000000001";
-  // Explicit default subaccount (32 zero bytes) of the pay-token accounts
-  // holding the mint fee.
-  let DEFAULT_SUBACCOUNT : Blob = "\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00";
+  // Dedicated mint fee account (1/101 of every mint, all pay tokens): canister
+  // + 32-byte ASCII subaccount, distinct from every other subaccount. Read-only:
+  // no endpoint withdraws from it; MF claims and injections are paid from it.
+  public let MINT_FEE_ACCOUNT_SUBACCOUNT : Blob = "MINT-FEE-ACCOUNT-TTTI-T-00000001";
   let INJECTIONS_LOCK : Text = "MF-INJECTIONS";
 
   type LockedAdd = { shares : Nat; used0 : Nat; used1 : Nat };
@@ -706,7 +715,7 @@ module {
   };
 
   // USD e8 rate of a pool token: TTTI-T fixed, others at the hourly rate.
-  func rateOf(ctx : ProtocolFeeContext, now : Int) : DexLib.UsdRateOf {
+  public func rateOf(ctx : ProtocolFeeContext, now : Int) : DexLib.UsdRateOf {
     func(token : DexTypes.PoolToken) : ?Nat {
       switch (DexLib.poolDexToken(token)) {
         case (?#tttiT) ?DexLib.TTTI_T_USD_E8;
@@ -782,9 +791,14 @@ module {
   // The lowest-liquidity TTTI-T/<token> pair (any TTTI-T pair of that pay
   // token, never other pairs, removed pools excluded); null when none exists.
   public func mintFeePool(ctx : ProtocolFeeContext, token : PayTypes.PayToken) : ?Nat {
-    let rate = rateOf(ctx, Time.now());
+    leastLiquidTttiPool(ctx.dex, rateOf(ctx, Time.now()), token);
+  };
+
+  // Selection rule shared with the router's 0.1 % redirect: the least liquid
+  // TTTI-T/<token> pair by USD liquidity, removed pools excluded.
+  public func leastLiquidTttiPool(dex : DexTypes.DexStore, rate : DexLib.UsdRateOf, token : PayTypes.PayToken) : ?Nat {
     var best : ?(Nat, Nat) = null;
-    for (pool in ctx.dex.pools.values()) {
+    for (pool in dex.pools.values()) {
       if (pool.status != #removed and pool.removedAt == null) {
         switch (tttiSide(pool, token)) {
           case (?tttiIs0) {
@@ -930,7 +944,7 @@ module {
       ctx.retry,
       #MF,
       null,
-      { token; from_subaccount = null; to = { owner = caller; subaccount = null }; amount = Nat.sub(amount, fee); fee = ?fee },
+      { token; from_subaccount = ?MINT_FEE_ACCOUNT_SUBACCOUNT; to = { owner = caller; subaccount = null }; amount = Nat.sub(amount, fee); fee = ?fee },
       RetryLib.dexNow(),
     );
     let claim : MintFeeTypes.MintFeeClaim = { n = attempt.n; owner = caller; token; amount; createdAt = Time.now(); attempt; status = #inProgress };
@@ -973,11 +987,12 @@ module {
 
   func memoOf(a : RetryTypes.DexTransferAttempt) : Text = a.memo.decodeUtf8() ?? "";
 
-  // One recorded pay-token move from the default account (memo TTTI-MF-<n>,
-  // created_at_time), sent once; the outcome stays on the injection record.
+  // One recorded pay-token move from the dedicated fee account (memo
+  // TTTI-MF-<n>, created_at_time), sent once; the outcome stays on the
+  // injection record.
   func payMove(ctx : ProtocolFeeContext, p : PayTypes.PayToken, to : Types.Account, amount : Nat) : async RetryTypes.DexTransferAttempt {
     let fee = PayTokenLib.expectedFee(p);
-    let a = RetryLib.newDexAttempt(ctx.retry, #MF, null, { token = payDex(p); from = { owner = ctx.canister; subaccount = ?DEFAULT_SUBACCOUNT }; to; amount; fee = ?fee }, RetryLib.dexNow());
+    let a = RetryLib.newDexAttempt(ctx.retry, #MF, null, { token = payDex(p); from = { owner = ctx.canister; subaccount = ?MINT_FEE_ACCOUNT_SUBACCOUNT }; to; amount; fee = ?fee }, RetryLib.dexNow());
     await RetryLib.sendPayDexAttempt({ a with sends = 1 });
   };
 
@@ -1312,6 +1327,7 @@ module {
   // the TTTI-T with the other 50 % as locked protocol liquidity. One pass at
   // a time, so one injection in flight per token.
   public func runInjections(ctx : ProtocolFeeContext, now : Int) : async () {
+    if (ctx.pause.paused) return;
     if (ctx.locks.contains(INJECTIONS_LOCK)) return;
     ctx.locks.add(INJECTIONS_LOCK);
     try {
@@ -1333,6 +1349,7 @@ module {
   // same pool's reserves as contract-held locked shares, minted on the
   // growth of sqrt(reserve0 x reserve1) (LP share value unchanged).
   public func recyclePoolFees(ctx : ProtocolFeeContext, poolId : Nat, now : Int) {
+    if (ctx.pause.paused) return;
     let pool = switch (ctx.dex.pools.get(poolId)) {
       case (?p) p;
       case null return;
@@ -1360,5 +1377,80 @@ module {
       },
     );
     recordLiquidity(ctx, poolId, a0, a1, shares, now);
+  };
+
+  // Open TTTI-T pair with the least USD liquidity (same rule as the router's
+  // redirect) and whether TTTI-T is its token0; null while none is open.
+  func feedTarget(dex : DexTypes.DexStore, rate : DexLib.UsdRateOf) : ?(DexTypes.Pool, Bool) {
+    var best : ?(DexTypes.Pool, Bool, Nat) = null;
+    for (pool in dex.pools.values()) {
+      if (isOpen(pool) and pool.kind == #tttiPair) {
+        let tttiIs0 = DexLib.poolDexToken(pool.token0) == ?#tttiT;
+        let tttiIs1 = DexLib.poolDexToken(pool.token1) == ?#tttiT;
+        if (tttiIs0 or tttiIs1) {
+          let usd = poolUsd(pool, tttiIs0, rate);
+          switch (best) {
+            case (?(_, _, b)) { if (usd < b) best := ?(pool, tttiIs0, usd) };
+            case null { best := ?(pool, tttiIs0, usd) };
+          };
+        };
+      };
+    };
+    switch (best) {
+      case (?(pool, tttiIs0, _)) ?(pool, tttiIs0);
+      case null null;
+    };
+  };
+
+  // Refused pair-request deposits feed the protocol liquidity. The 0.0005
+  // TTTI-T kept in DEX-REQUEST-DEPOSIT-TTTI-T-00001 for a refused request is
+  // moved (in-process ledger, synchronous) to the subaccount of the least
+  // liquid open TTTI-T pair, minus one ledger fee, and added to that pool's
+  // protocolFee side, which recyclePoolFees turns into contract-held
+  // permanent liquidity (as for the native 30 % fee). The transfer and the
+  // refusedFeeds record happen in the same message without an await, so each
+  // refused request is counted exactly once, across retries and upgrades.
+  // Nothing happens while no TTTI-T pair is open (the deposit waits). Pending
+  // and approved requests (deposit refunded) are never touched. No TTTI-T is
+  // created and no price-linked order is placed.
+  public func feedRefusedDeposits(ctx : ProtocolFeeContext, now : Int) {
+    if (ctx.pause.paused) return;
+    let fee = IcrcLib.fee(ctx.ledger);
+    let rate = rateOf(ctx, now);
+    for (request in ctx.dex.requests.values().toArray().values()) {
+      let refused = switch (request.status) {
+        case (#refused(_)) true;
+        case (_) false;
+      };
+      if (refused and request.refundStatus == #none and request.refundBlock == null and request.depositAmount > fee and ctx.refusedFeeds.get(request.id) == null) {
+        switch (feedTarget(ctx.dex, rate)) {
+          case (?(pool, tttiIs0)) {
+            let amount = Nat.sub(request.depositAmount, fee);
+            let result = IcrcLib.transfer(
+              ctx.ledger,
+              ctx.canister,
+              ctx.canister,
+              {
+                from_subaccount = DexLib.requestDepositAccount(ctx.canister).subaccount;
+                to = { owner = ctx.canister; subaccount = ?pool.subaccount };
+                amount;
+                fee = ?fee;
+                memo = ?("TTTI-RD-" # request.id.toText()).encodeUtf8();
+                created_at_time = null;
+              },
+            );
+            switch (result) {
+              case (#Ok(block)) {
+                ctx.refusedFeeds.add(request.id, { requestId = request.id; poolId = pool.id; amount; fee; block; at = now });
+                toPoolFee(ctx, pool.id, tttiIs0, amount);
+                recyclePoolFees(ctx, pool.id, now);
+              };
+              case (#Err(_)) {};
+            };
+          };
+          case null {};
+        };
+      };
+    };
   };
 };

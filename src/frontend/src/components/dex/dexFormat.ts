@@ -263,3 +263,19 @@ export function claimBonusErrorText(t: DexText, err: ClaimBonusError): string {
       return t.errClaimInProgress;
   }
 }
+
+/** The backend traps with this text when a call is refused because the DEX is paused. */
+const DEX_PAUSED_REJECT = "The DEX is paused";
+
+export function isDexPausedMessage(message: string): boolean {
+  return message.includes(DEX_PAUSED_REJECT);
+}
+
+/** Error text of a failed call: errDexPaused for a pause refusal, else the given fallback. */
+export function dexCallErrorText(
+  t: DexText,
+  message: string,
+  fallback: (detail: string) => string = t.errCall,
+): string {
+  return isDexPausedMessage(message) ? t.errDexPaused : fallback(message);
+}

@@ -22,25 +22,41 @@ import type {
   CyclesShareView,
   DcBatch,
   DepositEntry,
+  DepthLevel,
+  DexIndicatorsSnapshot,
+  FeeTotals,
+  IndicatorsStatus,
+  PoolIndicators,
+  TokenProof,
+  UnlockBucket,
   DepositTracking,
   DexAccount,
   DexBalanceView,
   DexConfig,
   DexDepositError,
+  DexPauseView,
+  DexReserveError,
+  DexReserveStatus,
   DexTokenInfo,
   DexTransferView,
   DexWithdrawError,
   ExtendLockError,
+  FeeAccountView,
+  HistoryRow,
+  ReceivingWalletView,
+  ReviewFilter,
+  TokenSettlementView,
   GetBlocksArgs,
   IcpPrice,
   LiquidityInjection,
   LpBonusView,
+  Mismatch,
   MintFeeClaimView,
   MintFeeLpView,
   MintTreasuryAccount,
-  OwnerDestinationView,
   OwnerSendView,
   PairRequestView,
+  PauseReason,
   PayTokenStatus,
   PoolMinimums,
   PoolTokenView,
@@ -48,6 +64,7 @@ import type {
   PositionBonusWeight,
   PositionView,
   ProtocolLiquidityView,
+  PublicDexPause,
   PurchaseAcknowledgement,
   PurchaseResult,
   PurchaseTrace,
@@ -56,21 +73,32 @@ import type {
   RequestPairArgs,
   RequestPairError,
   RequestedToken,
+  ReserveCheck,
   ReserveWithdrawal,
   SetAsideView,
   ShareChange,
   ReservedReconciliation,
   ReviewResult,
+  Route,
+  RouteError,
+  RouteFees,
+  RoutedQuoteArgs,
+  RoutedSwap,
+  RoutedSwapArgs,
+  RoutedSwapStatus,
+  RouterFeeView,
   SwapError,
   SwapQuote,
   SweepToken,
   TokenMinimums,
   TokenPrice,
+  TokenReserveResult,
   TopUpAttempt,
   TopUpRecord,
   TransferReview,
   TreasuryConfig,
   TreasurySweepView,
+  WithdrawalView,
   UpgradeReadiness,
   UsdGauge,
   Value__1,
@@ -83,6 +111,7 @@ import {
   BuybackRule,
   BuybackStatus,
   CollectState,
+  ComputationResult,
   ConversionStatus,
   DepositErrorKind,
   DepositKind,
@@ -90,8 +119,10 @@ import {
   DcTrigger,
   DexTransferDirection,
   FeeTier,
+  HistoryFilter,
+  HistoryKind,
+  HistoryToken,
   HolderKind,
-  OwnerRevenueError,
   PayToken,
   PoolKind,
   PoolSide,
@@ -99,10 +130,15 @@ import {
   PriceSource,
   ReconcileError,
   RemovePairError,
+  ReserveStatus,
   ReviewError,
+  RouteReason,
+  RoutedSwapStage,
   SetMinimumsError,
+  SettlementLegPurpose,
   SweepStatus,
   TransferKind,
+  TreasurySource,
   UserRole,
 } from "../backend";
 import {
@@ -131,7 +167,9 @@ import {
   TTTI_DECIMALS,
   TTTI_DIVISOR,
   TTTI_SYMBOL,
+  encodeAccountText,
   icpForTtti,
+  parseUnits,
   tttiFromIcp,
   tttiFromToken,
   validateDeliveryAddress,
@@ -319,6 +357,19 @@ function mockUpgradeReadiness(): UpgradeReadiness {
     sweepStatus: mockSweep.status,
     mintFeeClaimsInFlight: [],
     injectionsInFlight: [],
+    revenueSendsInFlight: mockOwnerSends
+      .filter((s) => s.source.__kind__ === "mint" && s.status.__kind__ === "pending")
+      .map((s) => s.id),
+    settlementsInFlight: mockSettlements
+      .filter((s) => s.status.__kind__ === "sending")
+      .map((s) => PAY_TOKENS[s.token].symbol),
+    dexPaused: mockDexReserve.pause.paused,
+    dexPauseReason: mockDexReserve.pause.paused ? mockDexReserve.pause.reason : undefined,
+    lastReserveCheckAt: mockDexReserve.lastCheck?.checkedAt,
+    lastReserveCheckStatus: mockLastReserveStatus(),
+    unresolvedShortfallCount: dexReserveUnresolved(),
+    dexOperationsInFlight: [],
+    dexReady: !mockDexReserve.pause.paused && dexReserveUnresolved() === 0n,
   };
 }
 
@@ -853,7 +904,8 @@ function takeReview(kind: TransferKind, purchaseId: bigint): TransferReview | Re
     (kind === TransferKind.DL && mockBonusClaims.some((c) => c.n === purchaseId)) ||
     ((kind === TransferKind.OW || kind === TransferKind.SR) &&
       mockOwnerSends.some((s) => s.id === purchaseId)) ||
-    (kind === TransferKind.MF && mockMintFeeClaims.some((c) => c.n === purchaseId));
+    (kind === TransferKind.MF && mockMintFeeClaims.some((c) => c.n === purchaseId)) ||
+    (kind === TransferKind.IR && mockRoutedSwaps.some((s) => s.id === purchaseId));
   return { __kind__: "err", err: known ? ReviewError.notUnderReview : ReviewError.notFound };
 }
 
@@ -881,6 +933,7 @@ function mockMarkArrived(kind: TransferKind, purchaseId: bigint, block: bigint):
   if (kind === TransferKind.DC || kind === TransferKind.DL) protocolFeeArrived(kind, purchaseId, block);
   if (kind === TransferKind.OW || kind === TransferKind.SR) ownerSendReviewed(purchaseId, block);
   if (kind === TransferKind.MF) mintFeeReviewed(purchaseId, block);
+  if (kind === TransferKind.IR) routerSetStatus(purchaseId, { __kind__: "reviewedArrived", reviewedArrived: block });
   return { __kind__: "ok", ok: null };
 }
 
@@ -907,6 +960,11 @@ function mockMarkNotArrived(kind: TransferKind, purchaseId: bigint): ReviewResul
     mockBuybackNotArrived(purchaseId);
     return { __kind__: "ok", ok: null };
   }
+  if (kind === TransferKind.IR) {
+    // Nothing moved: the input amount goes back to the owner's DEX balance.
+    routerSetStatus(purchaseId, { __kind__: "reviewedNotArrived", reviewedNotArrived: null });
+    return { __kind__: "ok", ok: null };
+  }
   if (kind === TransferKind.DD || kind === TransferKind.DW) {
     // DD: nothing credited; DW: the reserved amount goes back to available.
     dexMarkNotArrived(kind, purchaseId);
@@ -917,7 +975,7 @@ function mockMarkNotArrived(kind: TransferKind, purchaseId: bigint): ReviewResul
   mockPendingAttempts.push({
     kind,
     purchaseId,
-    memoText: `TTTI-${kind}-${purchaseId}-${attempt}`,
+    memoText: kind === TransferKind.DQ ? dexDqMemo(purchaseId, attempt) : `TTTI-${kind}-${purchaseId}-${attempt}`,
     createdAtTimeNs: nowNs(),
   });
   if (kind === TransferKind.FW) setForward(purchaseId, { __kind__: "pending", pending: null });
@@ -982,6 +1040,16 @@ const MOCK_API_DOC = [
   "- reconcileReserved() -> Result<ReservedReconciliation, ReconcileError> — sets sale.reserved to 0 and keeps the previous value, date and caller; refused with #notAdmin, #notPaused, #purchaseInFlight or #openTraces.",
   "- requestBuyback, retryBuybackPayout and cancelBuyback return #salesPaused while sales are paused.",
   "",
+  "## DEX reserve check and pause (lot 6)",
+  "- runDexReserveCheck() -> Result<ReserveCheck, DexReserveError> — admin update: compares, per DEX token, the internal total (user balances available + reserved, pool reserves) with the ledger total. ReserveCheck { checkedAt; results [{ token; internalTotal; ledgerTotal; difference = ledgerTotal - internalTotal; status #ok | #surplus | #shortfall }]; lastSuccessAt; error { message; at } }. Nothing is corrected automatically. A #shortfall pauses the DEX and records a Mismatch { id; at; token; internalTotal; ledgerTotal }.",
+  "- resumeDex() -> Result<DexPauseView, DexReserveError> — admin update: refused with #notPaused when the DEX is not paused and with #checkFailed(text) while a shortfall remains in the last check. DexPauseView { paused; reason { token; internalTotal; ledgerTotal; at }; resumed { by; at } }.",
+  "- getDexReserveStatus() : query -> Result<DexReserveStatus, DexReserveError> — admin: { lastCheck; unresolvedShortfallCount; checkInProgress; pause; history [Mismatch] }.",
+  "- getDexPauseStatus() : query -> PublicDexPause { paused; reasonToken } — public.",
+  "- DexReserveError: #unauthorized, #checkInProgress, #notPaused, #checkFailed(text).",
+  "- While the DEX is paused, swap, routedSwap, depositToDex and addLiquidity are refused with a paused error; withdrawFromDex and removeLiquidity still work. Sales and minting are not paused.",
+  "- UpgradeReadiness adds dexPaused, dexPauseReason, lastReserveCheckAt, lastReserveCheckStatus, unresolvedShortfallCount, dexOperationsInFlight and dexReady.",
+  "- The simulated contract finds a shortfall on ICP at every second check, seen by two consecutive checks and then repaired, so the pause and resume paths can be exercised.",
+  "",
   "## Review (admin only)",
   "- listTransfersToReview() : query -> [TransferReview] — FW, SH and RF under review, every PC payment to refund, BR BTC refunds to verify (id = BR attempt number), BC BTC cost sends to the treasury to verify (id = trace number), BM delivery-failure costs to refund by hand (id = conversion id) and BB buyback payments to verify plus legacy #payoutFailed buybacks (id = buyback id); kind, purchaseId, token, memoText, memoHex, createdAtTimeNs, amount, fee, destination (the buyer for PC), sends, lastError, block (when known), collect (PC: #confirmed or #unknown), buyer, depositIndex, conversionId, refundPurpose (BR: #excess, #fullRefund or #deliveryFailedExcess), outcome (BR/BC).",
   "- markTransferArrived(kind, purchaseId, block) -> ReviewResult — records the ledger block for FW, SH, RF, BR, BC or BB (RF sets the purchase #refunded; BB sets the payout block, releases the escrow and completes the buyback); PC and BM return #notApplicable.",
@@ -997,37 +1065,38 @@ const MOCK_API_DOC = [
   "- getDexBalances(owner) : [DexBalanceView] — public, one row per token with available and reserved; getDexTransfers(owner) : [DexTransferView] — public.",
   "- depositToDex({ token; amount }) — DD: icrc2_transfer_from of amount (the user approves amount plus the ledger fee), memo TTTI-DD-<n> with created_at_time; credits available. Errors: #anonymous, #amountTooSmall, #transferInProgress, #insufficientAllowance, #insufficientFunds, #ledgerError.",
   "- withdrawFromDex({ token; amount }) — DW: available -> reserved, transfer of amount minus the ledger fee to the owner, memo TTTI-DW-<n>; Ok: final debit, Err: given back. Errors: #anonymous, #amountTooSmall, #insufficientBalance, #transferInProgress, #ledgerError.",
-  "- PairRequestView.refundStatus: #none, #inProgress, #needsReview or #refunded(block); the DQ refund of an approved request uses memo TTTI-DQ-<request id>.",
+  "- PairRequestView.refundStatus: #none, #inProgress, #needsReview or #refunded(block); the DQ refund of an approved request uses memo TTTI-DQ-<pair request id> (the request number, not a transfer counter); renewed attempts append -<m>. The deposit of a refused request is counted once as TTTI-T feeding the protocol liquidity (mockRefusedPairDeposits, a per-request flag plus a running total); pending or approved requests add nothing and no TTTI-T is created.",
   "- To review adds DD, DW (id = transfer n) and DQ (id = request id). Arrived: DD credits, DW final debit, DQ #refunded. Not arrived: DD nothing credited, DW given back, DQ new attempt.",
   "",
   "## DEX liquidity and swaps (lot 3)",
-  "- PoolStatus: #filling, #active or #removed. An approved pool starts #filling with zero reserves and shares; several users add liquidity while it fills. Swaps stay closed until the reserves total 100 USD, both sides combined; the pool opens (#active) as soon as that value is reached.",
+  "- PoolStatus: #filling, #active or #removed. An approved pool starts #filling with zero reserves and shares; several users add liquidity while it fills. Swaps stay closed until the reserves total 100 USD, both sides combined; the pool opens (#active) as soon as that value is reached. Liquidity positions are public and linked to the identifier on TTTI: principal, shares, amounts, lock and unlock date are public.",
   "- USD value: TTTI-T at a fixed 10,000 USD; ICP, ckBTC, ckUSDC and ckUSDT at the hourly stored rate, valid 1 h plus 5 minutes. Missing or expired rate: no opening, gauge valueAvailable = false (value momentarily unavailable).",
   "- PoolView adds reserve0, reserve1, totalShares, lockedShares, protocolFee0, protocolFee1 and gauge : UsdGauge { currentUsdE8; targetUsdE8; remainingUsdE8; valueAvailable; missingRate }.",
   "- quoteAddLiquidity({ poolId; side; amount; counterAmount }) -> AddLiquidityQuote — first deposit: counterAmount required, fixes the ratio, at least 10 times the minimum locked liquidity; shares = floor(sqrt(A x B)) minus the minimum shares locked to the contract forever. Later deposits follow the reserve ratio (counter amount rounded up); counterAmount, when given, is the maximum accepted.",
   "- addLiquidity({ poolId; side; amount; counterAmount; lockDurationNs }) -> AddLiquidityResult — from internal balances; one position per add, locked 24 h minimum, 5 years maximum. Errors: #anonymous, #poolNotFound, #poolRemoved, #minimumsNotSet, #unsupportedToken, #zeroAmount, #counterAmountRequired, #insufficientBalance, #belowMinimum, #ratioMismatch, #lockTooShort, #lockTooLong, #zeroShares, #operationInProgress.",
   "- removeLiquidity(positionId) -> RemoveLiquidityResult — owner only, after unlockAt, or at any time on a removed pair; pro rata amounts (rounded down) credited to internal balances.",
-  "- extendLock(positionId, newUnlockAt) -> PositionView — owner only; never shorter, at most now + 5 years.",
-  "- getDexPosition(positionId) : ?PositionView; listPoolPositions(poolId) and listDexPositionsOf(owner) : [PositionView] — public (principal, shares, amounts, lock, unlockAt, isCreator). Creator/admin positions follow the same rules; no admin function acts on other positions.",
-  "- quoteSwap(poolId, tokenIn, amountIn, slippageBps) -> SwapQuote and swap(poolId, tokenIn, amountIn, minAmountOut, deadline) -> SwapResult — constant product on an open pool, from internal balances; fee 0.3 % for the 7 starting pairs (0.05 / 0.3 / 1 % tiers for added pairs), rounded up; 70 % stays in the reserves for LPs, 30 % becomes permanent liquidity in the same pool (counted in protocolFee0/1). Deadline at most 5 minutes after the call. Errors: #poolFilling (with the gauge), #poolRemoved, #slippageExceeded, #deadlineExceeded, #deadlineTooFar, #invalidSlippage, #insufficientBalance, #insufficientLiquidity, #tokenNotInPool, #zeroAmount.",
+  "- extendLock(positionId, newUnlockAt) -> PositionView — owner only; never shorter, at most creation date + 5 years (lockTooLong carries that maximumUnlockAt).",
+  "- getDexPosition(positionId) : ?PositionView; listPoolPositions(poolId) and listDexPositionsOf(owner) : [PositionView] — public, linked to the identifier on TTTI (principal, shares, amounts, lock, unlockAt, isCreator). Creator/admin positions follow the same rules; no admin function acts on other positions.",
+  "- quoteSwap(poolId, tokenIn, amountIn, slippageBps) -> SwapQuote and swap(poolId, tokenIn, amountIn, minAmountOut, deadline) -> SwapResult — constant product on an open pool, from internal balances; fee 0.3 % for the 7 starting pairs (0.05 / 0.3 / 1 % tiers for added pairs), rounded up; 70 % stays in the reserves for LPs, 30 % becomes permanent liquidity in the same pool (counted in protocolFee0/1). The only yield mentioned is the observed yield, meaning the fees actually earned, recorded as a fact. Deadline at most 5 minutes after the call. Errors: #poolFilling (with the gauge), #poolRemoved, #slippageExceeded, #deadlineExceeded, #deadlineTooFar, #invalidSlippage, #insufficientBalance, #insufficientLiquidity, #tokenNotInPool, #zeroAmount.",
   "",
   "## Cycles autonomy and protocol liquidity (lot 4)",
   "- The cycles reserve has no withdrawal path. CyclesStatus has no excess or withdrawal fields. setTreasuryConfig and setPayTokenAccount are removed.",
   "- getCyclesStatus() : CyclesStatus (public) — topUpThreshold is 20 T cycles: below it, reserve ICP is converted into cycles through the Cycles Minting Canister; the reserve is kept at 2 ICP.",
   "- getCyclesAutonomy() : AutonomyView (admin) — cycles balance, reserve ICP and its cycles estimate at the CMC rate, 7- and 30-day average consumption per day, autonomy in days (target 90), sample count and oldest sample.",
   "- Read-only history: getCyclesShare(), getCyclesShareHistory(), getLastWeeklyAllocation(), listWeeklyAllocations() and listDcBatches() keep past records; no new share change, weekly allocation or DC batch is created.",
-  "- getMintTreasuryAccounts() : [MintTreasuryAccount] (admin) — the former internal MINT-TREASURY-<token> subaccounts, emptied once by the treasury sweep; legacyExternalAccount is the old admin-set account.",
+  "- getMintTreasuryAccounts() : [MintTreasuryAccount] (admin) — the former internal MINT-TREASURY-<token> subaccounts, read-only; their owner share was settled once to the receiving wallets; legacyExternalAccount is the old admin-set account.",
   "- Native swap fees: 70 % stays in the reserves for liquidity providers, 30 % is added as permanent liquidity in the same pool; nothing goes to cycles and nothing is converted to ICP.",
   "- getProtocolLiquidity() : [ProtocolLiquidityView] (public) — protocol-owned shares per pool, counted in totalShares with no position and locked forever: current amounts, the parts from fees and from the treasury, last addition.",
   "- getMyLpBonus() : LpBonusView (caller) and claimLpBonus() -> ClaimBonusResult — bonuses already earned stay claimable (memo TTTI-DL-<n>); swap fees credit no new bonus. Errors: #anonymous, #nothingToClaim, #belowMinimum { minimumE8s }, #claimInProgress.",
   "",
-  "## Mint revenue (owner destinations, OW / SR)",
-  "- A mint is paid 101 for 100: 100/101 of the paid amount goes, in the paid token, to the owner destination account set for that token; 1/101 is the mint fee.",
-  "- setOwnerDestination(token, account) -> OwnerDestinationResult (admin) — errors #notAdmin, #anonymousOwner, #invalidSubaccount, #contractAccount; an accumulated amount is sent as soon as a destination is set (source #accumulated).",
-  "- clearOwnerDestination(token) -> OwnerDestinationResult (admin) — #notConfigured when none is set; later owner shares accumulate.",
-  "- listOwnerDestinations() : [OwnerDestinationView] (admin) — token, account, setAt, accumulated. getOwnerAccumulated() : [OwnerAccumulated] (admin).",
-  "- listOwnerSends(offset, limit) : OwnerSendPage (admin) — newest first; id, token, amount, fee, destination, source (#mint(id), #accumulated, #treasurySweep), status (#pending, #sent(block), #needsReview, #failed), block, memoText (TTTI-OW-<n> or TTTI-SR-<n>), createdAtTimeNs, attempt, sends, lastError. Sends use lib/retry.mo.",
-  "- getTreasurySweepStatus() : TreasurySweepView (admin) — one-time sweep of the internal mint treasuries: ICP first tops up the cycles reserve to 2 ICP (reserveTopUpE8s, block, memo), then each balance goes to its owner destination; per token #pending, #waitingDestination, #nothingToSend, #sending(send id) or #sent(send id); overall #notStarted, #toppingUpReserve, #sending or #completed.",
+  "## Mint revenue: direct sends (OW), fee account and settlement (ST)",
+  "- A mint is paid 101 for 100. At each mint the 100/101 share is sent directly, in the paid token, to the receiving wallet the admin configured for that token, ledger fee deducted (memo TTTI-OW-<n>, lib/retry.mo rules; an unknown outcome goes to To review). BTC mints follow ckBTC. Nothing accumulates in the contract and there is no withdraw endpoint.",
+  "- A mint with a token that has no receiving wallet is refused with #receivingWalletNotConfigured { token } before any funds are taken.",
+  "- setReceivingWallet(token, account) -> ReceivingWalletResult (admin) — owner principal plus optional 32-byte subaccount. Errors: #notAdmin, #anonymousOwner, #invalidSubaccount, #contractAccount. getReceivingWallets() -> ReceivingWalletsResult (admin) — per token: wallet, accountText, setAt, setBy.",
+  "- The 1/101 mint fee stays in a dedicated contract fee account that cannot be withdrawn. getMintFeeAccount() -> FeeAccountResult (admin) — owner, subaccountHex, accountText, readAt and per token: balance, received, redistributedToLps, setAside, injected.",
+  "- getSettlementStatus() -> SettlementStatusResult (admin) — one-time settlement per token: the accumulated revenue and the legacy mint-treasury owner share (minus past withdrawals) are sent to the receiving wallet; legacy and pending fees are moved once to the fee account; LP credits are unchanged. Status #pendingWallet, #sending, #sent([block]), #toReview or #failed(text); legs with purpose #ownerAccumulated, #ownerMintTreasury, #feePending or #feeLegacy, amount, destination, memoText (TTTI-ST-<n>), status and block.",
+  "- listAdminHistory(filter, token, offset, limit) -> HistoryResult (admin) — one history, newest first, with total for pagination. filter: #all, #revenueSent, #destination, #swap, #liquidity, #mintDeposit, #buyback, #refund; token: optional ICP, TTTI-T, ckBTC, ckUSDC or ckUSDT. Row: id, kind, token, amount, status, detail, counterparty, memo, block, timestamp. Errors: #notAdmin.",
+  "- getOwnerAccumulated() : [OwnerAccumulated] (admin); listOwnerSends(offset, limit) : OwnerSendPage and listTreasuryWithdrawals(offset, limit) (admin) — read-only history of past sends (source #mint(id), #accumulated, #treasurySweep, #withdrawal { by, from }, #settlement { from }).",
   "",
   "## Mint fee halves (MF, set-aside amounts, injections)",
   "- The 1/101 mint fee is split in two halves in the paid token, for the lowest-liquidity TTTI-T pair of that token.",
@@ -1038,7 +1107,8 @@ const MOCK_API_DOC = [
   "- listLiquidityInjections(offset, limit) : InjectionPage (public) — newest first; token, poolId, venue (#native(poolId) or #icpswap(principal)), amountIn, swapAmountIn, pairAmountIn, minTttiOut, tttiReceived, used0, used1, liquidityShares, status (#swapping, #addingLiquidity, #completed, #needsReview, #failed).",
   "",
   "## To review",
-  "- To review adds OW (id = owner send id), SR (id = sweep send id) and MF (id = claim n), next to the past DC and DL items. Arrived records the block; Not arrived opens a new attempt sent by the timer; markRefundedManually returns #notApplicable.",
+  "- To review adds OW (id = owner send id), SR (id = past sweep send id), ST (id = settlement leg n) and MF (id = claim n), next to the past DC and DL items. Arrived records the block; Not arrived opens a new attempt sent by the timer; markRefundedManually returns #notApplicable.",
+  "- listTransfersToReviewFiltered({ kinds; token }) : [TransferReview] (admin) — the same list restricted to the given kinds (empty = all) and optional token.",
 ].join("\n");
 
 function purchaseError(
@@ -1061,6 +1131,8 @@ function mockPurchase(recipient: Account | null, icpAmount: bigint): PurchaseRes
   if (state.salesPaused) {
     return purchaseError({ __kind__: "salesPaused", salesPaused: null }, "Sales are paused.");
   }
+  const noWallet = walletNotConfigured(PayToken.icp);
+  if (noWallet) return noWallet;
   const remaining = saleAvailable();
   if (remaining <= 0n) {
     return purchaseError({ __kind__: "saleComplete", saleComplete: null }, "Sale complete.");
@@ -1090,7 +1162,22 @@ function mockPurchase(recipient: Account | null, icpAmount: bigint): PurchaseRes
   state.feeCollectorBalance -= conversion.fromCollector;
   state.sold += conversion.tttiAmount;
   state.conversions.unshift(conversion);
+  recordMintRevenue(
+    PayToken.icp,
+    conversion.id,
+    conversion.netAmount ?? icpAmount - (conversion.feeAmount ?? 0n),
+    conversion.feeAmount ?? 0n,
+  );
   return { __kind__: "Ok", Ok: conversion };
+}
+
+/** Same refusal as the backend: no receiving wallet for the paid token, before any funds are taken. */
+function walletNotConfigured(token: PayToken): PurchaseResult | null {
+  if (mockReceivingWallets[token].wallet) return null;
+  return purchaseError(
+    { __kind__: "receivingWalletNotConfigured", receivingWalletNotConfigured: { token } },
+    `Minting with ${PAY_TOKENS[token].symbol} is not available yet: no receiving wallet is configured for this token.`,
+  );
 }
 
 /** Hourly rate fetched at the start of the current hour, valid one hour. */
@@ -1845,9 +1932,9 @@ const DEX_MAX_PENDING = 2n;
 const DEX_MESSAGE_MAX = 500n;
 const DEX_REASON_MAX = 300n;
 const DEX_PROTOCOL_STATEMENT =
-  "The protocol places no price-based order and mints no TTTI-T for pools.";
+  "The protocol places no price-linked order and creates no TTTI-T; the mint fee (1/101) buys TTTI-T without any price condition to feed pool liquidity.";
 const DEX_LOCKED_SHARES_STATEMENT =
-  "The minimum locked shares belong to the contract forever.";
+  "The minimum locked shares √(A×B) belong to the contract forever.";
 const DEX_APPROVAL_STATEMENT = "Approval of a pair is not a recommendation.";
 const DEX_USD_RATE_SCALE = 100_000_000n; // usdE8 = USD x 1e8
 const DEX_LAUNCH_MIN_TOTAL_USD_E8 = 100n * DEX_USD_RATE_SCALE; // 100 USD
@@ -1905,6 +1992,13 @@ let nextPoolId = 0n;
 const mockPairRequests: Array<PairRequestView> = [];
 let nextPairRequestId = 1n;
 let nextDexBlock = 4_200n;
+/** Refused pair-request deposits fed once to the protocol liquidity as TTTI-T (no TTTI-T is created). */
+const mockRefusedPairDeposits = { fed: new Set<bigint>(), totalTttiT: 0n };
+function dexFeedRefusedDeposit(request: PairRequestView) {
+  if (request.status.__kind__ !== "refused" || mockRefusedPairDeposits.fed.has(request.id)) return;
+  mockRefusedPairDeposits.fed.add(request.id);
+  mockRefusedPairDeposits.totalTttiT += request.depositAmount;
+}
 
 const dexSameLedger = (a: PoolTokenView, b: PoolTokenView) =>
   a.ledgerId.toText() === b.ledgerId.toText();
@@ -2143,6 +2237,7 @@ dexRefusedSeed.status = {
   __kind__: "refused",
   refused: { reason: "The symbol copies ICP.", at: nowNs() - 2n * 24n * HOUR_NS },
 };
+dexFeedRefusedDeposit(dexRefusedSeed);
 
 function mockRequestPair(args: RequestPairArgs): Outcome<"requestPair"> {
   const err = (e: RequestPairError): Outcome<"requestPair"> => ({ __kind__: "err", err: e });
@@ -2194,6 +2289,10 @@ function mockRequestPair(args: RequestPairArgs): Outcome<"requestPair"> {
   return { __kind__: "ok", ok: request };
 }
 
+/** DQ memo: the pair request id, with -<m> appended on a renewed attempt. */
+const dexDqMemo = (requestId: bigint, attempt?: number) =>
+  attempt === undefined ? `TTTI-DQ-${requestId}` : `TTTI-DQ-${requestId}-${attempt}`;
+
 function mockApprovePair(requestId: bigint, minimums: TokenMinimums | null): Outcome<"approvePair"> {
   const err = (e: ApprovePairError): Outcome<"approvePair"> => ({ __kind__: "err", err: e });
   const request = mockPairRequests.find((r) => r.id === requestId);
@@ -2212,7 +2311,7 @@ function mockApprovePair(requestId: bigint, minimums: TokenMinimums | null): Out
   const at = nowNs();
   const pool = dexCreatePool(token0, token1, request.feeTier, at, { id: request.id, minimums });
   request.status = { __kind__: "approved", approved: { poolId: pool.id, at } };
-  // DQ refund of the deposit minus one TTTI-T fee (memo TTTI-DQ-<request id>).
+  // DQ refund of the deposit minus one TTTI-T fee (memo TTTI-DQ-<pair request id>).
   request.refundBlock = nextDexBlock++;
   request.refundStatus = { __kind__: "refunded", refunded: request.refundBlock };
   return { __kind__: "ok", ok: dexPoolOut(pool) };
@@ -2229,6 +2328,7 @@ function mockRefusePair(requestId: bigint, reason: string): Outcome<"refusePair"
     return err({ __kind__: "reasonTooLong", reasonTooLong: { max: DEX_REASON_MAX } });
   }
   request.status = { __kind__: "refused", refused: { reason: trimmed, at: nowNs() } };
+  dexFeedRefusedDeposit(request);
   return { __kind__: "ok", ok: request };
 }
 
@@ -2380,6 +2480,154 @@ function dexBalancesView(owner: Principal): Array<DexBalanceView> {
       reserved: balance.reserved,
     };
   });
+}
+
+// --- DEX reserve check: simulated ledger totals, pause and resume. ----------
+
+/**
+ * Every second check finds a simulated shortfall on ICP (internal credits above
+ * the ledger balance). It is seen by two consecutive checks, so the resume
+ * refusal can be exercised, and is repaired before the next one.
+ */
+const RESERVE_SHORTFALL_TOKEN = DexToken.icp;
+const RESERVE_SHORTFALL_E8S = 50_000_000n;
+const mockDexReserve = {
+  runs: 0,
+  deficit: 0n,
+  deficitSeen: 0,
+  lastCheck: undefined as ReserveCheck | undefined,
+  lastSuccessAt: undefined as bigint | undefined,
+  history: [] as Array<Mismatch>,
+  openTokens: new Set<DexToken>(),
+  nextMismatchId: 1n,
+  pause: { paused: false } as DexPauseView,
+};
+
+/** Sum of the internal DEX balances (available and reserved) and the pool reserves of one token. */
+function dexInternalTotal(token: DexToken): bigint {
+  const ledgerId = DEX_TOKEN_VIEW[token].ledgerId.toText();
+  let total = 0n;
+  for (const byToken of mockDexBalances.values()) {
+    const balance = byToken.get(token);
+    if (balance) total += balance.available + balance.reserved;
+  }
+  for (const pool of mockPools) {
+    if (pool.token0.ledgerId.toText() === ledgerId) total += pool.reserve0;
+    if (pool.token1.ledgerId.toText() === ledgerId) total += pool.reserve1;
+  }
+  return total;
+}
+
+const dexReserveUnresolved = (): bigint =>
+  BigInt(
+    mockDexReserve.lastCheck?.results.filter((r) => r.status === ReserveStatus.shortfall).length ?? 0,
+  );
+
+function dexReserveErr(err: DexReserveError): { __kind__: "err"; err: DexReserveError } {
+  return { __kind__: "err", err };
+}
+
+function mockRunDexReserveCheck(): Outcome<"runDexReserveCheck"> {
+  const reserve = mockDexReserve;
+  reserve.runs += 1;
+  if (reserve.deficit > 0n) {
+    reserve.deficitSeen += 1;
+    if (reserve.deficitSeen > 2) {
+      reserve.deficit = 0n;
+      reserve.deficitSeen = 0;
+    }
+  } else if (reserve.runs % 2 === 0) {
+    reserve.deficit = RESERVE_SHORTFALL_E8S;
+    reserve.deficitSeen = 1;
+  }
+  const now = nowNs();
+  const results: Array<TokenReserveResult> = DEX_TOKEN_ORDER.map((token) => {
+    const ledgerTotal = dexInternalTotal(token);
+    const internalTotal = token === RESERVE_SHORTFALL_TOKEN ? ledgerTotal + reserve.deficit : ledgerTotal;
+    const difference = ledgerTotal - internalTotal;
+    const status =
+      difference < 0n ? ReserveStatus.shortfall : difference > 0n ? ReserveStatus.surplus : ReserveStatus.ok;
+    return { token, internalTotal, ledgerTotal, difference, status };
+  });
+  for (const result of results) {
+    if (result.status !== ReserveStatus.shortfall) {
+      reserve.openTokens.delete(result.token);
+      continue;
+    }
+    if (!reserve.openTokens.has(result.token)) {
+      reserve.openTokens.add(result.token);
+      reserve.history.push({
+        id: reserve.nextMismatchId,
+        at: now,
+        token: result.token,
+        internalTotal: result.internalTotal,
+        ledgerTotal: result.ledgerTotal,
+      });
+      reserve.nextMismatchId += 1n;
+    }
+    if (!reserve.pause.paused) {
+      const pauseReason: PauseReason = {
+        token: result.token,
+        internalTotal: result.internalTotal,
+        ledgerTotal: result.ledgerTotal,
+        at: now,
+      };
+      reserve.pause = { paused: true, reason: pauseReason };
+    }
+  }
+  reserve.lastSuccessAt = now;
+  const check: ReserveCheck = { checkedAt: now, results, lastSuccessAt: now, error: undefined };
+  reserve.lastCheck = check;
+  return { __kind__: "ok", ok: check };
+}
+
+function mockResumeDex(): Outcome<"resumeDex"> {
+  const reserve = mockDexReserve;
+  if (!reserve.pause.paused) return dexReserveErr({ __kind__: "notPaused", notPaused: null });
+  if (dexReserveUnresolved() > 0n) {
+    const symbol = reserve.pause.reason ? DEX_TOKEN_VIEW[reserve.pause.reason.token].symbol : "a token";
+    return dexReserveErr({
+      __kind__: "checkFailed",
+      checkFailed: `A shortfall remains for ${symbol}. Run a new reserve check once the ledger balance matches the internal total.`,
+    });
+  }
+  reserve.pause = { paused: false, reason: reserve.pause.reason, resumed: { by: CALLER, at: nowNs() } };
+  return { __kind__: "ok", ok: reserve.pause };
+}
+
+function mockDexReserveStatus(): DexReserveStatus {
+  const reserve = mockDexReserve;
+  return {
+    lastCheck: reserve.lastCheck,
+    unresolvedShortfallCount: dexReserveUnresolved(),
+    checkInProgress: false,
+    pause: reserve.pause,
+    history: [...reserve.history].reverse(),
+  };
+}
+
+function mockPublicDexPause(): PublicDexPause {
+  const { pause } = mockDexReserve;
+  return { paused: pause.paused, reasonToken: pause.paused ? pause.reason?.token : undefined };
+}
+
+/** Worst status of the last check, for the readiness checklist. */
+function mockLastReserveStatus(): ReserveStatus | undefined {
+  const results = mockDexReserve.lastCheck?.results;
+  if (!results) return undefined;
+  if (results.some((r) => r.status === ReserveStatus.shortfall)) return ReserveStatus.shortfall;
+  if (results.some((r) => r.status === ReserveStatus.surplus)) return ReserveStatus.surplus;
+  return ReserveStatus.ok;
+}
+
+/** Swaps, deposits and liquidity additions refuse while paused; withdrawals and liquidity removal do not. */
+function assertDexNotPaused() {
+  const { pause } = mockDexReserve;
+  if (!pause.paused) return;
+  const symbol = pause.reason ? DEX_TOKEN_VIEW[pause.reason.token].symbol : "a token";
+  throw new Error(
+    `The DEX is paused after a reserve check found a shortfall for ${symbol}. Swaps, deposits and liquidity additions are unavailable. Withdrawals and liquidity removal remain available.`,
+  );
 }
 
 function dexNewTransfer(
@@ -2543,7 +2791,7 @@ function dexMarkNotArrived(kind: TransferKind, id: bigint) {
   });
   approved.status = { __kind__: "approved", approved: { poolId: pool.id, at: ago(27n) } };
   approved.refundStatus = { __kind__: "needsReview", needsReview: null };
-  const memoText = `TTTI-DQ-${approved.id}`;
+  const memoText = dexDqMemo(approved.id);
   mockReviews.push({
     kind: TransferKind.DQ,
     purchaseId: approved.id,
@@ -2635,6 +2883,11 @@ function dexRefreshOpening(pool: PoolView) {
     pool.status = PoolStatus.active;
     pool.acceptsSwaps = true;
   }
+}
+
+/** Persists #filling -> #active for every pool whose gauge reaches the target with a usable rate. */
+function dexRefreshAllOpenings() {
+  for (const pool of mockPools) dexRefreshOpening(pool);
 }
 
 function dexPositionView(position: DexPosition): PositionView {
@@ -2844,7 +3097,7 @@ function mockExtendLock(positionId: bigint, newUnlockAt: bigint): Outcome<"exten
   if (newUnlockAt < position.unlockAt) {
     return fail({ __kind__: "cannotShortenLock", cannotShortenLock: { unlockAt: position.unlockAt } });
   }
-  const maximumUnlockAt = nowNs() + DEX_MAX_LOCK_NS;
+  const maximumUnlockAt = position.createdAt + DEX_MAX_LOCK_NS;
   if (newUnlockAt > maximumUnlockAt) {
     return fail({ __kind__: "lockTooLong", lockTooLong: { maximumUnlockAt } });
   }
@@ -2920,6 +3173,7 @@ function dexPlanSwap(
 }
 
 function mockQuoteSwap(poolId: bigint, tokenIn: DexToken, amountIn: bigint, slippageBps: bigint): Outcome<"quoteSwap"> {
+  dexRefreshAllOpenings();
   const plan = dexPlanSwap(poolId, tokenIn, amountIn, slippageBps);
   return plan.__kind__ === "err" ? plan : { __kind__: "ok", ok: plan.ok.quote };
 }
@@ -2932,6 +3186,7 @@ function mockSwap(
   deadline: bigint,
 ): Outcome<"swap"> {
   const fail = (err: SwapError): Outcome<"swap"> => ({ __kind__: "err", err });
+  dexRefreshAllOpenings();
   const plan = dexPlanSwap(poolId, tokenIn, amountIn, 0n);
   if (plan.__kind__ === "err") return plan;
   const { pool, tokenOut, inIsToken0, quote } = plan.ok;
@@ -3393,14 +3648,13 @@ function protocolFeeNotArrived(kind: TransferKind, n: bigint) {
 
 // --- Mint revenue correction: owner destinations (OW), treasury sweep (SR), mint fee halves (MF) ---
 
-/** Admin-set owner destination per paid token; ckUSDT has none, so its share accumulates. */
+/** Past automatic owner sends keep their destination; ckUSDT keeps an accumulated amount not yet withdrawn. */
 const OWNER_WALLET = principalFrom(21);
-const mockOwnerDestinations: Record<PayToken, { account?: Account; setAt?: bigint; accumulated: bigint }> = {
-  [PayToken.icp]: { account: { owner: OWNER_WALLET }, setAt: nowNs() - 3n * LOT4_DAY_NS, accumulated: 0n },
-  [PayToken.ckbtc]: { account: { owner: OWNER_WALLET }, setAt: nowNs() - 3n * LOT4_DAY_NS, accumulated: 0n },
+const mockOwnerDestinations: Record<PayToken, { account?: Account; accumulated: bigint }> = {
+  [PayToken.icp]: { account: { owner: OWNER_WALLET }, accumulated: 0n },
+  [PayToken.ckbtc]: { account: { owner: OWNER_WALLET }, accumulated: 0n },
   [PayToken.ckusdc]: {
     account: { owner: OWNER_WALLET, subaccount: lot4Subaccount("OWNER-CKUSDC") },
-    setAt: nowNs() - 2n * LOT4_DAY_NS,
     accumulated: 0n,
   },
   [PayToken.ckusdt]: { accumulated: 49_504_950n },
@@ -3474,41 +3728,400 @@ function mockSweepView(): TreasurySweepView {
   return { ...mockSweep, tokens: mockSweepTokens.map((t) => ({ ...t })) };
 }
 
-function ownerDestinationView(token: PayToken): OwnerDestinationView {
-  const d = mockOwnerDestinations[token];
-  return { token, account: d.account, setAt: d.setAt, accumulated: d.accumulated };
+// --- Past admin withdrawals (read-only history; there is no withdraw endpoint) ---
+
+const mockWithdrawals: Array<WithdrawalView> = [];
+function pushWithdrawal(
+  token: PayToken,
+  source: TreasurySource,
+  amount: bigint,
+  destination: Account,
+  status: WithdrawalView["status"],
+  ageNs: bigint,
+): WithdrawalView {
+  const id = BigInt(mockWithdrawals.length + 1);
+  const at = nowNs() - ageNs;
+  const view: WithdrawalView = {
+    id,
+    token,
+    source,
+    amount,
+    fee: PAY_TOKENS[token].fee,
+    destination,
+    status,
+    block: status.__kind__ === "sent" ? status.sent : undefined,
+    memoText: `TTTI-OW-${id}`,
+    createdAtTimeNs: at,
+    attempt: 1n,
+    sends: status.__kind__ === "pending" ? 0n : 1n,
+    createdAt: at,
+    updatedAt: at,
+    requestedBy: CALLER,
+  };
+  mockWithdrawals.push(view);
+  return view;
+}
+pushWithdrawal(PayToken.icp, TreasurySource.mintTreasury, 150_000_000n, { owner: OWNER_WALLET }, { __kind__: "sent", sent: 18_460_120n }, 3n * LOT4_DAY_NS);
+pushWithdrawal(PayToken.ckusdc, TreasurySource.accumulated, 20_000_000n, { owner: OWNER_WALLET, subaccount: lot4Subaccount("OWNER-CKUSDC") }, { __kind__: "sent", sent: 2_330_871n }, 2n * LOT4_DAY_NS);
+pushWithdrawal(PayToken.ckbtc, TreasurySource.mintTreasury, 50_000n, { owner: OWNER_WALLET }, { __kind__: "needsReview", needsReview: null }, LOT4_DAY_NS);
+
+// --- Receiving wallets: the 100/101 share of each mint goes directly to the wallet set for the paid token. ---
+
+const HISTORY_TOKEN: Record<PayToken, HistoryToken> = {
+  [PayToken.icp]: HistoryToken.icp,
+  [PayToken.ckbtc]: HistoryToken.ckbtc,
+  [PayToken.ckusdc]: HistoryToken.ckusdc,
+  [PayToken.ckusdt]: HistoryToken.ckusdt,
+};
+
+function receivingWallet(token: PayToken, wallet: Account | undefined, ageNs: bigint): ReceivingWalletView {
+  return wallet
+    ? { token, wallet, accountText: encodeAccountText(wallet), setAt: nowNs() - ageNs, setBy: CALLER }
+    : { token };
 }
 
-function mockSetOwnerDestination(token: PayToken, account: Account): Outcome<"setOwnerDestination"> {
-  if (account.owner.isAnonymous()) return { __kind__: "err", err: OwnerRevenueError.anonymousOwner };
+/** ckUSDT has no receiving wallet yet: a ckUSDT mint is refused and its settlement waits. */
+const mockReceivingWallets: Record<PayToken, ReceivingWalletView> = {
+  [PayToken.icp]: receivingWallet(PayToken.icp, { owner: OWNER_WALLET }, 2n * LOT4_DAY_NS),
+  [PayToken.ckbtc]: receivingWallet(PayToken.ckbtc, { owner: OWNER_WALLET }, 2n * LOT4_DAY_NS),
+  [PayToken.ckusdc]: receivingWallet(
+    PayToken.ckusdc,
+    { owner: OWNER_WALLET, subaccount: lot4Subaccount("OWNER-CKUSDC") },
+    2n * LOT4_DAY_NS,
+  ),
+  [PayToken.ckusdt]: receivingWallet(PayToken.ckusdt, undefined, 0n),
+};
+
+// --- Unified admin history (newest first, filtered by kind and token). ---
+
+const mockHistory: Array<HistoryRow> = [];
+function pushHistory(row: Omit<HistoryRow, "id">): HistoryRow {
+  const entry: HistoryRow = { id: `H-${mockHistory.length + 1}`, ...row };
+  mockHistory.push(entry);
+  return entry;
+}
+
+const sendStatusText = (status: OwnerSendView["status"]): string =>
+  status.__kind__ === "sent"
+    ? "Sent"
+    : status.__kind__ === "needsReview"
+      ? "To review"
+      : status.__kind__ === "failed"
+        ? "Failed"
+        : "Pending";
+
+// Revenue sent rows for the seeded mint sends.
+for (const send of mockOwnerSends) {
+  if (send.source.__kind__ !== "mint") continue;
+  pushHistory({
+    kind: HistoryKind.revenueSent,
+    token: HISTORY_TOKEN[send.token],
+    amount: send.amount,
+    status: sendStatusText(send.status),
+    detail: `Mint #${send.source.mint}: 100/101 share sent to the receiving wallet`,
+    counterparty: encodeAccountText(send.destination),
+    memo: send.memoText,
+    block: send.block,
+    timestamp: send.createdAt,
+  });
+}
+// Destination rows for the configured receiving wallets.
+for (const token of PAY_TOKEN_ORDER) {
+  const view = mockReceivingWallets[token];
+  if (!view.wallet || view.setAt === undefined) continue;
+  pushHistory({
+    kind: HistoryKind.destination,
+    token: HISTORY_TOKEN[token],
+    status: "Set",
+    detail: `Receiving wallet set for ${PAY_TOKENS[token].symbol}`,
+    counterparty: view.accountText,
+    timestamp: view.setAt,
+  });
+}
+// One sample row for each remaining kind.
+pushHistory({
+  kind: HistoryKind.mintDeposit,
+  token: HistoryToken.icp,
+  amount: 101_000_000n,
+  status: "Completed",
+  detail: "Mint #41: 1.01 ICP paid, 0.0001 TTTI-T minted",
+  counterparty: HOLDER_2.toText(),
+  memo: "TTTI-PC-41",
+  block: 18_431_219n,
+  timestamp: nowNs() - 30n * HOUR_NS,
+});
+pushHistory({
+  kind: HistoryKind.swap,
+  token: HistoryToken.ckusdt,
+  amount: 25_000_000n,
+  status: "Completed",
+  detail: "Routed swap ckUSDT -> TTTI-T through ICPSwap",
+  counterparty: HOLDER_2.toText(),
+  timestamp: nowNs() - 3n * HOUR_NS,
+});
+pushHistory({
+  kind: HistoryKind.liquidity,
+  token: HistoryToken.icp,
+  amount: 150_000_000n,
+  status: "Completed",
+  detail: "Mint fee set-aside added as permanent liquidity to the TTTI-T/ICP pool",
+  timestamp: nowNs() - 2n * LOT4_DAY_NS,
+});
+pushHistory({
+  kind: HistoryKind.buyback,
+  token: HistoryToken.tttiT,
+  amount: 5_000n,
+  status: "Completed",
+  detail: "Buyback of 0.00005 TTTI-T paid in ICP",
+  counterparty: HOLDER_3.toText(),
+  memo: "TTTI-BB-1-1",
+  block: 18_401_552n,
+  timestamp: nowNs() - 6n * LOT4_DAY_NS,
+});
+pushHistory({
+  kind: HistoryKind.refund,
+  token: HistoryToken.icp,
+  amount: ICP_DIVISOR / 10n,
+  status: "To review",
+  detail: "Purchase refund with no confirmed outcome after 23 h",
+  counterparty: HOLDER_2.toText(),
+  memo: "TTTI-RF-1",
+  timestamp: nowNs() - 27n * HOUR_NS,
+});
+
+function mockListAdminHistory(
+  filter: HistoryFilter,
+  token: HistoryToken | null,
+  offset: bigint,
+  limit: bigint,
+): Outcome<"listAdminHistory"> {
+  const rows = mockHistory
+    .filter((row) => filter === HistoryFilter.all || (row.kind as string) === (filter as string))
+    .filter((row) => token === null || row.token === token)
+    .sort((a, b) => (a.timestamp === b.timestamp ? 0 : a.timestamp > b.timestamp ? -1 : 1));
+  return {
+    __kind__: "ok",
+    ok: {
+      total: BigInt(rows.length),
+      offset,
+      limit,
+      items: rows.slice(Number(offset), Number(offset + limit)),
+    },
+  };
+}
+
+// --- Mint fee account: the 1/101 stays in a dedicated contract subaccount, never withdrawable. ---
+
+const MINT_FEE_SUBACCOUNT = lot4Subaccount("MINT-FEE-ACCOUNT");
+/** Fees received by mints made in this session, on top of the seeded totals. */
+const mockFeeReceived: Record<PayToken, bigint> = {
+  [PayToken.icp]: 0n,
+  [PayToken.ckbtc]: 0n,
+  [PayToken.ckusdc]: 0n,
+  [PayToken.ckusdt]: 0n,
+};
+
+function mockFeeAccount(): FeeAccountView {
+  return {
+    owner: TTTI_CANISTER,
+    subaccountHex: Array.from(MINT_FEE_SUBACCOUNT)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(""),
+    accountText: encodeAccountText({ owner: TTTI_CANISTER, subaccount: MINT_FEE_SUBACCOUNT }),
+    readAt: nowNs(),
+    tokens: PAY_TOKEN_ORDER.map((token) => {
+      const lp = mockMintFeeBalances[token];
+      const setAside = mockSetAside[token];
+      const redistributedToLps = lp.claimable + lp.claimed;
+      const extra = mockFeeReceived[token];
+      return {
+        token,
+        received: redistributedToLps + setAside.totalReceived + extra,
+        redistributedToLps,
+        setAside: setAside.amount,
+        injected: setAside.totalInjected,
+        balance: lp.claimable + setAside.amount + extra,
+      };
+    }),
+  };
+}
+
+/** Sends the 100/101 share of a mint to the receiving wallet and records a Revenue sent row. */
+function recordMintRevenue(token: PayToken, mintId: bigint, ownerShare: bigint, feeAmount: bigint) {
+  const wallet = mockReceivingWallets[token].wallet;
+  if (!wallet) return;
+  mockFeeReceived[token] += feeAmount;
+  const amount = ownerShare - PAY_TOKENS[token].fee;
+  const block = 18_480_000n + BigInt(mockOwnerSends.length);
+  const send = pushOwnerSend(token, amount, { __kind__: "mint", mint: mintId }, { __kind__: "sent", sent: block }, 0n);
+  send.destination = wallet;
+  pushHistory({
+    kind: HistoryKind.mintDeposit,
+    token: HISTORY_TOKEN[token],
+    amount: ownerShare + feeAmount,
+    status: "Completed",
+    detail: `Mint #${mintId}: payment received`,
+    counterparty: CALLER.toText(),
+    timestamp: send.createdAt,
+  });
+  pushHistory({
+    kind: HistoryKind.revenueSent,
+    token: HISTORY_TOKEN[token],
+    amount,
+    status: sendStatusText(send.status),
+    detail: `Mint #${mintId}: 100/101 share sent to the receiving wallet`,
+    counterparty: encodeAccountText(wallet),
+    memo: send.memoText,
+    block,
+    timestamp: send.createdAt,
+  });
+}
+
+// --- One-time settlement (ST) of the accumulated revenue and legacy mint-treasury owner share. ---
+
+function settlementLeg(
+  n: number,
+  purpose: SettlementLegPurpose,
+  amount: bigint,
+  destination: Account,
+  status: OwnerSendView["status"],
+): TokenSettlementView["legs"][number] {
+  return {
+    purpose,
+    amount,
+    destination,
+    memoText: `TTTI-ST-${n}`,
+    status,
+    block: status.__kind__ === "sent" ? status.sent : undefined,
+  };
+}
+
+const FEE_ACCOUNT: Account = { owner: TTTI_CANISTER, subaccount: MINT_FEE_SUBACCOUNT };
+const SETTLED_AT = nowNs() - LOT4_DAY_NS;
+const mockSettlements: Array<TokenSettlementView> = [
+  {
+    token: PayToken.icp,
+    ownerAmount: 162_450_000n,
+    feeAmount: 1_240_000n,
+    destination: { owner: OWNER_WALLET },
+    status: { __kind__: "sent", sent: [18_470_101n, 18_470_102n] },
+    startedAt: SETTLED_AT,
+    completedAt: SETTLED_AT + 60_000_000_000n,
+    legs: [
+      settlementLeg(1, SettlementLegPurpose.ownerMintTreasury, 162_450_000n, { owner: OWNER_WALLET }, { __kind__: "sent", sent: 18_470_101n }),
+      settlementLeg(2, SettlementLegPurpose.feeLegacy, 1_240_000n, FEE_ACCOUNT, { __kind__: "sent", sent: 18_470_102n }),
+    ],
+  },
+  {
+    token: PayToken.ckbtc,
+    ownerAmount: 134_200n,
+    feeAmount: 0n,
+    destination: { owner: OWNER_WALLET },
+    status: { __kind__: "sent", sent: [2_340_010n] },
+    startedAt: SETTLED_AT,
+    completedAt: SETTLED_AT + 60_000_000_000n,
+    legs: [
+      settlementLeg(3, SettlementLegPurpose.ownerMintTreasury, 134_200n, { owner: OWNER_WALLET }, { __kind__: "sent", sent: 2_340_010n }),
+    ],
+  },
+  {
+    token: PayToken.ckusdc,
+    ownerAmount: 76_400_000n,
+    feeAmount: 260_000n,
+    destination: mockReceivingWallets[PayToken.ckusdc].wallet,
+    status: { __kind__: "toReview", toReview: null },
+    startedAt: SETTLED_AT,
+    lastError: "Call timed out (outcome unknown)",
+    legs: [
+      settlementLeg(4, SettlementLegPurpose.ownerMintTreasury, 76_400_000n, mockReceivingWallets[PayToken.ckusdc].wallet ?? { owner: OWNER_WALLET }, { __kind__: "needsReview", needsReview: null }),
+      settlementLeg(5, SettlementLegPurpose.feePending, 260_000n, FEE_ACCOUNT, { __kind__: "sent", sent: 2_340_011n }),
+    ],
+  },
+  {
+    token: PayToken.ckusdt,
+    ownerAmount: mockOwnerDestinations[PayToken.ckusdt].accumulated + 41_250_000n,
+    feeAmount: 8_000n,
+    status: { __kind__: "pendingWallet", pendingWallet: null },
+    legs: [],
+  },
+];
+{
+  const leg = mockSettlements[2].legs[0];
+  mockReviews.push({
+    ...reviewEntry(TransferKind.ST, 4n, leg.memoText, leg.amount, leg.destination, 3n, "Call timed out (outcome unknown)"),
+    token: DexToken.ckusdc,
+    fee: PAY_TOKENS[PayToken.ckusdc].fee,
+  });
+  for (const settlement of mockSettlements) {
+    for (const l of settlement.legs) {
+      pushHistory({
+        kind: HistoryKind.revenueSent,
+        token: HISTORY_TOKEN[settlement.token],
+        amount: l.amount,
+        status: sendStatusText(l.status),
+        detail: `One-time settlement (${l.purpose})`,
+        counterparty: encodeAccountText(l.destination),
+        memo: l.memoText,
+        block: l.block,
+        timestamp: SETTLED_AT,
+      });
+    }
+  }
+}
+
+function mockSetReceivingWallet(token: PayToken, account: Account): Outcome<"setReceivingWallet"> {
+  if (account.owner.isAnonymous()) return { __kind__: "err", err: { __kind__: "anonymousOwner", anonymousOwner: null } };
   if (account.owner.toText() === TTTI_CANISTER.toText()) {
-    return { __kind__: "err", err: OwnerRevenueError.contractAccount };
+    return { __kind__: "err", err: { __kind__: "contractAccount", contractAccount: null } };
   }
   if (account.subaccount !== undefined && account.subaccount.length !== 32) {
-    return { __kind__: "err", err: OwnerRevenueError.invalidSubaccount };
+    return { __kind__: "err", err: { __kind__: "invalidSubaccount", invalidSubaccount: null } };
   }
-  const d = mockOwnerDestinations[token];
-  d.account = account;
-  d.setAt = nowNs();
-  if (d.accumulated > 0n) {
-    // The accumulated share leaves as soon as a destination exists.
-    pushOwnerSend(token, d.accumulated - PAY_TOKENS[token].fee, { __kind__: "accumulated", accumulated: null }, { __kind__: "sent", sent: 18_440_000n + BigInt(mockOwnerSends.length) }, 0n);
-    d.accumulated = 0n;
+  const view = receivingWallet(token, account, 0n);
+  mockReceivingWallets[token] = view;
+  pushHistory({
+    kind: HistoryKind.destination,
+    token: HISTORY_TOKEN[token],
+    status: "Set",
+    detail: `Receiving wallet set for ${PAY_TOKENS[token].symbol}`,
+    counterparty: view.accountText,
+    timestamp: view.setAt ?? nowNs(),
+  });
+  const settlement = mockSettlements.find((s) => s.token === token);
+  if (settlement && settlement.status.__kind__ === "pendingWallet") {
+    const n = mockSettlements.reduce((sum, s) => sum + s.legs.length, 0) + 1;
+    const ownerBlock = 18_490_000n + BigInt(n);
+    settlement.destination = account;
+    settlement.startedAt = nowNs();
+    settlement.legs = [
+      settlementLeg(n, SettlementLegPurpose.ownerAccumulated, settlement.ownerAmount, account, { __kind__: "sent", sent: ownerBlock }),
+      settlementLeg(n + 1, SettlementLegPurpose.feePending, settlement.feeAmount, FEE_ACCOUNT, { __kind__: "sent", sent: ownerBlock + 1n }),
+    ];
+    settlement.status = { __kind__: "sent", sent: [ownerBlock, ownerBlock + 1n] };
+    settlement.completedAt = nowNs();
+    for (const l of settlement.legs) {
+      pushHistory({
+        kind: HistoryKind.revenueSent,
+        token: HISTORY_TOKEN[token],
+        amount: l.amount,
+        status: "Sent",
+        detail: `One-time settlement (${l.purpose})`,
+        counterparty: encodeAccountText(l.destination),
+        memo: l.memoText,
+        block: l.block,
+        timestamp: nowNs(),
+      });
+    }
   }
-  const sweep = mockSweepTokens.find((t) => t.token === token && t.status.__kind__ === "waitingDestination");
-  if (sweep) {
-    const send = pushOwnerSend(token, (sweep.balance ?? 0n) - PAY_TOKENS[token].fee, { __kind__: "treasurySweep", treasurySweep: null }, { __kind__: "sent", sent: 18_441_000n + BigInt(mockOwnerSends.length) }, 0n);
-    sweep.status = { __kind__: "sent", sent: send.id };
-  }
-  return { __kind__: "ok", ok: ownerDestinationView(token) };
+  return { __kind__: "ok", ok: { ...view } };
 }
 
-function mockClearOwnerDestination(token: PayToken): Outcome<"clearOwnerDestination"> {
-  const d = mockOwnerDestinations[token];
-  if (!d.account) return { __kind__: "err", err: OwnerRevenueError.notConfigured };
-  d.account = undefined;
-  d.setAt = undefined;
-  return { __kind__: "ok", ok: ownerDestinationView(token) };
+function mockReviewsFiltered(filter: ReviewFilter): Array<TransferReview> {
+  return mockReviews.filter(
+    (r) =>
+      (filter.kinds.length === 0 || filter.kinds.includes(r.kind)) &&
+      (filter.token === undefined || r.token === filter.token),
+  );
 }
 
 /** Arrived / Not arrived on an OW or SR review. */
@@ -3634,11 +4247,559 @@ const mockInjections: Array<LiquidityInjection> = [
   },
 ];
 
+// DEX lot 5: ICPSwap router. One route per swap: the native pool (0.3 %) or
+// the ICPSwap pool of the same pair (0.3 % plus a 0.1 % protocol fee on the
+// input token, 70 % to the native pool LPs and 30 % to its permanent liquidity).
+const ROUTER_PROTOCOL_FEE_BPS = 10n;
+const ROUTER_ICPSWAP_FEE_BPS = 30n;
+const ROUTER_LP_PERCENT = 70n;
+/** Simulated ICPSwap depth: 2,000 USD on each side of every registry pair. */
+const ROUTER_ICPSWAP_DEPTH_USD_E8 = 2_000n * DEX_USD_RATE_SCALE;
+
+type IcpswapPool = { canisterId: Principal; reserves: Map<DexToken, bigint> };
+const mockIcpswapPools = new Map<string, IcpswapPool>();
+const mockRoutedSwaps: Array<RoutedSwap> = [];
+const mockRouterFees = new Map<string, RouterFeeView>();
+let nextRoutedSwapId = 1n;
+
+const routerPairKey = (a: DexToken, b: DexToken) => [a, b].sort().join("/");
+
+function routerUsdE8(token: DexToken): bigint {
+  return token === DexToken.tttiT ? DEX_TTTI_T_USD_E8 : MOCK_PAY_USD_E8[PAY_OF_DEX[token]];
+}
+
+function routerIcpswapPool(a: DexToken, b: DexToken): IcpswapPool {
+  const key = routerPairKey(a, b);
+  let pool = mockIcpswapPools.get(key);
+  if (!pool) {
+    const reserves = new Map<DexToken, bigint>();
+    for (const token of [a, b]) {
+      const scale = 10n ** BigInt(DEX_TOKEN_VIEW[token].decimals);
+      reserves.set(token, (ROUTER_ICPSWAP_DEPTH_USD_E8 * scale) / routerUsdE8(token));
+    }
+    pool = { canisterId: principalFrom(40 + mockIcpswapPools.size), reserves };
+    mockIcpswapPools.set(key, pool);
+  }
+  return pool;
+}
+
+type RouterLeg = { route: Route; amountOut: bigint; fees: RouteFees };
+
+function routerIcpswapLeg(tokenIn: DexToken, tokenOut: DexToken, amountIn: bigint): RouterLeg | null {
+  const pool = routerIcpswapPool(tokenIn, tokenOut);
+  const reserveIn = pool.reserves.get(tokenIn) ?? 0n;
+  const reserveOut = pool.reserves.get(tokenOut) ?? 0n;
+  const protocolFee = dexCeilDiv(amountIn * ROUTER_PROTOCOL_FEE_BPS, DEX_BPS);
+  const sent = amountIn - protocolFee;
+  const icpswapFee = dexCeilDiv(sent * ROUTER_ICPSWAP_FEE_BPS, DEX_BPS);
+  const net = sent - icpswapFee;
+  const amountOut = net <= 0n ? 0n : (reserveOut * net) / (reserveIn + net);
+  if (amountOut === 0n || amountOut >= reserveOut) return null;
+  const protocolLpShare = (protocolFee * ROUTER_LP_PERCENT) / 100n;
+  return {
+    route: { __kind__: "icpswap", icpswap: { poolCanisterId: pool.canisterId } },
+    amountOut,
+    fees: {
+      __kind__: "icpswap",
+      icpswap: {
+        icpswapFeeBps: ROUTER_ICPSWAP_FEE_BPS,
+        icpswapFee,
+        protocolFeeBps: ROUTER_PROTOCOL_FEE_BPS,
+        protocolFee,
+        protocolLpShare,
+        protocolPermanentShare: protocolFee - protocolLpShare,
+      },
+    },
+  };
+}
+
+function routerNativeLeg(pool: PoolView, tokenIn: DexToken, amountIn: bigint): RouterLeg | null {
+  const plan = dexPlanSwap(pool.id, tokenIn, amountIn, 0n);
+  if (plan.__kind__ === "err") return null;
+  return {
+    route: { __kind__: "native", native: { poolId: pool.id } },
+    amountOut: plan.ok.quote.amountOut,
+    fees: { __kind__: "native", native: { feeBps: plan.ok.quote.feeBps, fee: plan.ok.quote.fee } },
+  };
+}
+
+function routerNativePool(tokenIn: DexToken, tokenOut: DexToken): PoolView | undefined {
+  const pools = mockPools.filter((p) => {
+    const t0 = dexTokenOfView(p.token0);
+    const t1 = dexTokenOfView(p.token1);
+    return (t0 === tokenIn && t1 === tokenOut) || (t0 === tokenOut && t1 === tokenIn);
+  });
+  return pools.find((p) => p.status !== PoolStatus.removed) ?? pools[0];
+}
+
+const sameRoute = (a: Route, b: Route) =>
+  a.__kind__ === "native"
+    ? b.__kind__ === "native" && a.native.poolId === b.native.poolId
+    : b.__kind__ === "icpswap" && a.icpswap.poolCanisterId.toText() === b.icpswap.poolCanisterId.toText();
+
+function mockQuoteRoutedSwap(args: RoutedQuoteArgs): Outcome<"quoteRoutedSwap"> {
+  const fail = (err: RouteError): Outcome<"quoteRoutedSwap"> => ({ __kind__: "err", err });
+  const { tokenIn, tokenOut, amountIn, slippageBps } = args;
+  if (amountIn === 0n) return fail({ __kind__: "zeroAmount", zeroAmount: null });
+  if (tokenIn === tokenOut) return fail({ __kind__: "sameToken", sameToken: null });
+  if (slippageBps > DEX_MAX_SLIPPAGE_BPS) {
+    return fail({ __kind__: "invalidSlippage", invalidSlippage: { maximumBps: DEX_MAX_SLIPPAGE_BPS } });
+  }
+  dexRefreshAllOpenings();
+  const pool = routerNativePool(tokenIn, tokenOut);
+  if (!pool) return fail({ __kind__: "pairNotFound", pairNotFound: null });
+  if (pool.status === PoolStatus.removed) return fail({ __kind__: "pairRemoved", pairRemoved: null });
+  const native = routerNativeLeg(pool, tokenIn, amountIn);
+  const icpswap = routerIcpswapLeg(tokenIn, tokenOut, amountIn);
+  let chosen: RouterLeg;
+  let alternative: RouterLeg | null;
+  let reason: RouteReason;
+  if (native && icpswap) {
+    const nativeWins = native.amountOut >= icpswap.amountOut;
+    chosen = nativeWins ? native : icpswap;
+    alternative = nativeWins ? icpswap : native;
+    reason = RouteReason.bestAmount;
+  } else if (icpswap) {
+    [chosen, alternative, reason] = [icpswap, null, RouteReason.nativeUnavailable];
+  } else if (native) {
+    [chosen, alternative, reason] = [native, null, RouteReason.icpswapUnavailable];
+  } else {
+    return fail({ __kind__: "noRouteAvailable", noRouteAvailable: null });
+  }
+  const now = nowNs();
+  return {
+    __kind__: "ok",
+    ok: {
+      tokenIn,
+      tokenOut,
+      amountIn,
+      slippageBps,
+      route: chosen.route,
+      reason,
+      nativePoolId: pool.id,
+      amountOut: chosen.amountOut,
+      fees: chosen.fees,
+      minimumReceived: (chosen.amountOut * (DEX_BPS - slippageBps)) / DEX_BPS,
+      ...(alternative ? { alternative } : {}),
+      maxDeadline: now + DEX_SWAP_DEADLINE_MAX_NS,
+      quotedAt: now,
+    },
+  };
+}
+
+function routerFeeView(poolId: bigint): RouterFeeView {
+  const key = poolId.toString();
+  let view = mockRouterFees.get(key);
+  if (!view) {
+    view = {
+      totals: {
+        poolId,
+        collected0: 0n,
+        collected1: 0n,
+        lpPaid0: 0n,
+        lpPaid1: 0n,
+        lpSetAside0: 0n,
+        lpSetAside1: 0n,
+        permanent0: 0n,
+        permanent1: 0n,
+      },
+      setAside: { amount0: 0n, amount1: 0n },
+    };
+    mockRouterFees.set(key, view);
+  }
+  return view;
+}
+
+/** Splits the 0.1 %: 70 % to the native pool LPs (set aside with no LP), 30 % permanent. */
+function routerRecordFee(pool: PoolView, tokenIn: DexToken, fees: RouteFees) {
+  if (fees.__kind__ !== "icpswap") return;
+  const f = fees.icpswap;
+  const view = routerFeeView(pool.id);
+  const side = dexTokenOfView(pool.token0) === tokenIn ? 0 : 1;
+  const hasLp = mockPositions.some((p) => p.poolId === pool.id && p.shares > 0n);
+  const t = view.totals;
+  if (side === 0) {
+    t.collected0 += f.protocolFee;
+    t.permanent0 += f.protocolPermanentShare;
+    if (hasLp) t.lpPaid0 += f.protocolLpShare;
+    else {
+      t.lpSetAside0 += f.protocolLpShare;
+      view.setAside.amount0 += f.protocolLpShare;
+    }
+  } else {
+    t.collected1 += f.protocolFee;
+    t.permanent1 += f.protocolPermanentShare;
+    if (hasLp) t.lpPaid1 += f.protocolLpShare;
+    else {
+      t.lpSetAside1 += f.protocolLpShare;
+      view.setAside.amount1 += f.protocolLpShare;
+    }
+  }
+}
+
+function routerRecord(
+  owner: Principal,
+  pool: PoolView,
+  args: Omit<RoutedSwapArgs, "route">,
+  leg: RouterLeg,
+  status: RoutedSwapStatus,
+  stage: RoutedSwapStage,
+  createdAt: bigint,
+  lastError?: string,
+): RoutedSwap {
+  const swap: RoutedSwap = {
+    id: nextRoutedSwapId++,
+    status,
+    stage,
+    owner,
+    tokenIn: args.tokenIn,
+    tokenOut: args.tokenOut,
+    amountIn: args.amountIn,
+    amountOut: leg.amountOut,
+    minAmountOut: args.minAmountOut,
+    deadline: args.deadline,
+    fees: leg.fees,
+    route: leg.route,
+    nativePoolId: pool.id,
+    zeroForOne: dexTokenOfView(pool.token0) === args.tokenIn,
+    createdAt,
+    updatedAt: createdAt,
+    ...(lastError ? { lastError } : {}),
+  };
+  mockRoutedSwaps.push(swap);
+  return swap;
+}
+
+function mockRoutedSwap(args: RoutedSwapArgs): Outcome<"routedSwap"> {
+  const fail = (err: RouteError): Outcome<"routedSwap"> => ({ __kind__: "err", err });
+  const now = nowNs();
+  if (now > args.deadline) {
+    return fail({ __kind__: "deadlineExceeded", deadlineExceeded: { deadline: args.deadline, now } });
+  }
+  const maximum = now + DEX_SWAP_DEADLINE_MAX_NS;
+  if (args.deadline > maximum) return fail({ __kind__: "deadlineTooFar", deadlineTooFar: { maximum } });
+  const quoted = mockQuoteRoutedSwap({ ...args, slippageBps: 0n });
+  if (quoted.__kind__ === "err") return quoted;
+  const quote = quoted.ok;
+  if (!sameRoute(quote.route, args.route)) {
+    return fail({ __kind__: "routeMismatch", routeMismatch: { expected: quote.route } });
+  }
+  if (quote.amountOut < args.minAmountOut) {
+    return fail({
+      __kind__: "slippageExceeded",
+      slippageExceeded: { amountOut: quote.amountOut, minAmountOut: args.minAmountOut },
+    });
+  }
+  const balanceIn = dexBalanceOf(CALLER, args.tokenIn);
+  if (balanceIn.available < args.amountIn) {
+    return fail({
+      __kind__: "insufficientBalance",
+      insufficientBalance: { token: args.tokenIn, available: balanceIn.available, required: args.amountIn },
+    });
+  }
+  const pool = mockPools.find((p) => p.id === quote.nativePoolId);
+  if (!pool) return fail({ __kind__: "pairNotFound", pairNotFound: null });
+  let amountOut = quote.amountOut;
+  if (quote.route.__kind__ === "native") {
+    const done = mockSwap(pool.id, args.tokenIn, args.amountIn, args.minAmountOut, args.deadline);
+    if (done.__kind__ === "err") return fail({ __kind__: "noRouteAvailable", noRouteAvailable: null });
+    amountOut = done.ok.amountOut;
+  } else {
+    const icp = routerIcpswapPool(args.tokenIn, args.tokenOut);
+    const fees = quote.fees.__kind__ === "icpswap" ? quote.fees.icpswap : null;
+    const sent = args.amountIn - (fees?.protocolFee ?? 0n);
+    icp.reserves.set(args.tokenIn, (icp.reserves.get(args.tokenIn) ?? 0n) + sent);
+    icp.reserves.set(args.tokenOut, (icp.reserves.get(args.tokenOut) ?? 0n) - amountOut);
+    balanceIn.available -= args.amountIn;
+    dexBalanceOf(CALLER, args.tokenOut).available += amountOut;
+    routerRecordFee(pool, args.tokenIn, quote.fees);
+  }
+  const leg = { route: quote.route, amountOut, fees: quote.fees };
+  const swap = routerRecord(
+    CALLER,
+    pool,
+    args,
+    leg,
+    { __kind__: "completed", completed: null },
+    RoutedSwapStage.done,
+    now,
+  );
+  return {
+    __kind__: "ok",
+    ok: {
+      id: swap.id,
+      tokenIn: args.tokenIn,
+      tokenOut: args.tokenOut,
+      amountIn: args.amountIn,
+      amountOut,
+      fees: quote.fees,
+      route: quote.route,
+    },
+  };
+}
+
+function routerSetStatus(id: bigint, status: RoutedSwapStatus) {
+  const swap = mockRoutedSwaps.find((s) => s.id === id);
+  if (!swap) return;
+  swap.status = status;
+  swap.stage = RoutedSwapStage.done;
+  swap.updatedAt = nowNs();
+  if (status.__kind__ === "reviewedNotArrived") {
+    dexBalanceOf(swap.owner, swap.tokenIn).available += swap.amountIn;
+  }
+}
+
+// Seed: a ckUSDT -> TTTI-T swap through ICPSwap while the native TTTI-T/ckUSDT
+// pool is filling, and an ICP -> TTTI-T IR transfer whose outcome is unknown.
+{
+  const seed = (owner: Principal, tokenIn: DexToken, tokenOut: DexToken, amountIn: bigint, ageNs: bigint) => {
+    const pool = routerNativePool(tokenIn, tokenOut);
+    const leg = routerIcpswapLeg(tokenIn, tokenOut, amountIn);
+    if (!pool || !leg) return null;
+    const createdAt = nowNs() - ageNs;
+    const args = {
+      tokenIn,
+      tokenOut,
+      amountIn,
+      minAmountOut: (leg.amountOut * 9_950n) / DEX_BPS,
+      deadline: createdAt + DEX_SWAP_DEADLINE_MAX_NS,
+    };
+    return { pool, leg, args, createdAt };
+  };
+  const filling = seed(HOLDER_2, DexToken.ckusdt, DexToken.tttiT, 25_000_000n, 3n * HOUR_NS);
+  if (filling) {
+    routerRecord(
+      HOLDER_2,
+      filling.pool,
+      filling.args,
+      filling.leg,
+      { __kind__: "completed", completed: null },
+      RoutedSwapStage.done,
+      filling.createdAt,
+    );
+    routerRecordFee(filling.pool, DexToken.ckusdt, filling.leg.fees);
+  }
+  const unknown = seed(HOLDER_3, DexToken.icp, DexToken.tttiT, 200_000_000n, 25n * HOUR_NS);
+  if (unknown && unknown.leg.route.__kind__ === "icpswap") {
+    const lastError = "Call timed out (outcome unknown)";
+    const swap = routerRecord(
+      HOLDER_3,
+      unknown.pool,
+      unknown.args,
+      unknown.leg,
+      { __kind__: "needsReview", needsReview: null },
+      RoutedSwapStage.movingIn,
+      unknown.createdAt,
+      lastError,
+    );
+    const fees = unknown.leg.fees.__kind__ === "icpswap" ? unknown.leg.fees.icpswap.protocolFee : 0n;
+    mockReviews.push({
+      ...reviewEntry(
+        TransferKind.IR,
+        swap.id,
+        `TTTI-IR-${swap.id}`,
+        unknown.args.amountIn - fees - ICP_LEDGER_FEE,
+        { owner: unknown.leg.route.icpswap.poolCanisterId, subaccount: dexUserSubaccount(TTTI_CANISTER) },
+        6n,
+        lastError,
+      ),
+      buyer: HOLDER_3,
+      createdAtTimeNs: unknown.createdAt,
+    });
+  }
+}
+
+// --- DEX indicators snapshot (lot 7): hourly snapshot of the seven starter pools. ---
+
+const INDICATORS_MINUTE_NS = 60n * 1_000_000_000n;
+const INDICATORS_COMPUTED_AT = nowNs() - 25n * INDICATORS_MINUTE_NS;
+
+/** Plausible reserves and activity per starter pool (index = pool id); pool 3 stays empty. */
+const INDICATORS_SEEDS: ReadonlyArray<{
+  reserve0: string;
+  reserve1: string;
+  firmBps: bigint;
+  positions: bigint;
+  largestBps: bigint;
+  topFiveBps: bigint;
+  swaps24h: bigint;
+  swaps7d: bigint;
+  turnover24hBps: bigint;
+  turnover7dBps: bigint;
+}> = [
+  { reserve0: "5", reserve1: "4000", firmBps: 8_200n, positions: 14n, largestBps: 3_100n, topFiveBps: 7_600n, swaps24h: 18n, swaps7d: 96n, turnover24hBps: 140n, turnover7dBps: 820n },
+  { reserve0: "3", reserve1: "0.46", firmBps: 7_400n, positions: 9n, largestBps: 4_200n, topFiveBps: 8_900n, swaps24h: 7n, swaps7d: 41n, turnover24hBps: 90n, turnover7dBps: 510n },
+  { reserve0: "2", reserve1: "20000", firmBps: 9_000n, positions: 6n, largestBps: 5_200n, topFiveBps: 9_700n, swaps24h: 4n, swaps7d: 23n, turnover24hBps: 60n, turnover7dBps: 330n },
+  { reserve0: "0", reserve1: "0", firmBps: 0n, positions: 0n, largestBps: 0n, topFiveBps: 0n, swaps24h: 0n, swaps7d: 0n, turnover24hBps: 0n, turnover7dBps: 0n },
+  { reserve0: "0.2", reserve1: "1040", firmBps: 6_300n, positions: 11n, largestBps: 2_600n, topFiveBps: 6_800n, swaps24h: 12n, swaps7d: 67n, turnover24hBps: 210n, turnover7dBps: 1_150n },
+  { reserve0: "9000", reserve1: "720", firmBps: 5_800n, positions: 8n, largestBps: 3_400n, topFiveBps: 7_900n, swaps24h: 9n, swaps7d: 52n, turnover24hBps: 170n, turnover7dBps: 940n },
+  { reserve0: "6500", reserve1: "520", firmBps: 6_100n, positions: 5n, largestBps: 4_700n, topFiveBps: 9_500n, swaps24h: 3n, swaps7d: 19n, turnover24hBps: 80n, turnover7dBps: 450n },
+];
+/** Share of the firm liquidity per unlock bucket, in basis points (sums to 10,000). */
+const INDICATORS_UNLOCK_BPS = {
+  thisWeek: 500n,
+  days30: 1_500n,
+  days90: 2_000n,
+  year1: 1_000n,
+  overYear1: 1_000n,
+  permanent: 4_000n,
+};
+
+const bpsOfAmount = (value: bigint, bps: bigint): bigint => (value * bps) / 10_000n;
+
+function indicatorsDepth(reserve0: bigint, reserve1: bigint, bps: number): DepthLevel {
+  const side = (reserveIn: bigint, reserveOut: bigint) => {
+    if (reserveIn === 0n || reserveOut === 0n) return { amountIn: 0n, amountOut: 0n };
+    const factor = 1 / Math.sqrt(1 - bps / 10_000) - 1;
+    const amountIn = BigInt(Math.floor(Number(reserveIn) * factor));
+    return { amountIn, amountOut: reserveOut - (reserveIn * reserveOut) / (reserveIn + amountIn) };
+  };
+  return { token0In: side(reserve0, reserve1), token1In: side(reserve1, reserve0) };
+}
+
+function indicatorsFees(volume0: bigint, volume1: bigint, feeBps: bigint): FeeTotals {
+  const collected0 = bpsOfAmount(volume0, feeBps);
+  const collected1 = bpsOfAmount(volume1, feeBps);
+  const lp0 = (collected0 * BigInt(SWAP_FEE_LP_PERCENT)) / 100n;
+  const lp1 = (collected1 * BigInt(SWAP_FEE_LP_PERCENT)) / 100n;
+  return { collected0, collected1, lp0, lp1, permanent0: collected0 - lp0, permanent1: collected1 - lp1 };
+}
+
+function mockPoolIndicators(pool: PoolView): PoolIndicators {
+  const seed = INDICATORS_SEEDS[Number(pool.id)] ?? INDICATORS_SEEDS[3];
+  const reserve0 = wholeUnitsOrZero(seed.reserve0, pool.token0.decimals);
+  const reserve1 = wholeUnitsOrZero(seed.reserve1, pool.token1.decimals);
+  const isOpen = reserve0 > 0n && reserve1 > 0n;
+  const valueUsdE8 = isOpen ? dexGauge(pool, reserve0, reserve1).currentUsdE8 : undefined;
+  const totalShares = BigInt(Math.floor(Math.sqrt(Number(reserve0) * Number(reserve1))));
+  const firm0 = bpsOfAmount(reserve0, seed.firmBps);
+  const firm1 = bpsOfAmount(reserve1, seed.firmBps);
+  const firmShares = bpsOfAmount(totalShares, seed.firmBps);
+  const bucket = (bps: bigint): UnlockBucket => ({
+    shares: bpsOfAmount(firmShares, bps),
+    amount0: bpsOfAmount(firm0, bps),
+    amount1: bpsOfAmount(firm1, bps),
+  });
+  const window = (swapCount: bigint, turnoverBps: bigint) => ({
+    swapCount,
+    volume0: bpsOfAmount(reserve0, turnoverBps),
+    volume1: bpsOfAmount(reserve1, turnoverBps),
+    volumeUsdE8: valueUsdE8 === undefined ? undefined : bpsOfAmount(valueUsdE8, turnoverBps),
+  });
+  const last7d = window(seed.swaps7d, seed.turnover7dBps);
+  const fees7d = indicatorsFees(last7d.volume0, last7d.volume1, pool.feeBps);
+  const feesUsdE8 =
+    valueUsdE8 === undefined ? undefined : bpsOfAmount(last7d.volumeUsdE8 ?? 0n, pool.feeBps);
+  return {
+    poolId: pool.id,
+    token0Symbol: pool.token0.symbol,
+    token1Symbol: pool.token1.symbol,
+    isOpen,
+    reserve0,
+    reserve1,
+    valueUsdE8,
+    depth: {
+      onePercent: indicatorsDepth(reserve0, reserve1, 100),
+      twoPercent: indicatorsDepth(reserve0, reserve1, 200),
+      fivePercent: indicatorsDepth(reserve0, reserve1, 500),
+    },
+    liquidity: {
+      firmAmount0: firm0,
+      firmAmount1: firm1,
+      freeAmount0: reserve0 - firm0,
+      freeAmount1: reserve1 - firm1,
+      firmShares,
+      freeShares: totalShares - firmShares,
+      totalShares,
+      firmBps: isOpen ? seed.firmBps : 0n,
+      freeBps: isOpen ? 10_000n - seed.firmBps : 0n,
+    },
+    unlock: {
+      thisWeek: bucket(INDICATORS_UNLOCK_BPS.thisWeek),
+      days30: bucket(INDICATORS_UNLOCK_BPS.days30),
+      days90: bucket(INDICATORS_UNLOCK_BPS.days90),
+      year1: bucket(INDICATORS_UNLOCK_BPS.year1),
+      overYear1: bucket(INDICATORS_UNLOCK_BPS.overYear1),
+      permanent: bucket(INDICATORS_UNLOCK_BPS.permanent),
+    },
+    concentration: {
+      positionCount: seed.positions,
+      largestPositionBps: seed.largestBps,
+      topFiveBps: seed.topFiveBps,
+      permanentProtocolBps: isOpen ? INDICATORS_UNLOCK_BPS.permanent : 0n,
+    },
+    activity: { last24h: window(seed.swaps24h, seed.turnover24hBps), last7d },
+    fees: {
+      last7d: fees7d,
+      cumulative: indicatorsFees(last7d.volume0 * 6n, last7d.volume1 * 6n, pool.feeBps),
+      cumulativeSince: isOpen ? dexStartedAt : undefined,
+      observed: {
+        periodDays: 7n,
+        feesUsdE8,
+        liquidityUsdE8: valueUsdE8,
+        feeToLiquidityBps:
+          feesUsdE8 === undefined || valueUsdE8 === undefined || valueUsdE8 === 0n
+            ? undefined
+            : (feesUsdE8 * 10_000n) / valueUsdE8,
+      },
+    },
+  };
+}
+
+function wholeUnitsOrZero(whole: string, decimals: number): bigint {
+  return parseUnits(whole, decimals) ?? 0n;
+}
+
+function mockDexIndicators(): DexIndicatorsSnapshot {
+  const lastCheck = mockDexReserve.lastCheck;
+  const proofs: Array<TokenProof> = DEX_TOKEN_ORDER.map((token) => {
+    const checked = lastCheck?.results.find((r) => r.token === token);
+    if (checked) {
+      return {
+        token,
+        internalTotal: checked.internalTotal,
+        ledgerTotal: checked.ledgerTotal,
+        difference: checked.difference,
+        status: checked.status,
+      };
+    }
+    const total = dexInternalTotal(token);
+    return { token, internalTotal: total, ledgerTotal: total, difference: 0n, status: ReserveStatus.ok };
+  });
+  return {
+    computedAt: INDICATORS_COMPUTED_AT,
+    reserveCheckedAt: lastCheck?.checkedAt ?? INDICATORS_COMPUTED_AT - 10n * INDICATORS_MINUTE_NS,
+    proofs,
+    pools: mockPools.map(mockPoolIndicators),
+  };
+}
+
+const mockDexIndicatorsStatus = (): IndicatorsStatus => ({
+  snapshotAt: INDICATORS_COMPUTED_AT,
+  lastComputedAt: INDICATORS_COMPUTED_AT,
+  lastResult: ComputationResult.ok,
+  lastSuccessAt: INDICATORS_COMPUTED_AT,
+  lastError: undefined,
+});
+
 export const mockBackend: backendInterface = {
   _initialize_access_control: async () => undefined,
-  setOwnerDestination: async (token, account) => mockSetOwnerDestination(token, account),
-  clearOwnerDestination: async (token) => mockClearOwnerDestination(token),
-  listOwnerDestinations: async () => PAY_TOKEN_ORDER.map(ownerDestinationView),
+  setReceivingWallet: async (token, account) => mockSetReceivingWallet(token, account),
+  getReceivingWallets: async () => ({
+    __kind__: "ok",
+    ok: PAY_TOKEN_ORDER.map((token) => ({ ...mockReceivingWallets[token] })),
+  }),
+  getSettlementStatus: async () => ({
+    __kind__: "ok",
+    ok: mockSettlements.map((s) => ({ ...s, legs: s.legs.map((l) => ({ ...l })) })),
+  }),
+  getMintFeeAccount: async () => ({ __kind__: "ok", ok: mockFeeAccount() }),
+  listAdminHistory: async (filter, token, offset, limit) => mockListAdminHistory(filter, token, offset, limit),
+  listTransfersToReviewFiltered: async (filter) => mockReviewsFiltered(filter),
+  listTreasuryWithdrawals: async (offset, limit) => {
+    const all = [...mockWithdrawals].reverse();
+    return { __kind__: "ok", ok: { items: all.slice(Number(offset), Number(offset + limit)), total: BigInt(all.length), offset } };
+  },
   listOwnerSends: async (offset, limit) => {
     const all = [...mockOwnerSends].reverse();
     return { items: all.slice(Number(offset), Number(offset + limit)), total: BigInt(all.length), offset };
@@ -3664,7 +4825,10 @@ export const mockBackend: backendInterface = {
   getMyLpBonus: async () => mockLpBonusView(),
   claimLpBonus: async () => mockClaimLpBonus(),
   quoteAddLiquidity: async (args) => mockQuoteAddLiquidity(args),
-  addLiquidity: async (args) => mockAddLiquidity(CALLER, args),
+  addLiquidity: async (args) => {
+    assertDexNotPaused();
+    return mockAddLiquidity(CALLER, args);
+  },
   removeLiquidity: async (positionId) => mockRemoveLiquidity(positionId),
   extendLock: async (positionId, newUnlockAt) => mockExtendLock(positionId, newUnlockAt),
   getDexPosition: async (positionId) => {
@@ -3675,12 +4839,33 @@ export const mockBackend: backendInterface = {
     mockPositions.filter((p) => p.poolId === poolId).map(dexPositionView),
   listDexPositionsOf: async (owner) =>
     mockPositions.filter((p) => p.owner.toText() === owner.toText()).map(dexPositionView),
+  quoteRoutedSwap: async (args) => mockQuoteRoutedSwap(args),
+  routedSwap: async (args) => {
+    assertDexNotPaused();
+    return mockRoutedSwap(args);
+  },
+  runDexReserveCheck: async () => mockRunDexReserveCheck(),
+  resumeDex: async () => mockResumeDex(),
+  getDexReserveStatus: async () => ({ __kind__: "ok", ok: mockDexReserveStatus() }),
+  getDexPauseStatus: async () => mockPublicDexPause(),
+  getDexIndicators: async () => mockDexIndicators(),
+  getDexIndicatorsStatus: async () => ({ __kind__: "ok", ok: mockDexIndicatorsStatus() }),
+  getMyRoutedSwaps: async () =>
+    mockRoutedSwaps.filter((s) => s.owner.toText() === CALLER.toText()).reverse(),
+  adminListRoutedSwaps: async () => ({ __kind__: "ok", ok: [...mockRoutedSwaps].reverse() }),
+  adminGetRouterFees: async () => ({ __kind__: "ok", ok: [...mockRouterFees.values()] }),
   quoteSwap: async (poolId, tokenIn, amountIn, slippageBps) =>
     mockQuoteSwap(poolId, tokenIn, amountIn, slippageBps),
-  swap: async (poolId, tokenIn, amountIn, minAmountOut, deadline) =>
-    mockSwap(poolId, tokenIn, amountIn, minAmountOut, deadline),
-  listDexPools: async () => mockPools.map(dexPoolOut),
+  swap: async (poolId, tokenIn, amountIn, minAmountOut, deadline) => {
+    assertDexNotPaused();
+    return mockSwap(poolId, tokenIn, amountIn, minAmountOut, deadline);
+  },
+  listDexPools: async () => {
+    dexRefreshAllOpenings();
+    return mockPools.map(dexPoolOut);
+  },
   getDexPool: async (poolId) => {
+    dexRefreshAllOpenings();
     const pool = mockPools.find((p) => p.id === poolId);
     return pool ? dexPoolOut(pool) : null;
   },
@@ -3700,7 +4885,10 @@ export const mockBackend: backendInterface = {
   getDexBalances: async (owner) => dexBalancesView(owner),
   getDexTransfers: async (owner) =>
     mockDexTransfers.filter((t) => t.owner.toText() === owner.toText()).reverse(),
-  depositToDex: async ({ token, amount }) => mockDepositToDex(token, amount),
+  depositToDex: async ({ token, amount }) => {
+    assertDexNotPaused();
+    return mockDepositToDex(token, amount);
+  },
   withdrawFromDex: async ({ token, amount }) => mockWithdrawFromDex(token, amount),
   quoteBuyback: async (massToken, percent, receiveToken) =>
     mockBuybackQuote(massToken, percent, receiveToken),
@@ -3813,10 +5001,11 @@ export const mockBackend: backendInterface = {
   convertDepositWith: async (token, recipient, payAmount, _tttiTarget) =>
     token === PayToken.icp
       ? mockPurchase(recipient, payAmount)
-      : purchaseError(
+      : (walletNotConfigured(token) ??
+        purchaseError(
           { __kind__: "tokenNotConfigured", tokenNotConfigured: { token } },
           `${PAY_TOKENS[token].symbol} purchases are not available in the mock backend.`,
-        ),
+        )),
   getTokenPrices: async () => PAY_TOKEN_ORDER.map((token) => mockTokenPrice(token)),
   refreshTokenPrice: async (token) => {
     const price = mockTokenPrice(token);
@@ -4001,6 +5190,7 @@ export const mockBackend: backendInterface = {
   ledger_id: async () => TTTI_CANISTER,
   list_subaccounts: async () => [],
   refreshIcpPrice: async () => {
+    dexRefreshAllOpenings();
     const price = mockPrice();
     if (price.usable) {
       return {

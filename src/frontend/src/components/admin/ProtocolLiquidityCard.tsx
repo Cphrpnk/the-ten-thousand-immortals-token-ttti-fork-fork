@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
+import { AdminAccordion } from "./AdminUi";
 import { GOLD_CARD } from "./styles";
 
 /** Protocol-owned liquidity per pool, locked forever. */
@@ -61,42 +62,55 @@ export function ProtocolLiquidityCard() {
             {t.protocolLiquidityNone}
           </p>
         ) : (
-          <ul className="grid gap-x-8 gap-y-4 md:grid-cols-2">
-            {views.map((view, i) => {
-              const lines = protocolLiquidityLines(t, view, tokens ?? [], "en");
-              return (
-                <li
-                  key={view.poolId.toString()}
-                  className="space-y-1 border-l border-border pl-4 text-sm"
-                  data-ocid={`admin.protocol_liquidity.item.${i + 1}`}
-                >
-                  <p className="font-mono font-semibold text-primary">
-                    {view.token0Symbol}/{view.token1Symbol} (#
-                    {view.poolId.toString()})
-                  </p>
-                  {view.shares === 0n ? (
-                    <p className="text-muted-foreground">
-                      {t.protocolLiquidityNone}
+          <AdminAccordion
+            label="Protocol liquidity per pool"
+            count={views.length}
+            ocid="admin.protocol_liquidity_accordion"
+          >
+            <ul className="grid gap-x-8 gap-y-4 md:grid-cols-2">
+              {views.map((view, i) => {
+                const lines = protocolLiquidityLines(
+                  t,
+                  view,
+                  tokens ?? [],
+                  "en",
+                );
+                return (
+                  <li
+                    key={view.poolId.toString()}
+                    className="space-y-1 border-l border-border pl-4 text-sm"
+                    data-ocid={`admin.protocol_liquidity.item.${i + 1}`}
+                  >
+                    <p className="font-mono font-semibold text-primary">
+                      {view.token0Symbol}/{view.token1Symbol} (#
+                      {view.poolId.toString()})
                     </p>
-                  ) : (
-                    <>
-                      <p className="font-mono tabular-nums">{lines.held}</p>
-                      <p className="text-muted-foreground">{lines.fromFees}</p>
+                    {view.shares === 0n ? (
                       <p className="text-muted-foreground">
-                        {lines.fromTreasury}
+                        {t.protocolLiquidityNone}
                       </p>
-                      <p className="text-muted-foreground">{lines.share}</p>
-                      {lines.lastAdded && (
+                    ) : (
+                      <>
+                        <p className="font-mono tabular-nums">{lines.held}</p>
                         <p className="text-muted-foreground">
-                          {lines.lastAdded}
+                          {lines.fromFees}
                         </p>
-                      )}
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                        <p className="text-muted-foreground">
+                          {lines.fromTreasury}
+                        </p>
+                        <p className="text-muted-foreground">{lines.share}</p>
+                        {lines.lastAdded && (
+                          <p className="text-muted-foreground">
+                            {lines.lastAdded}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </AdminAccordion>
         )}
       </CardContent>
     </Card>

@@ -3,6 +3,7 @@ import { useDict } from "../../i18n/core";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { Button } from "../ui/button";
 import type { DexDialogKind } from "./DexAmountDialog";
+import { DexPausedHint, useDexPaused } from "./DexPausedNotice";
 import { DexTokenLogo } from "./DexTokenLogo";
 import { DEX_TOKEN_ORDER, dexLogoToken, formatDexUnits } from "./dexFormat";
 
@@ -42,6 +43,7 @@ export function DexBalanceTable({
   onAction?: (kind: DexDialogKind, row: DexBalanceRow) => void;
 }) {
   const t = useDict(DEX_TEXT);
+  const paused = useDexPaused();
   const grid = onAction
     ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
     : "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
@@ -85,15 +87,18 @@ export function DexBalanceTable({
             </span>
             {onAction && (
               <span className="col-span-2 flex gap-2 sm:col-span-1 sm:justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="min-h-11 flex-1 sm:min-h-9 sm:flex-none"
-                  onClick={() => onAction("deposit", row)}
-                  data-ocid={`${ocid}.deposit_button.${i + 1}`}
-                >
-                  {t.depositButton}
-                </Button>
+                <DexPausedHint paused={paused} className="flex-1 sm:flex-none">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="min-h-11 flex-1 sm:min-h-9 sm:flex-none"
+                    onClick={() => onAction("deposit", row)}
+                    disabled={paused}
+                    data-ocid={`${ocid}.deposit_button.${i + 1}`}
+                  >
+                    {t.depositButton}
+                  </Button>
+                </DexPausedHint>
                 <Button
                   type="button"
                   size="sm"

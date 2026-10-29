@@ -7,6 +7,10 @@ import BtcDepositLib "../lib/btc-deposit";
 import BuybackLib "../lib/buyback";
 import IcrcLib "../lib/icrc";
 import ProtocolFeesLib "../lib/protocol-fees";
+import RouterLib "../lib/router";
+import SettlementLib "../lib/settlement";
+import AdminHistoryLib "../lib/admin-history";
+import HistoryTypes "../types/admin-history";
 
 // Admin review ("To review") of forwards (FW), reserve shares (SH) and
 // purchase refunds (RF) whose outcome is unknown after 23 h, payments to
@@ -25,7 +29,16 @@ mixin (
   // (`purchaseId` = owner send id) and SR reserve top-up (attempt n) go
   // through RetryLib.
   protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
+  // DEX lot 5: IR ICPSwap route transfers (`purchaseId` = routed swap id).
+  routerContext : RouterLib.RouterContext,
+  // Mint revenue routing: ST fee-account moves (`purchaseId` = n); revenue
+  // and settlement owner sends are OW rows.
+  settlementContext : SettlementLib.SettlementContext,
 ) {
+  func allReviewRows() : [RetryTypes.TransferReview] {
+    RetryLib.toReview(transferContext).concat(BtcDepositLib.btcReview(btcDeposits, transferContext)).concat(BuybackLib.reviewRows(buybacks)).concat(RetryLib.dexToReview(dexContext)).concat(ProtocolFeesLib.toReview(protocolFeeContext)).concat(RouterLib.toReview(routerContext)).concat(SettlementLib.toReview(settlementContext));
+  };
+
   // Admin only: every FW, SH, RF transfer needing review, every payment to
   // refund, every BR / BC send under review, every BM cost to refund and
   // every BB buyback payout to check, plus DEX DD / DW / DQ rows to review.
@@ -33,7 +46,15 @@ mixin (
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: only admins can review transfers");
     };
-    RetryLib.toReview(transferContext).concat(BtcDepositLib.btcReview(btcDeposits, transferContext)).concat(BuybackLib.reviewRows(buybacks)).concat(RetryLib.dexToReview(dexContext)).concat(ProtocolFeesLib.toReview(protocolFeeContext));
+    allReviewRows();
+  };
+
+  // Admin only: the same list filtered by kinds (empty = all) and token.
+  public query ({ caller }) func listTransfersToReviewFiltered(filter : HistoryTypes.ReviewFilter) : async [RetryTypes.TransferReview] {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: only admins can review transfers");
+    };
+    AdminHistoryLib.filterReview(allReviewRows(), filter);
   };
 
   // Admin only, only on a #FW / #SH / #RF / #BR / #BC / #BB transfer needing
@@ -50,6 +71,8 @@ mixin (
       case (#BB) { BuybackLib.markArrived(buybacks, ledger, transferContext.canister, purchaseId, block) };
       case (#DD or #DW or #DQ) { RetryLib.markDexArrived(dexContext, kind, purchaseId, block) };
       case (#DC or #DL or #MF) { ProtocolFeesLib.markArrived(protocolFeeContext, kind, purchaseId, block) };
+      case (#IR) { await RouterLib.markArrived(routerContext, purchaseId, block) };
+      case (#ST) { SettlementLib.markArrived(settlementContext, purchaseId, block) };
       case (_) { RetryLib.markArrived(transferContext, kind, purchaseId, block) };
     };
   };
@@ -72,6 +95,8 @@ mixin (
       case (#BB) { BuybackLib.markNotArrived(buybacks, purchaseId) };
       case (#DD or #DW or #DQ) { RetryLib.markDexNotArrived(dexContext, kind, purchaseId) };
       case (#DC or #DL or #MF) { ProtocolFeesLib.markNotArrived(protocolFeeContext, kind, purchaseId) };
+      case (#IR) { await RouterLib.markNotArrived(routerContext, purchaseId) };
+      case (#ST) { SettlementLib.markNotArrived(settlementContext, purchaseId) };
       case (_) { RetryLib.markNotArrived(transferContext, kind, purchaseId) };
     };
   };
@@ -94,7 +119,7 @@ mixin (
         if (result == #ok) ignore BtcDepositLib.costRefunded(btcDeposits, purchaseId, block);
         result;
       };
-      case (#DC or #DL or #MF) { #err(#notApplicable) };
+      case (#DC or #DL or #MF or #IR or #ST) { #err(#notApplicable) };
       case (_) { RetryLib.markRefunded(transferContext, kind, purchaseId, block) };
     };
   };

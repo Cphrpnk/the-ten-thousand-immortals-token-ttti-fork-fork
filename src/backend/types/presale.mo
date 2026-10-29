@@ -137,6 +137,9 @@ module {
     #acknowledgementRequired; // the current version of the six purchase acknowledgements is not accepted
     #notConfigured; // ICP treasury account not set
     #tokenNotConfigured : { token : PayToken }; // receiving account of this ck token not set
+    // No receiving wallet configured by the admin for this token (BTC: the
+    // ckBTC wallet); refused before any funds are taken.
+    #receivingWalletNotConfigured : { token : PayToken };
     // icrc1_decimals / icrc1_fee of the ledger differ from the expected values.
     #ledgerMismatch : { token : PayToken; expectedDecimals : Nat8; actualDecimals : Nat8; expectedFee : Nat; actualFee : Nat };
     #salesPaused; // "Sales are paused"

@@ -34,7 +34,7 @@ export const MIN_PURCHASE = 10_000n;
 export const MIN_PURCHASE_USD = 1.01;
 /** Minimum ckBTC / ckUSDC / ckUSDT purchase, fee included: 1.01 USD. */
 export const CK_MIN_PURCHASE_USD = 1.01;
-/** Of every 101 paid: 100 to the owner's destination account, 1 as the mint fee. */
+/** Of every 101 paid: 100 stays in the contract (admin-managed), 1 as the mint fee. */
 export const MINT_PAID_UNITS = 101n;
 export const MINT_OWNER_UNITS = 100n;
 /** Mint fee halves are set aside until worth 0.001 TTTI-T (10 USD). */

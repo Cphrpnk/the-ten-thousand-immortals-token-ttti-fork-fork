@@ -21,7 +21,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "I understand that its price can fall to zero and that nobody is obligated to support it or buy back my TTTI-T.",
     ackIcpCreator:
-      "Of the ICP, ckBTC, ckUSDC or ckUSDT I pay, 100/101 goes to the owner's destination account in the paid token and 1/101 is the mint fee.",
+      "Of the ICP, ckBTC, ckUSDC or ckUSDT I pay, 100/101 stays in the contract in the paid token, managed by the admin, and 1/101 is the mint fee, which buys TTTI-T without any price condition to feed liquidity.",
     ackNoProfit:
       "I am not relying on any promise of profit, from the creator or from anyone.",
     ackAffordLoss: "I am spending only what I can afford to lose entirely.",
@@ -103,7 +103,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "Je comprends que son prix peut tomber à zéro et que personne n'est tenu de le soutenir ni de racheter mes TTTI-T.",
     ackIcpCreator:
-      "De l'ICP, du ckBTC, du ckUSDC ou du ckUSDT que je paie, 100/101 vont au compte de destination du propriétaire dans le jeton payé et 1/101 constitue les frais de mint.",
+      "De l'ICP, du ckBTC, du ckUSDC ou du ckUSDT que je paie, 100/101 restent dans le contrat dans le jeton payé, gérés par l'administrateur, et 1/101 constitue les frais de mint, qui achètent du TTTI-T sans aucune condition de prix pour alimenter la liquidité.",
     ackNoProfit:
       "Je ne me fie à aucune promesse de profit, ni du créateur ni de quiconque.",
     ackAffordLoss:
@@ -179,7 +179,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "Entiendo que su precio puede caer a cero y que nadie está obligado a respaldarlo ni a recomprar mis TTTI-T.",
     ackIcpCreator:
-      "Del ICP, ckBTC, ckUSDC o ckUSDT que pago, 100/101 van a la cuenta de destino del propietario en el token pagado y 1/101 es la comisión de mint.",
+      "Del ICP, ckBTC, ckUSDC o ckUSDT que pago, 100/101 permanecen en el contrato en el token pagado, gestionados por el administrador, y 1/101 es la comisión de mint, que compra TTTI-T sin ninguna condición de precio para alimentar la liquidez.",
     ackNoProfit:
       "No me baso en ninguna promesa de beneficio, ni del creador ni de nadie.",
     ackAffordLoss: "Solo gasto lo que puedo permitirme perder por completo.",
@@ -254,7 +254,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "我理解其价格可能跌至零，且没有人有义务为其提供支撑或回购我的 TTTI-T。",
     ackIcpCreator:
-      "我支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 中，100/101 以所支付的代币转入所有者的目标账户，1/101 为铸造费用。",
+      "我支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 中，100/101 以所支付的代币留在合约中，由管理员管理，1/101 为铸造费用，该费用在不附带任何价格条件的情况下购买 TTTI-T，用于补充流动性。",
     ackNoProfit: "我不依赖任何来自创建者或任何其他人的盈利承诺。",
     ackAffordLoss: "我只花费我能够承受全部损失的金额。",
     ackLegend: "首次购买前需确认，此后每当这些条款变更时需再次确认。",
@@ -324,7 +324,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "Entendo que seu preço pode cair a zero e que ninguém é obrigado a sustentá-lo nem a recomprar meus TTTI-T.",
     ackIcpCreator:
-      "Do ICP, ckBTC, ckUSDC ou ckUSDT que eu pago, 100/101 vão para a conta de destino do proprietário no token pago e 1/101 é a taxa de mint.",
+      "Do ICP, ckBTC, ckUSDC ou ckUSDT que eu pago, 100/101 permanecem no contrato no token pago, gerenciados pelo administrador, e 1/101 é a taxa de mint, que compra TTTI-T sem nenhuma condição de preço para alimentar a liquidez.",
     ackNoProfit:
       "Não estou me baseando em nenhuma promessa de lucro, nem do criador nem de qualquer outra pessoa.",
     ackAffordLoss:
@@ -400,7 +400,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "그 가격이 0까지 떨어질 수 있으며, 누구도 이를 지지하거나 제 TTTI-T를 되살 의무가 없다는 것을 이해합니다.",
     ackIcpCreator:
-      "제가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT 중 100/101은 지불한 토큰으로 소유자의 목적지 계정으로 가며, 1/101은 민트 수수료입니다.",
+      "제가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT 중 100/101은 지불한 토큰으로 컨트랙트에 남아 관리자가 관리하며, 1/101은 민트 수수료이며, 어떠한 가격 조건도 없이 TTTI-T를 구매하여 유동성을 보충합니다.",
     ackNoProfit:
       "저는 제작자로부터든 다른 누구로부터든 어떠한 수익 약속에도 의존하지 않습니다.",
     ackAffordLoss: "저는 전부 잃어도 감당할 수 있는 금액만 사용합니다.",
@@ -474,7 +474,7 @@ export const BUY_PAGE_TEXT = defineDict({
     ackPriceZero:
       "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ ਇਸਦੀ ਕੀਮਤ ਸਿਫ਼ਰ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ ਅਤੇ ਕੋਈ ਵੀ ਇਸਨੂੰ ਸਹਾਰਾ ਦੇਣ ਜਾਂ ਮੇਰੇ TTTI-T ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਪਾਬੰਦ ਨਹੀਂ ਹੈ।",
     ackIcpCreator:
-      "ਮੇਰੇ ਵੱਲੋਂ ਭੁਗਤਾਨ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚੋਂ, 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਮਾਲਕ ਦੇ ਮੰਜ਼ਿਲ ਖਾਤੇ ਨੂੰ ਜਾਂਦਾ ਹੈ ਅਤੇ 1/101 ਮਿੰਟ ਫੀਸ ਹੈ।",
+      "ਮੇਰੇ ਵੱਲੋਂ ਭੁਗਤਾਨ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚੋਂ, 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਕੰਟਰੈਕਟ ਵਿੱਚ ਰਹਿੰਦਾ ਹੈ ਅਤੇ ਐਡਮਿਨ ਵੱਲੋਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ, ਅਤੇ 1/101 ਮਿੰਟ ਫੀਸ ਹੈ, ਜੋ ਕਿਸੇ ਵੀ ਕੀਮਤ ਸ਼ਰਤ ਤੋਂ ਬਿਨਾਂ TTTI-T ਖਰੀਦਦੀ ਹੈ ਤਾਂ ਜੋ ਲਿਕਵਿਡਿਟੀ ਨੂੰ ਭਰਿਆ ਜਾ ਸਕੇ।",
     ackNoProfit: "ਮੈਂ ਨਿਰਮਾਤਾ ਜਾਂ ਕਿਸੇ ਹੋਰ ਵੱਲੋਂ ਮੁਨਾਫ਼ੇ ਦੇ ਕਿਸੇ ਵੀ ਵਾਅਦੇ 'ਤੇ ਨਿਰਭਰ ਨਹੀਂ ਹਾਂ।",
     ackAffordLoss:
       "ਮੇਰੇ ਵੱਲੋਂ ਖਰਚੀ ਜਾ ਰਹੀ ਰਕਮ ਸਿਰਫ਼ ਉਹੀ ਹੈ ਜਿਸਦਾ ਪੂਰਾ ਨੁਕਸਾਨ ਮੇਰੇ ਲਈ ਸਹਿਣਯੋਗ ਹੈ।",

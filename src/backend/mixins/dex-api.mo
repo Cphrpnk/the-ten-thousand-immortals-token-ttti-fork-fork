@@ -1,6 +1,7 @@
 import Nat "mo:core/Nat";
 import Principal "mo:core/Principal";
 import Result "mo:core/Result";
+import Runtime "mo:core/Runtime";
 import Text "mo:core/Text";
 import Time "mo:core/Time";
 import AccessControl "mo:caffeineai-authorization/access-control";
@@ -38,6 +39,13 @@ mixin (
     };
   };
 
+  // DEX lot 6: calls that add to the DEX are refused while it is paused.
+  func requireNotPaused() {
+    if (dexContext.pause.paused) {
+      Runtime.trap(DexLib.PAUSED_MESSAGE);
+    };
+  };
+
   public query func listDexPools() : async [Types.PoolView] {
     DexLib.listPools(dex, canister, Time.now(), usdRateOf);
   };
@@ -59,6 +67,7 @@ mixin (
   };
 
   public shared ({ caller }) func requestPair(args : Types.RequestPairArgs) : async Result.Result<Types.PairRequestView, Types.RequestPairError> {
+    requireNotPaused();
     if (caller.isAnonymous()) {
       return #err(#anonymous);
     };
@@ -129,6 +138,7 @@ mixin (
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       return #err(#notAuthorized);
     };
+    requireNotPaused();
     let request = switch (DexLib.prepareApproval(dex, canister, requestId, minimums)) {
       case (#ok(r)) r;
       case (#err(e)) return #err(e);
@@ -170,6 +180,7 @@ mixin (
   // DD: ICRC-2 transfer_from (amount + ledger fee approved) into the
   // caller's DEX deposit subaccount.
   public shared ({ caller }) func depositToDex(args : Types.DexAmountArgs) : async Result.Result<Types.DexTransferView, Types.DexDepositError> {
+    requireNotPaused();
     if (caller.isAnonymous()) {
       return #err(#anonymous);
     };
@@ -307,6 +318,7 @@ mixin (
   // From the caller's internal available balances on a filling or open pool;
   // one new position with its own lock (24 h to 5 years).
   public shared ({ caller }) func addLiquidity(args : Types.AddLiquidityArgs) : async Result.Result<Types.AddLiquidityResult, Types.AddLiquidityError> {
+    requireNotPaused();
     if (caller.isAnonymous()) {
       return #err(#anonymous);
     };
@@ -348,7 +360,7 @@ mixin (
     };
   };
 
-  // Position owner only; never shortens, at most 5 years from now.
+  // Position owner only; never shortens, at most 5 years from the position creation date.
   public shared ({ caller }) func extendLock(positionId : Nat, newUnlockAt : Int) : async Result.Result<Types.PositionView, Types.ExtendLockError> {
     if (caller.isAnonymous()) {
       return #err(#anonymous);
@@ -382,6 +394,7 @@ mixin (
 
   // Exact input from internal balances; deadline at most 5 minutes after the call.
   public shared ({ caller }) func swap(poolId : Nat, tokenIn : Types.DexToken, amountIn : Nat, minAmountOut : Nat, deadline : Int) : async Result.Result<Types.SwapResult, Types.SwapError> {
+    requireNotPaused();
     if (caller.isAnonymous()) {
       return #err(#anonymous);
     };
@@ -393,7 +406,7 @@ mixin (
       return #err(#operationInProgress);
     };
     try {
-      DexLib.swap(dex, dexContext.balances, canister, caller, poolId, tokenIn, amountIn, minAmountOut, deadline, false, usdRateOf, Time.now());
+      DexLib.swap(dex, dexContext.balances, canister, caller, poolId, tokenIn, amountIn, minAmountOut, deadline, false, usdRateOf, Time.now(), dexContext.indicators);
     } finally {
       unlockAll(keys);
     };

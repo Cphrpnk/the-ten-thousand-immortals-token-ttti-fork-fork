@@ -3,10 +3,12 @@ import { Loader2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { PoolStatus } from "../../backend";
 import type { DexTokenInfo, PoolView } from "../../backend";
-import { useDexBalances, useQuoteSwap, useSwap } from "../../hooks/useDex";
+import { useDexBalances } from "../../hooks/useDex";
+import { useQuoteRoutedSwap, useRoutedSwap } from "../../hooks/useRouter";
 import { useDict, useLanguage } from "../../i18n/core";
 import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
+import { ROUTER_TEXT } from "../../i18n/pages/dexRouter";
 import { nowNs } from "../../lib/approvals";
 import { parseUnits } from "../../lib/token";
 import { Button } from "../ui/button";
@@ -21,19 +23,23 @@ import {
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { DexAmountField } from "./DexAmountField";
+import { DexPausedHint, useDexPaused } from "./DexPausedNotice";
 import { SwapQuoteDetails } from "./SwapQuoteDetails";
-import { formatDexUnits } from "./dexFormat";
+import { dexCallErrorText, formatDexUnits } from "./dexFormat";
 import {
   DEFAULT_SLIPPAGE_BPS,
   SWAP_DEADLINE_NS,
   gaugeText,
   parsePercentBps,
-  swapErrorText,
 } from "./liquidityFormat";
+import { routeErrorText, routeName } from "./routeFormat";
 
 type Feedback = { tone: "info" | "danger"; text: string };
 
-/** Swap between the two tokens of an open pool, from internal DEX balances. */
+/**
+ * Routed swap between the two tokens of a pool, from internal DEX balances:
+ * the native pool or ICPSwap, whichever the routed quote chose.
+ */
 export function SwapDialog({
   pool,
   info0,
@@ -48,9 +54,11 @@ export function SwapDialog({
   onClose: () => void;
 }) {
   const t = useDict(DEX_TEXT);
+  const r = useDict(ROUTER_TEXT);
   const { lang } = useLanguage();
+  const dexPaused = useDexPaused();
   const balances = useDexBalances(owner);
-  const swap = useSwap();
+  const swap = useRoutedSwap();
   const [inIsToken0, setInIsToken0] = useState(true);
   const [amountText, setAmountText] = useState("");
   const [slippageText, setSlippageText] = useState(
@@ -60,43 +68,53 @@ export function SwapDialog({
   );
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  const open = pool.status === PoolStatus.active && pool.acceptsSwaps;
+  // The native pool may be filling or empty: the router can still go through ICPSwap.
+  const removed = pool.status === PoolStatus.removed;
+  const nativeOpen = pool.status === PoolStatus.active && pool.acceptsSwaps;
+  const open = !removed;
   const tokenIn = inIsToken0 ? info0 : info1;
   const tokenOut = inIsToken0 ? info1 : info0;
   const amountIn = parseUnits(amountText, tokenIn.decimals);
   const slippageBps = parsePercentBps(slippageText);
   const input =
     open && amountIn !== null && amountIn > 0n && slippageBps !== null
-      ? { poolId: pool.id, tokenIn: tokenIn.token, amountIn, slippageBps }
+      ? {
+          tokenIn: tokenIn.token,
+          tokenOut: tokenOut.token,
+          amountIn,
+          slippageBps,
+        }
       : null;
-  const quote = useQuoteSwap(input);
+  const quote = useQuoteRoutedSwap(input);
   const quoteOk = quote.data?.__kind__ === "ok" ? quote.data.ok : null;
   const pending = swap.isPending;
   const available =
     balances.data?.find((b) => b.token === tokenIn.token)?.available ?? 0n;
-  const errText = (err: Parameters<typeof swapErrorText>[1]) =>
-    swapErrorText(t, err, tokenIn, tokenOut, lang);
+  const errText = (err: Parameters<typeof routeErrorText>[2]) =>
+    routeErrorText(t, r, err, tokenIn, tokenOut, lang);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!input || !quoteOk || pending) return;
+    if (!input || !quoteOk || pending || dexPaused) return;
     setFeedback(null);
     swap.mutate(
       {
-        poolId: pool.id,
         tokenIn: input.tokenIn,
+        tokenOut: input.tokenOut,
         amountIn: input.amountIn,
         minAmountOut: quoteOk.minimumReceived,
         deadline: nowNs() + SWAP_DEADLINE_NS,
+        route: quoteOk.route,
       },
       {
         onSuccess: (outcome) => {
           if (outcome.__kind__ === "ok") {
             setFeedback({
               tone: "info",
-              text: t.swapDone(
+              text: r.swapDoneRoute(
                 formatDexUnits(outcome.ok.amountIn, tokenIn),
                 formatDexUnits(outcome.ok.amountOut, tokenOut),
+                routeName(r, outcome.ok.route),
               ),
             });
             setAmountText("");
@@ -105,7 +123,10 @@ export function SwapDialog({
           }
         },
         onError: (err) =>
-          setFeedback({ tone: "danger", text: t.errCall(err.message) }),
+          setFeedback({
+            tone: "danger",
+            text: dexCallErrorText(t, err.message),
+          }),
       },
     );
   };
@@ -125,19 +146,19 @@ export function SwapDialog({
           </DialogTitle>
           <DialogDescription>{t.swapIntro}</DialogDescription>
         </DialogHeader>
-        {pool.status === PoolStatus.removed ? (
+        {removed ? (
           <p
             className="callout-danger px-3 py-2 text-sm"
             data-ocid="pools.swap.removed_state"
           >
             {t.removedNotice}
           </p>
-        ) : !open ? (
+        ) : !nativeOpen ? (
           <p
             className="callout-info px-3 py-2 text-sm text-foreground"
             data-ocid="pools.swap.filling_state"
           >
-            {t.swapsClosedFilling(gaugeText(t, pool.gauge))}
+            {r.fillingViaIcpswap(gaugeText(t, pool.gauge))}
           </p>
         ) : null}
         <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
@@ -216,7 +237,7 @@ export function SwapDialog({
           )}
           {open && (
             <p className="text-xs text-muted-foreground">
-              {t.swapDeadlineNote}
+              {r.routeRule} {t.swapDeadlineNote}
             </p>
           )}
 
@@ -258,14 +279,16 @@ export function SwapDialog({
             >
               {t.cancel}
             </Button>
-            <Button
-              type="submit"
-              disabled={!open || !quoteOk || pending}
-              className="min-h-11"
-              data-ocid="pools.swap.confirm_button"
-            >
-              {pending ? t.swapping : t.confirmSwap}
-            </Button>
+            <DexPausedHint paused={dexPaused}>
+              <Button
+                type="submit"
+                disabled={!open || !quoteOk || pending || dexPaused}
+                className="min-h-11"
+                data-ocid="pools.swap.confirm_button"
+              >
+                {pending ? t.swapping : t.confirmSwap}
+              </Button>
+            </DexPausedHint>
           </DialogFooter>
         </form>
       </DialogContent>

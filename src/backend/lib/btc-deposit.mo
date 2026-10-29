@@ -68,6 +68,7 @@ module {
       case (?#other) ?"other";
       case (?#unrecoverable) ?"unrecoverable";
       case (?#refundFailed) ?"refundFailed";
+      case (?#receivingWalletNotConfigured) ?"receivingWalletNotConfigured";
       case null null;
     };
   };
@@ -927,6 +928,10 @@ module {
               switch (err.code) {
                 case (#priceUnavailable(_)) {
                   save(i, func e = { e with stage = #pendingRate; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?err.message });
+                };
+                case (#receivingWalletNotConfigured(_)) {
+                  // Nothing taken: the ckBTC stays in the deposit account until a wallet exists.
+                  save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = ?#receivingWalletNotConfigured; errorMessage = ?err.message });
                 };
                 case (#saleComplete or #belowMinimum(_)) {
                   // R2: the full refund attempt is recorded before its send.

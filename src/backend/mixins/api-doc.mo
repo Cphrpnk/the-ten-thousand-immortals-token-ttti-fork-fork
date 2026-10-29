@@ -10,9 +10,13 @@ mixin () {
     "ICP, ckBTC, ckUSDC or ckUSDT. Every purchase carries a fixed 1% fee, so a\n" #
     "buyer pays 10 100 USD worth of the paid token per TTTI-T (101 for 100).\n" #
     "The amount paid is collected into this canister's default account on the\n" #
-    "paid token's ledger and stays in the paid token. The 100/101 owner share is\n" #
-    "sent automatically to the destination account set by the admin for that\n" #
-    "token, and accumulates while none is set. The 1/101 fee is split in two\n" #
+    "paid token's ledger and stays in the paid token. The 100/101 owner share\n" #
+    "is sent directly, in the paid token, to the receiving wallet the admin\n" #
+    "configured for that token (BTC mints use the ckBTC wallet), ledger fee\n" #
+    "deducted; a mint in a token without a configured wallet is refused before\n" #
+    "any funds are taken. Nothing accumulates in the contract and there is no\n" #
+    "withdraw endpoint (see Mint revenue). The 1/101 fee is moved to a\n" #
+    "dedicated, non-withdrawable fee account of this contract and split in two\n" #
     "halves for the TTTI-T pair of the paid token with the lowest liquidity:\n" #
     "half A to that pair's LPs pro rata (set aside when it has no LP), half B\n" #
     "set aside for permanent liquidity (see Mint revenue). New TTTI-T is\n" #
@@ -23,10 +27,10 @@ mixin () {
     "Nobody, admin included, can mint outside the purchase logic, freeze\n" #
     "transfers, move other holders' tokens, or withdraw the TTTI-T\n" #
     "transfer-fee collector. Nobody can burn tokens. ICP, ckBTC, ckUSDC and\n" #
-    "ckUSDT move only by the automatic rules below. There is no manual\n" #
-    "withdrawal: not from the cycles reserve, not from the internal mint\n" #
-    "treasuries, not from the protocol fee account, not from protocol\n" #
-    "liquidity (DEX lot 4).\n\n" #
+    "ckUSDT move only by the automatic rules below. There is no withdrawal\n" #
+    "from the mint fee account, the cycles reserve, the protocol fee account\n" #
+    "or protocol liquidity; the admin only chooses the receiving wallet of\n" #
+    "each pay token.\n\n" #
     "This canister can be upgraded by its controllers. `getTechnicalDetails`\n" #
     "publishes the current controllers and module hash (see Canister info), so\n" #
     "the guarantees above describe the code identified by that module hash.\n\n" #
@@ -97,11 +101,17 @@ mixin () {
     "- Admin-only reads: `getTreasuryConfig`, `getConversions`,\n" #
     "  `exportBalanceSnapshot`, `getCyclesAutonomy`, `getCyclesShare`,\n" #
     "  `getCyclesShareHistory`, `getMintTreasuryAccounts`,\n" #
-    "  `getLastWeeklyAllocation`, `listWeeklyAllocations`, `listDcBatches`.\n" #
+    "  `getLastWeeklyAllocation`, `listWeeklyAllocations`, `listDcBatches`,\n" #
+    "  `getReceivingWallets`, `getSettlementStatus`, `getMintFeeAccount`,\n" #
+    "  `listAdminHistory`, `listTransfersToReview`,\n" #
+    "  `listTransfersToReviewFiltered`, and the history reads\n" #
+    "  `listTreasuryWithdrawals`, `listOwnerSends`, `getOwnerAccumulated`,\n" #
+    "  `getTreasurySweepStatus`.\n" #
     "- Public (lot 4): `getProtocolLiquidity`. Caller-scoped (lot 4):\n" #
     "  `getMyLpBonus`, `claimLpBonus`.\n" #
     "- Admin-only writes: `setSalesPaused`, `refreshIcpPrice`,\n" #
-    "  `refreshTokenPrice`, `set_fee` (test version only).\n" #
+    "  `refreshTokenPrice`, `set_fee` (test version only), `setReceivingWallet`.\n" #
+    "  `withdrawTreasury` and `getTreasuryBalances` no longer exist.\n" #
     "  `setTreasuryConfig`, `setPayTokenAccount` and `withdrawReserveExcess`\n" #
     "  were removed in DEX lot 4 and no longer exist. There is no admin mint,\n" #
     "  no burn endpoint, no transfer freeze and no withdrawal of the TTTI-T fee\n" #
@@ -412,7 +422,10 @@ mixin () {
     "   call ends, whatever its outcome), `#anonymousCaller`,\n" #
     "   `#acknowledgementRequired`, `#notConfigured` (no stored legacy treasury\n" #
     "   configuration), `#tokenNotConfigured { token }` (kept in the type; no\n" #
-    "   longer returned since DEX lot 4), `#invalidAmount` (0), `#salesPaused`, `#saleComplete`; then\n" #
+    "  longer returned since DEX lot 4), `#invalidAmount` (0), `#salesPaused`, `#saleComplete`,\n" #
+    "   `#receivingWalletNotConfigured { token }` (no receiving wallet for the\n" #
+    "   paid token; message \"Minting with <SYM> is not available yet: no\n" #
+    "   receiving wallet is configured for <SYM>; no <SYM> was taken\"); then\n" #
     "   the stored hourly rate of the paid token is read (no price fetch):\n" #
     "   absent or past validUntil + 5 minutes -> `#priceUnavailable { token }`\n" #
     "   before any ledger call. Then the pay ledger's `icrc1_decimals` and\n" #
@@ -460,8 +473,8 @@ mixin () {
     "   `conversion = ?<record>`. BTC path (`purchaseFromDeposit`): no automatic\n" #
     "   refund, the record is `#refundReview` with `#deliveryFailedRefundFailed`.\n" #
     "8. Success records a `#completed` conversion and returns `#Ok(Conversion)`.\n" #
-    "   The owner share (100/101) and the mint fee (1/101) are then routed\n" #
-    "   automatically (see Mint revenue, below).\n\n" #
+    "   The owner share (100/101) stays in the contract and the mint fee (1/101)\n" #
+    "   is routed automatically (see Mint revenue, below).\n\n" #
     "`PurchaseResult` is `#Ok(Conversion)` or `#Err({ code; message; conversion })`.\n" #
     "`Conversion` is `{ id; depositor; recipient; payToken; payAmount (pay-token\n" #
     "base units collected); feeBps (the fee applied when the purchase was made:\n" #
@@ -514,7 +527,7 @@ mixin () {
     "  \"MINT-TREASURY-CKBTC-TTTI-T-00001\", \"MINT-TREASURY-CKUSDC-TTTI-T-0001\"\n" #
     "  and \"MINT-TREASURY-CKUSDT-TTTI-T-0001\" (on each token's own ledger).\n" #
     "  No endpoint withdraws from them; their balances are emptied once by the\n" #
-    "  one-time treasury sweep (below).\n" #
+    "  one-time settlement of each token (see Mint revenue).\n" #
     "- Funds already sent to the old external receiving accounts stay where\n" #
     "  they are; nothing is moved back. The old accounts remain readable as\n" #
     "  `legacyExternalAccount` and are no longer settable: `setTreasuryConfig`\n" #
@@ -651,14 +664,22 @@ mixin () {
     "  `#notApplicable`.\n" #
     "- Mint revenue review kinds. `#OW` (id = owner send id): an owner send\n" #
     "  with an unknown outcome after 23 h; Arrived(block) records it `#sent`;\n" #
-    "  Not arrived opens a new attempt to the token's current owner destination\n" #
-    "  (new memo and `created_at_time`), sent by the 10-minute retry timer.\n" #
+    "  Not arrived opens a new attempt to the same destination (new memo and\n" #
+    "  `created_at_time`), sent by the 10-minute retry timer.\n" #
     "  `#SR` (id = attempt `n`): the one-time sweep reserve top-up; Arrived\n" #
     "  records it and the sweep continues; Not arrived opens a new attempt.\n" #
     "  `#MF` (id = claim `n`): a mint-fee claim; Arrived(block) records it\n" #
     "  claimed; Not arrived closes the claim and returns its amount to the\n" #
-    "  owner's claimable mint-fee balance. `markRefundedManually` on OW/SR/MF\n" #
-    "  returns `#notApplicable`.\n" #
+    "  owner's claimable mint-fee balance. `#ST` (id = fee move `n`): a move\n" #
+    "  into the mint fee account (mint fee or settlement leg) with an unknown\n" #
+    "  outcome after 23 h; Arrived(block) records it `#sent` and refreshes the\n" #
+    "  settlement; Not arrived opens a new attempt (new memo and\n" #
+    "  `created_at_time`) sent by the 10-minute retry timer.\n" #
+    "  `markRefundedManually` on OW/SR/MF/ST returns `#notApplicable`.\n" #
+    "- `listTransfersToReviewFiltered({ kinds : [TransferKind]; token :\n" #
+    "  ?DexToken }) : [TransferReview]` (admin query, same trap): the same rows\n" #
+    "  as `listTransfersToReview`, keeping only the listed kinds (empty = every\n" #
+    "  kind) and the given token (null = every token). Read-only, safe to poll.\n" #
     "- `ReviewError`: `#notAdmin`, `#notFound` (no such purchase, share or\n" #
     "  payment to refund), `#notApplicable` (action not valid for that kind),\n" #
     "  `#notUnderReview` (the transfer is not under review). All mark calls\n" #
@@ -1195,6 +1216,16 @@ mixin () {
     "  `owner`; claimableE8s, claimedE8s). Public: `protocolLiquidity` (key\n" #
     "  `poolId`; shares, fromFees0/1, fromTreasury0/1, lastAddedAt) and\n" #
     "  `poolPriceSample` (key `<poolId>/<at>`; poolId, at, reserve0, reserve1).\n" #
+    "  Mint revenue routing tables, controllers and app admins only:\n" #
+    "  `receivingWallet` (key `token`; token, owner, accountText, setAt, setBy),\n" #
+    "  `walletChange` (key `id`; token, oldAccountText (null = first\n" #
+    "  configuration), newOwner, newAccountText, at, by), `revenueSettlement`\n" #
+    "  (key `token`; status pendingWallet|sending|sent|failed|toReview,\n" #
+    "  destinationText, legCount, ownerAmount, feeAmount, startedAt,\n" #
+    "  completedAt, lastError) and `feeMove` (key `n`; token, purpose\n" #
+    "  mintFee|settlement:feePending|settlement:feeLegacy, conversionId, amount,\n" #
+    "  fee, attempt, memo, createdAtTime, sends, lastError, outcome, status,\n" #
+    "  block, createdAt, updatedAt). Other tables are listed in their sections.\n" #
     "  Variants appear as their tag text, null optional values as null. Only\n" #
     "  canister controllers and app admins read conversion and BTC tracking\n" #
     "  rows. Address book rows are read only by their signed-in owner (and\n" #
@@ -1204,7 +1235,9 @@ mixin () {
     "## DEX pair registry (lot 1)\n\n" #
     "Purpose: a registry of v2 constant-product pools and of public pair\n" #
     "requests. This lot creates no liquidity, no LP shares and no swaps. The\n" #
-    "protocol places no price-based order and mints no TTTI-T for pools.\n\n" #
+    "protocol places no price-linked order and creates no TTTI-T; the mint fee\n" #
+    "(1/101) is used to buy TTTI-T without any price condition, to feed pool\n" #
+    "liquidity (see Mint revenue).\n\n" #
     "Units and encodings: amounts are token base units (TTTI-T in e8s, so\n" #
     "50_000 = 0.0005 TTTI-T and 10_000 = 0.0001 TTTI-T); fees are basis points\n" #
     "(`FeeTier` `#bps5` = 5, `#bps30` = 30, `#bps100` = 100); timestamps are\n" #
@@ -1230,7 +1263,7 @@ mixin () {
     "  pool is reported `#active` once its reserves reach 100 USD), subaccount and\n" #
     "  subaccountText, poolAccount, minimumLocked (per token, null = not set),\n" #
     "  firstDepositMinimum (10 x minimumLocked), minimumsSet,\n" #
-    "  lockedSharesStatement (\"The minimum locked shares sqrt(A x B) belong to\n" #
+    "  lockedSharesStatement (\"The minimum locked shares √(A×B) belong to\n" #
     "  the contract forever.\"), newPairBadgeUntil / newPairBadgeActive (30\n" #
     "  days after approval), approvalStatement (\"Approval of a pair is not a\n" #
     "  recommendation.\", only on pools created from a request), requestId,\n" #
@@ -1328,7 +1361,9 @@ mixin () {
     "deposit minimum still apply to the first add.\n\n" #
     "Gotchas: a removed pool still reports acceptsWithdrawals = true; approval\n" #
     "is not a recommendation; the copied-symbol flag does not block a request;\n" #
-    "the protocol places no price-based order and mints no TTTI-T for pools.\n" #
+    "the protocol places no price-linked order and creates no TTTI-T; the mint\n" #
+    "fee (1/101) is used to buy TTTI-T without any price condition, to feed pool\n" #
+    "liquidity (see Mint revenue).\n" #
     "OQL tables `dexPool` (primary key `id`) and `dexPairRequest` (primary key\n" #
     "`id`; columns include status, reason, poolId, decidedAt, copiedSymbolOf)\n" #
     "are read by controllers and app admins; requesters read their own\n" #
@@ -1349,7 +1384,9 @@ mixin () {
     "account and are publicly visible.\n\n" #
     "Internal balances: per principal and token, `available` (usable) and\n" #
     "`reserved` (a withdrawal in flight). Balances and transfers are public:\n" #
-    "liquidity positions are public and linked to the identifier on TTTI.\n\n" #
+    "liquidity positions are public and linked to the identifier on TTTI.\n" #
+    "What is public for a position: the principal, the shares, the amounts, the\n" #
+    "lock and the unlock date.\n\n" #
     "Queries (open to everyone, anonymous included):\n" #
     "- `getDexTokens() : [DexTokenInfo]`: token, symbol, ledgerId, decimals,\n" #
     "  fee (ledger fee), minimumDeposit and minimumWithdrawal (fee + 1).\n" #
@@ -1385,17 +1422,19 @@ mixin () {
     "- One deposit or withdrawal in flight per principal and token; the lock\n" #
     "  is released on every exit.\n\n" #
     "Pair deposit refund (DQ): `approvePair` refunds 50_000 minus one TTTI-T\n" #
-    "fee from `DEX-REQUEST-DEPOSIT-TTTI-T-00001` with memo `TTTI-DQ-<n>` and\n" #
-    "created_at_time, under one lock per request. The request's refundStatus\n" #
+    "fee from `DEX-REQUEST-DEPOSIT-TTTI-T-00001` with memo `TTTI-DQ-<n>`\n" #
+    "(n = the pair request number, i.e. the PairRequest id, never the global\n" #
+    "transfer counter) and created_at_time, under one lock per request. The request's refundStatus\n" #
     "is `#none` (refused or pending), `#inProgress`, `#needsReview` or\n" #
     "`#refunded(block)` (refundBlock filled). Never refunded twice.\n\n" #
     "Retry and dedup: ledgers deduplicate on (memo, created_at_time). An\n" #
     "unknown outcome (rejected call) is resent identically by a 10-minute\n" #
     "timer (re-armed on every install and upgrade) for 23 h, then becomes\n" #
     "`#needsReview`. A DQ ledger Err opens a new attempt (`TTTI-DQ-<n>-<m>`,\n" #
-    "new created_at_time). Admin \"To review\" (`listTransfersToReview`) lists\n" #
+    "n = the pair request number, m = attempt number, new created_at_time;\n" #
+    "attempts already recorded keep their memo). Admin \"To review\" (`listTransfersToReview`) lists\n" #
     "DD, DW and DQ rows (kind `#DD`/`#DW`/`#DQ`; purchaseId = n, or the\n" #
-    "request id for DQ). `markTransferArrived`: DD credits the balance once,\n" #
+    "pair request number for DQ). `markTransferArrived`: DD credits the balance once,\n" #
     "DW finalizes the debit, DQ marks the request refunded.\n" #
     "`markTransferNotArrived`: DD becomes `#failed` with no credit, DW gives\n" #
     "the balance back, DQ opens a new attempt sent by the timer.\n\n" #
@@ -1407,6 +1446,22 @@ mixin () {
     "`<principal>/<symbol>`) and `dexTransfer` (primary key `key` = `DD-<n>`,\n" #
     "`DW-<n>` or `DQ-<request id>`; memo, createdAtTime, sends, outcome,\n" #
     "block, status) are public.\n\n" #
+    "Refused pair-request deposits (protocol liquidity): the 50_000 base units\n" #
+    "kept in `DEX-REQUEST-DEPOSIT-TTTI-T-00001` for a refused request are fed\n" #
+    "to the protocol liquidity by the 10-minute fee-recycling pass. The deposit\n" #
+    "minus one TTTI-T fee is moved (memo `TTTI-RD-<pair request number>`) to the\n" #
+    "subaccount of the least liquid open TTTI-T pair (same rule as the router\n" #
+    "redirect) and added to that pool's protocol fee, which becomes\n" #
+    "contract-held permanent locked liquidity exactly like the native 30 %\n" #
+    "share; no swap or price-linked order is placed, so no slippage applies.\n" #
+    "The fee goes to the fee collector as for any transfer; no TTTI-T is created\n" #
+    "and total supply and existing balances are unchanged. While no TTTI-T pair\n" #
+    "is open the deposit waits. Pending requests and approved requests (deposit\n" #
+    "refunded) feed nothing. Each refused request is counted exactly once (the\n" #
+    "transfer and its record share one message; requests refused before this\n" #
+    "change are counted once by the first pass after the upgrade). OQL table\n" #
+    "`refusedDepositFeed` (primary key `requestId`; poolId, amount, fee, block,\n" #
+    "at; admin only) lists them.\n\n" #
     "## DEX liquidity, positions and swaps (lot 3)\n\n" #
     "Units: token amounts, reserves and shares are base units (TTTI-T, ICP,\n" #
     "ckBTC 8 decimals = e8; ckUSDC, ckUSDT 6). USD values are USD x 1e8.\n" #
@@ -1419,7 +1474,11 @@ mixin () {
     "at a fixed 10,000 USD; ICP, ckBTC, ckUSDC, ckUSDT at the stored hourly rate,\n" #
     "valid 1 h after its fetch plus 5 min grace. The check runs on every add and\n" #
     "on every pool read (effective status); an add that reaches the target\n" #
-    "stores `#active`, and an open pool stays open. A missing or expired rate\n" #
+    "stores `#active`, and an open pool stays open. A newly stored ICP hourly\n" #
+    "rate or ck-token 5-minute rate also persists `#active` at once for every\n" #
+    "`#filling` pool that now reaches the target (and a 1-minute sweep covers a\n" #
+    "rate stored by an admin refresh), without waiting for an add or a swap;\n" #
+    "swaps and quotes already treat such a pool as open. A missing or expired rate\n" #
     "means no opening: the gauge reports `valueAvailable = false`,\n" #
     "`currentUsdE8 = null`, `remainingUsdE8 = null` and `missingRate { token0;\n" #
     "token1 }`. `PoolView` adds reserve0, reserve1, totalShares, lockedShares,\n" #
@@ -1473,7 +1532,8 @@ mixin () {
     "  repeat after success returns `#positionNotFound`; never paid twice.\n" #
     "- `extendLock(positionId, newUnlockAt : Int) : Result<PositionView,\n" #
     "  ExtendLockError>`. Owner only; newUnlockAt >= current unlockAt and <=\n" #
-    "  now + 5 years; never shortens. Errors: `#anonymous`, `#positionNotFound`,\n" #
+    "  the position creation date + 5 years (1826 days, never counted from now);\n" #
+    "  never shortens; existing locks are not modified. Errors: `#anonymous`, `#positionNotFound`,\n" #
     "  `#notPositionOwner`, `#cannotShortenLock { unlockAt }`, `#lockTooLong {\n" #
     "  maximumUnlockAt }`, `#operationInProgress`. Retry safety: idempotent for\n" #
     "  the same newUnlockAt.\n" #
@@ -1483,6 +1543,10 @@ mixin () {
     "  rounded down), token symbols, createdAt, lockDurationNs, unlockAt,\n" #
     "  isCreator, unlocked (now >= unlockAt) and withdrawable (unlocked or the\n" #
     "  pair is removed). The contract-owned lockedShares have no position.\n" #
+    "  A position is public and linked to the identifier on TTTI: principal,\n" #
+    "  shares, amounts, lock and unlock date. Only observed yield is mentioned:\n" #
+    "  the fees actually earned by a position, stated as a recorded fact (the\n" #
+    "  70 % LP part of each swap fee stays in the pool, see swap fees below).\n" #
     "- `quoteSwap(poolId, tokenIn, amountIn, slippageBps) : Result<SwapQuote,\n" #
     "  SwapError>` (query): tokenOut, amountOut, fee, lpFee, protocolFee,\n" #
     "  feeBps, priceImpactBps (versus the reserve ratio, rounded up),\n" #
@@ -1520,55 +1584,112 @@ mixin () {
     "the paid token (BTC counts as ckBTC). No TTTI-T is created for pools, no\n" #
     "order depends on the TTTI-T price and nothing is sent to the cycles\n" #
     "reserve. Token keys are \"icp\", \"ckbtc\", \"ckusdc\", \"ckusdt\".\n\n" #
-    "### Owner destinations and owner sends (OW, admin)\n\n" #
-    "- `setOwnerDestination(token, account) : Result<OwnerDestinationView,\n" #
-    "  OwnerRevenueError>` (admin): sets the ICRC account receiving the owner\n" #
-    "  share of `token`, records the change in the history, then sends the\n" #
-    "  amount accumulated for that token (one OW send) and resumes a sweep\n" #
-    "  waiting for it. Errors: `#notAdmin`, `#anonymousOwner`,\n" #
-    "  `#invalidSubaccount` (not 32 bytes), `#contractAccount` (an account of\n" #
-    "  this canister).\n" #
-    "- `clearOwnerDestination(token)` (admin): later shares accumulate.\n" #
-    "  `#notConfigured` when the token has no destination.\n" #
-    "- `listOwnerDestinations() : [OwnerDestinationView]` (admin query): one row\n" #
-    "  per pay token `{ token; account : ?Account; setAt : ?Int; accumulated }`.\n" #
-    "- `getOwnerAccumulated() : [{ token; amount }]` (admin query): shares not\n" #
-    "  yet sent, held in the canister default account of each ledger.\n" #
+    "### Receiving wallets (admin, one per pay token)\n\n" #
+    "- The admin sets one receiving wallet per pay token (#icp, #ckbtc,\n" #
+    "  #ckusdc, #ckusdt). BTC mints are ckBTC mints and use the ckBTC wallet.\n" #
+    "  No wallet is derived from a login principal.\n" #
+    "- `setReceivingWallet(token, account : Account) : Result<ReceivingWalletView,\n" #
+    "  TreasuryError>` (admin update): validates and stores the wallet, records\n" #
+    "  a wallet change (History filter Destination) and, on the first\n" #
+    "  configuration of the token, starts its one-time settlement and sends its\n" #
+    "  first legs in the same call. Errors, nothing stored: `#notAdmin`,\n" #
+    "  `#anonymousOwner`, `#invalidSubaccount` (not 32 bytes), `#contractAccount`\n" #
+    "  (any account of this canister, the fee account included). Retry safety:\n" #
+    "  repeating the same call records another wallet change and changes\n" #
+    "  nothing else; a later change only affects later sends, never a\n" #
+    "  completed settlement or an attempt already recorded.\n" #
+    "- `getReceivingWallets() : Result<[ReceivingWalletView], TreasuryError>`\n" #
+    "  (admin query): every pay token `{ token; wallet : ?Account (null = not\n" #
+    "  configured: mints in this token are refused); accountText : ?Text (ICRC-1\n" #
+    "  textual account); setAt : ?Int (ns); setBy : ?Principal }`.\n\n" #
+    "### Direct 100/101 send at each mint\n\n" #
+    "- Every mint path (`convertDeposit`, `convertDepositWith`, BTC purchase\n" #
+    "  finalization) first checks the wallet of the paid token. Without one it\n" #
+    "  returns `#receivingWalletNotConfigured { token }` before any ledger call:\n" #
+    "  no funds taken, no reservation, no trace. A BTC deposit refused this way\n" #
+    "  keeps its ckBTC in the deposit subaccount (`errorKind`\n" #
+    "  `#receivingWalletNotConfigured`) and is converted by a later check once\n" #
+    "  the ckBTC wallet exists.\n" #
+    "- After delivery, the owner share `net` is recorded as an owner send (OW,\n" #
+    "  source `#mint(conversionId)`, memo `TTTI-OW-<n>`, `created_at_time` set)\n" #
+    "  before the first await and sent at once from the default account to the\n" #
+    "  wallet: the wallet receives `net - ledger fee` (a share not above the\n" #
+    "  ledger fee is not sent). Lib/retry.mo rules: Ok or `#Duplicate` =\n" #
+    "  `#sent(block)`; a known Err opens a new attempt; an unknown outcome is\n" #
+    "  resent identically by the 10-minute retry timer for 23 h, then goes to\n" #
+    "  To review as `#OW`. The buyer's credit is never undone by these sends.\n" #
+    "- Nothing accumulates in the contract: there is no withdraw endpoint\n" #
+    "  (`withdrawTreasury` and `getTreasuryBalances` were removed).\n\n" #
+    "### Dedicated mint fee account (never withdrawable)\n\n" #
+    "- The 1/101 fee of each mint, minus the ledger fee, is moved from the\n" #
+    "  default account to `{ owner = <this canister>; subaccount = <fixed\n" #
+    "  32-byte fee subaccount> }` on the paid token's ledger (FeeMove, memo\n" #
+    "  `TTTI-ST-<n>`, same retry rules, To review as `#ST`) and the moved amount\n" #
+    "  is redistributed by the established rule (half A to the LPs of the\n" #
+    "  least liquid TTTI-T pair of that token, half B set aside for permanent\n" #
+    "  liquidity; see below). No endpoint, admin included, can withdraw it.\n" #
+    "- `getMintFeeAccount() : Result<FeeAccountView, TreasuryError>` (admin\n" #
+    "  update call, it reads the ledgers): `{ owner; subaccountHex; accountText;\n" #
+    "  tokens : [{ token; balance : ?Nat (null = read failed); received (sent\n" #
+    "  moves); setAside; redistributedToLps; injected }]; readAt }`. Read-only.\n\n" #
+    "### One-time settlement (per token)\n\n" #
+    "- Starts when the token's wallet is first configured (then continued by a\n" #
+    "  10-minute settlement timer, lock `SETTLEMENT`, re-armed on every install\n" #
+    "  and upgrade, waiting while sales are paused). Legs, each recorded before\n" #
+    "  its send: `#ownerAccumulated` (earlier accumulated 100/101 shares in the\n" #
+    "  default account, counter cleared) and `#ownerMintTreasury` (legacy\n" #
+    "  MINT-TREASURY balance minus unsettled withdrawals and minus its fee part)\n" #
+    "  go to the wallet as OW sends with source `#settlement`; `#feePending`\n" #
+    "  (set-aside and unclaimed LP mint-fee amounts) and `#feeLegacy` (fee part\n" #
+    "  of the legacy MINT-TREASURY) go to the fee account as ST moves. Each\n" #
+    "  leg's ledger fee is deducted from it (for `#feePending`, from the\n" #
+    "  set-aside amount); a leg not above the ledger fee is not sent. LP\n" #
+    "  credits are unchanged. A completed settlement is never sent again, even\n" #
+    "  after a wallet change.\n" #
+    "- `getSettlementStatus() : Result<[TokenSettlementView], TreasuryError>`\n" #
+    "  (admin query): per token `{ token; status (#pendingWallet | #sending |\n" #
+    "  #sent([blocks]) | #failed(text) | #toReview); destination; ownerAmount;\n" #
+    "  feeAmount; legs : [{ purpose; amount; destination; status; block;\n" #
+    "  memoText }]; startedAt; completedAt; lastError }`. Poll at most every\n" #
+    "  30 s; it changes when a leg is sent or at the 10-minute pass.\n\n" #
+    "### Revenue history reads (admin)\n\n" #
     "- `listOwnerSends(offset, limit) : { items; total; offset }` (admin query,\n" #
-    "  newest first, limit capped at 100). Each item: `{ id; token; amount (share\n" #
-    "  before the ledger fee); fee; destination; source (#mint(conversionId) |\n" #
-    "  #accumulated | #treasurySweep); status (#pending | #sent(block) |\n" #
-    "  #needsReview | #failed(text)); block; memoText; createdAtTimeNs : nat64;\n" #
-    "  attempt; sends; lastError; createdAt; updatedAt }`.\n" #
-    "- Rule: after each delivered mint, with a destination, the share is\n" #
-    "  recorded as an OW send before the first await (destination receives\n" #
-    "  amount - ledger fee, memo `TTTI-OW-<n>`, `created_at_time` set) and sent\n" #
-    "  once by the call; without a destination, or when the share does not\n" #
-    "  cover the ledger fee, it is added to the accumulated amount. The\n" #
-    "  10-minute retry timer resends identically for 23 h (Ok or `#Duplicate`\n" #
-    "  = `#sent`), opens a new attempt `TTTI-OW-<n>-<m>` to the current\n" #
-    "  destination after a ledger Err, and moves an unknown outcome to To\n" #
-    "  review (`#OW`) after 23 h. Owner sends wait while sales are paused.\n\n" #
-    "### One-time treasury sweep (SR + OW, admin read)\n\n" #
-    "- Runs once from the retry timer: first tops the cycles reserve up to\n" #
-    "  2 ICP (200_000_000 e8s) from MINT-TREASURY-ICP (memo `TTTI-SR-<n>`,\n" #
-    "  To review kind `#SR`), then sends every remaining internal mint treasury\n" #
-    "  balance to that token's owner destination as an OW send with source\n" #
-    "  `#treasurySweep`. A token without destination waits\n" #
-    "  (`#waitingDestination`) until one is set.\n" #
-    "- `getTreasurySweepStatus() : TreasurySweepView` (admin query): `{ status\n" #
-    "  (#notStarted | #toppingUpReserve | #sending | #completed); startedAt;\n" #
-    "  completedAt; reserveTopUpE8s; reserveTopUpBlock; reserveTopUpMemo;\n" #
-    "  tokens : [{ token; balance : ?Nat; status (#pending | #waitingDestination\n" #
-    "  | #nothingToSend | #sending(sendId) | #sent(sendId)) }] }`. The status\n" #
-    "  never returns to `#notStarted`; the sweep never runs twice.\n\n" #
+    "  newest first, limit capped at 100): every OW send. Item: `{ id; token;\n" #
+    "  amount; fee; destination; source (#mint(conversionId) | #accumulated |\n" #
+    "  #treasurySweep | #withdrawal { by; from } | #settlement { from });\n" #
+    "  status (#pending | #sent(block) | #needsReview | #failed(text)); block;\n" #
+    "  memoText; createdAtTimeNs : nat64; attempt; sends; lastError; createdAt;\n" #
+    "  updatedAt }`.\n" #
+    "- `listTreasuryWithdrawals(offset, limit)` (admin query, newest first,\n" #
+    "  limit capped at 100): earlier admin withdrawals (history; no new entry).\n" #
+    "- `getOwnerAccumulated() : [{ token; amount }]` (admin query): amounts\n" #
+    "  still counted as accumulated (0 once settled).\n" #
+    "- `getTreasurySweepStatus() : TreasurySweepView` (admin query): record of\n" #
+    "  the earlier one-time sweep (history; it no longer starts).\n" #
+    "- Owner sends and fee moves wait while sales are paused.\n\n" #
+    "### Unified admin history\n\n" #
+    "- `listAdminHistory(filter, token : ?HistoryToken, offset, limit) :\n" #
+    "  Result<HistoryPage, HistoryError>` (admin query; `#err(#notAdmin)`\n" #
+    "  otherwise). `filter`: `#all | #mintDeposit | #revenueSent | #refund |\n" #
+    "  #buyback | #swap | #liquidity | #destination`; `token`: `#icp | #ckbtc |\n" #
+    "  #ckusdc | #ckusdt | #tttiT` or null for every token. Rows are newest\n" #
+    "  first; `limit` 0 means 25 and is capped at 100; page with `offset`.\n" #
+    "  Page: `{ items; total (rows matching the filter); offset; limit }`. Row:\n" #
+    "  `{ id (\"<prefix>-<id>\", unique across kinds; prefixes CV, RF, BD, BR,\n" #
+    "  OW, BB, RS, LP, IN, RD, ST, WC, DH); kind; token; amount (base units);\n" #
+    "  counterparty : ?Text; status; memo; block; timestamp (ns); detail }`.\n" #
+    "  Swap rows are routed swaps only (native pool swaps have no per-swap\n" #
+    "  record); liquidity removals have no stored record. Built from stored\n" #
+    "  records at each call; read-only and safe to poll.\n\n" #
+
     "### Mint fee (1/101): LP balances and set-aside amounts\n\n" #
     "- The fee (minus the paid ledger's fee when it was moved first, as for\n" #
     "  BTC mints) is routed at delivery, in the paid token, to the TTTI-T pair\n" #
     "  of that token with the lowest USD liquidity: half A (floor(fee / 2)) to\n" #
     "  that pair's LP positions pro rata to their shares (to the set-aside\n" #
     "  amount when the pair has no LP, rounding remainders included), half B\n" #
-    "  to the set-aside amount. Accounting only, no ledger transfer.\n" #
+    "  to the set-aside amount. The routing is accounting on the amount moved\n" #
+    "  into the mint fee account (above).\n" #
     "- `getMyMintFees() : { balances : [{ token; claimable; claimed }]; claims :\n" #
     "  [{ n; token; amount; createdAt; memoText; status }] }` (query; anonymous\n" #
     "  gets empty lists).\n" #
@@ -1609,20 +1730,27 @@ mixin () {
     "  pass, at the pool ratio (the part beyond the ratio waits). Nothing goes\n" #
     "  to cycles. `getProtocolLiquidity()` (public) shows it.\n\n" #
     "### Admin data, polling and gotchas\n\n" #
-    "- `getUpgradeReadiness` adds `ownerSendsInFlight : [Nat]` (pending OW ids),\n" #
+    "- `getUpgradeReadiness` adds `ownerSendsInFlight : [Nat]` (pending OW ids,\n" #
+    "  every source), `revenueSendsInFlight : [Nat]` (pending OW ids with\n" #
+    "  source `#mint` or `#settlement`), `settlementsInFlight : [Text]` (token\n" #
+    "  keys whose settlement is `#sending`),\n" #
     "  `sweepStatus`, `mintFeeClaimsInFlight : [Nat]` (claims `#inProgress`) and\n" #
     "  `injectionsInFlight : [Nat]` (`#swapping` / `#addingLiquidity`). Before\n" #
     "  an upgrade wait until these lists are empty.\n" #
-    "- OQL tables: `ownerDestination`, `ownerSend`, `treasurySweep`,\n" #
-    "  `mintFeeRouting` (admin only); `mintFeeBalance`, `mintFeeClaim` (owner\n" #
+    "- OQL tables: `ownerSend` (settlement and legacy withdrawals included),\n" #
+    "  `treasurySweep`, `receivingWallet`, `walletChange`, `revenueSettlement`,\n" #
+    "  `feeMove`, `mintFeeRouting`, `routerRedirect` (admin only); `mintFeeBalance`, `mintFeeClaim` (owner\n" #
     "  or admin); `setAsideAmount`, `liquidityInjection` (public).\n" #
     "- Poll `getMyMintFees`, `listOwnerSends` and `getSetAsideAmounts` every\n" #
     "  10-30 s at most; they change at most every 10 minutes after a mint.\n" #
     "- Timers re-armed on every install and upgrade: retries (FW / SH / RF / OW\n" #
-    "  / SR) every 10 minutes, DL / MF retries, fee recycling and injections\n" #
-    "  every 10 minutes, price samples every 5 minutes.\n" #
-    "- A wrong \"Not arrived\" on OW or MF sends again: check the ledger for the\n" #
-    "  memo first.\n\n" #
+    "  / SR / ST) every 10 minutes, the settlement pass every 10 minutes, DL /\n" #
+    "  MF retries, fee recycling and injections every 10 minutes, price\n" #
+    "  samples every 5 minutes.\n" #
+    "- A wrong \"Not arrived\" on OW, ST or MF sends again: check the ledger for\n" #
+    "  the memo first.\n" #
+    "- Configure every receiving wallet before opening mints in that token:\n" #
+    "  until then the mint is refused with `#receivingWalletNotConfigured`.\n\n" #
     "## DEX lot 4 history: DC, cycles share and weekly allocation (read-only)\n\n" #
     "DC batches, the dynamic cycles share, the DL bonus credited from swap\n" #
     "fees and the weekly allocation no longer run since the mint revenue\n" #
@@ -1630,9 +1758,10 @@ mixin () {
     "earned stay claimable with `claimLpBonus`; ICP held for cycles stays\n" #
     "recorded. The descriptions below describe how that history was produced.\n" #
     "All constants below are fixed in the code; no endpoint changes them. The\n" #
-    "protocol never places a price-dependent order, never mints or buys TTTI-T\n" #
-    "for pools and does no buyback or price support. Figures are observed\n" #
-    "values only; no yield projection is computed.\n\n" #
+    "protocol places no price-linked order and creates no TTTI-T, while the\n" #
+    "mint fee (1/101) is used to buy TTTI-T without any price condition, to\n" #
+    "feed pool liquidity (see Mint revenue). Figures are observed values only;\n" #
+    "no yield projection is computed.\n\n" #
     "### Cycles autonomy (admin)\n\n" #
     "- Samples: the 6-hour cycles timer records `{ at; cyclesBalance;\n" #
     "  toppedUpCycles }` (also after each top-up). Consumption between two\n" #
@@ -1733,7 +1862,9 @@ mixin () {
     "  50 % to the DL bonus, 50 % fixed protocol liquidity at the pool ratio\n" #
     "  with no swap, preferably in the utility pairs (ckBTC/ICP, ckUSDC/ICP,\n" #
     "  ckUSDT/ICP). TTTI-T pairs receive fixed liquidity only from TTTI-T\n" #
-    "  fees; no TTTI-T is minted or bought for them. Amounts beyond the ratio\n" #
+    "  fees; no TTTI-T is created for them and no order depends on the price\n" #
+    "  (the mint fee buys TTTI-T without any price condition, see Mint revenue).\n" #
+    "  Amounts beyond the ratio\n" #
     "  or without an open pool wait for the next week.\n" #
     "- `getLastWeeklyAllocation() : ?WeeklyAllocation` and\n" #
     "  `listWeeklyAllocations() : [WeeklyAllocation]` (admin; trap\n" #
@@ -1753,6 +1884,172 @@ mixin () {
     "- Price samples, buckets, batches, claims and allocations are stable state\n" #
     "  and survive upgrades. A new pool has no average price for 30 minutes.\n" #
     "  With no autonomy value yet, the target cycles share is 4000 bps.\n\n" #
+
+    "## DEX router: native pool or ICPSwap (lot 5)\n\n" #
+    "- `quoteRoutedSwap({ tokenIn; tokenOut; amountIn; slippageBps })` (update\n" #
+    "  call, signed-in callers only, changes no state) works on a registry pair. It\n" #
+    "  compares the native pool (its fee tier, 0.3 % for the 7 starting pairs,\n" #
+    "  internal balances, no ledger fee) with the ICPSwap pool of the same pair\n" #
+    "  found through the ICPSwap factory (ICPSwap's own fee, plus a 0.1 % protocol\n" #
+    "  fee taken from the input before the ICPSwap swap, plus the input and output\n" #
+    "  ledger fees). It returns exactly one `route` (`#native { poolId }` or\n" #
+    "  `#icpswap { poolCanisterId }`), the amount received net of every fee, the\n" #
+    "  fees, `minimumReceived = amountOut x (10_000 - slippageBps) / 10_000`, the\n" #
+    "  other route in `alternative` for information, `reason` and `maxDeadline`\n" #
+    "  (now + 5 min, ns). On equal amounts the native route wins.\n" #
+    "- A native pool that is empty, filling (under 100 USD) or too shallow\n" #
+    "  (`reason = #nativeUnavailable`) goes through ICPSwap. With no ICPSwap pool or\n" #
+    "  quote only an open native pool is offered (`#icpswapUnavailable`). With\n" #
+    "  neither: `#noRouteAvailable`. Not a registry pair: `#pairNotFound`; a pair\n" #
+    "  removed by the admin is refused on both routes with `#pairRemoved`.\n" #
+    "- `routedSwap({ tokenIn; tokenOut; amountIn; minAmountOut; deadline; route })`\n" #
+    "  runs the whole order on the given route only (never split). It is refused\n" #
+    "  with no change when `now > deadline` (`#deadlineExceeded`), when\n" #
+    "  `deadline > now + 5 min` (`#deadlineTooFar`), when the expected amount is\n" #
+    "  below `minAmountOut` (`#slippageExceeded`), on `#insufficientBalance`, and\n" #
+    "  with `#routeMismatch { expected }` when the route is not the pair's native\n" #
+    "  pool or the factory's ICPSwap pool of the pair. `#operationInProgress` while\n" #
+    "  a deposit, withdrawal or swap of the caller holds either token.\n" #
+    "- Both routes debit the caller's internal DEX balance of `tokenIn` and credit\n" #
+    "  `tokenOut` to the internal balance. ICPSwap route steps: record and debit,\n" #
+    "  IR transfer from the caller's DEX deposit subaccount to the ICPSwap pool's\n" #
+    "  deposit subaccount of this canister, `deposit`, `swap` with\n" #
+    "  `amountOutMinimum = minAmountOut + output ledger fee`, `withdrawToSubaccount`\n" #
+    "  of the output to the caller's DEX deposit subaccount, then credit.\n" #
+    "- Every ledger move of the ICPSwap route made by this canister carries memo\n" #
+    "  `TTTI-IR-<n>` (global n) and `created_at_time`. An unknown outcome is resent\n" #
+    "  once with the same memo and time (deduplicated by the ledger).\n" #
+    "- Errors after the record: `#icpswapFailed { id; message; fundsReturned }`. A\n" #
+    "  refused IR transfer or a failed ICPSwap swap returns the input to the\n" #
+    "  internal balance (`fundsReturned = true`; after a deposit only what ICPSwap\n" #
+    "  gives back net of ledger fees, plus the 0.1 %). `#outcomeUnknown { id }`: the\n" #
+    "  swap is `#needsReview` and listed in To review as kind `#IR`\n" #
+    "  (`purchaseId` = routed swap id). Arrived at the withdrawal stage credits\n" #
+    "  the expected output; earlier, the input stayed on ICPSwap and only the 0.1 %\n" #
+    "  is credited back. Not arrived (only for the IR transfer itself) credits the\n" #
+    "  whole input back.\n" #
+    "- The 0.1 % of a completed ICPSwap route goes to the pair's native pool: 70 %\n" #
+    "  credited to its LPs' internal balances pro rata on their position shares,\n" #
+    "  30 % (plus rounding dust) to the pool's protocol fee, recycled into\n" #
+    "  permanent locked liquidity like native swap fees. With no LP in the native\n" #
+    "  pool, the 70 % goes to the LPs of the least liquid TTTI-T pool (pro rata\n" #
+    "  on their shares, recorded per pool in OQL table `routerRedirect`); if that\n" #
+    "  pool has no LP either, the 70 % is set aside per pool and paid to the LPs\n" #
+    "  once the first LP arrives (checked on every routed swap and every 10\n" #
+    "  minutes).\n" #
+    "- `getMyRoutedSwaps()` lists the caller's own routed swaps (both routes),\n" #
+    "  newest first. Admin only (`#err(#notAuthorized)` otherwise):\n" #
+    "  `adminListRoutedSwaps()` (ICPSwap routed swaps with stage and status) and\n" #
+    "  `adminGetRouterFees()` (0.1 % totals per native pool and the set-aside).\n" #
+    "- Retry safety: `routedSwap` is not idempotent; each call is a new order. After\n" #
+    "  an error or a timeout, read `getMyRoutedSwaps()` before calling again. The\n" #
+    "  protocol never places an order by itself and never creates TTTI-T.\n\n" #
+
+    "## DEX reserve check and pause (lot 6)\n\n" #
+    "- Purpose: per DEX token (TTTI-T, ICP, ckBTC, ckUSDC, ckUSDT) the backend\n" #
+    "  compares the internal total the DEX owes (user balances available +\n" #
+    "  reserved, pool reserves, protocol fees, router set-aside, pair request\n" #
+    "  deposits, ICP held in the protocol fee account) with the real ledger\n" #
+    "  balance summed over the DEX-controlled accounts (user deposit\n" #
+    "  subaccounts, pool subaccounts, request deposit, injection and protocol\n" #
+    "  fee accounts). Reserves are bookkeeping, so only the per-token sum is\n" #
+    "  compared. Nothing is corrected automatically, no alert is sent, sales\n" #
+    "  and minting are never paused by this check, and `sale.reserved` is not\n" #
+    "  touched.\n" #
+    "- Statuses: `#ok` (equal), `#surplus` (ledger higher, reported only),\n" #
+    "  `#shortfall` (ledger lower). A shortfall counts as a mismatch only after a\n" #
+    "  second fresh ledger read confirms it. Amounts are base units of the token;\n" #
+    "  `difference = ledgerTotal - internalTotal` (Int); timestamps are\n" #
+    "  nanoseconds since the epoch.\n" #
+    "- A ledger read failure is stored as `error : ?{ message (exact text); at }`\n" #
+    "  and is never a mismatch and never pauses the DEX; the previous results\n" #
+    "  and `lastSuccessAt` are kept. A token is skipped (previous result kept)\n" #
+    "  while DD/DW/DQ transfers, router swaps, fee or injection processing that\n" #
+    "  move its funds are in flight, so a transient difference is not reported.\n" #
+    "- The check runs from a timer every hour (re-armed on every install and\n" #
+    "  upgrade) and on demand. One check at a time (`#checkInProgress`). The\n" #
+    "  last check, last successful check date and the mismatch history (the 50\n" #
+    "  latest, oldest first) persist across upgrades.\n" #
+    "- Admin endpoints (a non-admin caller gets `#err(#unauthorized)`):\n" #
+    "  `runDexReserveCheck() : Result<ReserveCheck, DexReserveError>`;\n" #
+    "  `getDexReserveStatus() : Result<DexReserveStatus, DexReserveError>`\n" #
+    "  (query: last check, `unresolvedShortfallCount`, `checkInProgress`,\n" #
+    "  pause view, history); `resumeDex() : Result<DexPauseView,\n" #
+    "  DexReserveError>` runs a fresh check first and succeeds only when no\n" #
+    "  shortfall remains, recording `{ by; at }`. Errors: `#unauthorized`,\n" #
+    "  `#checkInProgress`, `#notPaused`, `#checkFailed(text)` (ledger read\n" #
+    "  failure, shortfall remaining, or nothing could be re-checked now).\n" #
+    "- Public: `getDexPauseStatus() : { paused; reasonToken : ?DexToken }`.\n" #
+    "- A confirmed shortfall pauses the DEX and records the reason `{ token;\n" #
+    "  internalTotal; ledgerTotal; at }`. While paused, `swap`, `routedSwap`,\n" #
+    "  `depositToDex`, `addLiquidity`, `requestPair` and `approvePair` trap\n" #
+    "  (reject) with `The DEX is paused after a reserve mismatch...`, and the\n" #
+    "  automatic fee recycling, refused-deposit feed, liquidity injection and\n" #
+    "  set-aside payout skip. `withdrawFromDex`, `removeLiquidity`, `extendLock`,\n" #
+    "  refusals, quotes and the DD/DW/DQ transfer retries stay available.\n" #
+    "- `getUpgradeReadiness` adds `dexPaused`, `dexPauseReason`,\n" #
+    "  `lastReserveCheckAt`, `lastReserveCheckStatus` (worst status of the last\n" #
+    "  check), `unresolvedShortfallCount`, `dexOperationsInFlight : [Text]`\n" #
+    "  (held DD/DW/DQ and IR lock keys) and `dexReady`, false while the DEX is\n" #
+    "  paused, a shortfall is unresolved or DEX operations are in flight.\n" #
+    "- OQL (admin only): `dexReserveResult`, `dexReserveMismatch`, `dexPause`.\n\n" #
+
+    "## DEX indicators (lot 7)\n\n" #
+    "- Purpose: facts about the DEX pools, computed once per hour from the stored\n" #
+    "  state and stored. No yield projection, no price-linked order.\n" #
+    "- `getDexIndicators() : ?DexIndicatorsSnapshot` (public query) returns the\n" #
+    "  stored snapshot only (null before the first computation). A read never\n" #
+    "  recomputes. `computedAt` is the time of the computation (nanoseconds since\n" #
+    "  the epoch); the data is as old as that time.\n" #
+    "- `getDexIndicatorsStatus() : Result<IndicatorsStatus, DexIndicatorsError>`\n" #
+    "  (admin only query, `#err(#unauthorized)` otherwise): `snapshotAt`,\n" #
+    "  `lastComputedAt`, `lastResult : ?{ #ok; #failed }`, `lastError : ?{ message\n" #
+    "  (exact text); at }` and `lastSuccessAt`.\n" #
+    "- Timer: one computation per hour, re-armed on every install and upgrade,\n" #
+    "  and one shortly after start when no snapshot exists. On failure the\n" #
+    "  previous snapshot stays with its original `computedAt`; the error text and\n" #
+    "  its date are stored and cleared by the next success.\n" #
+    "- Units: percentages are basis points (10_000 = 100 %); token amounts are\n" #
+    "  base units of the token concerned; `...UsdE8` values are USD with 8\n" #
+    "  decimals. TTTI-T is valued at its fixed 10,000 USD; other tokens at the\n" #
+    "  hourly stored rate within its validity (1 hour plus 5 minutes). A USD value\n" #
+    "  is null when a needed rate is absent or expired; the other figures still\n" #
+    "  compute.\n" #
+    "- `proofs`: per token, `internalTotal`, `ledgerTotal`, `difference`\n" #
+    "  (`ledgerTotal - internalTotal`) and `status` copied from the latest\n" #
+    "  successful DEX reserve check (`reserveCheckedAt`); empty before a check.\n" #
+    "- `pools` (one row per pool that is not removed): reserves, `valueUsdE8`,\n" #
+    "  `isOpen` (true when swaps are open).\n" #
+    "  - `depth`: at 1, 2 and 5 percent and per direction (`token0In`, `token1In`),\n" #
+    "    the largest input `amountIn` (and the `amountOut` it buys) after which the\n" #
+    "    constant-product price has moved by at most that percent, pool fee\n" #
+    "    included, rounding in favour of the pool. 0 for an empty pool and for a\n" #
+    "    pool that is not open.\n" #
+    "  - `liquidity`: firm shares = frozen position shares + permanent protocol\n" #
+    "    minimum shares + protocol liquidity shares; free shares = position\n" #
+    "    shares whose lock has ended; firm + free = total shares. Amounts and\n" #
+    "    `firmBps` / `freeBps` are given. Creator positions follow the same rules.\n" #
+    "  - `unlock`: frozen shares grouped by days to unlock (`thisWeek` <= 7,\n" #
+    "    `days30` <= 30, `days90` <= 90, `year1` <= 365, `overYear1`) plus\n" #
+    "    `permanent`; the six buckets plus free shares equal the total shares.\n" #
+    "  - `concentration`: `positionCount`, `largestPositionBps`, `topFiveBps`\n" #
+    "    (shares of total shares) and `permanentProtocolBps`.\n" #
+    "  - `activity`: swap count and volume (amount swapped in) per token over\n" #
+    "    `last24h` and `last7d`, plus `volumeUsdE8` when the rates are available.\n" #
+    "    Windows are the current hour plus the previous 23 (or 167) hourly\n" #
+    "    buckets. Only native pool swaps are recorded, from the moment recording\n" #
+    "    started (`fees.cumulativeSince`).\n" #
+    "  - `fees`: fees collected per token over the last 7 days and cumulative\n" #
+    "    since recording, with the 70 % LP part and the 30 % permanent-liquidity\n" #
+    "    part computed on the collected amount (permanent part rounded down), and\n" #
+    "    `observed`: the fees of the period over the pool value in basis points,\n" #
+    "    a plain figure for `periodDays` (7), not annualised, null without USD\n" #
+    "    values.\n" #
+    "- Reading the indicators moves no balance and changes no pool or position.\n" #
+    "- OQL (public): `dexIndicator`, one flat row per pool of the stored snapshot.\n" #
+    "- OQL (public): `dexSwapActivity`, hourly swap-activity buckets per pool\n" #
+    "  (`poolId`, `hour`, `swapCount`, `volume0`, `volume1`, `fee0`, `fee1`),\n" #
+    "  kept for 7 days.\n\n" #
 
     "## Polling guidance\n\n" #
     "- Purchases, transfers and approvals are synchronous: the reply is final.\n" #
@@ -1793,10 +2090,17 @@ mixin () {
     "  address. `#pendingRate` keeps the ckBTC in the subaccount until a rate\n" #
     "  exists.\n" #
     "- Admin endpoints trap (reject) instead of returning `#Err`, except\n" #
-    "  `markTransferArrived` / `markTransferNotArrived` / `markRefundedManually`\n" #
+    "  `markTransferArrived` / `markTransferNotArrived` / `markRefundedManually`,\n" #
+    "  `setReceivingWallet`, `getReceivingWallets`, `getSettlementStatus`,\n" #
+    "  `getMintFeeAccount`, `listTreasuryWithdrawals` and `listAdminHistory`\n" #
     "  (`#err(#notAdmin)`); ICRC,\n" #
     "  purchase, acknowledgement and delivery-address endpoints return typed errors.\n" #
     "- A wrong \"Not arrived\" on a PC payment drops a real refund obligation;\n" #
-    "  check the pay-token ledger for the `TTTI-PC-<n>` memo first.\n";
+    "  check the pay-token ledger for the `TTTI-PC-<n>` memo first.\n" #
+    "- The receiving wallet receives each mint's 100/101 share minus the paid\n" #
+    "  ledger's fee, in the paid token; the 1/101 fee account balance is never\n" #
+    "  withdrawable and is not part of any admin balance.\n" #
+    "- `listAdminHistory` returns `#err(#notAdmin)` instead of trapping; its\n" #
+    "  `limit` 0 means 25, not an empty page.\n";
   };
 };

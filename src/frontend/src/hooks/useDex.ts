@@ -5,7 +5,6 @@ import type {
   AddLiquidityArgs,
   AddLiquidityQuoteArgs,
   ApproveError,
-  DcBatch,
   DexAccount,
   DexAmountArgs,
   DexBalanceView,
@@ -48,9 +47,6 @@ export type {
   MintFeeClaimView,
   MintFeeLpView,
   SetAsideView,
-  DcBatch,
-  DcBatchStatus,
-  DcLeg,
   LpBonusView,
   PositionBonusWeight,
   ProtocolLiquidityView,
@@ -471,7 +467,7 @@ export function useSetUtilityPairMinimums() {
 // DEX lot 3: liquidity positions and swaps.
 
 /** Pools, positions and DEX balances after a liquidity or swap call. */
-function useInvalidateLiquidity() {
+export function useInvalidateLiquidity() {
   const queryClient = useQueryClient();
   return () => {
     void queryClient.invalidateQueries({ queryKey: DEX_KEYS.pools });
@@ -688,20 +684,6 @@ export function useClaimLpBonus() {
       void queryClient.invalidateQueries({ queryKey: ["icrc1BalanceOf"] });
       void queryClient.invalidateQueries({ queryKey: ["transfersToReview"] });
     },
-  });
-}
-
-/** Admin: DC fee conversion batches, newest first. */
-export function useDcBatches() {
-  const { actor, isFetching } = useActor();
-  const { data: isAdmin } = useIsCallerAdmin();
-  return useQuery<Array<DcBatch>>({
-    queryKey: DEX_KEYS.dcBatches,
-    queryFn: async () => {
-      if (!actor) return [];
-      return actor.listDcBatches();
-    },
-    enabled: !!actor && !isFetching && isAdmin === true,
   });
 }
 

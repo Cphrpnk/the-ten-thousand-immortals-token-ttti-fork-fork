@@ -18,6 +18,8 @@ import CyclesReserveLib "cycles-reserve";
 import PayTokenLib "pay-token";
 import IcrcLib "icrc";
 import DexTypes "../types/dex";
+import DexReserveTypes "../types/dex-reserve";
+import IndicatorTypes "../types/dex-indicators";
 import DexLib "dex";
 import OwnerTypes "../types/owner-revenue";
 
@@ -66,6 +68,8 @@ module {
       case (#OW) { "OW" };
       case (#SR) { "SR" };
       case (#MF) { "MF" };
+      case (#IR) { "IR" };
+      case (#ST) { "ST" };
     };
   };
 
@@ -375,9 +379,12 @@ module {
     // changed only through purchase traces (openTrace / releaseTrace).
     // While salesPaused is true no FW, SH, RF or BR transfer is sent.
     sale : { var reserved : Nat; var salesPaused : Bool };
-    // Mint revenue correction: owner destinations, accumulated shares, owner
-    // sends (OW) and the one-time treasury sweep (SR + OW).
+    // Mint revenue: accumulated shares, owner sends and admin withdrawals
+    // (OW) and the one-time treasury sweep (SR + OW, history).
     ownerRevenue : OwnerTypes.OwnerRevenueStore;
+    // Mint revenue routing: receiving wallets, wallet changes, one-time
+    // settlements and fee-account moves (ST).
+    mintRevenue : OwnerTypes.MintRevenueStore;
   };
 
   type Plan = {
@@ -851,7 +858,7 @@ module {
     );
   };
 
-  func review(kind : TransferKind, purchaseId : Nat, token : Types.PayToken, attempt : ?TransferAttempt, fallback : ?TransferRequest) : TransferReview {
+  public func review(kind : TransferKind, purchaseId : Nat, token : Types.PayToken, attempt : ?TransferAttempt, fallback : ?TransferRequest) : TransferReview {
     switch (attempt) {
       case (?a) {
         {
@@ -1020,7 +1027,7 @@ module {
       // BTC rows are handled by lib/btc-deposit.mo, BB rows by lib/buyback.mo.
       // DEX rows (DD, DW, DQ) are handled by markDexArrived.
       // Mint-fee rows (MF) are not handled here.
-      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF) { return #err(#notApplicable) };
+      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF or #IR or #ST) { return #err(#notApplicable) };
     };
     #ok;
   };
@@ -1108,16 +1115,8 @@ module {
         if (s.status != #needsReview) {
           return #err(#notUnderReview);
         };
-        // New attempt to the current destination (kept #failed until one exists).
-        switch (ctx.ownerRevenue.destinations.get(ownerKey(s.token))) {
-          case (?d) {
-            storeOwnerSend(ctx, { s with attempt = newAttempt(ctx.retry, #OW, ?s.attempt, { s.attempt.request with to = d.account }, now); status = #pending });
-          };
-          case null {
-            let text = "Not arrived (admin verification)";
-            storeOwnerSend(ctx, { s with attempt = { s.attempt with outcome = #failed(text); lastError = ?text }; status = #failed(text) });
-          };
-        };
+        // New attempt, same request (destination chosen by the admin at withdrawal).
+        storeOwnerSend(ctx, { s with attempt = newAttempt(ctx.retry, #OW, ?s.attempt, s.attempt.request, now); status = #pending });
       };
       case (#SR) {
         let a = reserveTopUpUnderReview(ctx, purchaseId) ?? (return #err(#notUnderReview));
@@ -1127,7 +1126,7 @@ module {
       // BB rows are handled by lib/buyback.mo.
       // DEX rows (DD, DW, DQ) are handled by markDexNotArrived.
       // Mint-fee rows (MF) are not handled here.
-      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF) { return #err(#notApplicable) };
+      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF or #IR or #ST) { return #err(#notApplicable) };
     };
     #ok;
   };
@@ -1156,7 +1155,7 @@ module {
       // BTC rows are handled by lib/btc-deposit.mo (deposit entries).
       // BB: buyback payouts are not refunded by hand (cancelBuyback instead).
       // DEX rows: no hand refund.
-      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #OW or #SR or #MF) { #err(#notApplicable) };
+      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #OW or #SR or #MF or #IR or #ST) { #err(#notApplicable) };
     };
   };
 
@@ -1172,6 +1171,8 @@ module {
     ledger : IcrcLib.Ledger; // TTTI-T in-process ledger
     locks : Set.Set<Text>; // transient: "<owner>/<token>" and "DQ/<request id>"
     canister : Principal;
+    pause : DexReserveTypes.PauseState; // DEX lot 6 pause (retries keep running)
+    indicators : IndicatorTypes.IndicatorsStore; // DEX lot 7 swap activity recording
   };
 
   // Lock key of one deposit or withdrawal in flight per principal and token.
@@ -1217,6 +1218,26 @@ module {
       n;
       attempt = m;
       memo = memoBlob(prefix, n, m);
+      created_at_time = now;
+      request;
+      sends = 0;
+      lastError = null;
+      outcome = #pending;
+    };
+  };
+
+  // New DQ attempt: the number n is the pair request number (never the global
+  // counter); memo TTTI-DQ-<request number>[-<m>], m = previous attempt + 1.
+  // Every new attempt gets a new memo (for m > 1) and a new created_at_time.
+  public func newPairRefundAttempt(requestId : Nat, previous : ?Types.DexTransferAttempt, request : Types.DexTransferRequest, now : Nat64) : Types.DexTransferAttempt {
+    let m = switch (previous) {
+      case (?p) { p.attempt + 1 };
+      case null { 1 };
+    };
+    {
+      n = requestId;
+      attempt = m;
+      memo = memoBlob(#DQ, requestId, m);
       created_at_time = now;
       request;
       sends = 0;
@@ -1359,6 +1380,15 @@ module {
         applyDexResult(a, result);
       };
     };
+  };
+
+  // DEX lot 5 (IR): one icrc1_transfer of a recorded attempt (sends counted
+  // here; TTTI-T in-process, others async), returned with its classified
+  // outcome. Resending the same attempt reuses memo and created_at_time, so
+  // the ledger deduplicates it. Never traps.
+  public func sendDexAttempt(ctx : DexContext, a : Types.DexTransferAttempt) : async Types.DexTransferAttempt {
+    let counted = { a with sends = a.sends + 1 };
+    applyDexResult(counted, await dexTransferSend(ctx, counted));
   };
 
   // icrc2_transfer_from of the recorded DD request (canister = spender).
@@ -1532,9 +1562,8 @@ module {
     if (request.depositAmount <= fee) {
       return null;
     };
-    let attempt = newDexAttempt(
-      ctx.retry,
-      #DQ,
+    let attempt = newPairRefundAttempt(
+      requestId,
       null,
       {
         token = #tttiT;
@@ -1574,7 +1603,7 @@ module {
         return;
       };
       case (#resend) { existing };
-      case (#newAttempt) { newDexAttempt(ctx.retry, #DQ, ?existing, existing.request, now) };
+      case (#newAttempt) { newPairRefundAttempt(requestId, ?existing, existing.request, now) };
     };
     let sending = { attempt with sends = attempt.sends + 1 };
     ctx.transfers.pairRefunds.add(requestId, sending);
@@ -1702,7 +1731,7 @@ module {
     deposits.concat(withdrawals).sort(func(x, y) = Nat.compare(y.n, x.n));
   };
 
-  func dexReview(kind : TransferKind, id : Nat, owner : Principal, a : Types.DexTransferAttempt) : TransferReview {
+  public func dexReview(kind : TransferKind, id : Nat, owner : Principal, a : Types.DexTransferAttempt) : TransferReview {
     {
       kind;
       purchaseId = id;
@@ -1788,7 +1817,7 @@ module {
         let r = ctx.dex.requests.get(id) ?? (return #err(#notFound));
         if (r.refundStatus != #needsReview) { return #err(#notUnderReview) };
         let previous = ctx.transfers.pairRefunds.get(id) ?? (return #err(#notFound));
-        ctx.transfers.pairRefunds.add(id, newDexAttempt(ctx.retry, #DQ, ?previous, previous.request, nowNat64()));
+        ctx.transfers.pairRefunds.add(id, newPairRefundAttempt(id, ?previous, previous.request, nowNat64()));
         setRefundStatus(ctx, id, #inProgress);
       };
       case (_) { return #err(#notApplicable) };
@@ -1797,13 +1826,6 @@ module {
   };
 
   // --- Mint owner revenue (OW) and one-time treasury sweep (SR) -------------
-
-  func ownerKey(token : Types.PayToken) : Text = TreasuryLib.tokenKey(token);
-
-  func addAccumulated(ctx : TransferContext, token : Types.PayToken, amount : Nat) {
-    let key = ownerKey(token);
-    ctx.ownerRevenue.accumulated.add(key, (ctx.ownerRevenue.accumulated.get(key) ?? 0) + amount);
-  };
 
   func storeOwnerSend(ctx : TransferContext, s : OwnerTypes.OwnerSend) {
     ctx.ownerRevenue.sends.add(s.id, { s with updatedAt = Time.now() });
@@ -1816,53 +1838,146 @@ module {
     };
   };
 
-  // Owner share of a mint (cost minus the 1/101 fee, in the paid token, held
-  // in `fromSubaccount` of the canister). With a destination: records an OW
-  // send (attempt before the first await) and returns it; without: adds the
-  // amount to ownerRevenue.accumulated and returns null. Amounts held in a
-  // subaccount are never accumulated (accumulated shares sit in the default
-  // account); the caller checks the destination first.
-  public func openOwnerSend(ctx : TransferContext, token : Types.PayToken, amount : Nat, source : OwnerTypes.OwnerSendSource, fromSubaccount : ?Blob) : ?OwnerTypes.OwnerSend {
-    if (amount == 0) {
-      return null;
-    };
-    let fee = PayTokenLib.expectedFee(token);
-    let dest = ctx.ownerRevenue.destinations.get(ownerKey(token));
-    switch (dest) {
-      case (?d) {
-        if (amount <= fee) {
-          if (fromSubaccount == null) { addAccumulated(ctx, token, amount) };
-          return null;
+  // Debited amount of the earlier admin withdrawals from the legacy
+  // MINT-TREASURY of `token` that are not settled yet (pending, failed, to
+  // review): the ledger balance does not reflect them yet.
+  public func unsettledMintTreasuryWithdrawals(ctx : TransferContext, token : Types.PayToken) : Nat {
+    var unsettled = 0;
+    for (s in ctx.ownerRevenue.sends.values()) {
+      switch (s.source) {
+        case (#withdrawal({ from = #mintTreasury })) {
+          let settled = switch (s.status) {
+            case (#sent(_)) { true };
+            case (_) { false };
+          };
+          if (s.token == token and not settled) {
+            unsettled += s.amount;
+          };
         };
-        let request : TransferRequest = {
-          token;
-          from_subaccount = fromSubaccount;
-          to = d.account;
-          amount = Nat.sub(amount, fee); // the send's ledger fee is deducted
-          fee = ?fee;
-        };
-        let attempt = newAttempt(ctx.retry, #OW, null, request, nowNat64());
-        let id = ctx.ownerRevenue.nextSendId;
-        ctx.ownerRevenue.nextSendId += 1;
-        let now = Time.now();
-        let s : OwnerTypes.OwnerSend = {
-          id;
-          token;
-          amount;
-          source;
-          attempt;
-          status = #pending;
-          createdAt = now;
-          updatedAt = now;
-        };
-        ctx.ownerRevenue.sends.add(id, s);
-        ?s;
-      };
-      case null {
-        if (fromSubaccount == null) { addAccumulated(ctx, token, amount) };
-        null;
+        case (_) {};
       };
     };
+    unsettled;
+  };
+
+  // Records an owner send (OW, memo TTTI-OW-<n>, created_at_time = now) of
+  // `amount` (received) plus `fee` (debited on top) from `fromSubaccount` to
+  // `to`. Call before the first await and send it with sendOwner.
+  public func openOwnerSend(ctx : TransferContext, token : Types.PayToken, source : OwnerTypes.OwnerSendSource, fromSubaccount : ?Blob, to : Types.Account, amount : Nat, fee : Nat) : OwnerTypes.OwnerSend {
+    let id = ctx.ownerRevenue.nextSendId;
+    ctx.ownerRevenue.nextSendId += 1;
+    let request : TransferRequest = { token; from_subaccount = fromSubaccount; to; amount; fee = ?fee };
+    let now = Time.now();
+    let send : OwnerTypes.OwnerSend = {
+      id;
+      token;
+      amount = amount + fee;
+      source;
+      attempt = newAttempt(ctx.retry, #OW, null, request, nowNat64());
+      status = #pending;
+      createdAt = now;
+      updatedAt = now;
+    };
+    ctx.ownerRevenue.sends.add(id, send);
+    send;
+  };
+
+  // --- Fee-account moves (ST) -------------------------------------------------
+
+  public func feeMoveActive(m : OwnerTypes.FeeMove) : Bool {
+    switch (m.status) {
+      case (#pending or #failed(_)) { true };
+      case (#sent(_) or #needsReview) { false };
+    };
+  };
+
+  func storeFeeMove(ctx : TransferContext, m : OwnerTypes.FeeMove) {
+    ctx.mintRevenue.feeMoves.add(m.n, { m with updatedAt = Time.now() });
+  };
+
+  // Records a move (ST, memo TTTI-ST-<n>, created_at_time = now) of `amount`
+  // (received) plus `fee` from `fromSubaccount` to `to` (the fee account).
+  // Keyed by the global transfer number n. Call before the first await.
+  public func openFeeMove(ctx : TransferContext, token : Types.PayToken, purpose : OwnerTypes.FeeMovePurpose, fromSubaccount : ?Blob, to : Types.Account, amount : Nat, fee : Nat) : OwnerTypes.FeeMove {
+    let request : TransferRequest = { token; from_subaccount = fromSubaccount; to; amount; fee = ?fee };
+    let attempt = newAttempt(ctx.retry, #ST, null, request, nowNat64());
+    let now = Time.now();
+    let move : OwnerTypes.FeeMove = { n = attempt.n; token; purpose; attempt; status = #pending; createdAt = now; updatedAt = now };
+    ctx.mintRevenue.feeMoves.add(move.n, move);
+    move;
+  };
+
+  func stepFeeMove(ctx : TransferContext, n : Nat) : async () {
+    if (ctx.sale.salesPaused) {
+      return;
+    };
+    let m = ctx.mintRevenue.feeMoves.get(n) ?? (return);
+    if (not feeMoveActive(m)) {
+      return;
+    };
+    let now = nowNat64();
+    let attempt = switch (nextAction(m.attempt, now)) {
+      case (#done) {
+        switch (m.attempt.outcome) {
+          case (#succeeded(block)) { storeFeeMove(ctx, { m with status = #sent(block) }) };
+          case (_) {};
+        };
+        return;
+      };
+      case (#needsReview) {
+        storeFeeMove(ctx, { m with status = #needsReview });
+        return;
+      };
+      case (#resend) { m.attempt };
+      case (#newAttempt) { newAttempt(ctx.retry, #ST, ?m.attempt, m.attempt.request, now) };
+    };
+    // Recorded (with this send counted) before the await.
+    let sending = { attempt with sends = attempt.sends + 1 };
+    storeFeeMove(ctx, { m with attempt = sending; status = #pending });
+    let result = await sendCounted(PayTokenLib.ledger(m.token), sending, describeFor(m.token));
+    let current = ctx.mintRevenue.feeMoves.get(n) ?? (return);
+    let status : OwnerTypes.OwnerSendStatus = switch (result.outcome) {
+      case (#succeeded(block)) { #sent(block) };
+      case (#failed(text)) { #failed(text) };
+      case (_) { #pending };
+    };
+    storeFeeMove(ctx, { current with attempt = result; status });
+  };
+
+  // Sends (or resends identically within 23 h) the recorded ST move `n`.
+  public func sendFeeMove(ctx : TransferContext, n : Nat) : async () {
+    let key = lockKey(#ST, n);
+    if (not tryLock(ctx.locks, key)) {
+      return;
+    };
+    try {
+      await stepFeeMove(ctx, n);
+    } catch (_) {
+      // The attempt stays recorded; the timer applies the rule again.
+    } finally {
+      unlock(ctx.locks, key);
+    };
+  };
+
+  // Admin review of an ST move: arrived in `block`.
+  public func markFeeMoveArrived(ctx : TransferContext, n : Nat, block : Nat) : Types.ReviewResult {
+    let m = ctx.mintRevenue.feeMoves.get(n) ?? (return #err(#notFound));
+    if (m.status != #needsReview) {
+      return #err(#notUnderReview);
+    };
+    storeFeeMove(ctx, { m with attempt = { m.attempt with outcome = #succeeded(block) }; status = #sent(block) });
+    #ok;
+  };
+
+  // Admin review of an ST move: did not arrive; a new attempt (new memo and
+  // created_at_time, same request) is sent by the timer.
+  public func markFeeMoveNotArrived(ctx : TransferContext, n : Nat) : Types.ReviewResult {
+    let m = ctx.mintRevenue.feeMoves.get(n) ?? (return #err(#notFound));
+    if (m.status != #needsReview) {
+      return #err(#notUnderReview);
+    };
+    storeFeeMove(ctx, { m with attempt = newAttempt(ctx.retry, #ST, ?m.attempt, m.attempt.request, nowNat64()); status = #pending });
+    #ok;
   };
 
   // One step of the rule for an active OW send. Caller holds the lock.
@@ -1889,9 +2004,7 @@ module {
       };
       case (#resend) { s.attempt };
       case (#newAttempt) {
-        // Only a new attempt may change the destination: the current one.
-        let dest = ctx.ownerRevenue.destinations.get(ownerKey(s.token)) ?? (return);
-        newAttempt(ctx.retry, #OW, ?s.attempt, { s.attempt.request with to = dest.account }, now);
+        newAttempt(ctx.retry, #OW, ?s.attempt, s.attempt.request, now);
       };
     };
     // Recorded (with this send counted) before the await.
@@ -1919,28 +2032,6 @@ module {
       // The attempt stays recorded; the timer applies the rule again.
     } finally {
       unlock(ctx.locks, key);
-    };
-  };
-
-  // Opens and sends an #accumulated OW send for `token` when a destination
-  // is configured and the accumulated amount covers the ledger fee.
-  public func flushOwnerAccumulated(ctx : TransferContext, token : Types.PayToken) : async () {
-    if (ctx.sale.salesPaused) {
-      return;
-    };
-    let key = ownerKey(token);
-    if (not ctx.ownerRevenue.destinations.containsKey(key)) {
-      return;
-    };
-    let amount = ctx.ownerRevenue.accumulated.get(key) ?? 0;
-    if (amount <= PayTokenLib.expectedFee(token)) {
-      return;
-    };
-    // Taken before the send is recorded, so it is never sent twice.
-    ctx.ownerRevenue.accumulated.remove(key);
-    switch (openOwnerSend(ctx, token, amount, #accumulated, null)) {
-      case (?s) { await sendOwner(ctx, s.id) };
-      case null {};
     };
   };
 
@@ -2040,29 +2131,10 @@ module {
           setSweepToken(ctx, token, ?balance, #nothingToSend);
           return true;
         };
-        if (not ctx.ownerRevenue.destinations.containsKey(ownerKey(token))) {
-          setSweepToken(ctx, token, ?balance, #waitingDestination);
-          return false;
-        };
-        switch (openOwnerSend(ctx, token, balance, #treasurySweep, ?TreasuryLib.mintTreasurySubaccount(token))) {
-          case (?s) {
-            setSweepToken(ctx, token, ?balance, #sending(s.id));
-            await sendOwner(ctx, s.id);
-            switch (ctx.ownerRevenue.sends.get(s.id)) {
-              case (?done) {
-                switch (done.status) {
-                  case (#sent(_)) {
-                    setSweepToken(ctx, token, ?balance, #sent(s.id));
-                    true;
-                  };
-                  case (_) { false };
-                };
-              };
-              case null { false };
-            };
-          };
-          case null { false };
-        };
+        // No automatic destination exists any more: the balance is part of the
+        // admin-managed treasury and is not swept.
+        setSweepToken(ctx, token, ?balance, #nothingToSend);
+        true;
       };
     };
   };
@@ -2097,9 +2169,10 @@ module {
 
   // Runs the once-only treasury sweep step by step (top-up of the cycles
   // reserve to 2 ICP from MINT-TREASURY-ICP, then one #treasurySweep OW send
-  // per token, waiting for missing destinations). No-op once #completed.
+  // per token). No-op once #completed or never started.
   public func runTreasurySweep(ctx : TransferContext) : async () {
-    if (ctx.ownerRevenue.sweep.status == #completed) {
+    // A sweep that never started stays unstarted: mint revenue is managed by the admin.
+    if (ctx.ownerRevenue.sweep.status == #completed or ctx.ownerRevenue.sweep.status == #notStarted) {
       return;
     };
     let key = "SWEEP";
@@ -2122,12 +2195,13 @@ module {
     if (ctx.sale.salesPaused) {
       return;
     };
-    for (token in PayTokenLib.ALL.values()) {
-      await flushOwnerAccumulated(ctx, token);
-    };
     let ids = ctx.ownerRevenue.sends.values().filter(ownerSendActive).map(func(s : OwnerTypes.OwnerSend) : Nat = s.id).toArray();
     for (id in ids.values()) {
       await sendOwner(ctx, id);
+    };
+    let moves = ctx.mintRevenue.feeMoves.values().filter(feeMoveActive).map(func(m : OwnerTypes.FeeMove) : Nat = m.n).toArray();
+    for (n in moves.values()) {
+      await sendFeeMove(ctx, n);
     };
   };
 };

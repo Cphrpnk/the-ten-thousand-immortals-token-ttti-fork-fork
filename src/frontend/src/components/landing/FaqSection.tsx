@@ -98,6 +98,11 @@ function useFaqs(): { id: string; question: string; answer: ReactNode }[] {
       ),
     },
     {
+      id: "liquidity",
+      question: t.liquidityQ,
+      answer: <>{t.liquidityA}</>,
+    },
+    {
       id: "privacy",
       question: t.privacyQ,
       answer: <>{t.privacyA}</>,

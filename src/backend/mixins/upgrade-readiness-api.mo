@@ -1,16 +1,21 @@
 import Set "mo:core/Set";
+import Map "mo:core/Map";
 import Iter "mo:core/Iter";
+import Text "mo:core/Text";
 import Time "mo:core/Time";
 import Runtime "mo:core/Runtime";
 import Result "mo:core/Result";
 import AccessControl "mo:caffeineai-authorization/access-control";
 import Types "../types/upgrade-readiness";
+import DexReserveTypes "../types/dex-reserve";
+import DexReserveLib "../lib/dex-reserve";
 import RetryTypes "../types/retry";
 import CyclesReserveLib "../lib/cycles-reserve";
 import SaleLib "../lib/presale";
 import ProtocolFeesLib "../lib/protocol-fees";
 import ProtocolFeeTypes "../types/protocol-fees";
 import OwnerTypes "../types/owner-revenue";
+import SettlementLib "../lib/settlement";
 import MintFeeTypes "../types/mint-fee";
 
 // Admin upgrade readiness: pause, purchases and BTC lock in flight, buybacks
@@ -29,10 +34,22 @@ mixin (
   protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
   // Mint revenue correction: owner sends and the one-time treasury sweep.
   ownerRevenue : OwnerTypes.OwnerRevenueStore,
+  // Mint revenue routing: one-time settlements per token.
+  mintRevenue : OwnerTypes.MintRevenueStore,
+  // DEX lot 6: reserve check / pause store and the DD / DW / DQ and IR locks.
+  dexReserve : DexReserveTypes.DexReserveStore,
+  dexInFlight : Set.Set<Text>,
+  routerInFlight : Set.Set<Text>,
 ) {
-  type UpgradeReadiness = Types.UpgradeReadiness and {
-    // Mint revenue correction: owner sends (OW) still #pending, by id.
+  type UpgradeReadiness = Types.UpgradeReadiness and Types.DexReadiness and {
+    // Owner sends (OW) of every source still #pending, by id (legacy
+    // #withdrawal records included as history).
     ownerSendsInFlight : [Nat];
+    // Mint revenue routing: 100/101 revenue sends (OW, source #mint or
+    // #settlement) still #pending, by id.
+    revenueSendsInFlight : [Nat];
+    // Token keys whose one-time settlement is #sending.
+    settlementsInFlight : [Text];
     // One-time treasury sweep state.
     sweepStatus : OwnerTypes.SweepStatus;
     // Mint-fee claims (MF) still #inProgress, by n.
@@ -53,7 +70,20 @@ mixin (
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: admin only");
     };
+    let shortfalls = DexReserveLib.shortfallCount(dexReserve);
+    let operations = dexInFlight.toArray().concat(routerInFlight.toArray());
     {
+      // DEX lot 6: pause state, last reserve check and DEX operations in flight.
+      dexPaused = dexReserve.pause.paused;
+      dexPauseReason = dexReserve.pause.reason;
+      lastReserveCheckAt = switch (dexReserve.lastCheck) {
+        case (?c) ?c.checkedAt;
+        case null null;
+      };
+      lastReserveCheckStatus = DexReserveLib.worstStatus(dexReserve);
+      unresolvedShortfallCount = shortfalls;
+      dexOperationsInFlight = operations;
+      dexReady = not dexReserve.pause.paused and shortfalls == 0 and operations.size() == 0;
       salesPaused = sale.salesPaused;
       purchasesInFlightCount = purchasesInFlight.size();
       purchasesInFlight = purchasesInFlight.toArray();
@@ -70,6 +100,10 @@ mixin (
       dcSendsInFlight = protocolFeeContext.store.dcSends.values().filter(func(s : ProtocolFeeTypes.DcSend) : Bool = s.status == #inProgress).map(func(s : ProtocolFeeTypes.DcSend) : Nat = s.n).toArray();
       bonusClaimsInFlight = protocolFeeContext.store.bonusClaims.values().filter(func(c : ProtocolFeeTypes.BonusClaim) : Bool = c.status == #inProgress).map(func(c : ProtocolFeeTypes.BonusClaim) : Nat = c.n).toArray();
       ownerSendsInFlight = ownerRevenue.sends.values().filter(func(s : OwnerTypes.OwnerSend) : Bool = s.status == #pending).map(func(s : OwnerTypes.OwnerSend) : Nat = s.id).toArray();
+      revenueSendsInFlight = ownerRevenue.sends.values().filter(
+        func(s : OwnerTypes.OwnerSend) : Bool = s.status == #pending and (switch (s.source) { case (#mint(_) or #settlement(_)) true; case (_) false })
+      ).map(func(s : OwnerTypes.OwnerSend) : Nat = s.id).toArray();
+      settlementsInFlight = SettlementLib.inFlight(mintRevenue);
       sweepStatus = ownerRevenue.sweep.status;
       mintFeeClaimsInFlight = protocolFeeContext.mintFees.claims.values().filter(func(c : MintFeeTypes.MintFeeClaim) : Bool = c.status == #inProgress).map(func(c : MintFeeTypes.MintFeeClaim) : Nat = c.n).toArray();
       injectionsInFlight = protocolFeeContext.mintFees.injections.values().filter(

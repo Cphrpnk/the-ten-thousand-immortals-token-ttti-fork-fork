@@ -70,7 +70,7 @@ module {
   // The same memo as the ICRC-1 blob: 8-byte little-endian encoding.
   public let TPUP_MEMO_BLOB : Blob = "\54\50\55\50\00\00\00\00";
 
-  public let RESERVE_RULE : Text = "Fixed 1% fee on every mint (ICP, ckBTC, ckUSDC, ckUSDT; BTC counts as ckBTC): 101 paid for 100 received. The owner share (100/101) is sent in the paid token to the destination configured for that token; the 1/101 fee goes to TTTI-T liquidity. The canister's public cycles reserve was topped up once to 2 ICP from the internal ICP mint treasury and is converted to cycles automatically when the cycles balance is below 20 T cycles. The reserve has no withdrawal path; the 2 ICP floor always stays available for cycles.";
+  public let RESERVE_RULE : Text = "Fixed 1% fee on every mint (ICP, ckBTC, ckUSDC, ckUSDT; BTC counts as ckBTC): 101 paid for 100 received. The 100/101 share goes directly, in the paid token, to the admin wallet configured for that token (BTC follows ckBTC); the 1/101 fee goes to a dedicated, non-withdrawable fee account of the contract and is redistributed to TTTI-T liquidity. The canister's public cycles reserve was topped up once to 2 ICP from the internal ICP mint treasury and is converted to cycles automatically when the cycles balance is below 20 T cycles. The reserve has no withdrawal path; the 2 ICP floor always stays available for cycles.";
 
   // --- Accounts and handles --------------------------------------------------
 

@@ -59,6 +59,7 @@ import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
+import { AdminAccordion } from "./AdminUi";
 import { GOLD_CARD, PRIMARY_GOLD, SECONDARY_GOLD } from "./styles";
 
 const EXPIRY_LABEL: Record<ApprovalExpiryChoice, string> = {
@@ -788,8 +789,15 @@ export function BuybackFundingCard() {
           )}
         </section>
 
-        <BuybackMassSummary />
-        <MassBuybackRecords />
+        <AdminAccordion
+          label="Buyback masses and records"
+          ocid="admin.buyback_records_accordion"
+        >
+          <div className="space-y-8">
+            <BuybackMassSummary />
+            <MassBuybackRecords />
+          </div>
+        </AdminAccordion>
       </CardContent>
     </Card>
   );

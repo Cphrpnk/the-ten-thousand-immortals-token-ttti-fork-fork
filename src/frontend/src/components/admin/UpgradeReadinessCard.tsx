@@ -1,12 +1,19 @@
 import { CheckCircle2, ClipboardCheck, Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { ReservedReconciliation, TopUpAttempt } from "../../backend";
-import { SweepStatus } from "../../backend";
+import { ReserveStatus } from "../../backend";
+import { useDexTokens } from "../../hooks/useDex";
 import {
+  useDexReadiness,
   useReconcileReserved,
   useUpgradeReadiness,
 } from "../../hooks/useUpgradeReadiness";
-import { formatIcpE8s, formatPayAmount, formatTtti } from "../../lib/token";
+import {
+  formatIcpE8s,
+  formatPayAmount,
+  formatTtti,
+  formatUnits,
+} from "../../lib/token";
 import { Alert, AlertDescription } from "../ui/alert";
 import {
   AlertDialog,
@@ -33,13 +40,6 @@ import { formatTimestamp } from "./ConversionsCard";
 import { GOLD_CARD, PRIMARY_GOLD, SECONDARY_GOLD } from "./styles";
 
 const memoText = (memo: Uint8Array) => new TextDecoder().decode(memo);
-
-const SWEEP_LABELS: Record<SweepStatus, string> = {
-  [SweepStatus.notStarted]: "Not started",
-  [SweepStatus.toppingUpReserve]: "Topping up the cycles reserve",
-  [SweepStatus.sending]: "Sending",
-  [SweepStatus.completed]: "Completed",
-};
 
 function outcomeText(outcome: TopUpAttempt["outcome"]): string {
   switch (outcome.__kind__) {
@@ -91,6 +91,68 @@ function List({ items, ocid }: { items: string[]; ocid: string }) {
         <li key={item}>{item}</li>
       ))}
     </ul>
+  );
+}
+
+const RESERVE_STATUS_LABELS: Record<ReserveStatus, string> = {
+  [ReserveStatus.ok]: "OK",
+  [ReserveStatus.surplus]: "Surplus",
+  [ReserveStatus.shortfall]: "Shortfall",
+};
+
+/** DEX readiness rows: pause, last reserve check, shortfalls, operations. */
+function DexRows() {
+  const { data } = useDexReadiness();
+  const { data: tokens } = useDexTokens();
+  if (!data) return null;
+  const reason = data.dexPauseReason;
+  const info = reason ? tokens?.find((t) => t.token === reason.token) : null;
+  const amount = (v: bigint) =>
+    info ? formatUnits(v, info.decimals, 0) : v.toString();
+  return (
+    <>
+      <Row label="DEX paused">
+        <Flag on={data.dexPaused} ocid="admin.upgrade_readiness.dex_paused" />
+        {reason && (
+          <span
+            className="mt-1 block text-xs"
+            data-ocid="admin.upgrade_readiness.dex_pause_reason"
+          >
+            {info?.symbol ?? reason.token}: internal{" "}
+            {amount(reason.internalTotal)}, ledger {amount(reason.ledgerTotal)}{" "}
+            · {formatTimestamp(reason.at)}
+          </span>
+        )}
+      </Row>
+      <Row label="Last DEX reserve check result">
+        <span data-ocid="admin.upgrade_readiness.dex_last_check">
+          {data.lastReserveCheckStatus
+            ? RESERVE_STATUS_LABELS[data.lastReserveCheckStatus]
+            : "No result"}
+        </span>
+      </Row>
+      <Row label="Unresolved shortfalls">
+        <span
+          className="font-mono"
+          data-ocid="admin.upgrade_readiness.dex_shortfalls"
+        >
+          {data.unresolvedShortfallCount.toString()}
+        </span>
+      </Row>
+      <Row label="DEX operations in flight">
+        <List
+          items={data.dexOperationsInFlight}
+          ocid="admin.upgrade_readiness.dex_operations_list"
+        />
+      </Row>
+      <Row label="DEX ready">
+        <Flag
+          on={data.dexReady}
+          warnWhen={false}
+          ocid="admin.upgrade_readiness.dex_ready"
+        />
+      </Row>
+    </>
   );
 }
 
@@ -249,11 +311,6 @@ export function UpgradeReadinessCard() {
                 ocid="admin.upgrade_readiness.owner_sends_list"
               />
             </Row>
-            <Row label="Treasury sweep">
-              <span data-ocid="admin.upgrade_readiness.sweep_status">
-                {SWEEP_LABELS[data.sweepStatus]}
-              </span>
-            </Row>
             <Row label="Mint fee claims in flight">
               <List
                 items={data.mintFeeClaimsInFlight.map(
@@ -266,6 +323,18 @@ export function UpgradeReadinessCard() {
               <List
                 items={data.injectionsInFlight.map((n) => `#${n.toString()}`)}
                 ocid="admin.upgrade_readiness.injections_list"
+              />
+            </Row>
+            <Row label="Revenue sends in flight">
+              <List
+                items={data.revenueSendsInFlight.map((n) => `#${n.toString()}`)}
+                ocid="admin.upgrade_readiness.revenue_sends_list"
+              />
+            </Row>
+            <Row label="Settlements in flight">
+              <List
+                items={data.settlementsInFlight}
+                ocid="admin.upgrade_readiness.settlements_list"
               />
             </Row>
             <Row label="Open purchase traces">
@@ -312,6 +381,7 @@ export function UpgradeReadinessCard() {
                 <span className="text-muted-foreground">Never</span>
               )}
             </Row>
+            <DexRows />
           </dl>
         )}
         <AlertDialog>

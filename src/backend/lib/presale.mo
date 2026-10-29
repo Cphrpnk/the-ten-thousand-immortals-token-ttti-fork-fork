@@ -101,7 +101,7 @@ module {
           minimumUsdE8 = PayTokenLib.minimumUsdE8(token);
           buyerPriceUsd = PayTokenLib.buyerPriceUsd(token);
           fundsCycles = PayTokenLib.fundsCycles(token);
-          // Mint revenue: the owner share goes to the owner destination or accumulates.
+          // Mint revenue: the 100/101 share stays in the contract and is managed by the admin through withdrawals.
           treasuryConfigured = true;
           priceUsdE8 = rate.usdE8;
           priceSource = rate.source;
@@ -310,6 +310,10 @@ module {
     if (buyer.isAnonymous()) {
       return #Err(refusal(#anonymousCaller, "Please sign in to buy TTTI-T"));
     };
+    switch (walletRefusal(ctx, token, stays)) {
+      case (?err) { return #Err(err) };
+      case null {};
+    };
     if (not hasAccepted(ctx.acknowledgements, buyer)) {
       return #Err(refusal(#acknowledgementRequired, "Please accept the purchase acknowledgements first" # stays));
     };
@@ -476,18 +480,49 @@ module {
     };
   };
 
-  // Mint revenue of a delivered mint (`conversionId`): `routedFee` (held in
-  // the canister default account) goes to ProtocolFeesLib.routeMintFee; the
-  // owner share `net` is recorded as an OW send (memo TTTI-OW-<n>, sent once
-  // here, then by the retry timer) or accumulated when the token has no
-  // owner destination.
-  func payOwnerShare(ctx : PurchaseContext, token : PayToken, conversionId : Nat, net : Nat, routedFee : Nat) : async () {
-    if (routedFee > 0) {
-      ignore ProtocolFeesLib.routeMintFee(ctx.protocolFees, token, routedFee, conversionId, Time.now());
+  // Mint revenue of a delivered mint (`conversionId`), both parts held in the
+  // canister default account. The owner share `net` is sent in the paid token
+  // to the receiving wallet (OW, source #mint, ledger fee deducted); the fee
+  // `feeHeld` is moved to the dedicated fee account (ST, ledger fee deducted)
+  // and the moved amount is routed by ProtocolFeesLib.routeMintFee. A zero or
+  // below-fee part is not required. Both sends are recorded before any await
+  // and follow lib/retry.mo (the retry timer resends them).
+  func payOwnerShare(ctx : PurchaseContext, token : PayToken, conversionId : Nat, net : Nat, feeHeld : Nat) : async () {
+    let ledgerFee = PayTokenLib.expectedFee(token);
+    var ownerSend : ?Nat = null;
+    switch (ctx.transfers.mintRevenue.wallets.get(TreasuryLib.tokenKey(token))) {
+      case (?w) {
+        if (net > ledgerFee) {
+          ownerSend := ?RetryLib.openOwnerSend(ctx.transfers, token, #mint(conversionId), null, w.account, Nat.sub(net, ledgerFee), ledgerFee).id;
+        };
+      };
+      case null {}; // unreachable: every mint path checks the wallet first
     };
-    switch (RetryLib.openOwnerSend(ctx.transfers, token, net, #mint(conversionId), null)) {
-      case (?s) { await RetryLib.sendOwner(ctx.transfers, s.id) };
+    var feeMove : ?Nat = null;
+    if (feeHeld > ledgerFee) {
+      let moved = Nat.sub(feeHeld, ledgerFee);
+      let feeAccount = { owner = ctx.canister; subaccount = ?ProtocolFeesLib.MINT_FEE_ACCOUNT_SUBACCOUNT };
+      feeMove := ?RetryLib.openFeeMove(ctx.transfers, token, #mintFee(conversionId), null, feeAccount, moved, ledgerFee).n;
+      ignore ProtocolFeesLib.routeMintFee(ctx.protocolFees, token, moved, conversionId, Time.now());
+    };
+    switch (ownerSend) {
+      case (?id) { await RetryLib.sendOwner(ctx.transfers, id) };
       case null {};
+    };
+    switch (feeMove) {
+      case (?n) { await RetryLib.sendFeeMove(ctx.transfers, n) };
+      case null {};
+    };
+  };
+
+  // Refusal when `token` (BTC mints: #ckbtc) has no receiving wallet yet.
+  func walletRefusal(ctx : PurchaseContext, token : PayToken, stays : Text) : ?PurchaseError {
+    switch (ctx.transfers.mintRevenue.wallets.get(TreasuryLib.tokenKey(token))) {
+      case (?_) { null };
+      case null {
+        let sym = PayTokenLib.symbol(token);
+        ?refusal(#receivingWalletNotConfigured({ token }), "Minting with " # sym # " is not available yet: no receiving wallet is configured for " # sym # stays);
+      };
     };
   };
 
@@ -507,6 +542,10 @@ module {
     };
     if (buyer.isAnonymous()) {
       return #Err(refusal(#anonymousCaller, "Please sign in to buy TTTI-T"));
+    };
+    switch (walletRefusal(ctx, token, "; no " # sym # " was taken")) {
+      case (?err) { return #Err(err) };
+      case null {};
     };
     if (not hasAccepted(ctx.acknowledgements, buyer)) {
       return #Err(refusal(#acknowledgementRequired, "Please accept the purchase acknowledgements first; no " # sym # " was taken"));
@@ -666,9 +705,10 @@ module {
         let recorded = TreasuryLib.recordConversion(ctx.treasury, { base with minted; fromCollector; mintBlock = firstBlock(blockIndices) });
         RetryLib.closeTrace(ctx.transfers, trace.n);
         // Mint revenue: the 1/101 fee stays in the canister default account
-        // and is routed by lib/protocol-fees.mo; the owner share (net) goes to
-        // the token's owner destination (OW) or accumulates. No forward to
-        // the internal mint treasury and no cycles reserve share any more.
+        // and is routed by lib/protocol-fees.mo. The 100/101 share also stays
+        // in the contract (default account); it is tracked by the
+        // ownerRevenue.accumulated counter and the admin manages it through
+        // withdrawals. No forward to the internal mint treasury.
         await payOwnerShare(ctx, token, recorded.id, Nat.sub(cost, fee), fee);
         #Ok(ctx.treasury.conversions.get(recorded.id) ?? recorded);
       };

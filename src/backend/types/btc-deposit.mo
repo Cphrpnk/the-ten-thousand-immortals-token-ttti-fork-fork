@@ -39,6 +39,9 @@ module {
     // purchase, stage #delivered: the excess refund failed; ckbtcPendingSats
     // is the amount still held, errorMessage the reason; retried automatically.
     #refundFailed;
+    // purchase: no ckBTC receiving wallet configured; the deposit is not
+    // converted (nothing taken) and waits until the admin configures it.
+    #receivingWalletNotConfigured;
   };
 
   // The current BTC refund attempt of a deposit entry (memo

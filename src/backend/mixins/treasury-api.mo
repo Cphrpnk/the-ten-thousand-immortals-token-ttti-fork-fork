@@ -14,10 +14,12 @@ import PayTokenLib "../lib/pay-token";
 import RetryLib "../lib/retry";
 import ProtocolFeesLib "../lib/protocol-fees";
 import OwnerTypes "../types/owner-revenue";
+import SettlementLib "../lib/settlement";
+import List "mo:core/List";
 import Time "mo:core/Time";
 
 // Mint treasuries (internal subaccounts of this contract for ICP, ckBTC,
-// ckUSDC and ckUSDT, no withdrawal path; DEX lot 4), the weekly allocation
+// ckUSDC and ckUSDT; the admin withdraws from them), the weekly allocation
 // views, conversion history and the buy-to-mint purchase
 // endpoints. Each delivered ICP purchase sends its 1% fee share to the cycles
 // reserve and the rest to the ICP mint treasury; ck-token purchases (1% fee
@@ -42,6 +44,8 @@ mixin (
   treasuryAllocation : TreasuryLib.AllocationStore,
   // Mint revenue correction: mint-fee routing context. Transient, owned by main.mo.
   protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
+  // Mint revenue routing: wallets, fee account and one-time settlement. Transient, owned by main.mo.
+  settlementContext : SettlementLib.SettlementContext,
 ) {
   // The ICP ledger canister (mainnet). Transient: a capability handle.
   transient let icpLedger : TreasuryLib.IcpLedger = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai");
@@ -84,7 +88,7 @@ mixin (
   };
 
   // Admin only: the internal mint treasuries (ICP, ckBTC, ckUSDC, ckUSDT)
-  // that receive new forwards (FW); no withdrawal path.
+  // that receive new forwards (FW); the admin withdraws with withdrawTreasury.
   public query ({ caller }) func getMintTreasuryAccounts() : async [Treasury.MintTreasuryAccount] {
     requireAdmin(caller);
     TreasuryLib.mintTreasuryAccounts(treasury, treasuryAllocation, canisterPrincipal);
@@ -159,52 +163,81 @@ mixin (
     await* purchaseLocked(caller, token, recipient, payAmount, tttiTarget);
   };
 
-  // --- Mint owner revenue (admin only) ---------------------------------------
+  // --- Mint revenue routing (admin only) -------------------------------------
+  // The 100/101 share of each mint is sent directly, in the paid token, to the
+  // receiving wallet configured for that token (BTC: the ckBTC wallet); the
+  // 1/101 fee goes to the dedicated fee account. Nothing accumulates in the
+  // contract and no endpoint withdraws from it.
 
-  // Sets the owner destination of `token` (ICRC account), then sends the
-  // amount accumulated for that token (OW) and resumes a waiting sweep.
-  public shared ({ caller }) func setOwnerDestination(token : Treasury.PayToken, account : Common.Account) : async OwnerTypes.OwnerDestinationResult {
+  // Admin only: sets the receiving wallet of `token` (ICRC account; not
+  // anonymous, 32-byte subaccount, not an account of this contract). Records
+  // the change; the first configuration starts the token's one-time
+  // settlement (a completed settlement is never sent again).
+  public shared ({ caller }) func setReceivingWallet(token : Treasury.PayToken, account : Common.Account) : async OwnerTypes.ReceivingWalletResult {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       return #err(#notAdmin);
     };
-    let result = TreasuryLib.setOwnerDestination(transferContext.ownerRevenue, canisterPrincipal, token, account, caller, Time.now());
+    let result = SettlementLib.setWallet(settlementContext, token, account, caller, Time.now());
     switch (result) {
-      case (#ok(view)) {
-        // Sends the accumulated share now; a failure is retried by the timer.
-        try { await RetryLib.flushOwnerAccumulated(transferContext, token) } catch (_) {};
-        #ok(TreasuryLib.ownerDestinations(transferContext.ownerRevenue).find(func v = v.token == token) ?? view);
+      case (#ok(_)) {
+        // Starts sending the settlement legs right away (the timer retries).
+        await SettlementLib.runPending(settlementContext);
       };
-      case (#err(_)) { result };
+      case (#err(_)) {};
     };
+    result;
   };
 
-  // Clears the owner destination of `token`; later shares accumulate.
-  public shared ({ caller }) func clearOwnerDestination(token : Treasury.PayToken) : async OwnerTypes.OwnerDestinationResult {
+  // Admin only: the receiving wallet of every pay token (null = not configured).
+  public query ({ caller }) func getReceivingWallets() : async OwnerTypes.ReceivingWalletsResult {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       return #err(#notAdmin);
     };
-    TreasuryLib.clearOwnerDestination(transferContext.ownerRevenue, token, caller, Time.now());
+    #ok(SettlementLib.walletViews(settlementContext.transfers.mintRevenue));
   };
 
-  // One row per pay token with its destination and accumulated amount.
-  public query ({ caller }) func listOwnerDestinations() : async [OwnerTypes.OwnerDestinationView] {
-    requireAdmin(caller);
-    TreasuryLib.ownerDestinations(transferContext.ownerRevenue);
+  // Admin only: one-time settlement status per pay token.
+  public query ({ caller }) func getSettlementStatus() : async OwnerTypes.SettlementStatusResult {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      return #err(#notAdmin);
+    };
+    #ok(SettlementLib.statusViews(settlementContext));
   };
 
-  // Owner send history, newest first, `limit` capped at 100.
+  // Admin only: the dedicated fee account (owner, subaccount hex, account
+  // text, per-token ledger balance, set-aside and redistributed totals).
+  // Update call (ledger reads). Read-only: nothing can be withdrawn from it.
+  public shared ({ caller }) func getMintFeeAccount() : async OwnerTypes.FeeAccountResult {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      return #err(#notAdmin);
+    };
+    #ok(await SettlementLib.feeAccountView(settlementContext));
+  };
+
+  // Admin only: withdrawals, newest first, `limit` capped at 100: amount, token,
+  // destination, date, status and block.
+  public query ({ caller }) func listTreasuryWithdrawals(offset : Nat, limit : Nat) : async OwnerTypes.WithdrawalPageResult {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      return #err(#notAdmin);
+    };
+    #ok(TreasuryLib.withdrawals(transferContext.ownerRevenue, offset, limit));
+  };
+
+  // Owner send history (earlier automatic sends and withdrawals), newest first,
+  // `limit` capped at 100.
   public query ({ caller }) func listOwnerSends(offset : Nat, limit : Nat) : async OwnerTypes.OwnerSendPage {
     requireAdmin(caller);
     TreasuryLib.ownerSends(transferContext.ownerRevenue, offset, limit);
   };
 
-  // Per-token owner share accumulated and not yet sent.
+  // Per-token share accumulated earlier in the default account (part of the
+  // admin-managed balance).
   public query ({ caller }) func getOwnerAccumulated() : async [OwnerTypes.OwnerAccumulated] {
     requireAdmin(caller);
     TreasuryLib.ownerAccumulated(transferContext.ownerRevenue);
   };
 
-  // Status of the one-time treasury sweep.
+  // Status of the one-time treasury sweep (history).
   public query ({ caller }) func getTreasurySweepStatus() : async OwnerTypes.TreasurySweepView {
     requireAdmin(caller);
     TreasuryLib.sweepView(transferContext.ownerRevenue);

@@ -2,19 +2,14 @@ import { defineDict } from "../core/dict";
 
 /**
  * White paper page interface and corrected-edition section 01 "Read this first".
- * Sections 02 to 07 and the archival original stay in English in every language.
+ * Sections 02 to 07 stay in English in every language.
  */
 export const WHITE_PAPER_TEXT = defineDict({
   en: {
     eyebrow: "Documents / White Paper",
     title: "The Ten Thousand Immortals",
     subtitle:
-      "The supplied original, preserved alongside a separate edition aligned with the current application source.",
-    editionsHeading: "White Paper Editions",
-    editionsAria: "White paper edition",
-    correctedTab: "Corrected edition · current source",
-    originalTab: "Original · archival",
-    download: "Download exact original DOCX",
+      "The corrected edition, aligned with the current application source.",
     identityHeading: "Identity of this edition",
     identityBefore: "The ledger name and symbol are both ",
     identityAfter:
@@ -36,22 +31,12 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingP2:
       "This edition explains what the current application source implements. It is not proof of a particular deployment, an independent audit, a live account balance or a guarantee that a purchase can be completed now.",
     englishOnlyNotice: "",
-    archiveNotice:
-      "Archived original. Some statements no longer match the code; the current edition is authoritative.",
-    archiveDescription:
-      "Archival transcription of the supplied document, in full and in its original order. Its claims have not been silently updated. The supplied DOCX is available above for exact formatting and source comparison. For current-code corrections, select the corrected edition.",
-    openOriginal: "Open original DOCX",
   },
   fr: {
     eyebrow: "Documents / Livre blanc",
     title: "Les Dix Mille Immortels",
     subtitle:
-      "L'original fourni, conservé à côté d'une édition distincte alignée sur le code source actuel de l'application.",
-    editionsHeading: "Éditions du livre blanc",
-    editionsAria: "Édition du livre blanc",
-    correctedTab: "Édition corrigée · code source actuel",
-    originalTab: "Original · archive",
-    download: "Télécharger le DOCX original exact",
+      "L'édition corrigée, alignée sur le code source actuel de l'application.",
     identityHeading: "Identité de cette édition",
     identityBefore: "Le nom et le symbole du ledger sont tous deux ",
     identityAfter:
@@ -74,22 +59,12 @@ export const WHITE_PAPER_TEXT = defineDict({
       "Cette édition explique ce que met en œuvre le code source actuel de l'application. Elle ne constitue ni la preuve d'un déploiement particulier, ni un audit indépendant, ni un solde de compte en temps réel, ni la garantie qu'un achat puisse être effectué maintenant.",
     englishOnlyNotice:
       "Les sections 02 à 07 ci-dessous ne sont disponibles qu'en anglais.",
-    archiveNotice:
-      "Original archivé. Certaines affirmations ne correspondent plus au code ; l'édition actuelle fait foi.",
-    archiveDescription:
-      "Transcription d'archive du document fourni, intégrale et dans son ordre d'origine. Ses affirmations n'ont pas été mises à jour discrètement. Le DOCX fourni est disponible ci-dessus pour la mise en forme exacte et la comparaison avec la source. Pour les corrections relatives au code actuel, sélectionnez l'édition corrigée.",
-    openOriginal: "Ouvrir le DOCX original",
   },
   es: {
     eyebrow: "Documentos / Libro blanco",
     title: "Los Diez Mil Inmortales",
     subtitle:
-      "El original proporcionado, conservado junto a una edición independiente alineada con el código fuente actual de la aplicación.",
-    editionsHeading: "Ediciones del libro blanco",
-    editionsAria: "Edición del libro blanco",
-    correctedTab: "Edición corregida · código fuente actual",
-    originalTab: "Original · archivo",
-    download: "Descargar el DOCX original exacto",
+      "La edición corregida, alineada con el código fuente actual de la aplicación.",
     identityHeading: "Identidad de esta edición",
     identityBefore: "El nombre y el símbolo del ledger son ambos ",
     identityAfter:
@@ -112,22 +87,11 @@ export const WHITE_PAPER_TEXT = defineDict({
       "Esta edición explica lo que implementa el código fuente actual de la aplicación. No constituye prueba de un despliegue concreto, ni una auditoría independiente, ni un saldo de cuenta en tiempo real, ni una garantía de que una compra pueda completarse ahora.",
     englishOnlyNotice:
       "Las secciones 02 a 07 que siguen solo están disponibles en inglés.",
-    archiveNotice:
-      "Original archivado. Algunas afirmaciones ya no coinciden con el código; la edición actual es la que prevalece.",
-    archiveDescription:
-      "Transcripción de archivo del documento proporcionado, íntegra y en su orden original. Sus afirmaciones no se han actualizado de forma silenciosa. El DOCX proporcionado está disponible arriba para consultar el formato exacto y compararlo con la fuente. Para las correcciones relativas al código actual, seleccione la edición corregida.",
-    openOriginal: "Abrir el DOCX original",
   },
   "zh-Hans": {
     eyebrow: "文档 / 白皮书",
     title: "万名不朽者",
-    subtitle:
-      "保留所提供的原始版本，并另附一份与当前应用源代码保持一致的独立版本。",
-    editionsHeading: "白皮书版本",
-    editionsAria: "白皮书版本",
-    correctedTab: "修订版 · 当前源代码",
-    originalTab: "原版 · 存档",
-    download: "下载原始 DOCX 文件",
+    subtitle: "与当前应用源代码保持一致的修订版。",
     identityHeading: "本版本的标识",
     identityBefore: "ledger 的名称和代码均为 ",
     identityAfter:
@@ -149,21 +113,12 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingP2:
       "本版本说明当前应用源代码所实现的内容。它不能证明任何特定部署，不是独立审计，不代表实时账户余额，也不保证现在能够完成购买。",
     englishOnlyNotice: "以下第 02 至 07 节仅提供英文版本。",
-    archiveNotice: "存档原版。部分表述已与代码不符；以当前版本为准。",
-    archiveDescription:
-      "所提供文档的存档转录，内容完整并保持原始顺序。其中的表述未经任何悄然修改。如需查看确切格式或与原文对照，可在上方获取所提供的 DOCX 文件。如需了解针对当前代码的修订，请选择修订版。",
-    openOriginal: "打开原始 DOCX",
   },
   "pt-BR": {
     eyebrow: "Documentos / White paper",
     title: "Os Dez Mil Imortais",
     subtitle:
-      "O original fornecido, preservado ao lado de uma edição separada alinhada ao código-fonte atual do aplicativo.",
-    editionsHeading: "Edições do white paper",
-    editionsAria: "Edição do white paper",
-    correctedTab: "Edição corrigida · código-fonte atual",
-    originalTab: "Original · arquivo",
-    download: "Baixar o DOCX original exato",
+      "A edição corrigida, alinhada ao código-fonte atual do aplicativo.",
     identityHeading: "Identidade desta edição",
     identityBefore: "O nome e o símbolo do ledger são ambos ",
     identityAfter:
@@ -186,22 +141,11 @@ export const WHITE_PAPER_TEXT = defineDict({
       "Esta edição explica o que o código-fonte atual do aplicativo implementa. Ela não é prova de uma implantação específica, nem uma auditoria independente, nem um saldo de conta em tempo real, nem uma garantia de que uma compra possa ser concluída agora.",
     englishOnlyNotice:
       "As seções 02 a 07 abaixo estão disponíveis somente em inglês.",
-    archiveNotice:
-      "Original arquivado. Algumas afirmações não correspondem mais ao código; a edição atual é a que prevalece.",
-    archiveDescription:
-      "Transcrição de arquivo do documento fornecido, na íntegra e em sua ordem original. Suas afirmações não foram atualizadas silenciosamente. O DOCX fornecido está disponível acima para consulta da formatação exata e comparação com a fonte. Para as correções relativas ao código atual, selecione a edição corrigida.",
-    openOriginal: "Abrir o DOCX original",
   },
   ko: {
     eyebrow: "문서 / 백서",
     title: "만 명의 불사신",
-    subtitle:
-      "제공된 원본을 보존하고, 현재 애플리케이션 소스 코드에 맞춘 별도의 판을 함께 제공합니다.",
-    editionsHeading: "백서 판",
-    editionsAria: "백서 판",
-    correctedTab: "수정판 · 현재 소스 코드",
-    originalTab: "원본 · 보관본",
-    download: "원본 DOCX 그대로 다운로드",
+    subtitle: "현재 애플리케이션 소스 코드에 맞춘 수정판입니다.",
     identityHeading: "이 판의 식별 정보",
     identityBefore: "ledger의 이름과 심볼은 모두 ",
     identityAfter:
@@ -223,22 +167,11 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingP2:
       "이 판은 현재 애플리케이션 소스 코드가 구현하는 내용을 설명합니다. 이는 특정 배포에 대한 증명, 독립적인 감사, 실시간 계정 잔액, 또는 지금 구매를 완료할 수 있다는 보장이 아닙니다.",
     englishOnlyNotice: "아래 02~07절은 영어로만 제공됩니다.",
-    archiveNotice:
-      "보관된 원본입니다. 일부 내용은 더 이상 코드와 일치하지 않으며, 현재 판이 우선합니다.",
-    archiveDescription:
-      "제공된 문서를 원래 순서대로 전부 옮긴 보관용 전사본입니다. 그 내용은 별도 표시 없이 수정되지 않았습니다. 정확한 서식 확인과 원문 대조를 위해 위에서 제공된 DOCX를 이용할 수 있습니다. 현재 코드 기준의 수정 사항은 수정판을 선택하십시오.",
-    openOriginal: "원본 DOCX 열기",
   },
   "pa-Guru": {
     eyebrow: "ਦਸਤਾਵੇਜ਼ / ਵ੍ਹਾਈਟ ਪੇਪਰ",
     title: "ਦਸ ਹਜ਼ਾਰ ਅਮਰ",
-    subtitle:
-      "ਦਿੱਤਾ ਗਿਆ ਮੂਲ ਦਸਤਾਵੇਜ਼, ਐਪਲੀਕੇਸ਼ਨ ਦੇ ਮੌਜੂਦਾ ਸਰੋਤ ਕੋਡ ਨਾਲ ਮੇਲ ਖਾਂਦੇ ਇੱਕ ਵੱਖਰੇ ਸੰਸਕਰਣ ਦੇ ਨਾਲ ਸੁਰੱਖਿਅਤ ਰੱਖਿਆ ਗਿਆ ਹੈ।",
-    editionsHeading: "ਵ੍ਹਾਈਟ ਪੇਪਰ ਦੇ ਸੰਸਕਰਣ",
-    editionsAria: "ਵ੍ਹਾਈਟ ਪੇਪਰ ਸੰਸਕਰਣ",
-    correctedTab: "ਸੋਧਿਆ ਸੰਸਕਰਣ · ਮੌਜੂਦਾ ਸਰੋਤ ਕੋਡ",
-    originalTab: "ਮੂਲ · ਪੁਰਾਲੇਖ",
-    download: "ਬਿਲਕੁਲ ਮੂਲ DOCX ਡਾਊਨਲੋਡ ਕਰੋ",
+    subtitle: "ਸੋਧਿਆ ਸੰਸਕਰਣ, ਐਪਲੀਕੇਸ਼ਨ ਦੇ ਮੌਜੂਦਾ ਸਰੋਤ ਕੋਡ ਨਾਲ ਮੇਲ ਖਾਂਦਾ।",
     identityHeading: "ਇਸ ਸੰਸਕਰਣ ਦੀ ਪਛਾਣ",
     identityBefore: "ledger ਦਾ ਨਾਮ ਅਤੇ ਚਿੰਨ੍ਹ ਦੋਵੇਂ ",
     identityAfter:
@@ -260,10 +193,5 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingP2:
       "ਇਹ ਸੰਸਕਰਣ ਦੱਸਦਾ ਹੈ ਕਿ ਐਪਲੀਕੇਸ਼ਨ ਦਾ ਮੌਜੂਦਾ ਸਰੋਤ ਕੋਡ ਕੀ ਲਾਗੂ ਕਰਦਾ ਹੈ। ਇਹ ਕਿਸੇ ਖਾਸ ਤੈਨਾਤੀ ਦਾ ਸਬੂਤ, ਸੁਤੰਤਰ ਆਡਿਟ, ਲਾਈਵ ਖਾਤਾ ਬਕਾਇਆ ਜਾਂ ਇਸ ਗੱਲ ਦੀ ਗਾਰੰਟੀ ਨਹੀਂ ਹੈ ਕਿ ਹੁਣੇ ਖਰੀਦ ਪੂਰੀ ਕੀਤੀ ਜਾ ਸਕਦੀ ਹੈ।",
     englishOnlyNotice: "ਹੇਠਾਂ ਦਿੱਤੇ ਭਾਗ 02 ਤੋਂ 07 ਸਿਰਫ਼ ਅੰਗਰੇਜ਼ੀ ਵਿੱਚ ਉਪਲਬਧ ਹਨ।",
-    archiveNotice:
-      "ਪੁਰਾਲੇਖ ਕੀਤਾ ਮੂਲ। ਕੁਝ ਕਥਨ ਹੁਣ ਕੋਡ ਨਾਲ ਮੇਲ ਨਹੀਂ ਖਾਂਦੇ; ਮੌਜੂਦਾ ਸੰਸਕਰਣ ਹੀ ਪ੍ਰਮਾਣਿਕ ਹੈ।",
-    archiveDescription:
-      "ਦਿੱਤੇ ਗਏ ਦਸਤਾਵੇਜ਼ ਦੀ ਪੁਰਾਲੇਖੀ ਨਕਲ, ਪੂਰੀ ਅਤੇ ਇਸਦੇ ਮੂਲ ਕ੍ਰਮ ਵਿੱਚ। ਇਸਦੇ ਦਾਅਵਿਆਂ ਨੂੰ ਚੁੱਪਚਾਪ ਅੱਪਡੇਟ ਨਹੀਂ ਕੀਤਾ ਗਿਆ। ਸਹੀ ਫਾਰਮੈਟਿੰਗ ਅਤੇ ਸਰੋਤ ਨਾਲ ਤੁਲਨਾ ਲਈ ਦਿੱਤਾ ਗਿਆ DOCX ਉੱਪਰ ਉਪਲਬਧ ਹੈ। ਮੌਜੂਦਾ ਕੋਡ ਨਾਲ ਸਬੰਧਤ ਸੋਧਾਂ ਲਈ, ਸੋਧਿਆ ਸੰਸਕਰਣ ਚੁਣੋ।",
-    openOriginal: "ਮੂਲ DOCX ਖੋਲ੍ਹੋ",
   },
 });

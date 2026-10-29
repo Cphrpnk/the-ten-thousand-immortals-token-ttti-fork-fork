@@ -1,6 +1,7 @@
 import List "mo:core/List";
 import Retry "retry";
 import CyclesReserve "cycles-reserve";
+import DexReserve "dex-reserve";
 
 // Upgrade readiness (admin): pause, in-flight locks, open purchase traces and
 // the sale.reserved reconciliation.
@@ -27,6 +28,21 @@ module {
     #notPaused; // sale.salesPaused is false
     #purchaseInFlight; // purchasesInFlight (the BTC lock included) is not empty
     #openTraces; // retry.traces is not empty
+  };
+
+  // DEX lot 6 part of the readiness. dexReady is false while the DEX is
+  // paused, a shortfall is unresolved, or DEX operations are in flight.
+  public type DexReadiness = {
+    dexPaused : Bool;
+    dexPauseReason : ?DexReserve.PauseReason;
+    lastReserveCheckAt : ?Int; // ns of the last attempt
+    // Worst token status of the last check's results (#shortfall first,
+    // then #surplus, else #ok); null before the first check.
+    lastReserveCheckStatus : ?DexReserve.ReserveStatus;
+    unresolvedShortfallCount : Nat;
+    // Held dexInFlight (DD / DW / DQ) and routerInFlight (IR) lock keys.
+    dexOperationsInFlight : [Text];
+    dexReady : Bool;
   };
 
   public type UpgradeReadiness = {

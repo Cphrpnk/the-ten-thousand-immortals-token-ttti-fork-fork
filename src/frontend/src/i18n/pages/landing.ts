@@ -1025,7 +1025,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Total supply: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Creator disclosures",
     disclosure1:
-      "For each mint, 100/101 of the ICP, ckBTC, ckUSDC or ckUSDT paid goes, in the paid token, to the owner's destination account set for that token; 1/101 is the mint fee. The creator may fund buybacks with personal funds. Buybacks are optional and limited, and nobody is obligated to buy back. The creator does not defend a price or trade to create volume. He will not open a liquidity pool or list TTTI on any other exchange. Any market is created by holders.",
+      "For each mint, 100/101 of the ICP, ckBTC, ckUSDC or ckUSDT paid stays in the contract, in the paid token, and is managed by the admin; 1/101 is the mint fee. The creator may fund buybacks with personal funds. Buybacks are optional and limited, and nobody is obligated to buy back. The creator does not defend a price or trade to create volume. Anyone, the creator included, may provide liquidity at their discretion and withdraw it at any time. Trust only what you can verify.",
     disclosure2:
       "TTTI and THAT have the same creator. TTTI has no link to THAT: it cannot be exchanged for THAT, used inside THAT, or converted into anything else.",
   },
@@ -1052,7 +1052,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Offre totale : ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Déclarations du créateur",
     disclosure1:
-      "Pour chaque mint, 100/101 de l'ICP, du ckBTC, du ckUSDC ou du ckUSDT payé vont, dans le jeton payé, au compte de destination du propriétaire fixé pour ce jeton ; 1/101 constitue les frais de mint. Le créateur peut financer des rachats avec ses fonds personnels. Les rachats sont facultatifs et limités, et personne n'est obligé de racheter. Le créateur ne défend aucun prix et n'effectue pas de transactions pour créer du volume. Il n'ouvrira pas de pool de liquidité et ne listera TTTI sur aucune autre plateforme d'échange. Tout marché est créé par les détenteurs.",
+      "Pour chaque mint, 100/101 de l'ICP, du ckBTC, du ckUSDC ou du ckUSDT payé restent dans le contrat, dans le jeton payé, et sont gérés par l'administrateur ; 1/101 constitue les frais de mint. Le créateur peut financer des rachats avec ses fonds personnels. Les rachats sont facultatifs et limités, et personne n'est obligé de racheter. Le créateur ne défend aucun prix et n'effectue pas de transactions pour créer du volume. Toute personne, y compris le créateur, peut apporter de la liquidité à sa discrétion et la retirer à tout moment. Ne vous fiez qu'à ce que vous pouvez vérifier.",
     disclosure2:
       "TTTI et THAT ont le même créateur. TTTI n'a aucun lien avec THAT : il ne peut pas être échangé contre THAT, ni utilisé au sein de THAT, ni converti en quoi que ce soit d'autre.",
   },
@@ -1079,7 +1079,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Suministro total: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Declaraciones del creador",
     disclosure1:
-      "En cada mint, 100/101 del ICP, ckBTC, ckUSDC o ckUSDT pagado van, en el token pagado, a la cuenta de destino del propietario fijada para ese token; 1/101 es la comisión de mint. El creador puede financiar recompras con fondos personales. Las recompras son opcionales y limitadas, y nadie está obligado a recomprar. El creador no defiende ningún precio ni opera para generar volumen. No abrirá ningún pool de liquidez ni listará TTTI en ninguna otra plataforma de intercambio. Cualquier mercado lo crean los poseedores.",
+      "En cada mint, 100/101 del ICP, ckBTC, ckUSDC o ckUSDT pagado permanecen en el contrato, en el token pagado, y los gestiona el administrador; 1/101 es la comisión de mint. El creador puede financiar recompras con fondos personales. Las recompras son opcionales y limitadas, y nadie está obligado a recomprar. El creador no defiende ningún precio ni opera para generar volumen. Cualquier persona, incluido el creador, puede aportar liquidez a su discreción y retirarla en cualquier momento. Confíe únicamente en lo que pueda verificar.",
     disclosure2:
       "TTTI y THAT tienen el mismo creador. TTTI no tiene ningún vínculo con THAT: no puede intercambiarse por THAT, ni usarse dentro de THAT, ni convertirse en ninguna otra cosa.",
   },
@@ -1104,7 +1104,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `总供应量：${total} / ${max} ${symbol}（${percent}%）`,
     disclosuresTitle: "创建者声明",
     disclosure1:
-      "每次铸造时，所支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 的 100/101 以所支付的代币转入为该代币设置的所有者目标账户；1/101 为铸造费用。创建者可以用个人资金为回购提供资金。回购是可选且有限的，任何人都没有回购的义务。创建者不维护任何价格，也不为制造交易量而交易。他不会开设流动性池，也不会在任何其他交易所上架 TTTI。任何市场均由持有者创建。",
+      "每次铸造时，所支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 的 100/101 以所支付的代币留在合约中，由管理员管理；1/101 为铸造费用。创建者可以用个人资金为回购提供资金。回购是可选且有限的，任何人都没有回购的义务。创建者不维护任何价格，也不为制造交易量而交易。任何人，包括创建者，均可自行决定提供流动性，并可随时撤回。只相信您能够验证的内容。",
     disclosure2:
       "TTTI 与 THAT 出自同一创建者。TTTI 与 THAT 没有任何关联：它不能兑换为 THAT，不能在 THAT 中使用，也不能转换为任何其他东西。",
   },
@@ -1131,7 +1131,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `Oferta total: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "Declarações do criador",
     disclosure1:
-      "Em cada mint, 100/101 do ICP, ckBTC, ckUSDC ou ckUSDT pago vão, no token pago, para a conta de destino do proprietário definida para esse token; 1/101 é a taxa de mint. O criador pode financiar recompras com fundos pessoais. As recompras são opcionais e limitadas, e ninguém é obrigado a recomprar. O criador não defende nenhum preço nem negocia para gerar volume. Ele não abrirá nenhum pool de liquidez nem listará TTTI em nenhuma outra plataforma de negociação. Qualquer mercado é criado pelos detentores.",
+      "Em cada mint, 100/101 do ICP, ckBTC, ckUSDC ou ckUSDT pago permanecem no contrato, no token pago, e são gerenciados pelo administrador; 1/101 é a taxa de mint. O criador pode financiar recompras com fundos pessoais. As recompras são opcionais e limitadas, e ninguém é obrigado a recomprar. O criador não defende nenhum preço nem negocia para gerar volume. Qualquer pessoa, inclusive o criador, pode fornecer liquidez a seu critério e retirá-la a qualquer momento. Confie apenas no que você puder verificar.",
     disclosure2:
       "TTTI e THAT têm o mesmo criador. TTTI não tem nenhum vínculo com THAT: não pode ser trocado por THAT, nem usado dentro de THAT, nem convertido em qualquer outra coisa.",
   },
@@ -1156,7 +1156,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `총 공급량: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "창작자 고지",
     disclosure1:
-      "민트할 때마다 지불한 ICP, ckBTC, ckUSDC 또는 ckUSDT의 100/101은 지불한 토큰으로, 해당 토큰에 설정된 소유자의 목적지 계정으로 갑니다. 1/101은 민트 수수료입니다. 창작자는 개인 자금으로 환매 자금을 댈 수 있습니다. 환매는 선택적이고 제한적이며, 누구도 환매할 의무가 없습니다. 창작자는 가격을 방어하지 않으며, 거래량을 만들기 위해 거래하지 않습니다. 창작자는 유동성 풀을 열지 않으며 다른 어떤 거래소에도 TTTI를 상장하지 않습니다. 모든 시장은 보유자가 만듭니다.",
+      "민트할 때마다 지불한 ICP, ckBTC, ckUSDC 또는 ckUSDT의 100/101은 지불한 토큰으로 컨트랙트에 남아 관리자가 관리합니다. 1/101은 민트 수수료입니다. 창작자는 개인 자금으로 환매 자금을 댈 수 있습니다. 환매는 선택적이고 제한적이며, 누구도 환매할 의무가 없습니다. 창작자는 가격을 방어하지 않으며, 거래량을 만들기 위해 거래하지 않습니다. 창작자를 포함한 누구나 자신의 재량으로 유동성을 공급할 수 있으며 언제든지 회수할 수 있습니다. 직접 확인할 수 있는 것만 신뢰하세요.",
     disclosure2:
       "TTTI와 THAT은 창작자가 같습니다. TTTI는 THAT과 아무 관련이 없습니다: THAT으로 교환할 수 없고, THAT 안에서 사용할 수 없으며, 다른 어떤 것으로도 전환할 수 없습니다.",
   },
@@ -1181,7 +1181,7 @@ export const PRESALE_TEXT = defineDict({
     ) => `ਕੁੱਲ ਸਪਲਾਈ: ${total} / ${max} ${symbol} (${percent}%)`,
     disclosuresTitle: "ਨਿਰਮਾਤਾ ਦੇ ਖੁਲਾਸੇ",
     disclosure1:
-      "ਹਰ ਮਿੰਟ ਲਈ, ਅਦਾ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਦਾ 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ, ਉਸ ਟੋਕਨ ਲਈ ਨਿਰਧਾਰਤ ਮਾਲਕ ਦੇ ਮੰਜ਼ਿਲ ਖਾਤੇ ਨੂੰ ਜਾਂਦਾ ਹੈ; 1/101 ਮਿੰਟ ਫੀਸ ਹੈ। ਨਿਰਮਾਤਾ ਨਿੱਜੀ ਫੰਡਾਂ ਨਾਲ ਵਾਪਸ ਖਰੀਦਾਂ ਲਈ ਫੰਡ ਦੇ ਸਕਦਾ ਹੈ। ਵਾਪਸ ਖਰੀਦਾਂ ਵਿਕਲਪਿਕ ਅਤੇ ਸੀਮਤ ਹਨ, ਅਤੇ ਕੋਈ ਵੀ ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਮਜਬੂਰ ਨਹੀਂ ਹੈ। ਨਿਰਮਾਤਾ ਕਿਸੇ ਕੀਮਤ ਦਾ ਬਚਾਅ ਨਹੀਂ ਕਰਦਾ ਅਤੇ ਵਾਲੀਅਮ ਬਣਾਉਣ ਲਈ ਵਪਾਰ ਨਹੀਂ ਕਰਦਾ। ਉਹ ਕੋਈ ਲਿਕਵਿਡਿਟੀ ਪੂਲ ਨਹੀਂ ਖੋਲ੍ਹੇਗਾ ਅਤੇ TTTI ਨੂੰ ਕਿਸੇ ਹੋਰ ਐਕਸਚੇਂਜ 'ਤੇ ਸੂਚੀਬੱਧ ਨਹੀਂ ਕਰੇਗਾ। ਕੋਈ ਵੀ ਬਾਜ਼ਾਰ ਧਾਰਕਾਂ ਵੱਲੋਂ ਬਣਾਇਆ ਜਾਂਦਾ ਹੈ।",
+      "ਹਰ ਮਿੰਟ ਲਈ, ਅਦਾ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਦਾ 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਕੰਟਰੈਕਟ ਵਿੱਚ ਰਹਿੰਦਾ ਹੈ ਅਤੇ ਐਡਮਿਨ ਵੱਲੋਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ; 1/101 ਮਿੰਟ ਫੀਸ ਹੈ। ਨਿਰਮਾਤਾ ਨਿੱਜੀ ਫੰਡਾਂ ਨਾਲ ਵਾਪਸ ਖਰੀਦਾਂ ਲਈ ਫੰਡ ਦੇ ਸਕਦਾ ਹੈ। ਵਾਪਸ ਖਰੀਦਾਂ ਵਿਕਲਪਿਕ ਅਤੇ ਸੀਮਤ ਹਨ, ਅਤੇ ਕੋਈ ਵੀ ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਮਜਬੂਰ ਨਹੀਂ ਹੈ। ਨਿਰਮਾਤਾ ਕਿਸੇ ਕੀਮਤ ਦਾ ਬਚਾਅ ਨਹੀਂ ਕਰਦਾ ਅਤੇ ਵਾਲੀਅਮ ਬਣਾਉਣ ਲਈ ਵਪਾਰ ਨਹੀਂ ਕਰਦਾ। ਨਿਰਮਾਤਾ ਸਮੇਤ ਕੋਈ ਵੀ ਆਪਣੀ ਮਰਜ਼ੀ ਨਾਲ ਲਿਕਵਿਡਿਟੀ ਪ੍ਰਦਾਨ ਕਰ ਸਕਦਾ ਹੈ ਅਤੇ ਕਿਸੇ ਵੀ ਸਮੇਂ ਇਸ ਨੂੰ ਕਢਵਾ ਸਕਦਾ ਹੈ। ਸਿਰਫ਼ ਉਸੇ ਉੱਤੇ ਭਰੋਸਾ ਕਰੋ ਜਿਸ ਦੀ ਤੁਸੀਂ ਪੁਸ਼ਟੀ ਕਰ ਸਕਦੇ ਹੋ।",
     disclosure2:
       "TTTI ਅਤੇ THAT ਦਾ ਨਿਰਮਾਤਾ ਇੱਕੋ ਹੈ। TTTI ਦਾ THAT ਨਾਲ ਕੋਈ ਸਬੰਧ ਨਹੀਂ ਹੈ: ਇਸ ਨੂੰ THAT ਨਾਲ ਬਦਲਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ, THAT ਦੇ ਅੰਦਰ ਵਰਤਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ, ਜਾਂ ਕਿਸੇ ਹੋਰ ਚੀਜ਼ ਵਿੱਚ ਬਦਲਿਆ ਨਹੀਂ ਜਾ ਸਕਦਾ।",
   },
@@ -1295,6 +1295,9 @@ export const FAQ_TEXT = defineDict({
       ". If you prefer, you can add an optional delivery address (a Principal ID) before minting — it is never required.",
     supplyQ: "How many tokens can exist?",
     supplyIntro: "TTTI is the future version; TTTI-T is the live test.",
+    liquidityQ: "How do liquidity pools work?",
+    liquidityA:
+      "Anyone may provide liquidity and withdraw it. Liquidity positions are public and linked to the identifier on TTTI. The protocol places no price-linked order and creates no TTTI-T. The mint fee buys TTTI-T without any price condition, to feed liquidity. Only observed yield, meaning fees actually earned, is shown. There is no promise of returns.",
     privacyQ: "What is public, and what does the app keep?",
     privacyA:
       "Every purchase and transfer is recorded publicly and permanently on the ledger of the token used: ICP, ckBTC, ckUSDC, ckUSDT or TTTI-T. Anyone can see the amounts, the accounts and the times. Bitcoin transfers are public on the Bitcoin chain: anyone can see their transaction IDs (txids), addresses and amounts. Beyond that, the app keeps only your purchase records with their amounts and block numbers, your delivery address, the date you accepted the purchase terms and your BTC deposit trackings (deposit address, txids and the status of each deposit).",
@@ -1327,6 +1330,9 @@ export const FAQ_TEXT = defineDict({
       ". Si vous le souhaitez, vous pouvez ajouter une adresse de livraison facultative (un Principal ID) avant de frapper — elle n'est jamais obligatoire.",
     supplyQ: "Combien de jetons peuvent exister ?",
     supplyIntro: "TTTI est la version future ; TTTI-T est le test en cours.",
+    liquidityQ: "Comment fonctionnent les pools de liquidité ?",
+    liquidityA:
+      "Toute personne peut apporter de la liquidité et la retirer. Les positions de liquidité sont publiques et liées à l'identifiant sur TTTI. Le protocole ne passe aucun ordre lié au prix et ne crée aucun TTTI-T. Les frais de mint achètent du TTTI-T sans aucune condition de prix, afin d'alimenter la liquidité. Seul le rendement constaté, c'est-à-dire les frais réellement perçus, est affiché. Il n'existe aucune promesse de rendement.",
     privacyQ: "Qu'est-ce qui est public, et que conserve l'app ?",
     privacyA:
       "Chaque achat et chaque transfert est enregistré publiquement et de façon permanente sur le ledger du jeton utilisé : ICP, ckBTC, ckUSDC, ckUSDT ou TTTI-T. Tout le monde peut voir les montants, les comptes et les horaires. Les transferts Bitcoin sont publics sur la chaîne Bitcoin : tout le monde peut voir leurs identifiants de transaction (txids), leurs adresses et leurs montants. Au-delà, l'app ne conserve que vos enregistrements d'achat avec leurs montants et leurs numéros de bloc, votre adresse de livraison, la date à laquelle vous avez accepté les conditions d'achat et vos suivis de dépôt BTC (adresse de dépôt, txids et statut de chaque dépôt).",
@@ -1358,6 +1364,9 @@ export const FAQ_TEXT = defineDict({
       ". Si lo prefiere, puede añadir una dirección de entrega opcional (un Principal ID) antes de acuñar; nunca es obligatoria.",
     supplyQ: "¿Cuántos tokens pueden existir?",
     supplyIntro: "TTTI es la versión futura; TTTI-T es la prueba en curso.",
+    liquidityQ: "¿Cómo funcionan los pools de liquidez?",
+    liquidityA:
+      "Cualquier persona puede aportar liquidez y retirarla. Las posiciones de liquidez son públicas y están vinculadas al identificador en TTTI. El protocolo no coloca ninguna orden vinculada al precio y no crea ningún TTTI-T. La comisión de mint compra TTTI-T sin ninguna condición de precio, para alimentar la liquidez. Solo se muestra el rendimiento observado, es decir, las comisiones realmente obtenidas. No existe ninguna promesa de rendimiento.",
     privacyQ: "¿Qué es público y qué conserva la app?",
     privacyA:
       "Cada compra y cada transferencia se registra de forma pública y permanente en el ledger del token utilizado: ICP, ckBTC, ckUSDC, ckUSDT o TTTI-T. Cualquiera puede ver los importes, las cuentas y las horas. Las transferencias de Bitcoin son públicas en la cadena de Bitcoin: cualquiera puede ver sus identificadores de transacción (txids), sus direcciones y sus importes. Aparte de eso, la app solo conserva sus registros de compra con sus importes y números de bloque, su dirección de entrega, la fecha en que aceptó las condiciones de compra y sus seguimientos de depósitos BTC (dirección de depósito, txids y estado de cada depósito).",
@@ -1386,6 +1395,9 @@ export const FAQ_TEXT = defineDict({
       "的 TTTI-T 下。如果您愿意，可以在铸造前添加一个可选的交付地址（Principal ID），但这从来不是必需的。",
     supplyQ: "最多可以存在多少枚代币？",
     supplyIntro: "TTTI 是未来版本；TTTI-T 是正在进行的测试。",
+    liquidityQ: "流动性池如何运作？",
+    liquidityA:
+      "任何人都可以提供流动性并将其撤回。流动性头寸是公开的，并与 TTTI 上的标识符相关联。协议不下达任何与价格挂钩的订单，也不创建任何 TTTI-T。铸造费用在没有任何价格条件的情况下购买 TTTI-T，用于补充流动性。仅显示已观察到的收益，即实际获得的手续费。不存在任何收益承诺。",
     privacyQ: "哪些信息是公开的？应用会保留什么？",
     privacyA:
       "每一笔购买和转账都会公开、永久地记录在所用代币的账本上：ICP、ckBTC、ckUSDC、ckUSDT 或 TTTI-T。任何人都可以看到金额、账户和时间。Bitcoin 转账在 Bitcoin 链上公开：任何人都可以看到其交易 ID（txid）、地址和金额。除此之外，应用只保留您的购买记录（含金额和区块编号）、您的交付地址、您接受购买条款的日期以及您的 BTC 存款跟踪记录（存款地址、txid 及每笔存款的状态）。",
@@ -1418,6 +1430,9 @@ export const FAQ_TEXT = defineDict({
       ". Se preferir, você pode adicionar um endereço de entrega opcional (um Principal ID) antes de cunhar — ele nunca é obrigatório.",
     supplyQ: "Quantos tokens podem existir?",
     supplyIntro: "TTTI é a versão futura; TTTI-T é o teste em andamento.",
+    liquidityQ: "Como funcionam os pools de liquidez?",
+    liquidityA:
+      "Qualquer pessoa pode fornecer liquidez e retirá-la. As posições de liquidez são públicas e vinculadas ao identificador no TTTI. O protocolo não coloca nenhuma ordem vinculada ao preço e não cria nenhum TTTI-T. A taxa de mint compra TTTI-T sem nenhuma condição de preço, para alimentar a liquidez. Apenas o rendimento observado, ou seja, as taxas efetivamente obtidas, é exibido. Não há promessa de retorno.",
     privacyQ: "O que é público e o que o app guarda?",
     privacyA:
       "Cada compra e cada transferência é registrada de forma pública e permanente no ledger do token utilizado: ICP, ckBTC, ckUSDC, ckUSDT ou TTTI-T. Qualquer pessoa pode ver os valores, as contas e os horários. As transferências de Bitcoin são públicas na blockchain do Bitcoin: qualquer pessoa pode ver seus identificadores de transação (txids), seus endereços e seus valores. Além disso, o app guarda apenas seus registros de compra com seus valores e números de bloco, seu endereço de entrega, a data em que você aceitou os termos de compra e seus acompanhamentos de depósitos BTC (endereço de depósito, txids e status de cada depósito).",
@@ -1447,6 +1462,9 @@ export const FAQ_TEXT = defineDict({
       "의 TTTI-T 항목에 표시됩니다. 원하시면 발행 전에 선택 사항인 지급 주소(Principal ID)를 추가할 수 있습니다. 필수는 아닙니다.",
     supplyQ: "토큰은 최대 몇 개까지 존재할 수 있나요?",
     supplyIntro: "TTTI는 향후 버전이고, TTTI-T는 현재 진행 중인 테스트입니다.",
+    liquidityQ: "유동성 풀은 어떻게 작동하나요?",
+    liquidityA:
+      "누구나 유동성을 공급하고 회수할 수 있습니다. 유동성 포지션은 공개되며 TTTI의 식별자에 연결됩니다. 프로토콜은 가격에 연동된 주문을 내지 않으며 TTTI-T를 생성하지 않습니다. 민트 수수료는 유동성을 공급하기 위해 어떠한 가격 조건 없이 TTTI-T를 매수합니다. 관측된 수익, 즉 실제로 발생한 수수료만 표시됩니다. 어떠한 수익도 약속하지 않습니다.",
     privacyQ: "무엇이 공개되며, 앱은 무엇을 보관하나요?",
     privacyA:
       "모든 구매와 전송은 사용된 토큰의 원장(ICP, ckBTC, ckUSDC, ckUSDT 또는 TTTI-T)에 공개적이고 영구적으로 기록됩니다. 누구나 금액, 계정, 시간을 볼 수 있습니다. Bitcoin 전송은 Bitcoin 체인에 공개되며, 누구나 그 거래 ID(txid), 주소, 금액을 볼 수 있습니다. 그 밖에 앱이 보관하는 것은 금액과 블록 번호가 포함된 귀하의 구매 기록, 지급 주소, 구매 약관에 동의한 날짜, 그리고 BTC 입금 추적 기록(입금 주소, txid 및 각 입금의 상태)뿐입니다.",
@@ -1478,6 +1496,9 @@ export const FAQ_TEXT = defineDict({
       " 'ਤੇ TTTI-T ਹੇਠ ਦਿਖਾਈ ਦਿੰਦਾ ਹੈ। ਜੇ ਤੁਸੀਂ ਚਾਹੋ, ਤਾਂ ਮਿੰਟ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਇੱਕ ਵਿਕਲਪਿਕ ਡਿਲੀਵਰੀ ਪਤਾ (Principal ID) ਜੋੜ ਸਕਦੇ ਹੋ — ਇਹ ਕਦੇ ਲਾਜ਼ਮੀ ਨਹੀਂ ਹੁੰਦਾ।",
     supplyQ: "ਕਿੰਨੇ ਟੋਕਨ ਮੌਜੂਦ ਹੋ ਸਕਦੇ ਹਨ?",
     supplyIntro: "TTTI ਭਵਿੱਖੀ ਸੰਸਕਰਣ ਹੈ; TTTI-T ਚੱਲ ਰਿਹਾ ਟੈਸਟ ਹੈ।",
+    liquidityQ: "ਲਿਕਵਿਡਿਟੀ ਪੂਲ ਕਿਵੇਂ ਕੰਮ ਕਰਦੇ ਹਨ?",
+    liquidityA:
+      "ਕੋਈ ਵੀ ਲਿਕਵਿਡਿਟੀ ਪ੍ਰਦਾਨ ਕਰ ਸਕਦਾ ਹੈ ਅਤੇ ਇਸ ਨੂੰ ਕਢਵਾ ਸਕਦਾ ਹੈ। ਲਿਕਵਿਡਿਟੀ ਪੁਜ਼ੀਸ਼ਨਾਂ ਜਨਤਕ ਹਨ ਅਤੇ TTTI 'ਤੇ ਪਛਾਣਕਰਤਾ ਨਾਲ ਜੁੜੀਆਂ ਹਨ। ਪ੍ਰੋਟੋਕੋਲ ਕੀਮਤ ਨਾਲ ਜੁੜਿਆ ਕੋਈ ਆਰਡਰ ਨਹੀਂ ਦਿੰਦਾ ਅਤੇ ਕੋਈ TTTI-T ਨਹੀਂ ਬਣਾਉਂਦਾ। ਮਿੰਟ ਫੀਸ ਲਿਕਵਿਡਿਟੀ ਨੂੰ ਭਰਨ ਲਈ ਬਿਨਾਂ ਕਿਸੇ ਕੀਮਤ ਸ਼ਰਤ ਦੇ TTTI-T ਖਰੀਦਦੀ ਹੈ। ਸਿਰਫ਼ ਦੇਖਿਆ ਗਿਆ ਰਿਟਰਨ, ਯਾਨੀ ਅਸਲ ਵਿੱਚ ਕਮਾਈਆਂ ਗਈਆਂ ਫੀਸਾਂ, ਦਿਖਾਇਆ ਜਾਂਦਾ ਹੈ। ਕਿਸੇ ਵੀ ਕਿਸਮ ਦੇ ਮੁਨਾਫ਼ੇ ਦਾ ਕੋਈ ਵਾਅਦਾ ਨਹੀਂ ਹੈ।",
     privacyQ: "ਕੀ ਜਨਤਕ ਹੈ, ਅਤੇ ਐਪ ਕੀ ਰੱਖਦੀ ਹੈ?",
     privacyA:
       "ਹਰ ਖਰੀਦ ਅਤੇ ਟ੍ਰਾਂਸਫਰ ਵਰਤੇ ਗਏ ਟੋਕਨ ਦੇ ਲੈਜਰ 'ਤੇ ਜਨਤਕ ਅਤੇ ਸਥਾਈ ਤੌਰ 'ਤੇ ਦਰਜ ਹੁੰਦਾ ਹੈ: ICP, ckBTC, ckUSDC, ckUSDT ਜਾਂ TTTI-T। ਕੋਈ ਵੀ ਰਕਮਾਂ, ਖਾਤੇ ਅਤੇ ਸਮੇਂ ਦੇਖ ਸਕਦਾ ਹੈ। Bitcoin ਟ੍ਰਾਂਸਫਰ Bitcoin ਚੇਨ 'ਤੇ ਜਨਤਕ ਹੁੰਦੇ ਹਨ: ਕੋਈ ਵੀ ਉਹਨਾਂ ਦੀਆਂ ਲੈਣ-ਦੇਣ ID (txid), ਪਤੇ ਅਤੇ ਰਕਮਾਂ ਦੇਖ ਸਕਦਾ ਹੈ। ਇਸ ਤੋਂ ਇਲਾਵਾ, ਐਪ ਸਿਰਫ਼ ਰਕਮਾਂ ਅਤੇ ਬਲਾਕ ਨੰਬਰਾਂ ਸਮੇਤ ਤੁਹਾਡੇ ਖਰੀਦ ਰਿਕਾਰਡ, ਤੁਹਾਡਾ ਡਿਲੀਵਰੀ ਪਤਾ, ਉਹ ਤਾਰੀਖ ਜਦੋਂ ਤੁਸੀਂ ਖਰੀਦ ਦੀਆਂ ਸ਼ਰਤਾਂ ਸਵੀਕਾਰ ਕੀਤੀਆਂ ਸਨ, ਅਤੇ ਤੁਹਾਡੇ BTC ਜਮ੍ਹਾਂ ਟ੍ਰੈਕਿੰਗ ਰਿਕਾਰਡ (ਜਮ੍ਹਾਂ ਪਤਾ, txid ਅਤੇ ਹਰ ਜਮ੍ਹਾਂ ਦੀ ਸਥਿਤੀ) ਰੱਖਦੀ ਹੈ।",

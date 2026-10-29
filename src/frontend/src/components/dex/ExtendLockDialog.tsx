@@ -5,7 +5,6 @@ import { useExtendLock } from "../../hooks/useDex";
 import { useDict, useLanguage } from "../../i18n/core";
 import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
-import { nowNs } from "../../lib/approvals";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -46,7 +45,7 @@ function fromDateInput(text: string, timeOf: bigint): bigint | null {
   return Number.isNaN(ms) ? null : BigInt(ms) * NS_PER_MS;
 }
 
-/** Move a position's unlock later: never earlier, at most maxLockNs from now. */
+/** Move a position's unlock later: never earlier, at most maxLockNs after the position was created. */
 export function ExtendLockDialog({
   position,
   maxLockNs,
@@ -66,10 +65,13 @@ export function ExtendLockDialog({
     tone: "info" | "danger";
     text: string;
   } | null>(null);
-  const [now] = useState(() => nowNs());
+  const [extendedTo, setExtendedTo] = useState<bigint | null>(null);
 
-  const current = position.unlockAt;
-  const latest = now + maxLockNs;
+  const current =
+    extendedTo !== null && extendedTo > position.unlockAt
+      ? extendedTo
+      : position.unlockAt;
+  const latest = position.createdAt + maxLockNs;
   const days = parseDaysNs(daysText);
   const next =
     mode === "date"
@@ -89,18 +91,22 @@ export function ExtendLockDialog({
     extend.mutate(
       { positionId: position.id, newUnlockAt: next },
       {
-        onSuccess: (outcome) =>
-          setFeedback(
-            outcome.__kind__ === "ok"
-              ? {
-                  tone: "info",
-                  text: t.extendDone(formatDexDate(outcome.ok.unlockAt, lang)),
-                }
-              : {
-                  tone: "danger",
-                  text: extendLockErrorText(t, outcome.err, lang),
-                },
-          ),
+        onSuccess: (outcome) => {
+          if (outcome.__kind__ === "ok") {
+            setExtendedTo(outcome.ok.unlockAt);
+            setDateText("");
+            setDaysText("");
+            setFeedback({
+              tone: "info",
+              text: t.extendDone(formatDexDate(outcome.ok.unlockAt, lang)),
+            });
+          } else {
+            setFeedback({
+              tone: "danger",
+              text: extendLockErrorText(t, outcome.err, lang),
+            });
+          }
+        },
         onError: (err) =>
           setFeedback({ tone: "danger", text: t.errCall(err.message) }),
       },

@@ -147,6 +147,19 @@ module {
     refundStatus : PairRefundStatus;
   };
 
+  // Record of one refused pair-request deposit fed to the protocol liquidity
+  // (one entry per refused request, never counted twice). `amount` is the
+  // TTTI-T credited to the pool's permanent liquidity (deposit minus one
+  // TTTI-T ledger fee, which goes to the fee collector as for every transfer).
+  public type RefusedDepositFeed = {
+    requestId : RequestId;
+    poolId : PoolId;
+    amount : Nat;
+    fee : Nat;
+    block : Nat;
+    at : Timestamp;
+  };
+
   public type DexStore = {
     pools : Map.Map<PoolId, Pool>;
     requests : Map.Map<RequestId, PairRequest>;

@@ -3,14 +3,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 import type {
   AttemptOutcome,
+  DexToken,
   ReviewResult,
   TransferReview,
 } from "../../backend";
 import {
   BtcRefundPurpose,
   CollectState,
-  DexToken,
-  PayToken,
   ReviewError,
   TransferKind,
 } from "../../backend";
@@ -20,30 +19,29 @@ import {
   useMarkRefundedManually,
   useMarkTransferArrived,
   useMarkTransferNotArrived,
-  useTransfersToReview,
+  useTransfersToReviewFiltered,
 } from "../../hooks/useTransferReview";
 import { buybackFailureMessage } from "../../lib/buyback";
-import {
-  TTTI_DECIMALS,
-  TTTI_SYMBOL,
-  formatPayAmount,
-  formatUnits,
-  payTokenSymbol,
-} from "../../lib/token";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
+import {
+  ADMIN_TOKENS,
+  ALL_TOKENS,
+  AdminAccordion,
+  type ChipOption,
+  FilterChips,
+  type TokenChoice,
+  TokenSelect,
+  adminTokenSymbol,
+  formatTokenAmount,
+} from "./AdminUi";
 import { formatTimestamp } from "./ConversionsCard";
 import { PRIMARY_GOLD, SECONDARY_GOLD } from "./styles";
+
+export { formatTokenAmount } from "./AdminUi";
 
 const KIND_LABELS: Record<TransferKind, string> = {
   [TransferKind.FW]: "FW · treasury forward",
@@ -59,31 +57,55 @@ const KIND_LABELS: Record<TransferKind, string> = {
   [TransferKind.DQ]: "Pair request deposit refund (DQ)",
   [TransferKind.DC]: "Converted fees sent to the cycles reserve (DC)",
   [TransferKind.DL]: "ICP bonus claim paid to an LP (DL)",
-  [TransferKind.OW]: "Mint revenue send to the owner destination (OW)",
+  [TransferKind.OW]: "Mint revenue send to the receiving wallet (OW)",
   [TransferKind.SR]: "Treasury sweep send (SR)",
   [TransferKind.MF]: "Mint fee claim paid to an LP (MF)",
-};
-
-/** Pay tokens matching each DEX token; TTTI-T is not a pay token. */
-const DEX_PAY_TOKENS: Record<DexToken, PayToken | null> = {
-  [DexToken.icp]: PayToken.icp,
-  [DexToken.ckbtc]: PayToken.ckbtc,
-  [DexToken.ckusdc]: PayToken.ckusdc,
-  [DexToken.ckusdt]: PayToken.ckusdt,
-  [DexToken.tttiT]: null,
+  [TransferKind.IR]: "ICPSwap routed swap transfer (IR)",
+  [TransferKind.ST]: "One-time settlement send (ST)",
 };
 
 function tokenSymbol(token: DexToken): string {
-  const pay = DEX_PAY_TOKENS[token];
-  return pay === null ? TTTI_SYMBOL : payTokenSymbol(pay);
+  return adminTokenSymbol(token);
 }
 
-function formatTokenAmount(value: bigint, token: DexToken): string {
-  const pay = DEX_PAY_TOKENS[token];
-  return pay === null
-    ? `${formatUnits(value, TTTI_DECIMALS, 2, "en")} ${TTTI_SYMBOL}`
-    : formatPayAmount(value, pay, "en");
-}
+type ReviewGroup =
+  | "all"
+  | "mint"
+  | "revenue"
+  | "refund"
+  | "buyback"
+  | "dex"
+  | "swap"
+  | "fees";
+
+const REVIEW_GROUPS: ReadonlyArray<
+  ChipOption<ReviewGroup> & { kinds: ReadonlyArray<TransferKind> }
+> = [
+  { value: "all", label: "All", kinds: [] },
+  {
+    value: "mint",
+    label: "Mint/Deposit",
+    kinds: [TransferKind.PC, TransferKind.FW, TransferKind.SH, TransferKind.BC],
+  },
+  {
+    value: "revenue",
+    label: "Revenue & settlement",
+    kinds: [TransferKind.OW, TransferKind.ST, TransferKind.SR],
+  },
+  {
+    value: "refund",
+    label: "Refund",
+    kinds: [TransferKind.RF, TransferKind.BR, TransferKind.BM, TransferKind.DQ],
+  },
+  { value: "buyback", label: "Buyback", kinds: [TransferKind.BB] },
+  { value: "swap", label: "Swap", kinds: [TransferKind.IR] },
+  { value: "dex", label: "DEX", kinds: [TransferKind.DD, TransferKind.DW] },
+  {
+    value: "fees",
+    label: "Fees & claims",
+    kinds: [TransferKind.DC, TransferKind.DL, TransferKind.MF],
+  },
+];
 
 const PURPOSE_LABELS: Record<BtcRefundPurpose, string> = {
   [BtcRefundPurpose.excess]: "Excess",
@@ -122,6 +144,8 @@ const ID_LABELS: Record<TransferKind, string> = {
   [TransferKind.OW]: "Owner send",
   [TransferKind.SR]: "Sweep send",
   [TransferKind.MF]: "Claim",
+  [TransferKind.IR]: "Routed swap",
+  [TransferKind.ST]: "Settlement send",
 };
 
 const COLLECT_LABELS: Record<CollectState, string> = {
@@ -227,11 +251,17 @@ function reviewFields(t: TransferReview, legacy: boolean): Field[] {
   if (
     t.kind === TransferKind.DD ||
     t.kind === TransferKind.DW ||
-    t.kind === TransferKind.DQ
+    t.kind === TransferKind.DQ ||
+    t.kind === TransferKind.IR
   ) {
     return [
       {
-        label: t.kind === TransferKind.DQ ? "Pair request id" : "Transfer n",
+        label:
+          t.kind === TransferKind.DQ
+            ? "Pair request id"
+            : t.kind === TransferKind.IR
+              ? "Routed swap id"
+              : "Transfer n",
         value: t.purchaseId.toString(),
       },
       { label: "Owner", value: t.buyer?.toText() ?? "—" },
@@ -306,6 +336,9 @@ const NOT_ARRIVED_SUCCESS: Record<TransferKind, string> = {
   [TransferKind.OW]: "Marked as not arrived. A new attempt is pending.",
   [TransferKind.SR]: "Marked as not arrived. A new attempt is pending.",
   [TransferKind.MF]: "Marked as not arrived. A new attempt is pending.",
+  [TransferKind.IR]:
+    "Marked as not arrived. The input amount is back in the owner's DEX balance.",
+  [TransferKind.ST]: "Marked as not arrived. A new attempt is pending.",
 };
 
 const ARRIVED_SUCCESS: Partial<Record<TransferKind, string>> = {
@@ -314,9 +347,11 @@ const ARRIVED_SUCCESS: Partial<Record<TransferKind, string>> = {
   [TransferKind.DQ]: "The pair request deposit refund is complete.",
   [TransferKind.DC]: "The ICP send to the cycles reserve is recorded.",
   [TransferKind.DL]: "The ICP bonus claim is paid.",
-  [TransferKind.OW]: "The send to the owner destination is recorded.",
+  [TransferKind.OW]: "The send to the receiving wallet is recorded.",
+  [TransferKind.ST]: "The settlement send is recorded.",
   [TransferKind.SR]: "The treasury sweep send is recorded.",
   [TransferKind.MF]: "The mint fee claim is paid.",
+  [TransferKind.IR]: "The IR transfer to ICPSwap is recorded with its block.",
 };
 
 /** Short effect of each button for the DEX kinds. */
@@ -332,11 +367,15 @@ const DEX_HINTS: Partial<Record<TransferKind, string>> = {
   [TransferKind.DL]:
     "Enter the ICP ledger block of the bonus payment. Arrived records the block. Not arrived opens a new attempt.",
   [TransferKind.OW]:
-    "Enter the ledger block of the send to the owner destination. Arrived records the block. Not arrived opens a new attempt.",
+    "Enter the ledger block of the send to the receiving wallet. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.ST]:
+    "Enter the ledger block of the one-time settlement send. Arrived records the block. Not arrived opens a new attempt.",
   [TransferKind.SR]:
     "Enter the ledger block of the treasury sweep send. Arrived records the block. Not arrived opens a new attempt.",
   [TransferKind.MF]:
     "Enter the ledger block of the mint fee claim payment. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.IR]:
+    "Enter the ledger block of the IR transfer to the ICPSwap deposit subaccount. Arrived records the block. Not arrived records that nothing moved and gives the input amount back to the owner's DEX balance.",
 };
 
 function ReviewRow({
@@ -585,13 +624,16 @@ function ReviewRow({
 }
 
 /** Transfers and payments whose outcome is unknown, checked by the admin. */
-export function ToReviewCard({ className }: { className: string }) {
+export function ToReviewCard({ className }: { className?: string }) {
+  const [group, setGroup] = useState<ReviewGroup>("all");
+  const [token, setToken] = useState<TokenChoice<DexToken>>(ALL_TOKENS);
+  const kinds = REVIEW_GROUPS.find((g) => g.value === group)?.kinds ?? [];
   const {
     data: transfers,
     isLoading,
     isError,
     refetch,
-  } = useTransfersToReview();
+  } = useTransfersToReviewFiltered(kinds, token === ALL_TOKENS ? null : token);
   const { data: buybacks } = useAllBuybacks();
   // Legacy buybacks (before the escrow) have no payout memo when the list of
   // buybacks is not loaded yet.
@@ -601,33 +643,37 @@ export function ToReviewCard({ className }: { className: string }) {
       transfer.memoText === undefined);
 
   return (
-    <Card className={className} data-ocid="admin.to_review_card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 font-display text-lg">
-          <ClipboardCheck className="h-5 w-5 text-primary" />
-          To review
-        </CardTitle>
-        <CardDescription>
-          Treasury forwards (FW), reserve shares (SH) and refunds (RF) with no
-          confirmed outcome after 23 h, and payments to refund (PC). Check each
-          one on the ledger, then mark it as arrived with its block number, as
-          not arrived to open a new attempt sent by the 10-minute timer, or as
-          refunded manually with the block of the refund. Not arrived on a
-          payment to refund removes a payment that never happened. BTC refunds
-          (BR) and BTC cost sends to the treasury (BC) are verified the same
-          way; delivery-failure costs (BM) are refunded by hand, then marked as
-          refunded with the block. Buyback payments (BB) with no confirmed
-          outcome after 23 h are marked as arrived or not arrived; legacy
-          buybacks whose payout failed (before the escrow) can also be marked as
-          cancelled with the block of the TTTI-T returned by hand. DEX deposits
-          (DD), DEX withdrawals (DW) and pair request deposit refunds (DQ) are
-          checked the same way. Converted fees sent to the cycles reserve (DC)
-          and ICP bonus claims (DL) are marked as arrived or not arrived. Owner
-          sends (OW), treasury sweep sends (SR) and mint fee claims (MF) are
-          checked the same way.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div
+      className={`space-y-5 ${className ?? ""}`}
+      data-ocid="admin.to_review_card"
+    >
+      <p className="max-w-3xl text-sm text-muted-foreground">
+        Transfers with no confirmed outcome after 23 h, payments to refund and
+        costs refunded by hand. Check each one on the ledger, then mark it with
+        its block number.
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <FilterChips
+          options={REVIEW_GROUPS}
+          value={group}
+          onChange={setGroup}
+          label="Transfer type"
+          ocid="admin.to_review_filter"
+        />
+        <TokenSelect
+          tokens={ADMIN_TOKENS}
+          value={token}
+          onChange={setToken}
+          label="To review token"
+          ocid="admin.to_review_token_select"
+          allowAll
+        />
+      </div>
+      <AdminAccordion
+        label="Transfers to review"
+        count={transfers ? transfers.length : undefined}
+        ocid="admin.to_review_accordion"
+      >
         {isLoading ? (
           <div className="space-y-3" data-ocid="admin.to_review_loading_state">
             {Array.from({ length: 2 }, (_, i) => `review-skeleton-${i}`).map(
@@ -664,8 +710,7 @@ export function ToReviewCard({ className }: { className: string }) {
                 Nothing to review
               </h3>
               <p className="max-w-sm text-sm text-muted-foreground">
-                No transfer needs review. Transfers whose outcome stays unknown
-                after 23 h and payments to refund are listed here.
+                No transfer matches these filters.
               </p>
             </div>
           </div>
@@ -681,7 +726,7 @@ export function ToReviewCard({ className }: { className: string }) {
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </AdminAccordion>
+    </div>
   );
 }

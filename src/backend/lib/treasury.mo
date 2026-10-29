@@ -1,4 +1,5 @@
 import Map "mo:core/Map";
+import List "mo:core/List";
 import Array "mo:core/Array";
 import Iter "mo:core/Iter";
 import Principal "mo:core/Principal";
@@ -332,7 +333,7 @@ module {
     transferFromErrorMessage(err);
   };
 
-  // --- Mint owner revenue: destinations and views ----------------------------
+  // --- Mint owner revenue: views ----------------------------
 
   // "icp", "ckbtc", "ckusdc", "ckusdt": key of the per-token owner maps.
   public func tokenKey(token : PayToken) : Text {
@@ -344,52 +345,56 @@ module {
     };
   };
 
-  func destinationView(store : OwnerTypes.OwnerRevenueStore, token : PayToken) : OwnerTypes.OwnerDestinationView {
-    let key = tokenKey(token);
-    let dest = store.destinations.get(key);
-    {
-      token;
-      account = switch (dest) { case (?d) { ?d.account }; case null { null } };
-      setAt = switch (dest) { case (?d) { ?d.setAt }; case null { null } };
-      accumulated = store.accumulated.get(key) ?? 0;
-    };
-  };
-
-  // Admin-only callers: validates and stores the destination of `token`
-  // (records a DestinationChange). Does not send; the caller flushes.
-  public func setOwnerDestination(store : OwnerTypes.OwnerRevenueStore, canister : Principal, token : PayToken, account : Account, caller : Principal, now : Int) : OwnerTypes.OwnerDestinationResult {
-    if (account.owner.isAnonymous()) {
-      return #err(#anonymousOwner);
-    };
-    switch (account.subaccount) {
-      case (?s) { if (s.size() != 32) { return #err(#invalidSubaccount) } };
-      case null {};
-    };
-    if (account.owner == canister) {
-      return #err(#contractAccount);
-    };
-    store.destinations.add(tokenKey(token), { token; account; setAt = now; setBy = caller });
-    store.destinationHistory.add({ token; account = ?account; at = now; by = caller });
-    #ok(destinationView(store, token));
-  };
-
-  public func clearOwnerDestination(store : OwnerTypes.OwnerRevenueStore, token : PayToken, caller : Principal, now : Int) : OwnerTypes.OwnerDestinationResult {
-    let key = tokenKey(token);
-    if (not store.destinations.containsKey(key)) {
-      return #err(#notConfigured);
-    };
-    store.destinations.remove(key);
-    store.destinationHistory.add({ token; account = null; at = now; by = caller });
-    #ok(destinationView(store, token));
-  };
-
-  // One row per pay token (ICP, ckBTC, ckUSDC, ckUSDT), configured or not.
-  public func ownerDestinations(store : OwnerTypes.OwnerRevenueStore) : [OwnerTypes.OwnerDestinationView] {
-    PayTokenLib.ALL.map(func token = destinationView(store, token));
-  };
-
   public func ownerAccumulated(store : OwnerTypes.OwnerRevenueStore) : [OwnerTypes.OwnerAccumulated] {
     PayTokenLib.ALL.map(func token = ({ token; amount = store.accumulated.get(tokenKey(token)) ?? 0 } : OwnerTypes.OwnerAccumulated));
+  };
+
+  // Share of `token` accumulated in the contract default account.
+  public func accumulatedOf(store : OwnerTypes.OwnerRevenueStore, token : PayToken) : Nat {
+    store.accumulated.get(tokenKey(token)) ?? 0;
+  };
+
+  func withdrawalView(s : OwnerTypes.OwnerSend, by : Principal, source : OwnerTypes.TreasurySource) : OwnerTypes.WithdrawalView {
+    {
+      id = s.id;
+      token = s.token;
+      amount = s.attempt.request.amount;
+      fee = s.attempt.request.fee ?? PayTokenLib.expectedFee(s.token);
+      destination = s.attempt.request.to;
+      source;
+      requestedBy = by;
+      status = s.status;
+      block = switch (s.status) { case (#sent(b)) { ?b }; case _ { null } };
+      memoText = s.attempt.memo.decodeUtf8() ?? "";
+      createdAtTimeNs = s.attempt.created_at_time;
+      attempt = s.attempt.attempt;
+      sends = s.attempt.sends;
+      lastError = s.attempt.lastError;
+      createdAt = s.createdAt;
+      updatedAt = s.updatedAt;
+    };
+  };
+
+  // The withdrawal with owner send id `id`; null when it is not a withdrawal.
+  public func withdrawalById(store : OwnerTypes.OwnerRevenueStore, id : Nat) : ?OwnerTypes.WithdrawalView {
+    let s = store.sends.get(id) ?? (return null);
+    switch (s.source) {
+      case (#withdrawal(w)) { ?withdrawalView(s, w.by, w.from) };
+      case (_) { null };
+    };
+  };
+
+  // Admin withdrawals, newest first; `limit` capped at 100.
+  public func withdrawals(store : OwnerTypes.OwnerRevenueStore, offset : Nat, limit : Nat) : OwnerTypes.WithdrawalPage {
+    let cap = Nat.min(limit, 100);
+    let all = List.empty<OwnerTypes.WithdrawalView>();
+    for ((_, s) in store.sends.reverseEntries()) {
+      switch (s.source) {
+        case (#withdrawal(w)) { all.add(withdrawalView(s, w.by, w.from)) };
+        case (_) {};
+      };
+    };
+    { items = all.values().drop(offset).take(cap).toArray(); total = all.size(); offset };
   };
 
   func sendView(s : OwnerTypes.OwnerSend) : OwnerTypes.OwnerSendView {

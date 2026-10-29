@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
+import { AdminAccordion } from "./AdminUi";
 import { formatTimestamp } from "./ConversionsCard";
 import { GOLD_CARD } from "./styles";
 
@@ -198,40 +199,43 @@ export function CyclesReserveCard() {
             </div>
 
             <div className="space-y-1.5" data-ocid="admin.reserve_withdrawals">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Withdrawals
-              </p>
-              {status.withdrawals.length === 0 ? (
-                <p
-                  className="text-sm text-muted-foreground"
-                  data-ocid="admin.reserve_withdrawals.empty_state"
-                >
-                  None
-                </p>
-              ) : (
-                <ul className="divide-y divide-border text-sm">
-                  {status.withdrawals.map((w, i) => (
-                    <li
-                      key={w.blockIndex.toString()}
-                      className="flex flex-wrap justify-between gap-2 py-1.5 font-mono tabular-nums"
-                      data-ocid={`admin.reserve_withdrawals.item.${i + 1}`}
-                    >
-                      <span className="text-muted-foreground">
-                        {formatTimestamp(w.timestamp)}
-                      </span>
-                      <span>{formatIcpE8s(w.amountE8s)}</span>
-                      <span className="text-muted-foreground">
-                        block{" "}
-                        <IcpBlockLink
-                          blockIndex={w.blockIndex}
-                          ocid={`admin.reserve_withdrawals.link.${i + 1}`}
-                          className="text-muted-foreground"
-                        />
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <AdminAccordion
+                label="Reserve withdrawals"
+                count={status.withdrawals.length}
+                ocid="admin.reserve_withdrawals_accordion"
+              >
+                {status.withdrawals.length === 0 ? (
+                  <p
+                    className="text-sm text-muted-foreground"
+                    data-ocid="admin.reserve_withdrawals.empty_state"
+                  >
+                    None
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border text-sm">
+                    {status.withdrawals.map((w, i) => (
+                      <li
+                        key={w.blockIndex.toString()}
+                        className="flex flex-wrap justify-between gap-2 py-1.5 font-mono tabular-nums"
+                        data-ocid={`admin.reserve_withdrawals.item.${i + 1}`}
+                      >
+                        <span className="text-muted-foreground">
+                          {formatTimestamp(w.timestamp)}
+                        </span>
+                        <span>{formatIcpE8s(w.amountE8s)}</span>
+                        <span className="text-muted-foreground">
+                          block{" "}
+                          <IcpBlockLink
+                            blockIndex={w.blockIndex}
+                            ocid={`admin.reserve_withdrawals.link.${i + 1}`}
+                            className="text-muted-foreground"
+                          />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </AdminAccordion>
             </div>
           </>
         )}

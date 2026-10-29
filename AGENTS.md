@@ -115,12 +115,9 @@
 - Ne toucher à rien d'autre que les points du lot 5
 - Utiliser lib/retry.mo et le verrou du rachat pour le paiement du rachat
 - Nouvelle migration au nom plus grand que 20261108_000000 ; aucune migration existante modifiée
-- Ne toucher à rien d'autre que les points du lot 6 ; partir du code actuel
 - Nouvelle migration au nom plus grand que 20261109_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
 - Écran admin en anglais
-- Ne toucher à rien d'autre que les points du lot 7 ; partir du code actuel
 - Nouvelle migration au nom plus grand que 20261110_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
-- Ne toucher à rien d'autre que les points du lot 8 ; partir du code actuel
 - Nouvelle migration au nom plus grand que 20261111_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
 - Textes repris mot pour mot ; traductions précises, l'anglais fait foi
 - Ne toucher à rien d'autre que les points du lot 9 ; partir du code actuel
@@ -146,7 +143,32 @@
 - Ne toucher à rien d'autre que les points (1) à (5) de la correction du revenu du mint ; partir du code actuel
 - Nouvelle migration au nom plus grand que 20261116_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
 - Écran admin en anglais ; textes factuels dans les 7 langues ; créateur non nommé
-- Les revenus du mint (100/101) vont automatiquement au wallet de destination configuré par l'admin pour chaque jeton
+- Ne toucher à rien d'autre que les points du lot 5 (routeur ICPSwap) ; partir du code actuel (v70)
+- Nouvelle migration au nom plus grand que 20261117_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Écran admin en anglais ; textes factuels dans les 7 langues
+- Le protocole ne passe jamais d'ordre lié au prix et ne crée aucun TTTI-T
+- Écran admin en anglais ; textes publics factuels dans les 7 langues
+- Nouvelle migration au nom plus grand que 20261118_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Ne toucher à rien d'autre que les trois points : routeur 0,1 %, revenus du mint dans le contrat, gestion de la trésorerie par l'admin ; partir du code actuel
+- getApiDoc et contrat simulé mis à jour
+- Le 0,1 % du routeur suit la règle 70 % LP / 30 % liquidité permanente ; sans LP sur le pool natif, les 70 % vont aux LP du pool TTTI-T le moins liquide
+- Ne toucher à rien d'autre que les cinq points du lot des petits défauts ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261119_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Aperçu seulement, jamais en version publique ; donner le numéro de version
+- Ne toucher à rien d'autre que les points du lot 6 du DEX ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261120_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Ne toucher à rien d'autre que les points du lot 7 du DEX ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261121_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Indicateurs publics calculés une fois par heure ; écran admin en anglais ; textes publics factuels dans les 7 langues
+- Partir de la dernière version en aperçu ; aperçu seulement, donner le numéro de version
+- Ne toucher à rien d'autre que les trois points demandés (retrait de l'édition originale du white paper, phrase de liquidité, textes des pools)
+- Phrase du Correctif 4 reprise mot pour mot en anglais, traduite précisément dans les autres langues ; l'anglais fait foi
+- Rendement constaté seulement dans les textes des pools ; positions de liquidité publiques
+- Admin screen in English; spacious, restrained look with gold accent
+- Répondre en français ; aperçu seulement, jamais publié ; donner le numéro de version
+- Nouvelle migration au nom plus grand que 20261122_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Ne toucher à rien d'autre que la réorganisation de l'admin, l'envoi direct du revenu du mint, les textes publics du revenu du mint, getApiDoc et le contrat simulé
+- Mint 100/101 sent directly to the admin-configured wallet of the paid token; 1/101 in a dedicated non-withdrawable contract fee account
 
 ## Accepted Requirements
 
@@ -165,7 +187,6 @@
 - Remove price-rise, scarcity, early-advantage and limited-supply wording; state only the listed facts
 - Whitepaper opens automatically on the first buy; after that no need
 - TTTI-T section with the stated terms
-- Creator disclosures as stated, creator unnamed; creator does not list TTTI on any other exchange
 - Footer without 'not an investment, a security'; keep no returns, final purchases, afford to lose
 - No fallback rate; refuse purchase when the rate is stale
 - No one, admin included, can mint tokens outside the buy-to-mint logic
@@ -218,7 +239,6 @@
 - « Tokens cannot be burned. Transfers to the contract's own address are refused. »
 - Contrôleurs et module hash lus via canister_info (timer quotidien et après chaque mise à jour, cache), exposés dans getTechnicalDetails et affichés dans Technical details
 - Phrase sur l'upgrade par les contrôleurs ajoutée au whitepaper corrigé
-- Whitepaper original archivé avec l'avertissement
 - Textes de l'historique du ledger remplacés, avec N = legacyBlockBoundary lu du canister
 - « TTTI-T (Test) » → « TTTI-T » partout
 - Texte sur la vie privée dans le whitepaper corrigé et la FAQ
@@ -450,45 +470,97 @@
 - Autonomie = réserve de cycles ÷ la plus haute des moyennes de consommation sur 7 et 30 jours ; cible 90 jours
 - Pas de rachat ni de soutien de prix ; rendement constaté seulement, pas d'« APY »
 - Lot 4 du DEX mis en aperçu seulement, avec le numéro de version
-- Le mint encaisse 101 pour 100 ; 100/101 partent automatiquement, dans le jeton payé, vers un wallet de destination configuré par l'admin pour chaque jeton, avec historique et statut des envois
-- Sans destination configurée, la part s'accumule puis part dès la configuration ; envois via lib/retry.mo
 - Les fonds déjà présents dans les trésoreries internes du mint retournent au propriétaire, après avoir complété une fois la réserve de cycles jusqu'à 2 ICP avec l'ICP qu'elles contiennent
 - Frais de 1/101 en deux moitiés, dans le jeton payé, toujours pour la paire TTTI-T la moins liquide : moitié A aux LP au prorata (mise de côté s'il n'y a aucun LP), moitié B en liquidité permanente
 - Sommes mises de côté accumulées jusqu'à 0,001 TTTI-T, puis 50 % échangés en TTTI-T (ICPSwap, puis pools natifs) et appariés aux 50 % restants ; taux absent ou expiré : attente ; slippage borné ; jamais conditionné au prix ; aucun TTTI-T créé
 - Frais d'échange natifs : 70 % aux LP, 30 % en liquidité permanente, rien aux cycles ; suppression de DC, de la part cycles dynamique, du bonus des LP gelés payé sur les frais d'échange (bonus gagnés gardés) et de l'allocation hebdomadaire
 - Seuil de recharge des cycles via le CMC relevé de 3 T à 20 T
 - Textes dans les 7 langues, getApiDoc et contrat simulé mis à jour ; nouvelle migration après 20261116_000000 ; mise en aperçu seulement avec le numéro de version
+- Routeur ICPSwap : comparaison des pools natifs (0,3 %) et d'ICPSwap (0,3 % + 0,1 %), frais compris, une seule route
+- Un pool natif vide ou trop peu profond passe par ICPSwap
+- Le 0,1 % suit la règle 70 % aux LP et 30 % en liquidité permanente du pool natif
+- KongSwap exclu
+- Le 0,1 % du routeur traité comme les frais d'échange natifs (70 % LP / 30 % liquidité permanente) ; si le pool natif n'a pas de LP, attribution aux LP du pool TTTI-T le moins liquide
+- La gestion de la trésorerie est réaffectée à l'admin
+- Le texte public sur les parts minimales bloquées mentionne √(A×B)
+- Le numéro du mémo DQ suit le numéro de la demande de paire, aussi dans le backend simulé
+- Un gel prolongé a pour plafond la date de création + 5 ans
+- Un pool qui atteint 100 USD par un nouveau taux de prix est enregistré et affiché ouvert sans attendre l'apport suivant
+- Les TTTI-T des demandes de paires refusées alimentent la liquidité
+- Lot en aperçu seulement, avec une nouvelle migration après la dernière existante
+- Lot 6 DEX: balance check comparing internal DEX reserves and balances with the ledger balances
+- Automatic pause when a mismatch is detected
+- Link with getUpgradeReadiness
+- Admin screen in English
+- Preview only, with a new migration after the latest existing one if stored state changes
+- Nothing from lots 7 and 8
+- getApiDoc and mocks kept up to date; public texts in 7 languages
+- Public indicators computed once per hour
+- Proof of reserves and depth at 1, 2 and 5 percent
+- Firm vs free liquidity and the unlock schedule
+- Concentration, activity and fee sharing
+- Public texts in the 7 languages for the new indicators
+- getApiDoc and mock backend kept up to date for the new endpoints
+- Lot 8 stays out of this lot
+- The protocol never places price-linked orders and creates no TTTI-T
+- Facts only, no promotional wording, no APY
+- Keep the existing look, no redesign beyond the new indicators section
+- New migration sorts after 20261121_000000 if stored state changes; no migration touches sale.reserved; no existing balance or block modified
+- Preview only, no Go live
+- Retirer l'onglet, le panneau, le lien de téléchargement et le lien « open original » de l'édition originale du white paper
+- Section 06 du white paper : remplacer la phrase sur la liquidité par « Anyone, the creator included, may provide liquidity at their discretion and withdraw it at any time. Trust only what you can verify. »
+- disclosure1 de la page d'accueil : même remplacement, traduit dans les 7 langues
+- Lot 8 des pools : textes dans les 7 langues, white paper, FAQ, getApiDoc et contrat simulé
+- Sans « APY » (rendement constaté seulement), avec la mention que les positions sont publiques
+- Textes « pas de soutien de prix » ajustés car les frais de mint achètent du TTTI-T
+- Aperçu seulement, ne pas publier, à partir de la version 6
+- Admin page reorganized in English with duplicates merged and unneeded cards removed
+- Accordions closed by default for every transaction and long list
+- One widget with a token dropdown instead of per-token boxes
+- Unified History list, newest first, 25 per page, filter buttons All/Mint-Deposit/Revenue sent/Refund/Buyback/Swap/Liquidity/Destination plus token dropdown, filters in URL
+- To review as a single filterable list
+- Admin configures the receiving wallet for each payment token
+- At each mint the 100/101 share is sent directly in the paid token to the configured wallet, ledger fee deducted, retry rules, To review if outcome unknown; BTC follows ckBTC
+- Mint refused with a clear message before funds are taken when the token has no configured wallet
+- 1/101 fee in a dedicated contract account, redistributed per established rules, never withdrawable
+- No Withdraw button and no accumulation in the contract
+- One-time settlement of accumulated revenue and legacy mint-treasury owner share (minus withdrawn) to configured wallets; legacy and pending fees moved once to the fee account; LP credits unchanged
+- Admin sections: Overview, Sales & rate, Treasury, Cycles, To review, History, Buyback funding, DEX, Snapshot export
+- Remove Treasury sweep, Weekly allocation, DC batches, autonomy history, legacy per-token cards, Withdraw controls, IcpAccountCard and PayTokenAccountCard
+- Public mint revenue text in 7 languages, getApiDoc and mock contract updated
+- No balance or block rewritten; new migration after the latest; no migration touches sale.reserved
+- Preview only
 
 ## Verified Commands
 
-- **typecheck**: `pnpm typecheck`
+- **typecheck**: `pnpm typecheck && mops check --fix`
 - **fix**: `pnpm fix`
-- **build**: `pnpm build`
+- **build**: `mops build && pnpm bindgen && pnpm build`
 
 ## Learnings
 
-- Known minor: public lockedSharesRule in i18n/pages/dex.ts omits sqrt(A x B); only the backend LOCKED_SHARES_STATEMENT includes it.
-- Migration 20261114_000000.mo (DEX lot 2: refundStatus from refundBlock, empty dexBalances and dexTransfers) is the latest; never modify it once in draft; any new migration must sort after it.
-- DEX lot 2 backend: per-user deposit subaccount [0xDD, len, principal bytes, zero pad] (DexLib.userDepositSubaccount); endpoints getDexTokens, getDexDepositAccount, getDexPoolAccount, getDexBalances, getDexTransfers, depositToDex, withdrawFromDex.
-- DEX lot 2 retry: lib/retry.mo has #DD/#DW/#DQ with DexContext, dexLockKey(owner, token) shared by endpoints and runDexRetries; DQ memo uses global n, pairRefunds keyed by request id.
-- DEX lot 2 frontend: hooks useDexTokens/useDexBalances/useDexTransfers/useDepositToDex/useWithdrawFromDex in hooks/useDex.ts; components/dex/DexBalancesPanel, DexAmountDialog, DexBalanceLookup, DexTransfersList, DexDepositSubaccount; ToReviewCard handles DD/DW/DQ.
-- Known minor: mocks/backend.ts builds the DQ memo as TTTI-DQ-<request id> instead of the backend global n.
-- Migration 20261115_000000.mo (DEX lot 3: #awaitingFirstLiquidity becomes #filling, new pool numbers reserve0/1, totalShares, lockedShares, protocolFee0/1 start at 0, positions empty) is the latest; never modify it once in draft; any new migration must sort after it.
-- DEX lot 3 backend: DexApi mixin receives oracle and tokenRates (private usdRateOf); lib/dex.mo has usdGauge, effectiveStatus, refreshOpening, quoteAddLiquidity, addLiquidity, removeLiquidity, extendLock, quoteSwap, swap, amountOut, splitFee, isqrt; endpoints quoteAddLiquidity, addLiquidity, removeLiquidity, extendLock, getDexPosition, listPoolPositions, listDexPositionsOf, quoteSwap, swap.
-- DEX lot 3: first-deposit lockedShares stay in pool.totalShares with no position; swap fee taken from tokenIn, 80 % stays in reserves, 20 % in protocolFee0/1 outside reserves.
-- DEX lot 3 frontend: components/dex AddLiquidityDialog, SwapDialog, PoolPositionsDialog, MyPositions (under DexBalancesPanel), ExtendLockDialog, IcpswapReference, LockDurationPicker; PoolCard opens them via onAction.
-- Mock DEX lot 3 seeds TTTI-T/ckUSDT at 37/100 USD; added pair TCFHR/ICP shows the value momentarily unavailable gauge.
-- Known minor (lot 3): extendLock caps at now + 5 years instead of createdAt + 5 years; a pool opened only on read is not saved as #active until an add or swap.
-- Known minor (lot 3): IcpswapReference compares the token0 side only; ExtendLockDialog keeps the old unlock date until reopened.
-- DEX lot 4: fee conversions move funds on the ledgers (fee token from source pool to the ICP pool subaccount, then ICP to DEX-PROTOCOL-FEES-ICP-0000000001); DL claims and DC sends are paid from that subaccount; cycles ICP is held in cyclesHeldE8s until sent with memo TTTI-DC.
-- Mint forwards (FW) in lib/retry.mo forwardPlan target TreasuryLib.mintTreasuryAccount(ctx.canister, token); legacy external accounts are read-only.
-- Motoko module-level public let must be static literals, not expressions using other modules' constants.
-- mocks/backend.ts mockUpgradeReadiness must include bonusClaimsInFlight, protocolFeeLocks and dcSendsInFlight.
-- formatIcpE8s already appends ' ICP'; do not add the unit again.
-- Lot 4 migration is migrations/20261116_000000.mo; TTTI-T from refused pair-request deposits is not yet tracked for the weekly allocation.
-- Mint revenue: 100/101 of each mint is sent in the paid token to the admin-set owner destination per token (OwnerDestinationsCard, OwnerSendsCard, TreasurySweepCard in components/admin); it accumulates when no destination is set.
-- Mint fee 1/101 is routed by protocol-fees.mo routeMintFee to the lowest-liquidity TTTI-T pair of the paid token; injection gate planFor; pools UI MintFeePanel and SetAsideInjections.
-- Native swap fees split 70% LPs / 30% permanent liquidity; DC batches, the dynamic cycles share and the weekly allocation are read-only history only.
-- mocks/backend.ts mockUpgradeReadiness must include ownerSendsInFlight, sweepStatus, mintFeeClaimsInFlight and injectionsInFlight.
-- Cycles top-up threshold is 20 T cycles; the 2 ICP floor is unchanged.
-- MintPaymentBreakdown needs a signed-in quote on /buy; visual QA while signed out cannot reach it.
+- DQ memo of a pair-request refund is TTTI-DQ-<pair request id> via newPairRefundAttempt in lib/retry.mo; DD/DW still use the global counter.
+- extendLock caps the unlock date at position.createdAt + MAX_LOCK_NS; ExtendLockDialog uses position.createdAt + maxLockNs.
+- Pools in filling status open through OracleLib onRateStored hook and DexLib.openReadyPools sweep; refused pair-request deposits feed liquidity once via ProtocolFeesLib.feedRefusedDeposits (OQL table refusedDepositFeed).
+- Migration 20261120_000000.mo (adds refusedDepositFeeds map) is the latest; never modify it once in draft; any new migration must sort after it.
+- The locked-shares sentence lives in lib/dex.mo LOCKED_SHARES_STATEMENT, mixins/api-doc.mo and mocks/backend.ts DEX_LOCKED_SHARES_STATEMENT; change all three together.
+- Migration 20261121_000000.mo (adds the DEX reserve-check store) is the latest; never modify it once in draft; any new migration must sort after it.
+- DEX reserve check lives in lib/dex-reserve.mo with endpoints in mixins/dex-reserve-api.mo (runDexReserveCheck, resumeDex, getDexReserveStatus, public getDexPauseStatus); DEX pause refusals trap with DexLib.PAUSED_MESSAGE and the frontend maps them to errDexPaused.
+- Frontend DEX reserve UI: hooks/useDexReserve.ts, components/admin/DexReserveCheckCard.tsx, components/dex/DexPausedNotice.tsx; mockUpgradeReadiness must also carry the DEX readiness fields.
+- Migration 20261122_000000.mo (adds the dexIndicators store) is the latest; never modify it once in draft; any new migration must sort after it.
+- DEX indicators: lib/dex-indicators.mo computes one public snapshot hourly (endpoints getDexIndicators, getDexIndicatorsStatus in mixins/dex-indicators-api.mo; OQL entities dexIndicator and dexSwapActivity); swap activity is recorded through DexLib.activityRecorder set in main.mo.
+- Permanent DEX shares are total shares minus position shares, because pool.lockedShares and protocolLiquidity.shares overlap; never sum them.
+- Frontend indicators: hooks/useDexIndicators.ts, components/dex/DexIndicators.tsx, components/admin/DexIndicatorsCard.tsx, i18n/pages/dexIndicators.ts; every new public OQL entity must be added to the api-doc.mo OQL line.
+- The original-edition tab, panel, download link and open-original link are removed from WhitePaperPage.tsx; the white paper shows only the corrected edition.
+- Section 06 liquidity sentence in WhitePaperPage.tsx and disclosure1 in PRESALE_TEXT (landing.ts, 7 languages) now state that anyone, the creator included, may provide liquidity and withdraw it at any time.
+- PROTOCOL_STATEMENT (lib/dex.mo), DEX_PROTOCOL_STATEMENT (mocks/backend.ts) and protocolStatement (i18n/pages/dex.ts) must read the same in English.
+- FAQ liquidity entry uses FAQ_TEXT keys liquidityQ and liquidityA (7 languages) rendered in FaqSection.tsx.
+- The white paper no longer references the removed original edition; avoid reintroducing prose that points to it.
+- Mint revenue 100/101 is sent directly to the per-token admin receiving wallet (BTC uses ckBTC); mints are refused with #receivingWalletNotConfigured before funds are taken.
+- The 1/101 fee goes to the dedicated fee account MINT_FEE_ACCOUNT_SUBACCOUNT in lib/protocol-fees.mo; no endpoint withdraws from it.
+- The one-time settlement runs from lib/settlement.mo on its own timer; setReceivingWallet starts it only when the previous wallet was null.
+- Admin history comes from listAdminHistory with filters in /admin URL params hf, ht, hp; the To review list uses listTransfersToReviewFiltered.
+- Mint revenue OQL tables receivingWallet, walletChange, revenueSettlement and feeMove are admin-only.
+- Latest migration is 20261123_000000.mo; never modify it or older ones after it ships; no migration touches sale.reserved.
+- Admin long lists use AdminAccordion in components/admin/AdminUi.tsx, closed by default.
+- The mock isCallerAdmin returns true, so /admin renders without signing in during visual QA.

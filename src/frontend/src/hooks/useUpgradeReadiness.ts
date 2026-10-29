@@ -8,6 +8,33 @@ import { useActor } from "./useActor";
 
 const READINESS_KEY = ["upgradeReadiness"];
 
+/** React Query key of getUpgradeReadiness, shared with the DEX reserve hooks. */
+export const UPGRADE_READINESS_KEY = READINESS_KEY;
+
+/** The DEX fields of the readiness checklist (reserve check and pause). */
+export type DexReadiness = Pick<
+  UpgradeReadiness,
+  | "dexPaused"
+  | "dexPauseReason"
+  | "lastReserveCheckAt"
+  | "lastReserveCheckStatus"
+  | "unresolvedShortfallCount"
+  | "dexOperationsInFlight"
+  | "dexReady"
+>;
+
+function pickDexReadiness(readiness: UpgradeReadiness): DexReadiness {
+  return {
+    dexPaused: readiness.dexPaused,
+    dexPauseReason: readiness.dexPauseReason,
+    lastReserveCheckAt: readiness.lastReserveCheckAt,
+    lastReserveCheckStatus: readiness.lastReserveCheckStatus,
+    unresolvedShortfallCount: readiness.unresolvedShortfallCount,
+    dexOperationsInFlight: readiness.dexOperationsInFlight,
+    dexReady: readiness.dexReady,
+  };
+}
+
 /** Admin-only upgrade checklist read from getUpgradeReadiness. */
 export function useUpgradeReadiness() {
   const { actor, isFetching } = useActor();
@@ -17,6 +44,20 @@ export function useUpgradeReadiness() {
       if (!actor) throw new Error("Actor not available");
       return actor.getUpgradeReadiness();
     },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+/** Only the DEX reserve and pause fields of the same readiness query. */
+export function useDexReadiness() {
+  const { actor, isFetching } = useActor();
+  return useQuery<UpgradeReadiness, Error, DexReadiness>({
+    queryKey: READINESS_KEY,
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getUpgradeReadiness();
+    },
+    select: pickDexReadiness,
     enabled: !!actor && !isFetching,
   });
 }

@@ -4,6 +4,8 @@ import type { PoolView } from "../backend";
 import { AddLiquidityDialog } from "../components/dex/AddLiquidityDialog";
 import { DexBalanceLookup } from "../components/dex/DexBalanceLookup";
 import { DexBalancesPanel } from "../components/dex/DexBalancesPanel";
+import { DexIndicators } from "../components/dex/DexIndicators";
+import { DexPausedNotice } from "../components/dex/DexPausedNotice";
 import { LpBonusPanel } from "../components/dex/LpBonusPanel";
 import { MintFeePanel } from "../components/dex/MintFeePanel";
 import { MyPositions } from "../components/dex/MyPositions";
@@ -78,6 +80,7 @@ export function PoolsPage() {
   return (
     <div className="flex flex-col gap-14" data-ocid="pools.page">
       <header className="flex flex-col gap-4">
+        <DexPausedNotice />
         <h1 className="font-display text-4xl uppercase tracking-[0.25em]">
           {t.title}
         </h1>
@@ -163,6 +166,8 @@ export function PoolsPage() {
           onClose={close}
         />
       )}
+
+      <DexIndicators />
 
       <section
         className="mx-auto flex w-full max-w-3xl flex-col gap-4"
