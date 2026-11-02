@@ -1,20 +1,18 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PayToken } from "../../backend";
+import type { FiatToken } from "../../hooks/useFiatValue";
+import { useIcpswapTttiPrice } from "../../hooks/useIcpSwap";
 import { useGetIcpPrice } from "../../hooks/useQueries";
-import { useBtcUsdRate } from "../../hooks/useWallet";
+import { usableBtcUsdE8, useBtcUsdRate } from "../../hooks/useWallet";
 import type { Lang } from "../../i18n/core";
 import {
   PAY_TOKENS,
   PAY_TOKEN_ORDER,
   PRICE_SCALE,
-  TOKEN_PRICE_USD,
   formatUsdE8,
 } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
 import { isTttiToken } from "./TokenBalanceCard";
-
-/** Fixed TTTI-T calculation value (usdE8 per whole token). */
-export const TTTI_CALCULATION_USD_E8 = BigInt(TOKEN_PRICE_USD) * PRICE_SCALE;
 
 /** Pay token whose ledger is `canisterId`; null for TTTI-T or any other. */
 export function payTokenForLedger(canisterId: string): PayToken | null {
@@ -23,6 +21,14 @@ export function payTokenForLedger(canisterId: string): PayToken | null {
       (token) => PAY_TOKENS[token].ledgerCanisterId === canisterId,
     ) ?? null
   );
+}
+
+/** Fiat token of a wallet token (pay token or TTTI-T); null when it has no USD rate. */
+export function fiatTokenOfDescriptor(
+  token: TokenDescriptor,
+): FiatToken | null {
+  if (isTttiToken(token)) return "ttti";
+  return payTokenForLedger(token.canisterId.toText());
 }
 
 /**
@@ -34,16 +40,25 @@ export function useTokenUsdRates(
 ): Map<string, bigint | null> {
   const { data: icpPrice } = useGetIcpPrice();
   const { data: btcRate } = useBtcUsdRate();
+  const { data: tttiPrice } = useIcpswapTttiPrice();
   const icpUsdE8 =
     icpPrice?.usable && icpPrice.usdE8 > 0n ? icpPrice.usdE8 : null;
-  const btcUsdE8 = btcRate && btcRate.usdE8 > 0n ? btcRate.usdE8 : null;
+  // Re-check expiry every minute so a rate that lapses turns into a dash.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const btcUsdE8 = usableBtcUsdE8(btcRate, nowMs);
+  // TTTI-T: the ICPSwap price, cached in the browser for 24 hours.
+  const tttiUsdE8 = tttiPrice?.usdE8 ?? null;
 
   return useMemo(() => {
     const rates = new Map<string, bigint | null>();
     for (const token of tokens) {
       const id = token.canisterId.toText();
       if (isTttiToken(token)) {
-        rates.set(id, TTTI_CALCULATION_USD_E8);
+        rates.set(id, tttiUsdE8);
         continue;
       }
       switch (payTokenForLedger(id)) {
@@ -62,7 +77,7 @@ export function useTokenUsdRates(
       }
     }
     return rates;
-  }, [tokens, icpUsdE8, btcUsdE8]);
+  }, [tokens, icpUsdE8, btcUsdE8, tttiUsdE8]);
 }
 
 /** USD value (usdE8) of a base-unit balance at a usdE8 unit price. */

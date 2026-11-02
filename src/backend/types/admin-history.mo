@@ -4,7 +4,7 @@ import Retry "retry";
 
 // Unified admin history (newest first, paginated) built from existing records:
 // conversions, BTC deposits, owner sends and settlement sends, refunds,
-// buybacks, routed and native swaps, liquidity adds/removes/injections and
+// guarantee redemptions, routed and native swaps, liquidity adds/removes/injections and
 // receiving wallet changes. Also the To review filter.
 module {
   public type Account = Common.Account;
@@ -13,7 +13,7 @@ module {
     #mintDeposit; // conversions (mints) and BTC deposits
     #revenueSent; // 100/101 owner sends (mint and settlement)
     #refund; // purchase and BTC refunds
-    #buyback;
+    #redemption;
     #swap; // routed ICPSwap swaps and native pool swaps
     #liquidity; // liquidity adds, removes and injections
     #destination; // receiving wallet changes
@@ -24,7 +24,7 @@ module {
     #mintDeposit;
     #revenueSent;
     #refund;
-    #buyback;
+    #redemption;
     #swap;
     #liquidity;
     #destination;

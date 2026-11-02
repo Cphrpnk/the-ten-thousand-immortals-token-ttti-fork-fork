@@ -5,11 +5,21 @@ import type { RouteFees, RoutedQuote } from "../../backend";
 import { useDict } from "../../i18n/core";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { ROUTER_TEXT } from "../../i18n/pages/dexRouter";
+import { DexFiat, type DexFiatSource, useDexUnitsText } from "./DexFiat";
 import { formatDexUnits } from "./dexFormat";
 import { formatBps } from "./liquidityFormat";
 import { routeName } from "./routeFormat";
 
-type TokenFormat = { decimals: number; symbol: string };
+type TokenFormat = DexFiatSource & { decimals: number; symbol: string };
+
+/** Amount with its discreet USD equivalent. */
+function Amount({ value, token }: { value: bigint; token: TokenFormat }) {
+  return (
+    <>
+      {formatDexUnits(value, token)} <DexFiat token={token} amount={value} />
+    </>
+  );
+}
 
 function Line({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -27,10 +37,11 @@ function FeeLines({
 }: { fees: RouteFees; tokenIn: TokenFormat }) {
   const t = useDict(DEX_TEXT);
   const r = useDict(ROUTER_TEXT);
+  const unitsText = useDexUnitsText();
   if (fees.__kind__ === "native") {
     return (
       <Line label={t.swapFee(formatBps(fees.native.feeBps))}>
-        {formatDexUnits(fees.native.fee, tokenIn)}
+        <Amount value={fees.native.fee} token={tokenIn} />
       </Line>
     );
   }
@@ -38,15 +49,15 @@ function FeeLines({
   return (
     <>
       <Line label={r.icpswapFee(formatBps(f.icpswapFeeBps))}>
-        {formatDexUnits(f.icpswapFee, tokenIn)}
+        <Amount value={f.icpswapFee} token={tokenIn} />
       </Line>
       <Line label={r.protocolFee(formatBps(f.protocolFeeBps))}>
-        {formatDexUnits(f.protocolFee, tokenIn)}
+        <Amount value={f.protocolFee} token={tokenIn} />
       </Line>
       <p className="text-xs text-muted-foreground">
         {r.protocolSplit(
-          formatDexUnits(f.protocolLpShare, tokenIn),
-          formatDexUnits(f.protocolPermanentShare, tokenIn),
+          unitsText(f.protocolLpShare, tokenIn),
+          unitsText(f.protocolPermanentShare, tokenIn),
         )}
       </p>
     </>
@@ -116,15 +127,15 @@ export function SwapQuoteDetails({
         {r[REASON_KEY[quote.reason]]}
       </p>
       <Line label={t.swapAmountOut}>
-        {formatDexUnits(quote.amountOut, tokenOut)}
+        <Amount value={quote.amountOut} token={tokenOut} />
       </Line>
       <FeeLines fees={quote.fees} tokenIn={tokenIn} />
       <Line label={t.swapMinimum}>
-        {formatDexUnits(quote.minimumReceived, tokenOut)}
+        <Amount value={quote.minimumReceived} token={tokenOut} />
       </Line>
       {alt ? (
         <Line label={r.alternativeLabel(routeName(r, alt.route))}>
-          {formatDexUnits(alt.amountOut, tokenOut)}
+          <Amount value={alt.amountOut} token={tokenOut} />
         </Line>
       ) : (
         <Line label={r.alternativeNone}>{r.alternativeUnavailable}</Line>

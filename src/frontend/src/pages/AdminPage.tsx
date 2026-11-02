@@ -3,7 +3,6 @@ import {
   AdminSection,
   type AdminSectionDef,
 } from "../components/admin/AdminUi";
-import { BuybackFundingCard } from "../components/admin/BuybackFundingCard";
 import { CyclesAutonomyCard } from "../components/admin/CyclesAutonomyCard";
 import { CyclesReserveCard } from "../components/admin/CyclesReserveCard";
 import { DexIndicatorsCard } from "../components/admin/DexIndicatorsCard";
@@ -13,6 +12,7 @@ import { HistoryCard } from "../components/admin/HistoryCard";
 import { LaunchControls } from "../components/admin/LaunchControls";
 import { OverviewCard } from "../components/admin/OverviewCard";
 import { ProtocolLiquidityCard } from "../components/admin/ProtocolLiquidityCard";
+import { RedemptionFeesCard } from "../components/admin/RedemptionFeesCard";
 import { RoutedSwapsCard } from "../components/admin/RoutedSwapsCard";
 import { SnapshotExport } from "../components/admin/SnapshotExport";
 import { ToReviewCard } from "../components/admin/ToReviewCard";
@@ -38,7 +38,7 @@ const SECTIONS: ReadonlyArray<AdminSectionDef> = [
   { id: "cycles", title: "Cycles" },
   { id: "review", title: "To review" },
   { id: "history", title: "History" },
-  { id: "buyback", title: "Buyback funding" },
+  { id: "redemption", title: "Redemption fees" },
   { id: "dex", title: "DEX" },
   { id: "snapshot", title: "Snapshot export" },
 ];
@@ -206,8 +206,12 @@ export function AdminPage() {
           <HistoryCard />
         </AdminSection>
 
-        <AdminSection index={n("buyback")} id="buyback" title={t("buyback")}>
-          <BuybackFundingCard />
+        <AdminSection
+          index={n("redemption")}
+          id="redemption"
+          title={t("redemption")}
+        >
+          <RedemptionFeesCard />
         </AdminSection>
 
         <AdminSection

@@ -8,7 +8,6 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
 import { DexBalanceTable, buildBalanceRows } from "./DexBalanceTable";
-import { DexDepositSubaccount } from "./DexDepositSubaccount";
 
 function parsePrincipal(text: string): Principal | null {
   try {
@@ -42,7 +41,6 @@ export function DexBalanceLookup() {
       className="flex flex-col gap-4"
       data-ocid="pools.balances.lookup.section"
     >
-      <h3 className="font-display text-lg tracking-wide">{t.lookupTitle}</h3>
       <form
         onSubmit={onSubmit}
         className="flex flex-col gap-2"
@@ -92,10 +90,6 @@ export function DexBalanceLookup() {
           <p className="font-mono text-xs break-all text-muted-foreground">
             {shown.toText()}
           </p>
-          <DexDepositSubaccount
-            owner={shown}
-            ocid="pools.balances.lookup.subaccount"
-          />
           {tokens.isPending || balances.isPending ? (
             <Skeleton
               className="h-40 w-full"

@@ -6,6 +6,7 @@ import Common "../types/common";
 import Treasury "../types/treasury";
 import Sale "../types/presale";
 import TreasuryLib "../lib/treasury";
+import LiquidityMintLib "../lib/liquidity-mint";
 import SaleLib "../lib/presale";
 import IcrcLib "../lib/icrc";
 import OracleLib "../lib/oracle";
@@ -135,22 +136,12 @@ mixin (
     await* purchaseLocked(caller, #icp, recipient, icpAmount, null);
   };
 
-  // Shared lock for both purchase endpoints: set before any await, removed
-  // in `finally` on every exit.
+  // PTM-1: both purchase endpoints are replaced by the liquidity mint. No
+  // lock, no external call, nothing taken; already sold TTTI-T, balances and
+  // blocks are untouched.
   func purchaseLocked(caller : Principal, token : Treasury.PayToken, recipient : ?Common.Account, payAmount : Nat, tttiTarget : ?Nat) : async* Sale.PurchaseResult {
-    if (purchasesInFlight.contains(caller)) {
-      return #Err({
-        code = #purchaseInProgress;
-        message = "A purchase is already in progress for this account; please wait for it to finish. No " # PayTokenLib.symbol(token) # " was taken";
-        conversion = null;
-      });
-    };
-    purchasesInFlight.add(caller);
-    try {
-      await SaleLib.purchaseWith(purchaseContext(), caller, token, recipient, payAmount, tttiTarget);
-    } finally {
-      purchasesInFlight.remove(caller);
-    };
+    ignore (caller, recipient, payAmount, tttiTarget);
+    #Err(LiquidityMintLib.oldPurchaseRefusal(token));
   };
 
   // Purchase in any pay token (ICP, ckBTC, ckUSDC, ckUSDT). The buyer first

@@ -5,6 +5,7 @@ import { useExtendLock } from "../../hooks/useDex";
 import { useDict, useLanguage } from "../../i18n/core";
 import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
+import { nowNs } from "../../lib/approvals";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -17,7 +18,13 @@ import {
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { formatDexDate } from "./dexFormat";
-import { extendLockErrorText, parseDaysNs } from "./liquidityFormat";
+import {
+  extendLockErrorText,
+  lockBoundText,
+  parseDaysNs,
+  positionStatusText,
+  relayOutcomeText,
+} from "./liquidityFormat";
 
 const NS_PER_MS = 1_000_000n;
 const pad = (n: number) => n.toString().padStart(2, "0");
@@ -45,13 +52,19 @@ function fromDateInput(text: string, timeOf: bigint): bigint | null {
   return Number.isNaN(ms) ? null : BigInt(ms) * NS_PER_MS;
 }
 
-/** Move a position's unlock later: never earlier, at most maxLockNs after the position was created. */
+/**
+ * Extend a position's lock (owner only, never a shortening). A locked position
+ * moves its unlock later; a free position is committed anew from now. In both
+ * cases the remaining time must stay between minLockNs and maxLockNs.
+ */
 export function ExtendLockDialog({
   position,
+  minLockNs,
   maxLockNs,
   onClose,
 }: {
   position: PositionView;
+  minLockNs: bigint;
   maxLockNs: bigint;
   onClose: () => void;
 }) {
@@ -65,13 +78,14 @@ export function ExtendLockDialog({
     tone: "info" | "danger";
     text: string;
   } | null>(null);
-  const [extendedTo, setExtendedTo] = useState<bigint | null>(null);
+  const [updated, setUpdated] = useState<PositionView | null>(null);
+  const [relayLine, setRelayLine] = useState<string | null>(null);
 
-  const current =
-    extendedTo !== null && extendedTo > position.unlockAt
-      ? extendedTo
-      : position.unlockAt;
-  const latest = position.createdAt + maxLockNs;
+  const pos = updated ?? position;
+  const now = nowNs();
+  const locked = pos.unlockAt > now;
+  const current = locked ? pos.unlockAt : now;
+  const latest = now + maxLockNs;
   const days = parseDaysNs(daysText);
   const next =
     mode === "date"
@@ -79,7 +93,9 @@ export function ExtendLockDialog({
       : days !== null
         ? current + days
         : null;
-  const tooEarly = next !== null && next <= current;
+  const notLater = next !== null && locked && next <= current;
+  const tooShort = next !== null && !notLater && next - now < minLockNs;
+  const tooEarly = notLater || tooShort;
   const tooLate = next !== null && next > latest;
   const valid = next !== null && !tooEarly && !tooLate;
   const pending = extend.isPending;
@@ -93,12 +109,15 @@ export function ExtendLockDialog({
       {
         onSuccess: (outcome) => {
           if (outcome.__kind__ === "ok") {
-            setExtendedTo(outcome.ok.unlockAt);
+            setUpdated(outcome.ok.position);
+            setRelayLine(relayOutcomeText(t, outcome.ok.relay));
             setDateText("");
             setDaysText("");
             setFeedback({
               tone: "info",
-              text: t.extendDone(formatDexDate(outcome.ok.unlockAt, lang)),
+              text: t.extendDone(
+                formatDexDate(outcome.ok.position.unlockAt, lang),
+              ),
             });
           } else {
             setFeedback({
@@ -121,7 +140,9 @@ export function ExtendLockDialog({
             {t.extendTitle(formatNumber(position.id))}
           </DialogTitle>
           <DialogDescription>
-            {t.extendCurrent(formatDexDate(current, lang))}
+            {locked
+              ? t.extendCurrent(formatDexDate(pos.unlockAt, lang))
+              : positionStatusText(t, pos)}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
@@ -158,7 +179,9 @@ export function ExtendLockDialog({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="dex-extend-days">{t.extendDaysLabel}</Label>
+              <Label htmlFor="dex-extend-days">
+                {locked ? t.extendDaysLabel : t.lockCustomDays}
+              </Label>
               <Input
                 id="dex-extend-days"
                 value={daysText}
@@ -178,7 +201,9 @@ export function ExtendLockDialog({
                 className="text-destructive"
                 data-ocid="pools.extend.field_error"
               >
-                {t.extendTooEarly}
+                {notLater
+                  ? t.extendTooEarly
+                  : t.errLockTooShort(lockBoundText(t, minLockNs))}
               </p>
             ) : tooLate ? (
               <p
@@ -215,6 +240,14 @@ export function ExtendLockDialog({
                 }
               >
                 {feedback.text}
+                {feedback.tone === "info" && relayLine && (
+                  <span
+                    className="mt-1 block text-xs text-muted-foreground"
+                    data-ocid="pools.extend.relay_result"
+                  >
+                    {relayLine}
+                  </span>
+                )}
               </p>
             )}
           </div>

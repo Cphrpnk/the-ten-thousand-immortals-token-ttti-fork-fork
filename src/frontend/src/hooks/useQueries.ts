@@ -26,20 +26,31 @@ import type {
   BtcDepositInfo,
   BtcDepositResult,
   Conversion,
+  CreatorHoldingsView,
+  CreatorPayoutView,
+  CyclesFeeSettlement,
   CyclesShareView,
   CyclesStatus,
   DataCertificate,
   DeliveryAddressResult,
   DepositEntry,
   DepositTracking,
+  DexToken,
   FeeBounds,
   FeeCollectorInfo,
+  FeeSplitRow,
+  FeeSplitSource,
   GetBlocksArgs,
   GetBlocksResult,
+  Guarantee,
   IcpPrice,
   LegacyBlockInfo,
+  LiquidityMint,
+  MintAmount,
+  MintArgs,
   MyBtcDeposits,
   PayTokenStatus,
+  PayoutError,
   PriceResult,
   PublicTreasuryInfo,
   PurchaseAcknowledgement,
@@ -49,6 +60,7 @@ import type {
   SupportedStandard,
   TechnicalDetails,
   TokenPrice,
+  TopUpResult,
   TransferArgs,
   TransferFromArgs,
   TransferFromResult,
@@ -92,6 +104,7 @@ function invalidateSale(queryClient: QueryClient) {
     "icpPrice",
     "tokenPrices",
     "cyclesStatus",
+    "publicBoard",
     "icrc3GetBlocks",
     "purchaseAcknowledgement",
     "ownerSends",
@@ -101,6 +114,9 @@ function invalidateSale(queryClient: QueryClient) {
     "setAsideAmounts",
     "liquidityInjections",
     "myMintFees",
+    "liquidityMints",
+    "myGuarantees",
+    "dexPositionsOf",
   ]) {
     void queryClient.invalidateQueries({ queryKey: [key] });
   }
@@ -322,7 +338,7 @@ export function useIcrc3SupportedBlockTypes() {
   });
 }
 
-/** Inclusive transfer-fee bounds (base units) accepted by set_fee. */
+/** Transfer-fee bounds. The fee is fixed at 1 000 e8s (0.00001 TTTI-T): min and max both report it. */
 export function useFeeBounds() {
   const { actor, isFetching } = useActor();
 
@@ -334,26 +350,6 @@ export function useFeeBounds() {
     },
     enabled: !!actor && !isFetching,
     staleTime: Number.POSITIVE_INFINITY,
-  });
-}
-
-/** Sets the transfer fee; rejects with the backend err text on failure. */
-export function useSetFee() {
-  const { actor } = useActor();
-  const queryClient = useQueryClient();
-
-  return useMutation<void, Error, bigint>({
-    mutationFn: async (newFee: bigint) => {
-      if (!actor) throw new Error("Actor not available");
-      const result = await actor.set_fee(newFee);
-      if (result.__kind__ === "err") throw new Error(result.err);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["tokenInfo"] });
-      void queryClient.invalidateQueries({ queryKey: ["getFee"] });
-      void queryClient.invalidateQueries({ queryKey: ["icrc1Fee"] });
-      void queryClient.invalidateQueries({ queryKey: ["technicalDetails"] });
-    },
   });
 }
 
@@ -895,7 +891,89 @@ export function useBtcDepositInfo() {
       return actor.getBtcDepositInfo();
     },
     enabled: !!actor && !isFetching,
-    staleTime: 5 * 60_000,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+// --- Liquidity-forming mint ---------------------------------------------------
+
+export type LiquidityMintQuoteResult = Awaited<
+  ReturnType<Backend["quoteLiquidityMint"]>
+>;
+export type LiquidityMintOutcome = Awaited<
+  ReturnType<Backend["mintLiquidity"]>
+>;
+
+/** Cache key part of a mint amount: kind and value, never object identity. */
+function mintAmountKey(amount: MintAmount | null): string {
+  if (!amount) return "none";
+  if (amount.__kind__ === "usd") return `usd:${amount.usd}`;
+  return amount.ttti.__kind__ === "decimal"
+    ? `decimal:${amount.ttti.decimal}`
+    : `base:${amount.ttti.baseUnits}`;
+}
+
+/** Preview of a liquidity mint (public query); disabled without an amount. */
+export function useLiquidityMintQuote(
+  token: PayToken,
+  amount: MintAmount | null,
+) {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<LiquidityMintQuoteResult>({
+    queryKey: ["liquidityMintQuote", token, mintAmountKey(amount)],
+    queryFn: async () => {
+      if (!actor || !amount) throw new Error("Actor not available");
+      return actor.quoteLiquidityMint({ token, amount });
+    },
+    enabled: !!actor && !isFetching && amount !== null,
+    staleTime: 10_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+}
+
+/** Mint liquidity as the Internet Identity caller; the approval is already granted. */
+export function useMintLiquidity() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<LiquidityMintOutcome, Error, MintArgs>({
+    mutationFn: async (args) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.mintLiquidity(args);
+    },
+    onSettled: () => {
+      invalidateSale(queryClient);
+    },
+  });
+}
+
+/** Liquidity mints of the signed-in caller, newest first. */
+export function useMyLiquidityMints(principalText: string | undefined) {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<Array<LiquidityMint>>({
+    queryKey: ["liquidityMints", principalText],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getMyLiquidityMints();
+    },
+    enabled: !!actor && !isFetching && !!principalText,
+  });
+}
+
+/** Personal guarantees of the signed-in caller. */
+export function useMyGuarantees(principalText: string | undefined) {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<Array<Guarantee>>({
+    queryKey: ["myGuarantees", principalText],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getMyGuarantees();
+    },
+    enabled: !!actor && !isFetching && !!principalText,
   });
 }
 
@@ -1302,6 +1380,211 @@ export function useCyclesStatus() {
     },
     enabled: !!actor && !isFetching,
     refetchInterval: 60_000,
+  });
+}
+
+// --- Cycles top-up (anyone) -------------------------------------------------
+
+/**
+ * Anyone can ask for a cycles top-up. The backend decides: ran, busy or
+ * notNeeded; the result is returned as is and the cycles views are refreshed.
+ */
+export function useTopUpCycles() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<TopUpResult, Error, void>({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.topUpCycles();
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["cyclesStatus"] });
+      void queryClient.invalidateQueries({ queryKey: ["publicBoard"] });
+      void queryClient.invalidateQueries({ queryKey: ["cyclesAutonomy"] });
+      void queryClient.invalidateQueries({ queryKey: ["technicalDetails"] });
+    },
+  });
+}
+
+// --- Cycles fee settlements and splits --------------------------------------
+
+/** Admin: page of cycles fee settlements (the protocol share sent to the reserve). */
+export function useCyclesFeeSettlements(offset: bigint, limit: bigint) {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<CyclesFeeSettlement>>({
+    queryKey: ["cyclesFeeSettlements", offset.toString(), limit.toString()],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listCyclesFeeSettlements(offset, limit);
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+    refetchInterval: 60_000,
+  });
+}
+
+/** Admin: page of fee splits (creator and cycles parts) for one source. */
+export function useCyclesFeeSplits(
+  source: FeeSplitSource,
+  offset: bigint,
+  limit: bigint,
+) {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<FeeSplitRow>>({
+    queryKey: ["cyclesFeeSplits", source, offset.toString(), limit.toString()],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listCyclesFeeSplits(source, offset, limit);
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+    refetchInterval: 60_000,
+  });
+}
+
+/** Admin: cycles fee settlements whose outcome is unknown and need a review. */
+export function useCyclesFeeSettlementsToReview() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<CyclesFeeSettlement>>({
+    queryKey: ["cyclesFeeSettlementsToReview"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listCyclesFeeSettlementsToReview();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+    refetchInterval: 30_000,
+  });
+}
+
+function invalidateCyclesFeeSettlements(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ["cyclesFeeSettlements"] });
+  void queryClient.invalidateQueries({
+    queryKey: ["cyclesFeeSettlementsToReview"],
+  });
+  void queryClient.invalidateQueries({ queryKey: ["cyclesStatus"] });
+  void queryClient.invalidateQueries({ queryKey: ["publicBoard"] });
+}
+
+/** Admin: confirms that a settlement arrived at the given ledger block. */
+export function useMarkCyclesFeeSettlementArrived() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { n: bigint; block: bigint }>({
+    mutationFn: async ({ n, block }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.markCyclesFeeSettlementArrived(n, block);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSettled: () => invalidateCyclesFeeSettlements(queryClient),
+  });
+}
+
+/** Admin: records that a settlement did not arrive so that it is sent again. */
+export function useMarkCyclesFeeSettlementNotArrived() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { n: bigint }>({
+    mutationFn: async ({ n }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.markCyclesFeeSettlementNotArrived(n);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSettled: () => invalidateCyclesFeeSettlements(queryClient),
+  });
+}
+
+// --- Creator holdings and payouts -------------------------------------------
+
+/** Creator holdings per token (fees received, in flight, paid out) and recent payouts. */
+export function useCreatorHoldings() {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<CreatorHoldingsView>({
+    queryKey: ["creatorHoldings"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getCreatorHoldings();
+    },
+    enabled: !!actor && !isFetching,
+    refetchInterval: 60_000,
+  });
+}
+
+/** Payout outcome: the payout view, or the backend refusal kept as data. */
+export type CreatorPayoutOutcome =
+  | { __kind__: "ok"; ok: CreatorPayoutView }
+  | { __kind__: "err"; err: PayoutError };
+
+function invalidateCreatorPayouts(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ["creatorHoldings"] });
+  void queryClient.invalidateQueries({ queryKey: ["creatorPayoutsToReview"] });
+  void queryClient.invalidateQueries({ queryKey: ["publicBoard"] });
+}
+
+/** Creator: pays out the fees held for one token. */
+export function usePayCreatorFees() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<CreatorPayoutOutcome, Error, DexToken>({
+    mutationFn: async (token) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.payCreatorFees(token);
+    },
+    onSettled: () => invalidateCreatorPayouts(queryClient),
+  });
+}
+
+/** Admin: creator payouts whose outcome is unknown and need a review. */
+export function useCreatorPayoutsToReview() {
+  const { actor, isFetching } = useActor();
+  const isAdmin = useAdminGate();
+
+  return useQuery<Array<CreatorPayoutView>>({
+    queryKey: ["creatorPayoutsToReview"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.listCreatorPayoutsToReview();
+    },
+    enabled: !!actor && !isFetching && isAdmin,
+    refetchInterval: 30_000,
+  });
+}
+
+/** Admin: confirms that a creator payout arrived at the given ledger block. */
+export function useMarkCreatorPayoutArrived() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { n: bigint; block: bigint }>({
+    mutationFn: async ({ n, block }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.markCreatorPayoutArrived(n, block);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSettled: () => invalidateCreatorPayouts(queryClient),
+  });
+}
+
+/** Admin: records that a creator payout did not arrive so that it can be paid again. */
+export function useMarkCreatorPayoutNotArrived() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { n: bigint }>({
+    mutationFn: async ({ n }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.markCreatorPayoutNotArrived(n);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSettled: () => invalidateCreatorPayouts(queryClient),
   });
 }
 

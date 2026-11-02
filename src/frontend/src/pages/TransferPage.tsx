@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { Account } from "../backend";
 import { ExplorerLink } from "../components/ExplorerLink";
+import { FiatAmount } from "../components/FiatAmount";
 import { FlatTokenIcon } from "../components/FlatTokenIcon";
 import { PercentBar } from "../components/exchange/WalletPercentBar";
 import { Alert, AlertDescription } from "../components/ui/alert";
@@ -206,6 +207,17 @@ function SignedOutNotice() {
   );
 }
 
+/** Discreet USD equivalent of a typed TTTI-T amount; nothing until it parses. */
+function TypedFiat({ text, ocid }: { text: string; ocid: string }) {
+  const parsed = parseTtti(text);
+  if (parsed === null || text.trim() === "") return null;
+  return (
+    <p className="text-right">
+      <FiatAmount token="ttti" amount={parsed} ocid={ocid} />
+    </p>
+  );
+}
+
 function BalanceCard({ balance }: { balance: bigint | undefined }) {
   const t = useDict(TRANSFER_TEXT);
   return (
@@ -222,7 +234,14 @@ function BalanceCard({ balance }: { balance: bigint | undefined }) {
           {balance === undefined ? (
             <Skeleton className="h-10 w-48" />
           ) : (
-            `${formatTtti(balance)} ${TTTI_SYMBOL}`
+            <>
+              {formatTtti(balance)} {TTTI_SYMBOL}{" "}
+              <FiatAmount
+                token="ttti"
+                amount={balance}
+                ocid="transfer.balance_fiat"
+              />
+            </>
           )}
         </CardTitle>
       </CardHeader>
@@ -421,6 +440,7 @@ function TransferForm({
               autoComplete="off"
               data-ocid="transfer.amount_input"
             />
+            <TypedFiat text={amount} ocid="transfer.amount_fiat" />
             <PercentBar
               symbol={TTTI_SYMBOL}
               decimals={TTTI_DECIMALS}
@@ -599,6 +619,7 @@ function ApproveForm({ owner }: { owner: Principal }) {
               autoComplete="off"
               data-ocid="transfer.approve_amount_input"
             />
+            <TypedFiat text={amount} ocid="transfer.approve_amount_fiat" />
             <p className="text-xs text-muted-foreground">
               {t.approveHint(TTTI_DECIMALS, TTTI_SYMBOL)}
             </p>
@@ -649,11 +670,20 @@ function ApproveForm({ owner }: { owner: Principal }) {
               : t.currentAllowance}
           </p>
           <p className="mt-1 text-lg font-semibold tracking-tight font-mono tabular-nums text-foreground">
-            {!spenderPrincipal
-              ? t.enterSpenderToView
-              : isAllowanceLoading
-                ? t.loading
-                : `${formatTtti(allowance?.allowance ?? 0n)} ${TTTI_SYMBOL}`}
+            {!spenderPrincipal ? (
+              t.enterSpenderToView
+            ) : isAllowanceLoading ? (
+              t.loading
+            ) : (
+              <>
+                {formatTtti(allowance?.allowance ?? 0n)} {TTTI_SYMBOL}{" "}
+                <FiatAmount
+                  token="ttti"
+                  amount={allowance?.allowance ?? 0n}
+                  ocid="transfer.allowance_fiat"
+                />
+              </>
+            )}
           </p>
         </div>
       </CardContent>
@@ -798,6 +828,10 @@ function TransferFromForm({
               onChange={(e) => setAmount(e.target.value)}
               autoComplete="off"
               data-ocid="transfer.transfer_from_amount_input"
+            />
+            <TypedFiat
+              text={amount}
+              ocid="transfer.transfer_from_amount_fiat"
             />
           </div>
 

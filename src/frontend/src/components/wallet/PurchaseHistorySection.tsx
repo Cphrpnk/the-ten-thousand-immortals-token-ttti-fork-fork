@@ -1,22 +1,18 @@
 import { AlertTriangle, ChevronDown, History, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
-  type Buyback,
-  type BuybackMass,
   type Conversion,
   ConversionStatus,
   type PayToken,
 } from "../../backend";
-import { useBuybackMasses, useMyBuybacks } from "../../hooks/useBuyback";
-import { useInternetIdentity } from "../../hooks/useInternetIdentity";
+import type { FiatToken } from "../../hooks/useFiatValue";
 import { useMyConversions } from "../../hooks/useQueries";
 import { WALLET_HISTORY_PAGE_SIZE } from "../../hooks/useWallet";
 import { useDict, useLanguage } from "../../i18n/core";
-import { BUYBACK_TEXT } from "../../i18n/pages/buyback";
 import { WALLET_EXPLORER_TEXT, WALLET_TEXT } from "../../i18n/pages/wallet";
-import { buybackForPurchase, massBuybacks, massFor } from "../../lib/buyback";
 import type { BlockLinkTarget } from "../../lib/explorer";
 import {
+  feeQuantity,
   formatBlockIndex,
   formatFeeQuantity,
   formatNetQuantity,
@@ -26,19 +22,18 @@ import {
   formatTttiPerPaidToken,
   formatTttiReceived,
   mintBlockTarget,
+  netQuantity,
+  paidQuantity,
   paymentBlockTarget,
 } from "../../lib/purchaseHistory";
 import { encodeAccountText, payTokenSymbol } from "../../lib/token";
 import { ExplorerLink } from "../ExplorerLink";
+import { FiatAmount } from "../FiatAmount";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { HistoryPager } from "./HistoryPager";
-import {
-  BuybackRecordState,
-  PurchaseBuybackState,
-} from "./PurchaseBuybackState";
 
 type WalletText = (typeof WALLET_TEXT)["en"];
 
@@ -75,6 +70,7 @@ function Field({
   emphasis = false,
   mono = false,
   link,
+  fiat,
 }: {
   label: string;
   value: string | null;
@@ -83,6 +79,8 @@ function Field({
   mono?: boolean;
   /** Explorer target and label; the value stays displayed unchanged. */
   link?: { target: BlockLinkTarget | null; label: string; ocid: string };
+  /** USD equivalent of the displayed amount. */
+  fiat?: { token: FiatToken; amount: bigint | null };
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -109,6 +107,13 @@ function Field({
         ) : (
           (value ?? unavailable)
         )}
+        {value !== null && fiat && (
+          <FiatAmount
+            token={fiat.token}
+            amount={fiat.amount}
+            className="ml-2"
+          />
+        )}
       </dd>
     </div>
   );
@@ -118,20 +123,10 @@ function PurchaseRow({
   conversion,
   index,
   t,
-  buyback,
-  mass,
-  buybacksReady,
-  isBuyer,
-  onBuyback,
 }: {
   conversion: Conversion;
   index: number;
   t: WalletText;
-  buyback: Buyback | undefined;
-  mass: BuybackMass | undefined;
-  buybacksReady: boolean;
-  isBuyer: boolean;
-  onBuyback?: (purchaseId: bigint) => void;
 }) {
   const { lang } = useLanguage();
   const tx = useDict(WALLET_EXPLORER_TEXT);
@@ -168,22 +163,29 @@ function PurchaseRow({
           label={t.historyPaid}
           value={formatPaidQuantity(conversion, lang)}
           unavailable={na}
+          fiat={{
+            token: conversion.payToken,
+            amount: paidQuantity(conversion),
+          }}
         />
         <Field
           label={t.historyFee}
           value={formatFeeQuantity(conversion, lang)}
           unavailable={na}
+          fiat={{ token: conversion.payToken, amount: feeQuantity(conversion) }}
         />
         <Field
           label={t.historyNet}
           value={formatNetQuantity(conversion, lang)}
           unavailable={na}
+          fiat={{ token: conversion.payToken, amount: netQuantity(conversion) }}
           emphasis
         />
         <Field
           label={t.historyReceived}
           value={formatTttiReceived(conversion, lang)}
           unavailable={na}
+          fiat={{ token: "ttti", amount: conversion.tttiAmount }}
           emphasis
         />
         <div className="hidden lg:block" aria-hidden="true" />
@@ -198,16 +200,6 @@ function PurchaseRow({
           unavailable={na}
         />
       </dl>
-
-      <PurchaseBuybackState
-        conversion={conversion}
-        buyback={buyback}
-        mass={mass}
-        buybacksReady={buybacksReady}
-        isBuyer={isBuyer}
-        index={index}
-        onBuyback={onBuyback}
-      />
 
       <div className="flex flex-col gap-4">
         <Button
@@ -273,29 +265,17 @@ interface PurchaseHistorySectionProps {
   payToken?: PayToken;
   /** Section title; defaults to the purchase history title. */
   title?: string;
-  /** Opens the buyback flow on the mass of a purchase's payment token. */
-  onBuyback?: (purchaseId: bigint) => void;
 }
 
 /**
- * The user's purchases, newest first, 25 per page, with the buyback state of
- * each purchase's mass, then the mass buybacks.
+ * The user's purchases, newest first, 25 per page.
  */
 export function PurchaseHistorySection({
   payToken,
   title,
-  onBuyback,
 }: PurchaseHistorySectionProps = {}) {
   const t = useDict(WALLET_TEXT);
-  const tb = useDict(BUYBACK_TEXT);
   const { data, isLoading, isError, isFetching, refetch } = useMyConversions();
-  const { data: buybacks } = useMyBuybacks();
-  const masses = useBuybackMasses();
-  const buybacksReady =
-    buybacks !== undefined && (masses.data !== undefined || masses.isError);
-  const records = massBuybacks(buybacks, payToken);
-  const { identity } = useInternetIdentity();
-  const callerText = identity?.getPrincipal().toText();
   const [page, setPage] = useState(1);
 
   const purchases = useMemo(
@@ -391,11 +371,6 @@ export function PurchaseHistorySection({
                     conversion={conversion}
                     index={offset + i + 1}
                     t={t}
-                    buyback={buybackForPurchase(buybacks, conversion.id)}
-                    mass={massFor(masses.data, conversion.payToken)}
-                    buybacksReady={buybacksReady}
-                    isBuyer={conversion.depositor.toText() === callerText}
-                    onBuyback={onBuyback}
                   />
                 ))}
               </ul>
@@ -407,36 +382,6 @@ export function PurchaseHistorySection({
                   onNext={() => setPage(currentPage + 1)}
                   ocid="wallet.history"
                 />
-              )}
-              {buybacksReady && records.length > 0 && (
-                <section
-                  className="flex flex-col gap-4 border-t border-border pt-4"
-                  data-ocid="wallet.history.mass_buybacks.section"
-                >
-                  <h3 className="font-display text-base">
-                    {tb.historyMassTitle}
-                  </h3>
-                  <ul
-                    className="flex flex-col gap-4"
-                    data-ocid="wallet.history.mass_buybacks.list"
-                  >
-                    {records.map((record, i) => (
-                      <li
-                        key={record.id.toString()}
-                        className="rounded-lg border border-border bg-background/40 p-4 md:p-6"
-                        data-ocid={`wallet.history.mass_buybacks.item.${i + 1}`}
-                      >
-                        <BuybackRecordState
-                          buyback={record}
-                          isBuyer={record.buyer.toText() === callerText}
-                          index={i + 1}
-                          ocid="wallet.history.mass_buyback"
-                          bordered={false}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </section>
               )}
             </div>
           )}

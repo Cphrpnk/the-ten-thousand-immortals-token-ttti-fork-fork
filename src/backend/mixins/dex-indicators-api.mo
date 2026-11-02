@@ -1,13 +1,24 @@
 import Result "mo:core/Result";
 import AccessControl "mo:caffeineai-authorization/access-control";
+import Time "mo:core/Time";
 import Types "../types/dex-indicators";
+import ProtocolFeeTypes "../types/protocol-fees";
+import ProtocolFeesLib "../lib/protocol-fees";
 
 // DEX lot 7: public indicators snapshot (computed once per hour by a timer) and
 // its admin status.
 mixin (
   indicators : Types.IndicatorsStore,
   accessControlState : AccessControl.AccessControlState,
+  protocolFees : ProtocolFeesLib.ProtocolFeeContext,
 ) {
+  // PTM-10a: public, no sign-in. Pools value, capitalisation, current ratio,
+  // 24 h average, 50 % target and locked share m, computed on each call
+  // (nothing stored by the call). The mint does not use m yet.
+  public query func getPoolCapRatio() : async ProtocolFeeTypes.PoolCapRatioView {
+    ProtocolFeesLib.poolCapRatioView(protocolFees, Time.now());
+  };
+
   // Public: the stored snapshot, null until the first computation. Never
   // recomputes on read.
   public query func getDexIndicators() : async ?Types.DexIndicatorsSnapshot {

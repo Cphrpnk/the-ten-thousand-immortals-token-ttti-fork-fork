@@ -15,7 +15,6 @@
 - The footer carries a neutral copyright line with no third-party build credit.
 - Do not name the creator
 - State facts only; no promotional or value-suggesting wording
-- Transfer fee adjustable only in the test (TTTI-T) version, not in the real version
 - Present TTTI as a perfect instrument without denigrating it; no profit, scarcity-as-value or price-rise promises
 - Amounts accept both '.' and ',' as the decimal separator
 - Ne toucher à aucun solde ni bloc existant
@@ -54,7 +53,6 @@
 - The token's name is The Ten Thousand Immortals; TTTI is the ticker (TTTI-T for the test version)
 - OISY-like wallet layout: total balance at top, Receive/Send/Swap at top, compact token list
 - Per-token action buttons appear only when the row is selected and disappear when clicking elsewhere
-- TTTI-T valued at a fixed 10,000 USD per token for USD calculation, for now
 - History pages of 25 transactions max
 - Mint wording everywhere TTTI-T is obtained (Mint TTTI-T, Mint with <token>, Minting…); /buy URL, Buy ICP via Onramper, the six acknowledgements and the footer stay unchanged
 - The buy-to-mint explanation stays discreet (collapsible, closed by default) so it does not overload the layout
@@ -66,15 +64,9 @@
 - Approvals always require an expiration; clear instructions, warnings and explicit confirmation before each approval action
 - Address suggestions come only from the signed-in user's own transactions, not the whole history
 - The contract (mint) address never appears in Send dialog address suggestions
-- Les TTTI-T rachetés vont au compte de l'admin/créateur ; rien n'est brûlé
 - Le rachat s'exécute automatiquement à la demande de l'acheteur
-- Les fonds du rachat viennent du wallet de l'admin via des autorisations ICRC-2 plafonnées avec expiration
 - 1 % de frais de rachat ; tous les frais des tiers sont déduits du montant rendu
 - Le BTC est remboursé en ckBTC ; l'utilisateur le convertit lui-même en BTC
-- Achats d'avant la Version 26 exclus du rachat
-- Rachat par masse moyenne par jeton de paiement, avec un curseur de pourcentage identique à celui du mint
-- La règle du plus bas des deux s'applique au ratio moyen de la masse
-- Pas de masse globale tous jetons confondus
 - Ne modifier aucun solde ni bloc existant ; aucun changement visuel
 - Buyback slider, maximum and quote follow min(remaining mass, usable TTTI-T wallet balance) in the interface only; the backend keeps the mass percent and transferFrom check
 - Clear short notice when the wallet balance limits the buyback, without visual redesign
@@ -90,16 +82,13 @@
 - Signature automatique : l'app choisit le wallet qui détient le compte et ouvre sa fenêtre sans choix manuel
 - L'admin choisit librement le wallet du compte de financement du rachat ; les textes restent neutres pour toutes les options (Internet Identity, OISY, NFID, Plug)
 - Aucun changement visuel au-delà du strict nécessaire
-- Aucun changement backend pour la signature multi-wallet
 - Buyback quote shows the lower-of-two rule step by step with USD equivalents, using the quote's own rates
 - Wallet header buttons: Receive, Send, Swap and Mint TTTI-T
-- Swap runs from the user's own wallet through ICPSwap pools; no backend change for the swap
 - Buy (Onramper) on the selected ICP, ckBTC, ckUSDC and ckUSDT cards; none on TTTI-T
 - Slippage tolerance adjustable, 0.5 % by default
 - Écran admin « To review » en anglais, comme le reste de l'admin
 - Déployer uniquement en aperçu (draft), jamais en version publique ; chaque lot validé est mis en aperçu
 - Une migration déjà passée en aperçu ne se modifie plus ; les lots suivants ajoutent une nouvelle migration au nom plus grand
-- Le rachat se paie uniquement dans le jeton de la masse ; receiveToken reste dans l'API mais doit égaler massToken
 - Le contrat simulé garde le cas d'échec ponctuel du paiement en ckUSDT pour tester la reprise, sur une masse ckUSDT de l'appelant
 - Ne toucher à rien d'autre que les points du lot demandé ; partir du code actuel
 - Déployer seulement en aperçu, jamais en version publique ; donner le numéro de version
@@ -168,7 +157,124 @@
 - Répondre en français ; aperçu seulement, jamais publié ; donner le numéro de version
 - Nouvelle migration au nom plus grand que 20261122_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
 - Ne toucher à rien d'autre que la réorganisation de l'admin, l'envoi direct du revenu du mint, les textes publics du revenu du mint, getApiDoc et le contrat simulé
-- Mint 100/101 sent directly to the admin-configured wallet of the paid token; 1/101 in a dedicated non-withdrawable contract fee account
+- Pools page: airy, sober style with gold accent; long content in accordions closed by default
+- Pools page redesign is frontend only; no balance or block touched
+- Existing sentences reused verbatim; English authoritative; 7 languages
+- Preview only, never published; give the version number
+- Ne toucher à rien d'autre que les points du lot DEX-1 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261123_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Balayage de tout le solde ledger des anciens sous-comptes vers la garde ; excédent dans « To review », jamais crédité automatiquement
+- Contrôle de réserve séparé par compte, sans mélanger les comptes
+- Ne toucher à rien d'autre que les points du lot DEX-2 ; partir de l'aperçu v2 (DEX-1)
+- Nouvelle migration au nom plus grand que 20261124_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Aperçu seulement, jamais en version publique ; donner le numéro de version, l'analyse du code modifié et la liste de ce qui reste
+- Écran admin « To review » en anglais ; textes publics factuels dans les 7 langues, l'anglais fait foi
+- Preview only; no live deploy until asked
+- Admin and To review screens in English; public texts in 7 languages with English authoritative
+- Keep the airy restrained look with a gold accent; long content in accordions closed by default
+- Amounts accept both . and , as decimal separator
+- Never rewrite a balance or block; never touch sale.reserved
+- Ne toucher à rien d'autre que les points du lot DEX-2b ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261125_000000 seulement si l'état enregistré change ; aperçu seulement, donner le numéro de version
+- Ne toucher à rien d'autre que les points du lot de corrections ICPSwap/acceptsDeposits ; partir du code actuel
+- Ne toucher à rien d'autre que les points du lot DEX-3 ; partir de l'aperçu v5 ; ne faire que ce qui manque
+- Textes dans les 7 langues, l'anglais fait foi
+- Aperçu seulement, jamais en version publique ; donner le numéro de version et la liste de ce qui reste
+- Répondre en français ; aperçu seulement ; donner le numéro de version et la liste de ce qui reste
+- Ne toucher à rien d'autre que les points du lot PTM-1 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261125_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Mint minimum 0,0001 TTTI-T (environ 1 $) ; granularité maximale de 8 décimales (0,00000001 TTTI-T)
+- Textes dans les 7 langues, l'anglais fait foi ; apparence existante conservée
+- Ne toucher à rien d'autre que les points du lot PTM-2 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261126_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Écran « Ma garantie » et textes publics factuels, sans formulation promotionnelle
+- Réponses en français
+- Textes en 7 langues, l'anglais fait foi
+- Apparence existante conservée
+- Écran d'administration en anglais
+- Mise en aperçu seulement
+- Ne toucher à rien d'autre que les points du lot PTM-3 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261127_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Textes en 7 langues, l'anglais fait foi ; apparence existante conservée ; écran d'administration en anglais
+- Aucune fonction d'admin n'ouvre, prolonge ni raccourcit un verrou, hors retrait de paire annoncé 5 jours d'avance
+- Textes factuels, sans formulation promotionnelle
+- Verrou optionnel de 18 mois à 5 ans ; relève d'un tiers du poids de chaque nouvel engagement ; frais LP en deux moitiés (réserves au prorata / positions verrouillées selon capital × √(temps restant ÷ 5 ans))
+- Ne toucher à rien d'autre que les points de la correction de prolongation et du lot PTM-4 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261128_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Textes publics factuels, sans formulation promotionnelle
+- Frais de transfert du TTTI-T fixe à 1 000 e8s, non réglable, versé au créateur
+- Part protocole de 30 % : deux tiers au créateur, un tiers en liquidité permanente (parts verrouillées du contrat, journal public)
+- Ne toucher à rien d'autre que les points du lot sur l'échec du mint ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261129_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Dans l'appel isolé du mint, toute erreur fait un trap, jamais un throw ni un retour d'erreur
+- L'appel isolé revérifie lui-même plafond, slippage et soldes
+- Le verrou de mint se libère tout seul après un délai
+- Ne toucher à rien d'autre que les points du lot PTM-5 ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261130_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved
+- Textes en 7 langues, l'anglais fait foi ; écran d'administration en anglais ; textes factuels
+- Tout lecteur d'un prix du TTTI-T utilise le prix consolidé, jamais celui d'un seul pool
+- Alertes des LP affichées dans l'app
+- Publier en aperçu seulement ; aucun changement visuel
+- Ne toucher à rien d'autre que les points du lot PTM-5b ; partir du code actuel (aperçu v8)
+- Aperçu du mint : deux blocs identifiés, « prix consolidé (référence) » et « prix du pool visé, avant et après le zap », avec l'écart signé entre les deux
+- Publier en aperçu seulement ; donner le numéro de version
+- Ne toucher à rien d'autre que les points du lot PTM-6a ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261201_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Textes en 7 langues, l'anglais fait foi ; apparence existante conservée ; formulation factuelle
+- Prix de réserve = le plus haut de 10 000 $ par TTTI-T, de la moyenne 24 h du prix consolidé et du prix consolidé actuel, avec équivalent dans chaque jeton au taux du moment ; remplace la réserve fixe au prix du mint
+- Ne toucher à rien d'autre que le changement du prix de réserve ; partir du code actuel
+- Ne toucher à rien d'autre que les points du lot PTM-6b ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261202_000000 ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Ne toucher à rien d'autre que les points du lot PTM-6c ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261203_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Ne toucher à rien d'autre que les points du lot PTM-7 ; partir du code actuel
+- Rendement constaté seulement, jamais d'APY ; aucune promesse de hausse ; textes sur les règles, sans objectif de prix
+- Aucune récompense n'est créée : tout ce qui est versé a d'abord été payé par quelqu'un, vérifiable par chacun
+- Chance égale au mint, plus offrant aux enchères : le dire tel quel
+- Enchères décrites par leurs règles seulement, sans commentaire sur leur effet attendu
+- Les avoirs du créateur sont déclarés ; le créateur n'est jamais nommé
+- Aucun solde, bloc, état enregistré ni apparence modifié ; aperçu seulement, donner le numéro de version
+- Ne toucher à rien d'autre que les points du lot PTM-9b ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261204_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Textes en 7 langues, l'anglais fait foi ; écrans admin en anglais ; apparence existante conservée
+- Frais de transfert versés au créateur (source #transferFee), jamais comptés dans le TTTI-T disponible au mint
+- Verrou volontaire de 3 mois à 5 ans, seule règle : le temps restant
+- Garanties : un compte interne dédié par jeton dans la garde commune ; somme des masses = solde affichée publiquement
+- Ne toucher à rien d'autre que les points du lot PTM-9c ; partir du code actuel
+- Réponses en français ; textes en 7 langues, l'anglais fait foi ; textes factuels, non promotionnels
+- Valorisation du portefeuille au prix consolidé (moyenne de l'heure), garantie récupérable affichée à part
+- Aperçu seulement ; donner le numéro de version
+- Aucun mot « APY » ni « rendement annualisé », même nié ; dire positivement que le TTTI-T ne génère rien par lui-même, que les frais de swap rémunèrent la liquidité fournie, et n'afficher que les frais réellement versés sur 30 jours
+- Textes du site en 7 langues, l'anglais fait foi
+- Textes factuels, sans promesse ni mention de rendement annualisé
+- Ne toucher à rien d'autre que les points du lot PTM-9d ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261205_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Textes en 7 langues, l'anglais fait foi ; apparence existante conservée ; écrans admin en anglais
+- Ne toucher à rien d'autre que les points du lot PTM-9e ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261206_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Écrans admin en anglais ; apparence existante conservée ; textes dans les 7 langues, l'anglais fait foi
+- Ne toucher à rien d'autre que les points du lot PTM-9f ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261207_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Ne toucher à rien d'autre que les points du lot PTM-10a ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261208_000000 seulement si l'état enregistré change ; aucune migration existante modifiée ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Textes en 7 langues, l'anglais fait foi ; apparence existante conservée ; textes factuels, non promotionnels
+- Ne toucher à rien d'autre que le changement du prix de la capitalisation du lot PTM-10a ; partir du code actuel
+- Capitalisation du ratio pools ÷ capitalisation = prix consolidé instantané, mesuré au même moment que la valeur des pools ; ratio retenu = le plus bas entre la valeur actuelle et la moyenne 24 h ; test existant inchangé
+- Ne toucher à rien d'autre que le prix ICPSwap, le seuil d'ouverture des échanges des pools à 10 USD et le minimum du mint à 1 USD ; partir du code actuel
+- Minimum du mint de 1 USD (environ 0,0001 TTTI-T)
+- Prix du TTTI-T du portefeuille tiré d'ICPSwap, relu au moins une fois par jour à la consultation et à chaque refresh ; relu en temps réel au moment d'un échange
+- Textes en 7 langues, l'anglais fait foi ; apparence existante conservée
+- Aucun solde ni bloc existant modifié ; aperçu seulement, donner le numéro de version
+- Frais de transfert du TTTI-T fixe à 100 unités de base (0,000001 TTTI-T), non réglable, versé au créateur
+- Aucun minimum pour créer ou alimenter un pool ; le seul seuil est celui qui ouvre les échanges, équivalent à 10 USD de TTTI-T
+- Ne toucher à rien d'autre que le retrait du minimum de premier dépôt et la mesure du seuil d'échange ; partir du code actuel
+- Nouvelle migration au nom plus grand que 20261209_000000 seulement si l'état enregistré change ; aucune migration ne touche à sale.reserved ; aucun solde ni bloc réécrit
+- Textes en 7 langues, l'anglais fait foi ; apparence existante conservée ; aperçu seulement, donner le numéro de version ; réponse en français
+- Échange du portefeuille: un seul module unifié; pools natifs en route de base, ICPSwap en dernier recours; route la moins chère suggérée, choix manuel toujours possible
+- Équivalent en USD à côté de chaque montant crypto, secondaire visuellement; tiret si le taux est absent ou expiré
+- Aucun changement visuel au-delà du strict nécessaire; textes en 7 langues, l'anglais fait foi
+- Aperçu seulement, jamais en version publique; donner le numéro de version
+- Réponses en français ; aperçu seulement, donner le numéro de version
 
 ## Accepted Requirements
 
@@ -190,7 +296,6 @@
 - Footer without 'not an investment, a security'; keep no returns, final purchases, afford to lose
 - No fallback rate; refuse purchase when the rate is stale
 - No one, admin included, can mint tokens outside the buy-to-mint logic
-- Collected TTTI transfer fees are reissued only at the end, after fresh minting reaches the cap
 - Admin cannot freeze transfers; transfer fee change only in the test version
 - Admin: remove mint, fallback-rate and presale controls; fixed order; fee account not withdrawable; transfer fee adjustable in beta only
 - Remove unused freeze UI on the Transfer page
@@ -271,7 +376,6 @@
 - Historique personnel des achats dans le wallet de l'utilisateur : ce qui a été échangé contre quoi
 - Les mêmes données d'achat visibles côté admin
 - Pour chaque achat, les quantités exactes (payée, frais, net, TTTI-T reçus) et le ratio payé/reçu, enregistrés pour un futur remboursement
-- Pas de valeur USD affichée ; la comparaison en USD se fera au moment du remboursement
 - Conseil sur la pertinence d'un historique public
 - Montant net échangé (sans les frais) enregistré et affiché clairement comme seule base remboursable
 - Liens depuis les numéros de transaction vers l'Explorer officiel de l'ICP
@@ -288,7 +392,6 @@
 - Simplifier le menu du portefeuille
 - Mise en page du portefeuille inspirée d'OISY, adaptée à l'ajout de nombreux tokens
 - Résumé avec le solde total du portefeuille en haut
-- 10 000 USD par TTTI-T pour le calcul de la valeur en USD, pour l'instant
 - Historique paginé, 25 transactions maximum par page
 - Boutons Envoyer, Recevoir et Historique dans chaque carte de token, visibles seulement quand la carte est sélectionnée et masqués quand on clique ailleurs
 - « Buy TTTI-T » devient « Mint TTTI-T » partout
@@ -305,24 +408,14 @@
 - Carnet d'adresses dans le dialogue Envoyer, avec suggestions tirées du ledger
 - Carte de contact configurable : pseudo, memo et approvals ICRC-2
 - Instructions claires et avertissements concernant les approvals
-- Les TTTI-T rachetés reviennent à l'admin/créateur
 - L'acheteur demande le rachat et le reçoit automatiquement
 - Le rachat a une place sur la page Exchange et sur les cartes de token
 - Un message explique la règle du plus bas des deux
 - Les frais de transfert des autres contrats ne sont pas inclus : ils sont retirés du montant rendu
 - 1 % de frais sur le rachat
-- Achats d'avant la Version 26 exclus du rachat
-- Le jeton rendu vient du wallet de l'admin, via une autorisation ICRC-2 plafonnée avec expiration, pour chaque jeton
-- On rend la quantité d'origine si le jeton a baissé, et seulement la valeur des TTTI-T au taux du jour s'il a monté
 - Les frais des tiers sont retirés du montant final de la transaction
 - Le BTC est remboursé en ckBTC ; l'utilisateur fait lui-même la conversion vers le BTC
-- Rachat agrégé : une masse moyenne par jeton de paiement (ICP, ckBTC, ckUSDC, ckUSDT ; BTC compté en ckBTC)
-- Ratio de la masse = total net payé / total TTTI-T reçus, moins ce qui a déjà été racheté
-- Choix de la masse et du pourcentage avec le curseur du mint (1 % à 100 %, aimanté à 10, 25, 50, 75, 90 et 100 %) ; 100 % rachète tout le reste
-- Règle du plus bas des deux appliquée à la moyenne, puis 1 % de frais et frais des tiers déduits
 - Plusieurs rachats partiels, un à la fois, jusqu'à épuisement de la masse
-- Pas de masse globale tous jetons confondus
-- Les rachats existants sont conservés et déduits de la masse ; aucun solde ni bloc modifié
 - Curseur, maximum et devis du rachat basés sur min(masse restante, solde TTTI-T utilisable), dans l'interface seulement
 - Mention claire pour que l'utilisateur comprenne le plafond et ne lance pas une transaction vouée à l'échec
 - Étape 3 : « Avez-vous un jeton de paiement ? » avec une rangée de petits logos des jetons acceptés, générée depuis la liste des jetons de paiement
@@ -352,7 +445,6 @@
 - Le bouton Échanger du portefeuille ouvre l'échange
 - Une fonction d'achat distincte dans le portefeuille, en plus de l'échange
 - Achat (Onramper) disponible pour tous les jetons, pas seulement ICP
-- Rachat payé uniquement dans le jeton de la masse ; un receiveToken différent du massToken est refusé par #receiveTokenMismatch avant tout verrou et tout transfert ; receiveToken reste dans l'API
 - Pas de conversion : montant rendu, frais du ledger et taux du jeton de la masse
 - try … finally qui retire la clé buybacksInFlight dans requestBuyback et retryBuybackPayout ; retraits faits à la main supprimés
 - Site sans choix du jeton reçu, sans ligne de conversion, sans second taux et sans phrase sur l'autre jeton ; receiveLabel, receivePaidToken et explainOtherToken supprimés, ainsi que la fin « or choose another token » des errAdmin*
@@ -387,8 +479,6 @@
 - Anciennes entrées sans created_at_time relancées seulement sur un Err du ledger ; un message ambigu compte comme une issue inconnue
 - Garder le contrôle du solde, la destination et le reste de 10 sat ou moins
 - Écran « To review » : remboursements BTC à vérifier et coûts des #deliveryFailedRefundFailed à rembourser à la main, avec un bouton « remboursé » (avec le bloc)
-- Compte d'attente : sous-compte du contrat sur le ledger TTTI-T, distinct du compte de mint et du collecteur de frais, sans retrait possible
-- Rachat : TTTI-T de l'acheteur vers le compte d'attente ; paiement enregistré (memo TTTI-BB-<n>-<tentative>) puis envoyé dans le jeton payé ; réussite : TTTI-T vers le financeur, #completed ; sinon #payoutFailed avec l'issue notée
 - L'acheteur autorise le montant plus deux frais TTTI-T ; le second frais est noté pour chaque rachat ; le frais du jeton payé reste déduit du montant rendu
 - Si toutes les tentatives ont reçu un Err, la relance crée la suivante, sans l'admin
 - cancelBuyback(id), pour l'acheteur ou l'admin, sous le même verrou, seulement si toutes les tentatives ont reçu un Err : rend les TTTI-T pris, statut #cancelled, bloc noté
@@ -432,13 +522,11 @@
 - Module de pools v2 à produit constant séparé, dans le contrat actuel
 - Registre de 7 paires vides : TTTI-T/ICP, TTTI-T/ckBTC, TTTI-T/ckUSDC, TTTI-T/ckUSDT, ckBTC/ICP, ckUSDC/ICP, ckUSDT/ICP
 - Pool vide « en attente de première liquidité »
-- Liquidité minimale bloquée : 0,0001 TTTI-T pour les paires TTTI-T, minimum par jeton fixé par l'admin pour les paires utilitaires ; premier dépôt ≥ 10 fois ce minimum
 - Demande de paire avec ID du ledger, jeton en face, palier de frais, message et dépôt de 0,0005 TTTI-T
 - Contrôles automatiques : ICRC-1/2, métadonnées, paire pas déjà existante, symbole copié signalé
 - 1 à 2 demandes en attente au plus par utilisateur et délai après un refus
 - Statuts publics en attente / approuvée / refusée avec le motif
 - Refus : dépôt gardé ; approbation : dépôt rendu (memo DQ), pool créé, badge « nouvelle paire » pendant 30 jours, l'approbation n'est pas une recommandation
-- Retrait d'une paire par l'admin : échanges et dépôts bloqués, retraits LP toujours ouverts
 - Le protocole ne passe aucun ordre lié au prix
 - Mise en aperçu seulement avec le numéro de version
 - Un sous-compte DEX-POOL-<id> par pool, avec un préfixe séparé qui ne chevauche aucun compte existant
@@ -451,18 +539,11 @@
 - Positions et soldes publics, avec le texte « Les positions de liquidité sont publiques et liées à ton identifiant sur TTTI. » et la mention que le dépôt reste visible sur la chaîne
 - Nouveaux textes d'interface dans les 7 langues
 - Lot 2 du DEX mis en aperçu seulement, avec le numéro de version
-- Pool vide approuvé « en remplissage » : plusieurs utilisateurs apportent de la liquidité ; échanges fermés jusqu'à 100 USD au total (deux côtés), ouverture dès 100 USD
-- Valeur USD : TTTI-T à 10 000 USD ; autres jetons au taux horaire valable 1 h + 5 min ; taux absent ou expiré : pas d'ouverture, jauge « valeur momentanément indisponible »
-- Le premier apport fixe le rapport ; les apports suivants le suivent ; prix ICPSwap affiché comme repère, avertissement au-delà de 2 % d'écart
-- Jauge sur chaque carte de pool, par ex. « 37 / 100 USD — encore 63 USD pour ouvrir le pool », dans les 7 langues
 - Les minimums existants restent valables
 - Ajout et retrait de liquidité depuis les soldes internes
 - Parts LP v2 : √(A×B) au premier dépôt, parts minimales au contrat pour toujours
-- Gels par position : 24 h minimum, jusqu'à 5 ans, prolongeables, jamais raccourcissables
 - Positions du créateur/admin soumises aux mêmes règles et marquées « créateur » ; aucune fonction admin sur les positions des autres
-- Paire retirée : retraits ouverts même pour les positions gelées
 - Positions publiques (principal, montant, gel, date de déblocage)
-- Devis et échanges avec slippage et date limite de 5 minutes, seulement sur un pool ouvert (≥ 100 USD)
 - Frais de 0,3 % pour les 7 paires de départ, paliers 0,05 / 0,3 / 1 % pour les paires ajoutées ; conversions du contrat gratuites
 - Arrondis toujours en faveur du pool ; pas de prix instantané comme oracle
 - Nouveaux textes dans les 7 langues, écran admin en anglais
@@ -473,19 +554,15 @@
 - Les fonds déjà présents dans les trésoreries internes du mint retournent au propriétaire, après avoir complété une fois la réserve de cycles jusqu'à 2 ICP avec l'ICP qu'elles contiennent
 - Frais de 1/101 en deux moitiés, dans le jeton payé, toujours pour la paire TTTI-T la moins liquide : moitié A aux LP au prorata (mise de côté s'il n'y a aucun LP), moitié B en liquidité permanente
 - Sommes mises de côté accumulées jusqu'à 0,001 TTTI-T, puis 50 % échangés en TTTI-T (ICPSwap, puis pools natifs) et appariés aux 50 % restants ; taux absent ou expiré : attente ; slippage borné ; jamais conditionné au prix ; aucun TTTI-T créé
-- Frais d'échange natifs : 70 % aux LP, 30 % en liquidité permanente, rien aux cycles ; suppression de DC, de la part cycles dynamique, du bonus des LP gelés payé sur les frais d'échange (bonus gagnés gardés) et de l'allocation hebdomadaire
 - Seuil de recharge des cycles via le CMC relevé de 3 T à 20 T
 - Textes dans les 7 langues, getApiDoc et contrat simulé mis à jour ; nouvelle migration après 20261116_000000 ; mise en aperçu seulement avec le numéro de version
 - Routeur ICPSwap : comparaison des pools natifs (0,3 %) et d'ICPSwap (0,3 % + 0,1 %), frais compris, une seule route
 - Un pool natif vide ou trop peu profond passe par ICPSwap
-- Le 0,1 % suit la règle 70 % aux LP et 30 % en liquidité permanente du pool natif
 - KongSwap exclu
 - Le 0,1 % du routeur traité comme les frais d'échange natifs (70 % LP / 30 % liquidité permanente) ; si le pool natif n'a pas de LP, attribution aux LP du pool TTTI-T le moins liquide
 - La gestion de la trésorerie est réaffectée à l'admin
 - Le texte public sur les parts minimales bloquées mentionne √(A×B)
 - Le numéro du mémo DQ suit le numéro de la demande de paire, aussi dans le backend simulé
-- Un gel prolongé a pour plafond la date de création + 5 ans
-- Un pool qui atteint 100 USD par un nouveau taux de prix est enregistré et affiché ouvert sans attendre l'apport suivant
 - Les TTTI-T des demandes de paires refusées alimentent la liquidité
 - Lot en aperçu seulement, avec une nouvelle migration après la dernière existante
 - Lot 6 DEX: balance check comparing internal DEX reserves and balances with the ledger balances
@@ -508,8 +585,6 @@
 - New migration sorts after 20261121_000000 if stored state changes; no migration touches sale.reserved; no existing balance or block modified
 - Preview only, no Go live
 - Retirer l'onglet, le panneau, le lien de téléchargement et le lien « open original » de l'édition originale du white paper
-- Section 06 du white paper : remplacer la phrase sur la liquidité par « Anyone, the creator included, may provide liquidity at their discretion and withdraw it at any time. Trust only what you can verify. »
-- disclosure1 de la page d'accueil : même remplacement, traduit dans les 7 langues
 - Lot 8 des pools : textes dans les 7 langues, white paper, FAQ, getApiDoc et contrat simulé
 - Sans « APY » (rendement constaté seulement), avec la mention que les positions sont publiques
 - Textes « pas de soutien de prix » ajustés car les frais de mint achètent du TTTI-T
@@ -520,9 +595,7 @@
 - Unified History list, newest first, 25 per page, filter buttons All/Mint-Deposit/Revenue sent/Refund/Buyback/Swap/Liquidity/Destination plus token dropdown, filters in URL
 - To review as a single filterable list
 - Admin configures the receiving wallet for each payment token
-- At each mint the 100/101 share is sent directly in the paid token to the configured wallet, ledger fee deducted, retry rules, To review if outcome unknown; BTC follows ckBTC
 - Mint refused with a clear message before funds are taken when the token has no configured wallet
-- 1/101 fee in a dedicated contract account, redistributed per established rules, never withdrawable
 - No Withdraw button and no accumulation in the contract
 - One-time settlement of accumulated revenue and legacy mint-treasury owner share (minus withdrawn) to configured wallets; legacy and pending fees moved once to the fee account; LP credits unchanged
 - Admin sections: Overview, Sales & rate, Treasury, Cycles, To review, History, Buyback funding, DEX, Snapshot export
@@ -530,37 +603,220 @@
 - Public mint revenue text in 7 languages, getApiDoc and mock contract updated
 - No balance or block rewritten; new migration after the latest; no migration touches sale.reserved
 - Preview only
+- Sticky nav bar with 5 links: Pools, Indicateurs, Ma liquidité, Protocole, Demandes
+- Pools: pause notice, title, one intro sentence, one compact row per pool (pair, status, gauge, fee tier, Swap, Add) with a closed 'Détails' accordion
+- Closed 'Comment fonctionnent les pools' accordion with the protocol statement (identical text) shown once, the fee split and the rules
+- Indicateurs: summary visible; a single widget with a pool dropdown replaces the 7 cards; blocks and proof of reserves in closed accordions
+- Ma liquidité: single sign-in card; balances and positions; single Rewards widget (mint fees + LP bonus); privacy sentence visible
+- Single 'Mon activité' history, closed accordion, filters All/Deposits & withdrawals/Mint fees/LP bonus plus token dropdown, newest first, 25 per page, filters in URL
+- Protocole: set-aside amounts, injections and address balance lookup, each in a closed accordion
+- Demandes: form in a closed accordion, single filterable list (All, My requests, Pending, Approved, Rejected)
+- New strings in the 7 languages, English authoritative, existing sentences reused verbatim
+- Frontend only, admin unchanged, preview only with version number
+- Garde commune par jeton en sous-compte ASCII de 32 octets, avec dépôt automatique par transfer_from ICRC-2 pour swap et addLiquidity
+- withdrawFromDex depuis la garde ; sorties du routeur ICPSwap vers la garde
+- Balayage de tout le solde ledger des anciens sous-comptes de dépôt et de DEX-POOL-<id> vers la garde, avec excédent listé dans « To review » et non crédité
+- Contrôle de réserve séparé par compte (garde DEX, dépôts de demandes de paires, MINT_FEE, PROTOCOL_FEES avec cycles retenus)
+- Préfixe de memo SW pour les transferts de balayage, géré dans « To review »
+- claimLpBonus et claimMintFee inchangés avec contrôle de réserve ajouté ; part LP du 0,1 % du routeur payée via la garde
+- Nouvelle migration au nom plus grand que 20261123_000000 ; rien ne touche sale.reserved ; getApiDoc et contrat simulé à jour ; analyse finale du code ; aperçu seulement avec numéro de version
+- Ajout de liquidité avec côté fixé, autre côté calculé à l'exécution, tolérance de glissement 0,5 % par défaut, refus hors tolérance avec fonds en solde interne
+- Premier dépôt d'un pool vide à 2 % près d'un prix de référence (TTTI-T) ou des taux de l'heure (utilitaires), prix/sources/poids publics
+- Profondeur au prix du pool, sans TTTI-T à 10 000 USD fixes ; swap refusé si taux manquant ou expiré
+- Seuil de 100 USD au premier dépôt retiré, √(A×B) conservé
+- removePair annonce un retrait à +5 jours avec raison, annulable par l'admin, swaps et ajouts suspendus pendant l'annonce, retraits volontaires permis selon les verrous, liquidation à la date d'effet via lib/retry.mo, « To review » en cas d'échec, puis #removed
+- unlockAt toujours appliqué dans removeLiquidity, y compris pool #removed ; aucun raccourcissement ni annulation de verrou par l'admin
+- Profondeur, seuil, état du swap et état de retrait exposés publiquement
+- Textes dans 7 langues, getApiDoc et contrat simulé mis à jour
+- Curseur de pourcentage du mint dans le swap et l'ajout de liquidité, sur portefeuille + solde DEX
+- Ajout de liquidité : curseur qui fixe un côté, autre côté au ratio du pool, tolérance 0,5 % par défaut au même endroit qu'au swap
+- Premier dépôt d'un pool vide : prix de référence, sources, poids et montant attendu de l'autre côté
+- Verrou de position optionnel, aucun par défaut
+- Pool en retrait : bandeau avec raison, date d'effet et compte à rebours ; ajout et swap désactivés ; retrait volontaire selon le verrou
+- Approbation signée automatiquement avec le bon portefeuille, comme au mint
+- Textes dans les 7 langues, l'anglais fait foi; aucun autre changement visuel; aucun; aperçu seulement avec numéro de version et liste de ce qui reste
+- Le mint formant la liquidité remplace l'achat actuel pour toutes les nouvelles frappes
+- Prix unique de 10 000 $ par TTTI-T, le même pour tous
+- Paiement en ICP, ckBTC, ckUSDC ou ckUSDT au taux du moment
+- Pour q TTTI-T, le minteur paie 20 000 $ × q ÷ 0,99
+- Position de liquidité à son nom : 10 000 $ × q de son jeton et q TTTI-T dans le pool TTTI-T/<son jeton>
+- Garantie personnelle de 10 000 $ × q gardée dans le jeton payé (règles au lot PTM-2)
+- 1 % du montant payé mis de côté pour le créateur (répartition au lot PTM-4)
+- Zap dans le pool au prix du marché, puis dépôt du reste au ratio, dans la même opération avec l'argent du minteur
+- Premier dépôt d'un pool TTTI-T vide en mint 1:1, soit 10 000 $ par TTTI-T
+- Plafond de 1 TTTI-T frappé au total, en comptant le déjà vendu et ce qui sera rendu au contrat ; aucun TTTI-T hors du mint, rien de brûlé
+- La position appartient au minteur, qui la retire quand il veut
+- Écran de mint : montant en TTTI-T ou en $, jeton, aperçu de la répartition et du prix du pool avant et après le zap
+- Granularité du mint : minimum 0,0001 TTTI-T (≈ 1 $), maximum 8 décimales (0,00000001 TTTI-T)
+- Publier en aperçu quand c'est prêt
+- Chaque minteur a une masse personnelle : TTTI-T frappés et garantie correspondante (jeton et quantité), sans réserve commune
+- Le droit de rachat appartient à la personne : n'importe quel TTTI-T détenu permet de l'exercer
+- Pendant le mint : rendre x TTTI-T rend le plus bas entre la garantie déposée pour x et la quantité valant 10 000 $ × x au taux du moment ; l'excédent reste dans la garantie, retirable par son propriétaire à la fin du mint
+- Après le mint : rachat au prorata de la masse, en nature, sans plafond
+- Frais de rachat de 1 % du montant racheté, mis de côté pour le créateur
+- Le TTTI-T rendu retourne au contrat, hors circulation jusqu'aux enchères ; rien n'est brûlé
+- Masse totale non réclamée affichée publiquement
+- Écran « Ma garantie » : masse, garantie et valeur, bouton de rachat avec aperçu du montant rendu et des frais
+- L'ancien rachat (computeQuote, prix fixe de 10 000 $) est remplacé
+- Relève : un tiers du poids de chaque nouvel engagement raccourcit les positions engagées au prorata de leur capital × temps servi, sans jamais rallonger
+- Position relevée ou arrivée à terme gardée comme liquidité libre, non expulsée
+- Seul le propriétaire s'engage ou prolonge ; aucune fonction d'admin n'ouvre un verrou sauf le retrait d'une paire annoncé 5 jours d'avance
+- Frais LP : moitié dans les réserves au prorata des parts, moitié mise de côté et partagée entre positions verrouillées selon capital × √(temps restant ÷ 5 ans), frais réellement payés seulement
+- Capital d'une position = sa part du pool
+- Profondeur garantie de chaque pool affichée : positions verrouillées + liquidité permanente
+- Écran de position : verrou, temps restant, relève reçue, frais touchés
+- Relève d'une prolongation calculée sur la durée ajoutée seulement ; la position qui prolonge ne se relève pas elle-même
+- Part protocole de 30 % du frais de swap natif et du 0,1 % ICPSwap : deux tiers au créateur, un tiers à la liquidité permanente
+- Liquidité permanente rééquilibrée par le routeur (1 ICP, 2 % sur la moyenne de l'heure) puis injectée dans le pool TTTI-T le moins liquide, en parts verrouillées jamais retirables, avec journal public
+- Retirer l'usage de runInjections pour l'ancien revenu du mint sans toucher à ce que le nouveau mint utilise
+- Frais de 1 % du mint et du rachat : réserve de cycles d'abord (jusqu'à un an de consommation mesurée, part en ICP), le reste au créateur
+- Recharge actuelle conservée (20 T, CMC, 6 h, plancher 2 ICP) ; n'importe qui peut recharger la réserve
+- Frais de transfert TTTI-T fixe de 0,00001 TTTI-T (1 000 e8s), versé au créateur ; MIN_FEE et MAX_FEE vérifiés
+- Corriger les commentaires « 20 % » devenus faux
+- Tableau public : réserve de cycles en mois, liquidité permanente, avoirs du créateur y compris frais TTTI-T
+- Répondre en chat à la question sur l'échec après la frappe du mint
+- Publier en aperçu
+- Approche 1 : le cœur du mint passe dans un appel isolé du contrat à lui-même ; une erreur annule tout, frappe comprise
+- Nouveau statut « remboursement en cours » avec numéro du retrait stocké dans le mint, et nouvelle migration
+- Le lot couvre aussi le mint par dépôt BTC
+- Dans l'appel isolé, toute erreur fait un trap (Debug.trap ou assert), jamais un throw ni un retour d'erreur
+- L'appel isolé revérifie lui-même plafond, slippage et soldes
+- Le verrou se libère tout seul après un délai
+- Test : après un échec dans l'appel isolé, aucun TTTI-T frappé, pool inchangé, paiement dans le solde du payeur
+- Prix consolidé du TTTI-T pondéré par la profondeur, converti en dollars avec les taux de l'oracle actuel
+- Échantillonnage de 5 min réutilisé : moyenne de l'heure conservée, moyenne de 24 h ajoutée
+- Tout lecteur d'un prix du TTTI-T utilise le prix consolidé, jamais celui d'un seul pool : garde-fou du routeur, affichages
+- Écart de chaque pool avec le prix consolidé affiché
+- Alerte aux LP d'un pool quand son écart dépasse 2 %
+- Publication en aperçu seulement
+- Garder le bloc du pool visé dans l'aperçu du mint
+- Deux blocs identifiés : « prix consolidé (référence) » et « prix du pool visé, avant et après le zap », avec l'écart entre les deux
+- Contrat simulé mis à jour seulement pour cet affichage
+- Rien d'autre dans ce lot
+- Enchère scellée à plusieurs gagnants remplaçant l'enchère montante prévue
+- Lot : tout le TTTI-T rendu accumulé depuis la dernière enchère ; enchère de 24 h dès qu'un lot non vide existe ; le TTTI-T rendu pendant une enchère va au lot suivant
+- Offre : quantité et prix B par TTTI-T dans le jeton payé ; minimum 0,001 TTTI-T ; 10 offres au plus par personne ; offres fermes
+- Dépôt complet à l'offre : 2 × B × quantité ÷ 0,99 ; dépôt supérieur possible ; excédent rendu à la clôture
+- Offres cachées jusqu'à la clôture ; seul l'auteur voit les siennes
+- Affichage : taille du lot, heure de clôture, prix de réserve actuel à côté du prix consolidé, « garantie récupérable »
+- Contrat simulé mis à jour seulement pour ce lot
+- Réponse en chat sur les vetKeys, sans rien coder
+- Prix de réserve = le plus haut de 10 000 $ par TTTI-T, la moyenne 24 h du prix consolidé et le prix consolidé actuel, avec équivalent dans chaque jeton au taux du moment
+- À la clôture, la réserve est cette valeur prise au moment de la clôture
+- vetKeys exclus de ce lot ; lot dédié ultérieur sans preuve à divulgation nulle, dépôt vérifié après déchiffrement, offre écartée si le dépôt ne couvre pas 2 × B × quantité ÷ 0,99
+- Réserve à la clôture : le plus haut de 10 000 $ par TTTI-T, de la moyenne 24 h du prix consolidé et du prix consolidé à la clôture
+- Marché sous 10 000 $ : la réserve vaut 10 000 $ et une offre à 10 000 $ ou plus passe
+- Sans taux valide de l'oracle, la clôture attend un taux valide
+- Offres converties en dollars au taux de clôture, celles sous la réserve écartées
+- Tri par prix décroissant, puis volume (quantité × prix), puis ancienneté ; service jusqu'à épuiser le lot
+- Dernière offre servie en partie possible ; reste sous la quantité minimale reporté
+- Chaque gagnant paie son propre prix
+- Offres non servies, parties non servies et excédent des dépôts reviennent dans le solde retirable de l'enchérisseur
+- Dépôts des quantités servies en attente de règlement (lot suivant)
+- Invendu passe au lot suivant ; sans offre valide, le lot reste au contrat
+- Après la clôture, toutes les offres et le résultat sont publiés
+- Contrat simulé mis à jour pour ce lot seulement, textes dans les 7 langues, aperçu seulement avec numéro de version
+- Chaque gagnant poolé comme au mint, dans l'appel isolé, tout ou rien, un à la fois, dans l'ordre du classement
+- Pour q au prix B : 2 × B × q ÷ 0,99 pris du dépôt ; 1 % au créateur ; une moitié en position avec q TTTI-T (zap), l'autre en garantie de B par TTTI-T dans le jeton payé
+- Échec d'un gagnant : dépôt rendu dans son solde retirable, quantité au lot suivant, autres gagnants non touchés
+- Tous les retours aux enchérisseurs dans le solde DEX existant, retirables avec « Récupérer »
+- Le marché secondaire n'exige pas de pooler
+- Contrat simulé mis à jour pour ce lot seulement
+- Jamais d'APY : seulement le rendement constaté
+- Aucune promesse de hausse ; textes sur les règles, sans objectif de prix
+- Expliquer en clair la perte impermanente, l'exposition du TTTI-T au BTC et à l'ICP, le zap du mint et la garantie récupérable
+- Liquidité permanente décrite comme une gestion de la profondeur, mécanique, publique et jamais conditionnée au prix
+- Aucune récompense n'est créée : tout ce qui est versé a d'abord été payé par quelqu'un, vérifiable par chacun
+- Chance égale au mint, plus offrant aux enchères : le dire tel quel
+- Décrire le verrou en relais et le partage des frais LP
+- Décrire les enchères telles qu'elles sont, règles seulement
+- Les avoirs du créateur sont déclarés ; le créateur n'est pas nommé
+- White paper : remplacer la phrase sur l'absence d'adossement et de droit de rachat par la description exacte de la garantie personnelle
+- L'anglais fait foi ; garder les 7 langues
+- Frais de transfert versés au créateur (source #transferFee) et jamais comptés dans le TTTI-T disponible au mint
+- Mint terminé sous le minimum d'un mint ; le reste rejoint le premier lot des enchères et est frappé au règlement pour le gagnant, poolé avec sa masse
+- Lot sous le minimum d'une offre vendu en bloc, meilleure offre (prix par TTTI-T pour le lot entier) gagne tout, même réserve, poolé comme les autres
+- Verrou volontaire de 3 mois à 5 ans à l'ouverture et après prolongation ; plafond début + 5 ans retiré
+- Compte de garantie interne dédié par jeton dans la garde commune, crédité par le mint et les enchères, seul débité par le rachat, somme des masses = solde affichée publiquement
+- À finishRemoval d'une paire TTTI-T, réserves des parts du contrat réinjectées par injectPermanent dans le pool TTTI-T le moins liquide, avec ligne au journal public
+- Tests en interpréteur pour chacun de ces points
+- Retirer les mots « APY » et « rendement annualisé », même niés, et dire positivement que le TTTI-T ne génère rien par lui-même, que les frais de swap rémunèrent la liquidité et que seuls les frais réellement versés sur 30 jours sont affichés
+- Supprimer le code mort de presale.mo (purchaseFromDeposit, execute), TTTI_T_USD_E8 et son commentaire, le commentaire périmé de main.mo et la branche recycle0/recycle1 de recycleFees
+- Tests en interpréteur pour lib/dex.mo : relève, prolongation et feeWeight, sans le partage des frais
+- Corriger ownerShare, swapFeeSplit, disclosure1, le texte des enchères, le white paper et PLAIN_RULES_TEXT dans les 7 langues
+- Rejeter topUpCycles dans system func inspect quand la recharge n'est pas nécessaire
+- Frais LP : le swap ne parcourt plus les positions ; la moitié « engagement » va dans une cagnotte par pool
+- Partage quotidien par timer, par tranches, entre les positions verrouillées pendant la journée, poids capital × √(temps restant ÷ 5 ans) × fraction de la journée verrouillée
+- Position retirée pendant la journée : part versée au propriétaire au partage suivant ; sans position verrouillée, la cagnotte va aux réserves du pool
+- Affichage de la cagnotte en attente par pool et de la part estimée par position
+- Index des positions par pool pour shareLpFee, payLps, weights, routeMintFee, relayPositions et finishRemoval
+- placeBid refuse les offres sous 10 000 $ par TTTI-T et les dépôts sous les frais du ledger
+- sweepReturns ignore la poussière, qui s'ajoute au prochain retour de la même personne
+- Mouvements d'enchère indexés par enchérisseur ; mouvements terminés hors de la liste active
+- Enchère entièrement réglée marquée réglée et sautée par runSettlements
+- Tests en interpréteur : swap sans position touchée, partage par tranches égal au partage d'un coup, demi-journée = demi-part, offre à 1 $ refusée, 10 000 poussières sans travail pour runSettlements
+- Pagination (curseur et taille maximale) de listIcpswapSwaps, listByOwner et listTransfers, avec chargement page par page dans l'interface
+- listByOwner lit un index par propriétaire
+- Contrôle de réserve : instantané des obligations pris à la lecture du solde, comptes balayés à zéro exclus, lecture par lots avec curseur, alerte visible si zéro compte comparé
+- Balayage dex-sweep : exclusion des comptes à zéro, lecture par lots avec curseur, verrou SWEEP non tenu pendant des heures
+- paySetAside ne parcourt que les positions du pool concerné ; entrées à zéro retirées
+- Index des transferts, dépôts, retraits et swaps non terminés utilisé par resendPending, tokenBusy, hasUnsettledSweep, legacyInFlight et tokenInFlight
+- Tests en interpréteur : 10 000 swaps par pages, contrôle de réserve avec activité pendant la lecture, alerte à zéro compte comparé
+- Contrôle de réserve en plusieurs lots : statut « en cours (lot x sur y) » tant que le curseur n'a pas fini
+- L'alerte « zéro compte comparé » ne se décide qu'à la fin du contrôle complet, jamais après le premier lot
+- Un compte balayé à zéro et exclu redevient inclus dès que le DEX enregistre une nouvelle opération pour lui (dépôt, demande, swap)
+- Une fois par jour, les comptes exclus sont relus par lots ; un solde non nul les réintègre tout de suite, dans le contrôle comme dans le balayage ; plus de délai de 30 jours
+- Pagination de l'historique DEX par utilisateur (curseur et taille maximale), chargé page par page dans l'interface
+- Tests en interpréteur : statut « en cours » après le premier lot, compte balayé à zéro relu après dépôt, historique lu par pages
+- Valeur des pools = 2 × réserve de contrepartie par pool TTTI-T, en dollars au taux de l'oracle, toutes parts comprises
+- Capitalisation = TTTI-T en circulation (hors celui gardé pour les enchères) × prix consolidé (moyenne de l'heure)
+- Ratio pools ÷ capitalisation échantillonné toutes les 5 min avec les prix, moyenne 24 h, ratio retenu = le plus bas des deux
+- Part verrouillée m = 50 % × (50 % − ratio retenu) ÷ 50 %, entre 0 % et 50 %, arrondie vers le haut ; 50 % sans circulation ou sans pool
+- Requête publique et affichage sur l'écran du mint : valeur des pools, capitalisation, ratio actuel, moyenne 24 h, cible 50 %, m
+- Tests en interpréteur sur m (50/30/10/0 %), achat, ajout et retrait de liquidité
+- Prix du TTTI-T tiré d'ICPSwap, relu au moins une fois par jour à la consultation du portefeuille et à chaque demande de refresh
+- Prix en temps réel d'ICPSwap au moment de l'échange
+- Le seuil d'ouverture des échanges d'un pool est de 10 USD et bloque seulement les échanges, jamais la création, le dépôt, l'achat ni le mint
+- Chaque dépôt fait croître la capitalisation du pool
+- Le minimum du mint est de 1 USD, pas 100 USD
+- Aucun minimum pour créer ou faire le premier dépôt d'un pool
+- Le seuil d'ouverture des échanges d'un pool équivaut à 10 USD de TTTI-T, pas 100 USD, et ne bloque que les échanges
+- Le menu d'échange du portefeuille donne accès aux échanges des pools natifs, pas seulement à ICPSwap, dans un seul module unifié
+- L'app utilise les pools natifs ; ICPSwap sert seulement de dernier recours
+- L'app compare les prix des deux pools et suggère le plus bas
+- L'utilisateur choisit manuellement le pool dans lequel échanger
+- Partout où un montant crypto est affiché, son équivalent fiat est affiché
 
 ## Verified Commands
 
-- **typecheck**: `pnpm typecheck && mops check --fix`
+- **typecheck**: `pnpm typecheck`
 - **fix**: `pnpm fix`
-- **build**: `mops build && pnpm bindgen && pnpm build`
+- **build**: `mops build`
 
 ## Learnings
 
-- DQ memo of a pair-request refund is TTTI-DQ-<pair request id> via newPairRefundAttempt in lib/retry.mo; DD/DW still use the global counter.
-- extendLock caps the unlock date at position.createdAt + MAX_LOCK_NS; ExtendLockDialog uses position.createdAt + maxLockNs.
-- Pools in filling status open through OracleLib onRateStored hook and DexLib.openReadyPools sweep; refused pair-request deposits feed liquidity once via ProtocolFeesLib.feedRefusedDeposits (OQL table refusedDepositFeed).
-- Migration 20261120_000000.mo (adds refusedDepositFeeds map) is the latest; never modify it once in draft; any new migration must sort after it.
-- The locked-shares sentence lives in lib/dex.mo LOCKED_SHARES_STATEMENT, mixins/api-doc.mo and mocks/backend.ts DEX_LOCKED_SHARES_STATEMENT; change all three together.
-- Migration 20261121_000000.mo (adds the DEX reserve-check store) is the latest; never modify it once in draft; any new migration must sort after it.
-- DEX reserve check lives in lib/dex-reserve.mo with endpoints in mixins/dex-reserve-api.mo (runDexReserveCheck, resumeDex, getDexReserveStatus, public getDexPauseStatus); DEX pause refusals trap with DexLib.PAUSED_MESSAGE and the frontend maps them to errDexPaused.
-- Frontend DEX reserve UI: hooks/useDexReserve.ts, components/admin/DexReserveCheckCard.tsx, components/dex/DexPausedNotice.tsx; mockUpgradeReadiness must also carry the DEX readiness fields.
-- Migration 20261122_000000.mo (adds the dexIndicators store) is the latest; never modify it once in draft; any new migration must sort after it.
-- DEX indicators: lib/dex-indicators.mo computes one public snapshot hourly (endpoints getDexIndicators, getDexIndicatorsStatus in mixins/dex-indicators-api.mo; OQL entities dexIndicator and dexSwapActivity); swap activity is recorded through DexLib.activityRecorder set in main.mo.
-- Permanent DEX shares are total shares minus position shares, because pool.lockedShares and protocolLiquidity.shares overlap; never sum them.
-- Frontend indicators: hooks/useDexIndicators.ts, components/dex/DexIndicators.tsx, components/admin/DexIndicatorsCard.tsx, i18n/pages/dexIndicators.ts; every new public OQL entity must be added to the api-doc.mo OQL line.
-- The original-edition tab, panel, download link and open-original link are removed from WhitePaperPage.tsx; the white paper shows only the corrected edition.
-- Section 06 liquidity sentence in WhitePaperPage.tsx and disclosure1 in PRESALE_TEXT (landing.ts, 7 languages) now state that anyone, the creator included, may provide liquidity and withdraw it at any time.
-- PROTOCOL_STATEMENT (lib/dex.mo), DEX_PROTOCOL_STATEMENT (mocks/backend.ts) and protocolStatement (i18n/pages/dex.ts) must read the same in English.
-- FAQ liquidity entry uses FAQ_TEXT keys liquidityQ and liquidityA (7 languages) rendered in FaqSection.tsx.
-- The white paper no longer references the removed original edition; avoid reintroducing prose that points to it.
-- Mint revenue 100/101 is sent directly to the per-token admin receiving wallet (BTC uses ckBTC); mints are refused with #receivingWalletNotConfigured before funds are taken.
-- The 1/101 fee goes to the dedicated fee account MINT_FEE_ACCOUNT_SUBACCOUNT in lib/protocol-fees.mo; no endpoint withdraws from it.
-- The one-time settlement runs from lib/settlement.mo on its own timer; setReceivingWallet starts it only when the previous wallet was null.
-- Admin history comes from listAdminHistory with filters in /admin URL params hf, ht, hp; the To review list uses listTransfersToReviewFiltered.
-- Mint revenue OQL tables receivingWallet, walletChange, revenueSettlement and feeMove are admin-only.
-- Latest migration is 20261123_000000.mo; never modify it or older ones after it ships; no migration touches sale.reserved.
-- Admin long lists use AdminAccordion in components/admin/AdminUi.tsx, closed by default.
-- The mock isCallerAdmin returns true, so /admin renders without signing in during visual QA.
+- Dernière migration : 20261207_000000 ; la prochaine doit porter un nom plus grand.
+- PTM-9e : listes paginées par curseur (Page<T>, taille max 100, défaut 50) ; index des entrées en cours dans lib/inflight.mo ; contrôle de réserve et balayage par lots de 25 avec curseur persistant ; alerte ReserveAlert dans BatchStore.
+- Restes mineurs PTM-9e : clearZeroed (lib/dex-sweep.mo) n'est appelé que par le test ; DexReserveCheckCard.onRun doit tester progress.active avant d'afficher « finished with an alert ».
+- PTM-9f: le statut du contrôle de réserve porte phase, batch, totalBatches et alertDecided ; l'alerte « zéro compte comparé » ne s'affiche qu'avec alertDecided vrai.
+- PTM-9f: l'historique DEX par utilisateur passe par getDexTransfersPage (curseur = n du transfert, plus récent d'abord) et le hook usePagedList.
+- Dernière migration: 20261208_000000 ; la suivante doit avoir un nom plus grand.
+- PTM-10a : ratio pools ÷ capitalisation via getPoolCapRatio (échelles ratio 10^12 = 100 %, m 10^6 = 100 %) ; migration 20261209_000000 ; tests dans test/ptm-10a.test.mo
+- Capitalisation à la moyenne horaire : un achat dans un pool fait monter le ratio actuel tout de suite, donc m baisse ou reste ; m ne monte qu'après rattrapage du prix horaire. Le choix du prix d'entrée (moyenne horaire ou prix spot consolidé) reste une décision produit à prendre.
+- Le prix de la capitalisation du ratio pools ÷ capitalisation se choisit à un seul endroit : poolCapRatioView dans src/backend/lib/protocol-fees.mo (DexLib.consolidatedNow(...).price) ; consolidatedReferenceUsd (moyenne de l'heure) reste utilisée ailleurs
+- Texte à tenir à jour avec ce changement : getApiDoc (mixins/api-doc.mo), mocks/backend.ts (dexPoolCapRatio) et la clé defCapitalisation de i18n/pages/buy.ts dans les 7 langues
+- Le seuil d'ouverture des échanges d'un pool est la constante unique DexLib.SWAP_THRESHOLD_USD_E8 (10 USD) dans src/backend/lib/dex.mo ; les textes de jauge reçoivent la valeur du backend.
+- Le zap du mint (src/backend/lib/liquidity-mint.mo) dépose au ratio du pool sans échange quand le pool n'est pas ouvert aux échanges.
+- Prix ICPSwap du TTTI-T du portefeuille : cache navigateur 24 h (clé localStorage ttti.icpswapTttiPrice.v1) dans lib/icpswap.ts et hooks/useIcpSwap.ts ; refresh manuel toujours relu ; SwapPanel et SwapDialog relisent le devis en direct au lancement.
+- Dernière migration connue : 20261209_000000.mo ; aucune migration ajoutée par ce lot.
+- Commandes vérifiées : backend mops check --fix et mops build puis pnpm bindgen ; frontend pnpm typecheck et pnpm fix.
+- Frais de transfert TTTI-T : constante unique IcrcLib.FIXED_FEE dans src/backend/lib/icrc.mo (100 unités de base) ; aucune migration nécessaire ; textes dans src/backend/mixins/api-doc.mo, src/frontend/src/mocks/backend.ts (FEE) et src/frontend/src/i18n/pages/dex.ts
+- Premier dépôt d'un pool vide : aucun minimum ; parts bloquées = max(1, min(minimum habituel, total/2)) quand total ≥ 2 (src/backend/lib/dex.mo, quoteAddLiquidity) ; #belowMinimum et #zeroShares ne sont plus renvoyés au premier dépôt
+- Seuil d'échange : DexLib.thresholdMeasureAt ; type ThresholdBasis {#tttiSideAtPoolPrice; #sumOfSides} ; PoolView.thresholdBasis et thresholdMeasuredUsdE8 ; paire TTTI-T = contrepartie en USD (côté TTTI-T au prix du pool) ≥ 10 USD, paire utilitaire = somme des deux côtés ; profondeur affichée inchangée
+- Frontend : liquidityFormat.ts thresholdText/thresholdPct suivent pool.thresholdBasis ; la jauge utilise thresholdMeasuredUsdE8 ou gauge.currentUsdE8 ; le contrat simulé utilise dexThresholdMeasure (depth/2 pour les paires TTTI-T)
+- La page Pools est la route /pools (App.tsx), pas /dex ; la page du mint est /exchange
+- Reste mineur : commentaire périmé sur la valeur minimale du premier dépôt dans src/backend/types/dex.mo vers la ligne 641
+- Échange du portefeuille unifié : route native (quoteSwap, swap, withdrawFromDex) et ICPSwap comparées côte à côte, badge Best price, choix manuel ; code dans src/frontend/src/components/wallet (SwapPanel, SwapParts) et hooks/useIcpSwap.ts ; textes dans i18n/pages/swap.ts
+- Équivalent USD partout : composant FiatAmount (components/FiatAmount.tsx), hook hooks/useFiatValue.ts, DexFiat.tsx pour les pools, TokenFiat pour le portefeuille ; taux absent ou expiré = tiret ; usableBtcUsdE8 dans hooks/useWallet.ts pour le taux BTC/USD
+- Écarts mineurs restants pour l'USD : ligne « reserved » de PresaleProgress.tsx, frais de transfert dans admin/OverviewCard.tsx, et les tuiles de PresaleProgress.tsx qui utilisent encore le prix de référence fixe tttiToUsdE8 ; la rangée TTTI-T du portefeuille utilise le prix ICPSwap alors que FiatAmount utilise le prix consolidé
+- Aucune migration ajoutée par ce lot ; dernière migration connue : 20261209_000000

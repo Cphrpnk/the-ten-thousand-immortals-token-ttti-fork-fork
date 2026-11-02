@@ -38,9 +38,9 @@ import BtcDepositApi "mixins/btc-deposit-api";
 import AddressBookTypes "types/address-book";
 import AddressBookApi "mixins/address-book-api";
 import AddressBookLib "lib/address-book";
-import BuybackTypes "types/buyback";
-import BuybackApi "mixins/buyback-api";
-import BuybackLib "lib/buyback";
+import GuaranteeTypes "types/guarantee";
+import GuaranteeLib "lib/guarantee";
+import GuaranteeApi "mixins/guarantee-api";
 import Timer "mo:core/Timer";
 import Time "mo:core/Time";
 import Iter "mo:core/Iter";
@@ -52,9 +52,16 @@ import UpgradeReadinessApi "mixins/upgrade-readiness-api";
 import DexTypes "types/dex";
 import DexApi "mixins/dex-api";
 import DexLib "lib/dex";
+import DexPotLib "lib/dex-pot";
+import IcpSwapLib "lib/icpswap";
 import DexReserveTypes "types/dex-reserve";
 import DexReserveApi "mixins/dex-reserve-api";
 import DexReserveLib "lib/dex-reserve";
+import DexSweepLib "lib/dex-sweep";
+import BatchTypes "types/dex-batch";
+import InflightLib "lib/inflight";
+import InflightTypes "types/inflight";
+import DexSweepApi "mixins/dex-sweep-api";
 import DexIndicatorTypes "types/dex-indicators";
 import DexIndicatorsApi "mixins/dex-indicators-api";
 import DexIndicatorsLib "lib/dex-indicators";
@@ -69,11 +76,24 @@ import RouterApi "mixins/router-api";
 import SettlementLib "lib/settlement";
 import AdminHistoryLib "lib/admin-history";
 import AdminHistoryApi "mixins/admin-history-api";
+import LiquidityMintTypes "types/liquidity-mint";
+import LiquidityMintLib "lib/liquidity-mint";
+import LiquidityMintApi "mixins/liquidity-mint-api";
+import CreatorFeesLib "lib/creator-fees";
+import CreatorFeesTypes "types/creator-fees";
+import CreatorFeesApi "mixins/creator-fees-api";
+import CyclesTypes "types/cycles-reserve";
+import PublicBoardLib "lib/public-board";
+import PublicBoardApi "mixins/public-board-api";
+import AuctionTypes "types/auction";
+import AuctionLib "lib/auction";
+import AuctionApi "mixins/auction-api";
 import Nat8 "mo:core/Nat8";
 import List "mo:core/List";
 import Nat "mo:core/Nat";
 import Int "mo:core/Int";
 import Blob "mo:core/Blob";
+import Runtime "mo:core/Runtime";
 
 actor TTTIToken {
   // --- Stable state (initialized by the migration chain) ---------------------
@@ -97,8 +117,10 @@ actor TTTIToken {
   let btcDeposits : BtcDepositLib.BtcDepositStore;
   // Private address book per caller principal.
   let addressBook : AddressBookTypes.AddressBookStore;
-  // TTTI-T buybacks (keyed by buyback id) and the admin funding/receiving account.
-  let buybacks : BuybackTypes.BuybackStore;
+  // PTM-2: personal guarantee masses (owner -> token key -> mass), never shared.
+  let guaranteeMasses : GuaranteeTypes.GuaranteeMassStore;
+  // PTM-2: guarantee redemption payouts and the 1 % fees set aside for the creator.
+  let redemptions : GuaranteeTypes.RedemptionStore;
   // Common transfer retry: global memo counter, the recorded forward (FW),
   // reserve share (SH) and purchase refund (RF) attempts keyed by purchase id,
   // active purchase traces (PC) and payments to refund keyed by trace n.
@@ -138,6 +160,48 @@ actor TTTIToken {
   // Mint revenue routing: receiving wallet per pay token, wallet changes,
   // one-time settlements and fee-account moves (ST).
   let mintRevenue : OwnerRevenueTypes.MintRevenueStore;
+  // DEX-1: recorded sweep transfers (SW) of the legacy DEX ledger accounts into
+  // the per-token custody accounts and the last report per token.
+  let dexSweep : DexSweepLib.SweepStore;
+  // PTM-1: liquidity-forming mints (mint -> position link), personal
+  // guarantees and creator set-asides (amounts only).
+  let liquidityMints : LiquidityMintTypes.LiquidityMintStore;
+  // PTM-4: creator holdings per token (credits by source, payouts).
+  let creatorFees : CreatorFeesLib.CreatorFeeStore;
+  // PTM-4: permanent liquidity set-aside (one third of the 30 % protocol share)
+  // and its public journal.
+  let permanentLiquidity : ProtocolFeeTypes.PermanentLiquidityStore;
+  // PTM-4: cycles share of the 1 % mint and buyback fees (pending, in flight,
+  // settled), its settlements and the split recorded with each fee.
+  let cyclesFees : CyclesTypes.CyclesFeeStore;
+  // PTM-5: 24 h of consolidated TTTI-T price samples (USD x 1e8), taken by the
+  // 5-minute price sampling timer.
+  let consolidatedPrices : ProtocolFeeTypes.ConsolidatedPriceStore;
+  // PTM-10a: 24 h of pools-to-capitalisation ratio samples (RATIO_SCALE fixed
+  // point), taken by the same 5-minute timer.
+  let poolCapRatioSamples : ProtocolFeeTypes.PoolCapRatioStore;
+  // PTM-6a: sealed-bid auction of the returned TTTI-T: current auction, returned
+  // TTTI-T already committed to lots and the bids of the current auction.
+  let auction : AuctionTypes.AuctionStore;
+  // PTM-6b: closing state of the auctions: closing pending flag, closed
+  // auctions, outcome of each bid and the bidders' withdrawable / pending-
+  // settlement balances.
+  let auctionClosing : AuctionTypes.ClosingStore;
+  // PTM-9b: dedicated internal guarantee account per token (balance in the
+  // common custody), credited by the mint and the auctions, debited only by
+  // the redemption.
+  let guaranteeAccount : GuaranteeTypes.GuaranteeAccountStore;
+
+  // PTM-9e: swap ids per owner in creation order (read by listByOwner). Built
+  // from router.swaps by migration 20261207_000000; appended on swap creation.
+  let routerOwnerIndex : RouterTypes.OwnerSwapIndex;
+  // PTM-9e: index of the unfinished transfers, deposits, withdrawals and swaps.
+  // Empty after migration 20261207_000000; filled once at start-up by
+  // InflightLib.backfill from the current stores.
+  let inflight : InflightTypes.InflightStore;
+  // PTM-9e: reserve-check and sweep cursors, batch size, reserve alert and the
+  // legacy accounts already swept to zero.
+  let dexBatch : BatchTypes.BatchStore;
 
   // One reserve check at a time. Transient.
   transient let dexReserveLock : DexReserveTypes.CheckLock = { var busy = false };
@@ -148,9 +212,11 @@ actor TTTIToken {
   // One lock per outgoing transfer (RetryLib.lockKey), released in a finally. Transient.
   transient let transfersInFlight = Set.empty<Text>();
 
-  // One buyback in progress per (buyer, mass token), keyed by
-  // BuybackLib.lockKey. Transient.
-  transient let buybacksInFlight = Set.empty<Text>();
+  // PTM-6c: one running winners' settlement per auction. Transient.
+  transient let auctionSettleLocks = Set.empty<Text>();
+
+  // One redemption in progress per (owner, mass token). Transient.
+  transient let redemptionsInFlight = Set.empty<Text>();
 
   // Shared lock of the cycles top-up timer. Transient.
   transient let reserveLock : CyclesReserveLib.ReserveLock = { var busy = false };
@@ -195,6 +261,10 @@ actor TTTIToken {
     tokenRates;
     refusedFeeds = refusedDepositFeeds;
     pause = dexReserve.pause;
+    creator = creatorFees;
+    permanent = permanentLiquidity;
+    consolidated = consolidatedPrices;
+    ratioSamples = poolCapRatioSamples;
   };
 
   // Purchase pipeline stores for the BTC deposit finalization (references the
@@ -224,6 +294,102 @@ actor TTTIToken {
     canister = canisterPrincipal;
     pause = dexReserve.pause;
     indicators = dexIndicators;
+    batch = dexBatch;
+    // A settled DW withdrawal moves the liquidity mint refund it belongs to.
+    onWithdrawal = func(n, status) = LiquidityMintLib.followWithdrawal(liquidityMints, n, status);
+  };
+
+  // PTM-4: cycles share of the 1 % fees: routing (references) and settlement
+  // context. Transient.
+  transient let cyclesFeeRouting : CyclesReserveLib.CyclesFeeRouting = {
+    reserve = cyclesReserve;
+    autonomy = cyclesAutonomy;
+    fees = cyclesFees;
+  };
+  transient let cyclesFeeContext : RetryLib.CyclesFeeContext = {
+    fees = cyclesFees;
+    reserve = cyclesReserve;
+    dex = dexContext;
+  };
+
+  // PTM-4: creator payout context (references); the wallet is the receiving
+  // wallet configured for the mint revenue. Transient.
+  transient let creatorFeeContext : CreatorFeesLib.CreatorFeeContext = {
+    store = creatorFees;
+    dex = dexContext;
+    walletOf = func(token) = SettlementLib.walletOf(mintRevenue, token);
+  };
+
+  // Take times of the transient mint locks (self-releasing after 10 minutes). Transient.
+  transient let mintLockTimes = Map.empty<Text, Int>();
+
+  // PTM-1: liquidity mint context (references the stable stores). Transient.
+  transient let liquidityMintContext : LiquidityMintLib.MintContext = {
+    store = liquidityMints;
+    masses = guaranteeMasses;
+    guaranteeAccount;
+    sale;
+    ledger;
+    oracle;
+    tokenRates;
+    acknowledgements = purchaseAcknowledgements;
+    dex = dexContext;
+    transfers = transferContext;
+    canister = canisterPrincipal;
+    creatorFees;
+    cyclesFees = cyclesFeeRouting;
+    isolated = func(args : LiquidityMintLib.CoreArgs) : async LiquidityMintTypes.LiquidityMintResult {
+      await mintCoreSelf.liquidityMintCore(args);
+    };
+    lockTimes = mintLockTimes;
+  };
+
+  // The canister's own reference, used only for the isolated mint self-call. Transient.
+  transient let mintCoreSelf : actor {
+    liquidityMintCore : shared LiquidityMintLib.CoreArgs -> async LiquidityMintTypes.LiquidityMintResult;
+  } = actor (canisterPrincipal.toText());
+
+  // Isolated core of the liquidity mint. Reserved to the canister itself: it is
+  // reached only through a self-call from LiquidityMintLib.settle. Every
+  // refusal inside is a trap, so the whole message (mint of TTTI-T, credit,
+  // swap, deposit, guarantee, masses, fees) is rolled back as one.
+  public shared ({ caller }) func liquidityMintCore(args : LiquidityMintLib.CoreArgs) : async LiquidityMintTypes.LiquidityMintResult {
+    if (caller != canisterPrincipal) {
+      Runtime.trap("Unauthorized: reserved to the canister itself");
+    };
+    LiquidityMintLib.core(liquidityMintContext, args);
+  };
+
+  // PTM-6c: settlement context of the winners (references). The isolated core is
+  // reached through a self-call so that a trap undoes the whole settlement. Transient.
+  transient let auctionSettleContext : AuctionLib.SettleContext = {
+    store = auction;
+    closing = auctionClosing;
+    mint = liquidityMintContext;
+    locks = auctionSettleLocks;
+    isolated = func(args : AuctionTypes.SettleCoreArgs) : async AuctionTypes.SettleCoreResult {
+      await auctionCoreSelf.auctionSettleCore(args);
+    };
+  };
+
+  transient let auctionCoreSelf : actor {
+    auctionSettleCore : shared AuctionTypes.SettleCoreArgs -> async AuctionTypes.SettleCoreResult;
+  } = actor (canisterPrincipal.toText());
+
+  // PTM-2: personal guarantee and redemption context (references). Transient.
+  transient let guaranteeContext : GuaranteeLib.GuaranteeContext = {
+    masses = guaranteeMasses;
+    guaranteeAccount;
+    store = redemptions;
+    sale;
+    ledger;
+    oracle;
+    tokenRates;
+    dex = dexContext;
+    canister = canisterPrincipal;
+    locks = redemptionsInFlight;
+    creatorFees;
+    cyclesFees = cyclesFeeRouting;
   };
 
   // DEX lot 5: router context (references). Transient.
@@ -231,6 +397,19 @@ actor TTTIToken {
     store = router;
     dex = dexContext;
     locks = routerInFlight;
+    protocol = protocolFeeContext;
+    ownerIndex = routerOwnerIndex;
+    inflight;
+  };
+
+  // PTM-4: public board context (references, no state of its own). Transient.
+  transient let publicBoardContext : PublicBoardLib.BoardContext = {
+    cyclesReserve;
+    autonomy = cyclesAutonomy;
+    cyclesFees;
+    creator = creatorFeeContext;
+    protocol = protocolFeeContext;
+    canister = canisterPrincipal;
   };
 
   // DEX lot 6: reserve check context (references). Transient.
@@ -240,7 +419,43 @@ actor TTTIToken {
     dex = dexContext;
     fees = protocolFeeContext;
     router = routerContext;
+    auction;
+    closing = auctionClosing;
+    inflight;
+    batch = dexBatch;
   };
+
+  // DEX-1: one lock per sweep transfer ("SW:<n>") and one for a running sweep. Transient.
+  transient let sweepLocks = Set.empty<Text>();
+
+  // DEX-1: custody sweep context (references). Transient.
+  transient let sweepContext : DexSweepLib.SweepContext = {
+    store = dexSweep;
+    dex = dexContext;
+    router = routerContext;
+    locks = sweepLocks;
+    inflight;
+    batch = dexBatch;
+  };
+
+  // PTM-9e: one-time backfill of the in-flight index from the current stores
+  // (state only; no ledger read, no record altered). Does nothing once done.
+  ignore InflightLib.backfill(
+    inflight,
+    dexTransfers,
+    router.swaps,
+    dexSweep.transfers.values().map(
+      func t = {
+        n = t.n;
+        token = t.token;
+        owner = switch (t.source) {
+          case (#userDeposit(p)) ?p;
+          case (#pool(_)) null;
+        };
+        status = t.status;
+      }
+    ).toArray(),
+  );
 
   // DEX lot 7: indicators context (references; hourly USD rates). Transient.
   transient let dexIndicatorsContext : DexIndicatorsLib.IndicatorsContext = {
@@ -271,10 +486,54 @@ actor TTTIToken {
   transient let historyContext : AdminHistoryLib.HistoryContext = {
     transfers = transferContext;
     btcDeposits;
-    buybacks;
+    redemptions;
     dex = dexContext;
     fees = protocolFeeContext;
     router = routerContext;
+  };
+
+  // DEX-2: reads the ICPSwap TTTI-T/<counter> pairs (read only: no order, no
+  // transfer, no TTTI-T created) and stores their latest price and depth, the
+  // input of the first-deposit reference price. Returns the number of readable
+  // pairs. One run at a time; used by the hourly timer and refreshReferenceSources.
+  transient var referenceRefreshRunning : Bool = false;
+  transient var lastReferenceAttemptAt : Int = 0;
+
+  func refreshReferenceSamples() : async Nat {
+    if (referenceRefreshRunning) return 0;
+    referenceRefreshRunning := true;
+    lastReferenceAttemptAt := Time.now();
+    try {
+      var readable = 0;
+      let tttiLedger = DexLib.tokenLedgerId(#tttiT, canisterPrincipal);
+      for (token in DexLib.DEX_TOKENS.values()) {
+        if (token != #tttiT) {
+          let info = DexLib.tokenInfo(token, canisterPrincipal, RetryLib.dexFee(dexContext, token));
+          let sample = try {
+            await IcpSwapLib.readTttiSample(token, info.ledgerId, info.decimals, tttiLedger, Time.now());
+          } catch (_) {
+            null;
+          };
+          switch (sample) {
+            case (?s) {
+              DexLib.recordIcpSwapSample(dex, s);
+              readable += 1;
+            };
+            case null {};
+          };
+        };
+      };
+      readable;
+    } finally {
+      referenceRefreshRunning := false;
+    };
+  };
+
+  // Due when the last attempt is an hour old or the hourly ICP rate was
+  // refreshed since the last attempt.
+  func referenceSamplesDue() : Bool {
+    let now = Time.now();
+    lastReferenceAttemptAt == 0 or now - lastReferenceAttemptAt >= 3_300_000_000_000 or oracle.fetchedAt > lastReferenceAttemptAt;
   };
 
   // The outcall transform callback for the ICP/BTC/USDC/USDT USD price feeds: keeps only
@@ -289,22 +548,27 @@ actor TTTIToken {
 
   include IcrcApi(ledger, canisterPrincipal);
   include IndexApi(ledger, canisterPrincipal);
-  include ManagementApi(ledger, accessControlState);
+  include ManagementApi(ledger);
   include TreasuryApi(treasury, sale, ledger, accessControlState, canisterPrincipal, oracle, purchaseAcknowledgements, cyclesReserve, tokenRates, purchasesInFlight, transferContext, treasuryAllocation, protocolFeeContext, settlementContext);
   include SaleApi(sale, treasury, ledger, oracle, accessControlState, canisterPrincipal, purchaseAcknowledgements, canisterInfo, tokenRates);
   include OracleApi(oracle, accessControlState, transform, tokenRates);
-  include CyclesReserveApi(cyclesReserve, cyclesAutonomy, accessControlState, canisterPrincipal);
-  include BtcDepositApi(btcDeposits, btcPurchaseContext, purchasesInFlight, canisterPrincipal);
+  include CyclesReserveApi(cyclesReserve, cyclesAutonomy, reserveLock, cyclesFeeContext, accessControlState, canisterPrincipal);
+  include BtcDepositApi(btcDeposits, btcPurchaseContext, liquidityMintContext, purchasesInFlight, canisterPrincipal);
   include AddressBookApi(addressBook, canisterPrincipal);
-  include BuybackApi(buybacks, buybacksInFlight, treasury, ledger, oracle, tokenRates, accessControlState, canisterPrincipal, retry, sale);
-  include TransferReviewApi(transferContext, btcDeposits, accessControlState, buybacks, ledger, dexContext, protocolFeeContext, routerContext, settlementContext);
-  include UpgradeReadinessApi(sale, purchasesInFlight, buybacksInFlight, reserveLock, cyclesReserve, retry, reservedReconciliations, accessControlState, protocolFeeContext, ownerRevenue, mintRevenue, dexReserve, dexInFlight, routerInFlight);
+  include GuaranteeApi(guaranteeContext, guaranteeAccount, accessControlState);
+  include TransferReviewApi(transferContext, btcDeposits, accessControlState, redemptions, ledger, dexContext, protocolFeeContext, routerContext, settlementContext, sweepContext, liquidityMintContext);
+  include UpgradeReadinessApi(sale, purchasesInFlight, redemptionsInFlight, reserveLock, cyclesReserve, retry, reservedReconciliations, accessControlState, protocolFeeContext, ownerRevenue, mintRevenue, dexReserve, dexInFlight, routerInFlight);
   include AdminHistoryApi(historyContext, accessControlState);
-  include DexApi(dex, ledger, accessControlState, canisterPrincipal, dexContext, oracle, tokenRates);
+  include DexApi(dex, ledger, accessControlState, canisterPrincipal, dexContext, oracle, tokenRates, refreshReferenceSamples, consolidatedPrices);
   include DexReserveApi(dexReserveContext, accessControlState);
-  include DexIndicatorsApi(dexIndicators, accessControlState);
+  include DexIndicatorsApi(dexIndicators, accessControlState, protocolFeeContext);
   include ProtocolFeesApi(protocolFeeContext, accessControlState);
   include RouterApi(routerContext, accessControlState, oracle, tokenRates);
+  include DexSweepApi(sweepContext, accessControlState);
+  include LiquidityMintApi(liquidityMintContext, accessControlState, purchasesInFlight);
+  include CreatorFeesApi(creatorFeeContext, accessControlState);
+  include PublicBoardApi(publicBoardContext);
+  include AuctionApi(auction, auctionClosing, ledger, oracle, tokenRates, dexContext, canisterPrincipal, dex, consolidatedPrices, auctionSettleContext);
   // OQL: purchase history (conversions) and BTC deposit trackings, readable
   // by controllers and app admins only; address book contacts, readable by
   // controllers, app admins and their owner.
@@ -343,6 +607,34 @@ actor TTTIToken {
       errorMessage = ?"";
     },
   );
+  transient let liquidityMintSample : LiquidityMintTypes.LiquidityMint = {
+    id = 0;
+    payer = canisterPrincipal;
+    owner = canisterPrincipal;
+    token = #icp;
+    tttiAmount = 0;
+    payAmount = 0;
+    rateUsdE8 = 0;
+    poolId = 0;
+    positionId = null;
+    paymentBlock = null;
+    status = #completed;
+    createdAt = 0;
+    refundWithdrawalN = null;
+    refusalCause = null;
+  };
+  transient let guaranteeSample : LiquidityMintTypes.Guarantee = {
+    mintId = 0;
+    owner = canisterPrincipal;
+    token = #icp;
+    amount = 0;
+    createdAt = 0;
+  };
+  transient let creatorSetAsideSample : LiquidityMintTypes.CreatorSetAside = {
+    mintId = 0;
+    token = #icp;
+    amount = 0;
+  };
   transient let contactSample : (Principal, AddressBookTypes.Contact) = (
     canisterPrincipal,
     {
@@ -354,39 +646,231 @@ actor TTTIToken {
       updatedAt = 0;
     },
   );
-  transient let buybackSample : BuybackTypes.Buyback = {
+  transient let redemptionSample : GuaranteeTypes.Redemption = {
     id = 0;
-    purchaseId = ?0;
-    buyer = canisterPrincipal;
-    buyerAccount = { owner = canisterPrincipal; subaccount = null };
-    timestamp = 0;
-    originalToken = #icp;
-    tokenReturned = #icp;
-    percent = 0;
-    massTotalNet = 0;
-    massTotalTtti = 0;
-    massRemainingNet = 0;
-    massRemainingTtti = 0;
-    originalRateUsdE8 = 0;
-    returnedRateUsdE8 = 0;
-    rule = #originalNet;
-    originalNetAmount = 0;
-    baseAmount = 0;
-    baseAmountReturned = 0;
-    buybackFee = 0;
-    thirdPartyFees = 0;
-    tttiTransferFee = 0;
-    tttiEscrowFee = 0;
-    amountReturned = 0;
+    owner = canisterPrincipal;
+    account = { owner = canisterPrincipal; subaccount = null };
+    kind = #redeem;
+    token = #icp;
+    phase = #duringMint;
+    rule = #depositedGuarantee;
     tttiAmount = 0;
-    pullBlock = ?0;
-    payoutBlock = ?0;
-    payoutAttempts = [];
-    releaseBlock = ?0;
-    cancelBlock = ?0;
-    legacy = false;
-    status = #completed;
-    message = ?"";
+    tttiPullBlock = ?0;
+    depositedGuarantee = 0;
+    rateUsdE8 = ?0;
+    returnedAmount = 0;
+    excessKept = 0;
+    redemptionFee = 0;
+    thirdPartyFee = 0;
+    netAmount = 0;
+    createdAt = 0;
+    payout = {
+      n = 0;
+      attempt = 1;
+      memo = "" : Blob;
+      created_at_time = 0;
+      request = {
+        token = #icp;
+        from = { owner = canisterPrincipal; subaccount = null };
+        to = { owner = canisterPrincipal; subaccount = null };
+        amount = 0;
+        fee = null;
+      };
+      sends = 0;
+      lastError = null;
+      outcome = #pending;
+    };
+    status = #inProgress;
+  };
+  transient let redemptionFeeSample : GuaranteeTypes.RedemptionFee = {
+    redemptionId = 0;
+    token = #icp;
+    amount = 0;
+    createdAt = 0;
+  };
+  transient let guaranteeMassSample : (Principal, GuaranteeTypes.GuaranteeMass) = (
+    canisterPrincipal,
+    {
+      token = #icp;
+      totalTtti = 0;
+      totalGuarantee = 0;
+      remainingTtti = 0;
+      remainingGuarantee = 0;
+      excess = 0;
+    },
+  );
+  // PTM-9b: sample of the dedicated guarantee account view (public entity).
+  transient let guaranteeAccountSample : GuaranteeTypes.GuaranteeAccountView = {
+    token = #tttiT;
+    massTotal = 0;
+    accountBalance = 0;
+    equal = true;
+  };
+  // PTM-6a: sample of an auction bid (owner-only entity).
+  transient let auctionBidSample : AuctionTypes.Bid = {
+    id = 0;
+    auctionId = 0;
+    bidder = canisterPrincipal;
+    token = #icp;
+    quantityE8s = 0;
+    priceB = 0;
+    requiredDeposit = 0;
+    deposited = 0;
+    createdAt = 0;
+    memo = "" : Blob;
+    block = 0;
+  };
+  // PTM-6b: samples of a closed auction, a closed bid and a bidder balance.
+  transient let closedAuctionSample : AuctionTypes.ClosedAuction = {
+    id = 0;
+    openedAt = 0;
+    closesAt = 0;
+    closedAt = 0;
+    lotSizeE8s = 0;
+    blockSale = false;
+    remainderE8s = 0;
+    reserve = {
+      reserveUsdE8 = 0;
+      floorUsdE8 = 0;
+      consolidatedUsdE8 = null;
+      dailyAverageUsdE8 = null;
+      binding = #floor;
+    };
+    rates = [];
+    bidCount = 0;
+    servedE8s = 0;
+    carriedOverE8s = 0;
+    status = #unsold;
+  };
+  transient let closedBidSample : AuctionTypes.ClosedBid = {
+    id = 0;
+    auctionId = 0;
+    bidder = canisterPrincipal;
+    token = #icp;
+    quantityE8s = 0;
+    priceB = 0;
+    requiredDeposit = 0;
+    deposited = 0;
+    createdAt = 0;
+    outcome = #notServed;
+    servedE8s = 0;
+    pricePaidB = 0;
+    servedDeposit = 0;
+    returned = 0;
+  };
+  transient let bidderBalanceSample : AuctionTypes.BidderBalance = {
+    owner = canisterPrincipal;
+    token = #icp;
+    var withdrawable = 0;
+    var pendingSettlement = 0;
+  };
+  transient let auctionMoveSample : AuctionTypes.AuctionMove = {
+    n = 0;
+    owner = canisterPrincipal;
+    token = #icp;
+    gross = 0;
+    fromPending = 0;
+    fromWithdrawable = 0;
+    credited = 0;
+    bidId = null;
+    createdAt = 0;
+    attempt = {
+      n = 0;
+      attempt = 1;
+      memo = "" : Blob;
+      created_at_time = 0;
+      request = {
+        token = #icp;
+        from = { owner = canisterPrincipal; subaccount = null };
+        to = { owner = canisterPrincipal; subaccount = null };
+        amount = 0;
+        fee = null;
+      };
+      sends = 0;
+      lastError = null;
+      outcome = #pending;
+    };
+    status = #inProgress;
+  };
+  // PTM-9d: samples of the fee pot, lock-time, unpaid-share and dust tables.
+  transient let dexPoolPotSample : DexTypes.PoolPot = {
+    poolId = 0;
+    var pending0 = 0;
+    var pending1 = 0;
+    var phase = #idle;
+    var frozen0 = 0;
+    var frozen1 = 0;
+    var cursor = null;
+    var totalProductNs = 0;
+    var paid0 = 0;
+    var paid1 = 0;
+    var sharedDayStart = 0;
+    var sharedDayEnd = 0;
+    var lockedPositionShares = 0;
+    var lockedScan = 0;
+  };
+  transient let dexPositionLockSample : DexTypes.PositionLock = {
+    positionId = 0;
+    poolId = 0;
+    owner = canisterPrincipal;
+    var weight = 0;
+    var lockedFrom = 0;
+    var lockedUntil = null;
+  };
+  transient let dexUnpaidShareSample : DexTypes.UnpaidShare = {
+    owner = canisterPrincipal;
+    poolId = 0;
+    var productNs = 0;
+  };
+  transient let bidderDustSample : AuctionTypes.BidderDust = {
+    owner = canisterPrincipal;
+    token = #icp;
+    var amount = 0;
+  };
+  transient let bidSettlementSample : AuctionTypes.BidSettlement = {
+    auctionId = 0;
+    bidId = 0;
+    bidder = canisterPrincipal;
+    token = #icp;
+    status = #pending;
+    settledE8s = 0;
+    mintedE8s = 0;
+    takenAmount = 0;
+    creatorShare = 0;
+    positionAmount = 0;
+    guaranteeAmount = 0;
+    surplusReturned = 0;
+    carriedE8s = 0;
+    positionId = ?0;
+    failureReason = ?"";
+    attemptedAt = ?0;
+    settledAt = ?0;
+  };
+  func auctionSettlementStatusText(s : AuctionTypes.SettlementStatus) : Text {
+    switch (s) { case (#notRequired) "notRequired"; case (#pending) "pending"; case (#settled) "settled"; case (#failed) "failed" };
+  };
+  func auctionTokenText(token : AuctionTypes.PayToken) : Text {
+    switch (token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" };
+  };
+  func closingRateOf(a : AuctionTypes.ClosedAuction, token : AuctionTypes.PayToken) : ?Nat {
+    for (r in a.rates.values()) {
+      if (r.token == token) { return r.usdE8 };
+    };
+    null;
+  };
+  func closedBidRows() : Iter.Iter<AuctionTypes.ClosedBid> {
+    let rows = List.empty<AuctionTypes.ClosedBid>();
+    for (bids in auctionClosing.closedBids.values()) {
+      for (b in bids.values()) { rows.add(b) };
+    };
+    rows.values();
+  };
+  func guaranteeMassRows() : Iter.Iter<(Principal, GuaranteeTypes.GuaranteeMass)> {
+    let rows = List.empty<(Principal, GuaranteeTypes.GuaranteeMass)>();
+    for ((owner, perToken) in guaranteeMasses.entries()) {
+      for ((_, mass) in perToken.entries()) { rows.add((owner, mass)) };
+    };
+    rows.values();
   };
   transient let attemptSample : (Nat, RetryTypes.TransferAttempt) = (
     0,
@@ -476,6 +960,22 @@ actor TTTIToken {
     lockedShares = 0;
     protocolFee0 = 0;
     protocolFee1 = 0;
+    lockedFeesPaid0 = 0;
+    lockedFeesPaid1 = 0;
+  };
+  transient let dexRemovalSample : DexTypes.PairRemoval = { poolId = 0; reason = ""; announcedAt = 0; effectiveAt = 0; state = #announced };
+  transient let dexIcpSwapSampleSample : DexTypes.IcpSwapSample = { poolCanister = canisterPrincipal; counter = #icp; counterPerTttiE8 = 0; counterReserve = 0; readAt = 0 };
+  func dexRemovalStateText(s : DexTypes.RemovalState) : Text = switch (s) {
+    case (#announced) "announced";
+    case (#cancelled(_)) "cancelled";
+    case (#executing(_)) "executing";
+    case (#completed(_)) "completed";
+  };
+  func dexRemovalStateAt(s : DexTypes.RemovalState) : ?Int = switch (s) {
+    case (#announced) null;
+    case (#cancelled(c)) ?c.cancelledAt;
+    case (#executing(e)) ?e.startedAt;
+    case (#completed(c)) ?c.completedAt;
   };
   transient let dexPositionSample : DexTypes.Position = {
     id = 0;
@@ -486,6 +986,10 @@ actor TTTIToken {
     lockDurationNs = 0;
     unlockAt = 0;
     isCreator = false;
+    lockStartedAt = 0;
+    relayReceivedNs = 0;
+    feesCollected0 = 0;
+    feesCollected1 = 0;
   };
   transient let refusedDepositFeedSample : DexTypes.RefusedDepositFeed = { requestId = 0; poolId = 0; amount = 0; fee = 0; block = 0; at = 0 };
   transient let dexReserveMismatchSample : DexReserveTypes.Mismatch = { id = 0; at = 0; token = #tttiT; internalTotal = 0; ledgerTotal = 0 };
@@ -662,7 +1166,8 @@ actor TTTIToken {
   func dexTransferRows() : [DexTransferRow] {
     let rows = List.empty<DexTransferRow>();
     for (t in dexTransfers.deposits.values()) {
-      rows.add({ key = "DD-" # t.n.toText(); kind = "DD"; id = t.n; owner = t.owner; amount = t.amount; attempt = t.attempt; status = dexStatusText(t.status) });
+      // PTM-6a: auction deposits (AB) are not DEX deposits and stay out of this entity.
+      if (not RetryLib.isAuctionDeposit(t)) rows.add({ key = "DD-" # t.n.toText(); kind = "DD"; id = t.n; owner = t.owner; amount = t.amount; attempt = t.attempt; status = dexStatusText(t.status) });
     };
     for (t in dexTransfers.withdrawals.values()) {
       rows.add({ key = "DW-" # t.n.toText(); kind = "DW"; id = t.n; owner = t.owner; amount = t.amount; attempt = t.attempt; status = dexStatusText(t.status) });
@@ -675,10 +1180,16 @@ actor TTTIToken {
       // Review row of a DQ refund: id = pair request number (memo TTTI-DQ-<pair request number>).
       rows.add({ key = "DQ-" # requestId.toText(); kind = "DQ"; id = requestId; owner; amount = a.request.amount; attempt = a; status });
     };
+    for (t in dexTransfers.liquidations.values()) {
+      // DEX-2 LQ payout: id = payout number n (memo TTTI-LQ-<n>).
+      rows.add({ key = "LQ-" # t.n.toText(); kind = "LQ"; id = t.n; owner = t.owner; amount = t.amount; attempt = t.attempt; status = dexStatusText(t.status) });
+    };
     rows.toArray();
   };
   // DEX lot 4 OQL rows and samples.
   type PriceSampleRow = { key : Text; poolId : Nat; at : Int; reserve0 : Nat; reserve1 : Nat };
+  type ConsolidatedPriceRow = { key : Text; at : Int; priceUsdE8 : Nat };
+  type PoolCapRatioRow = { key : Text; at : Int; ratio : Nat };
   type BonusBalanceRow = { owner : Principal; claimableE8s : Nat; claimedE8s : Nat };
   type MintTreasuryRow = { token : Text; balance : Nat; lastRunAt : ?Int };
   transient let cyclesSampleRowSample : CyclesReserveLib.CyclesSample = { at = 0; cyclesBalance = 0; toppedUpCycles = 0 };
@@ -705,6 +1216,8 @@ actor TTTIToken {
   transient let protocolLiquiditySample : ProtocolFeeTypes.ProtocolLiquidity = { poolId = 0; shares = 0; fromFees0 = 0; fromFees1 = 0; fromTreasury0 = 0; fromTreasury1 = 0; lastAddedAt = ?0 };
   transient let feeBucketsSample : (Nat, ProtocolFeeTypes.FeeBuckets) = (0, { cycles0 = 0; cycles1 = 0; bonus0 = 0; bonus1 = 0; recycle0 = 0; recycle1 = 0 });
   transient let priceSampleRowSample : PriceSampleRow = { key = ""; poolId = 0; at = 0; reserve0 = 0; reserve1 = 0 };
+  transient let consolidatedPriceRowSample : ConsolidatedPriceRow = { key = ""; at = 0; priceUsdE8 = 0 };
+  transient let poolCapRatioRowSample : PoolCapRatioRow = { key = ""; at = 0; ratio = 0 };
   transient let bonusBalanceSample : BonusBalanceRow = { owner = canisterPrincipal; claimableE8s = 0; claimedE8s = 0 };
   transient let mintTreasurySample : MintTreasuryRow = { token = ""; balance = 0; lastRunAt = ?0 };
   func dcBatchStatusText(s : ProtocolFeeTypes.DcBatchStatus) : Text = switch (s) {
@@ -736,6 +1249,12 @@ actor TTTIToken {
       };
     };
     rows.toArray();
+  };
+  func consolidatedPriceRows() : [ConsolidatedPriceRow] {
+    consolidatedPrices.samples.toArray().map(func(s) = { key = s.at.toText(); at = s.at; priceUsdE8 = s.priceUsdE8 });
+  };
+  func poolCapRatioRows() : [PoolCapRatioRow] {
+    poolCapRatioSamples.samples.toArray().map(func(s) = { key = s.at.toText(); at = s.at; ratio = s.ratio });
   };
   func bonusBalanceRows() : [BonusBalanceRow] {
     let rows = List.empty<BonusBalanceRow>();
@@ -1017,6 +1536,79 @@ actor TTTIToken {
     rows.toArray();
   };
   func isAppAdmin(caller : Principal) : Bool = accessControlState.userRoles.get(caller) == ?#admin;
+  // DEX-1: sweep transfers, sweep token reports and per-account reserve results.
+  transient let dexSweepTransferSample : DexSweepLib.SweepTransferView = {
+    n = 0;
+    token = #tttiT;
+    source = #pool(0);
+    from = { owner = canisterPrincipal; subaccount = null };
+    to = { owner = canisterPrincipal; subaccount = null };
+    ledgerBalance = 0;
+    amount = 0;
+    fee = 0;
+    memoText = "";
+    createdAtTimeNs = 0;
+    attempt = 1;
+    sends = 0;
+    status = #inProgress;
+    lastError = ?"";
+    recordedAt = 0;
+  };
+  transient let dexSweepReportSample : DexSweepLib.TokenReport = {
+    token = #tttiT;
+    lastRunAt = ?0;
+    legacyAccountsFound = 0;
+    accountsWithBalance = 0;
+    accountsSkipped = 0;
+    notes = [""];
+    comparison = ?{
+      checkedAt = 0;
+      custodyLedger = 0;
+      userBalances = 0;
+      poolReserves = 0;
+      poolProtocolFees = 0;
+      routerSetAside = 0;
+      owed = 0;
+      surplus = 0;
+      shortfall = 0;
+      status = #balanced;
+    };
+    comparisonPending = false;
+  };
+  transient let dexReserveAccountSample : DexReserveTypes.AccountResult = {
+    kind = #dexHoldings;
+    accountLabel = "";
+    token = #tttiT;
+    ledgerBalance = 0;
+    owed = 0;
+    difference = 0;
+    status = #ok;
+    checkedAt = 0;
+  };
+  type DexSweepSourceRow = { kind : Text; ref : Text };
+  func dexSweepSourceRow(s : DexSweepLib.SweepSource) : DexSweepSourceRow = switch (s) {
+    case (#userDeposit(p)) ({ kind = "userDeposit"; ref = p.toText() });
+    case (#pool(id)) ({ kind = "pool"; ref = id.toText() });
+  };
+  func dexAccountKindText(k : DexReserveTypes.AccountKind) : Text = switch (k) {
+    case (#dexHoldings) "dexHoldings";
+    case (#requestDeposits) "requestDeposits";
+    case (#mintFee) "mintFee";
+    case (#protocolFees) "protocolFees";
+    case (#auctionDeposits) "auctionDeposits";
+  };
+  func dexSweepComparisonStatusText(c : ?DexSweepLib.Comparison) : ?Text = switch (c) {
+    case (?x) switch (x.status) {
+      case (#balanced) ?"balanced";
+      case (#surplus) ?"surplus";
+      case (#shortfall) ?"shortfall";
+    };
+    case null null;
+  };
+  func dexSweepComparisonNat(c : ?DexSweepLib.Comparison, pick : DexSweepLib.Comparison -> Nat) : ?Nat = switch (c) {
+    case (?x) ?pick(x);
+    case null null;
+  };
   // DEX lot 5: router OQL rows.
   transient let routedSwapSample : RouterTypes.RoutedSwap = {
     id = 0;
@@ -1081,6 +1673,222 @@ actor TTTIToken {
     case (#reviewedArrived(_)) "reviewedArrived";
     case (#reviewedNotArrived) "reviewedNotArrived";
   };
+  // PTM-4 OQL rows and samples: creator fees, permanent liquidity and cycles fees.
+  type CyclesFeeSplitRow = { key : Text; id : Nat; source : Text; cyclesE8s : Nat; creator : Nat };
+  type PermanentSetAsideRow = { symbol : Text; amount : Nat };
+  transient let creatorTotalsSample : CreatorFeesTypes.CreatorTokenTotals = {
+    token = #tttiT;
+    swapFeeShare = 0;
+    routerShare = 0;
+    mintFee = 0;
+    buybackFee = 0;
+    transferFee = 0;
+    paidOut = 0;
+    inFlight = 0;
+    lastCreditAt = ?0;
+  };
+  transient let creatorPayoutSample : CreatorFeesTypes.CreatorPayout = {
+    n = 0;
+    token = #icp;
+    grossAmount = 0;
+    netAmount = 0;
+    wallet = { owner = canisterPrincipal; subaccount = null };
+    createdAt = 0;
+    attempt = dexTransferSample.attempt;
+    status = #inProgress;
+  };
+  transient let permanentLogSample : ProtocolFeeTypes.PermanentLogEntry = {
+    id = 0;
+    at = 0;
+    kind = #accrued;
+    token = #icp;
+    amount = 0;
+    otherToken = ?#tttiT;
+    otherAmount = 0;
+    route = ?#native(0);
+    poolId = ?0;
+    shares = 0;
+    reason = ?"";
+  };
+  transient let permanentSetAsideSample : PermanentSetAsideRow = { symbol = ""; amount = 0 };
+  transient let cyclesFeeSettlementSample : CyclesTypes.CyclesFeeSettlement = {
+    n = 0;
+    grossE8s = 0;
+    netE8s = 0;
+    createdAt = 0;
+    attempt = dexTransferSample.attempt;
+    status = #inProgress;
+  };
+  transient let cyclesFeeSplitSample : CyclesFeeSplitRow = { key = ""; id = 0; source = ""; cyclesE8s = 0; creator = 0 };
+  func permanentSetAsideRows() : [PermanentSetAsideRow] {
+    permanentLiquidity.setAside.entries().map(func((symbol, amount) : (Text, Nat)) : PermanentSetAsideRow = { symbol; amount }).toArray();
+  };
+  func cyclesFeeSplitRows() : [CyclesFeeSplitRow] {
+    let rows = List.empty<CyclesFeeSplitRow>();
+    for ((id, sp) in cyclesFees.mintSplits.entries()) {
+      rows.add({ key = "mint/" # id.toText(); id; source = "mint"; cyclesE8s = sp.cyclesE8s; creator = sp.creator });
+    };
+    for ((id, sp) in cyclesFees.buybackSplits.entries()) {
+      rows.add({ key = "buyback/" # id.toText(); id; source = "buyback"; cyclesE8s = sp.cyclesE8s; creator = sp.creator });
+    };
+    rows.toArray();
+  };
+  func permanentKindText(k : ProtocolFeeTypes.PermanentKind) : Text = switch (k) {
+    case (#accrued) "accrued";
+    case (#rebalanced) "rebalanced";
+    case (#injected) "injected";
+    case (#waiting) "waiting";
+    case (#failed) "failed";
+  };
+  func permanentRouteText(r : ?ProtocolFeeTypes.PermanentRoute) : ?Text = switch (r) {
+    case (?#native(id)) ?("native/" # id.toText());
+    case (?#icpswap(p)) ?("icpswap/" # p.toText());
+    case null null;
+  };
+
+  // PTM-9e: OQL rows for the per-owner swap index, the in-flight index and the
+  // batch store (reserve alerts, zeroed accounts, run cursors). Read only.
+  type OwnerSwapRow = { key : Text; owner : Principal; swapId : Nat };
+  type InflightRow = { key : Text; kind : Text; n : Nat; tokens : Text; owner : ?Principal; since : Int };
+  type ReserveAlertRow = {
+    id : Nat;
+    at : Int;
+    runId : Nat;
+    accountsToCompare : Nat;
+    accountsCompared : Nat;
+    message : Text;
+    unresolved : Bool;
+  };
+  type ZeroedAccountRow = { key : Text; markedAt : Int };
+  transient let ownerSwapSample : OwnerSwapRow = { key = ""; owner = canisterPrincipal; swapId = 0 };
+  transient let inflightSample : InflightRow = { key = ""; kind = ""; n = 0; tokens = ""; owner = ?canisterPrincipal; since = 0 };
+  transient let reserveAlertSample : ReserveAlertRow = {
+    id = 0;
+    at = 0;
+    runId = 0;
+    accountsToCompare = 0;
+    accountsCompared = 0;
+    message = "";
+    unresolved = false;
+  };
+  transient let zeroedAccountSample : ZeroedAccountRow = { key = ""; markedAt = 0 };
+  transient let reserveRunSample : BatchTypes.ReserveProgress = {
+    phase = #idle;
+    batch = 0;
+    totalBatches = 0;
+    alertDecided = false;
+    active = false;
+    runId = 0;
+    startedAt = ?0;
+    targetIndex = 0;
+    targetCount = 0;
+    accountIndex = 0;
+    accountsToCompare = 0;
+    accountsCompared = 0;
+    excludedZero = 0;
+    unreadable = 0;
+    batchSize = 0;
+    lastBatchAt = ?0;
+  };
+  transient let excludedRereadSample : BatchTypes.ExcludedRereadProgress = {
+    active = false;
+    runId = 0;
+    startedAt = ?0;
+    excludedCount = 0;
+    read = 0;
+    reincluded = 0;
+    unreadable = 0;
+    batchSize = 0;
+    lastBatchAt = ?0;
+    lastFinishedAt = ?0;
+    nextRunAt = ?0;
+  };
+  transient let sweepTokenProgressSample : BatchTypes.SweepTokenProgressView = {
+    token = #tttiT;
+    accountsListed = 0;
+    accountsRead = 0;
+    withBalance = 0;
+    skipped = 0;
+    unreadable = 0;
+    inFlight = 0;
+    excludedZero = 0;
+    done = false;
+  };
+  func ownerSwapRows() : [OwnerSwapRow] {
+    let rows = List.empty<OwnerSwapRow>();
+    for ((owner, ids) in routerOwnerIndex.entries()) {
+      for (id in ids.values()) {
+        rows.add({ key = owner.toText() # "/" # id.toText(); owner; swapId = id });
+      };
+    };
+    rows.toArray();
+  };
+  func inflightKindText(k : InflightTypes.Kind) : Text = switch (k) {
+    case (#deposit) "deposit";
+    case (#withdrawal) "withdrawal";
+    case (#sweep) "sweep";
+    case (#swap) "swap";
+  };
+  func inflightRows() : [InflightRow] {
+    let rows = List.empty<InflightRow>();
+    for ((key, e) in inflight.entries.entries()) {
+      rows.add({
+        key;
+        kind = inflightKindText(e.kind);
+        n = e.n;
+        tokens = e.tokens.map(func t = DexLib.tokenSymbol(t)).values().join(",");
+        owner = e.owner;
+        since = e.since;
+      });
+    };
+    rows.toArray();
+  };
+  func reserveAlertRows() : [ReserveAlertRow] {
+    let openId : ?Nat = switch (dexBatch.alert) {
+      case (?a) ?a.id;
+      case null null;
+    };
+    let rows = List.empty<ReserveAlertRow>();
+    var openListed = false;
+    for (a in dexBatch.alertHistory.values()) {
+      let open = openId == ?a.id;
+      if (open) openListed := true;
+      rows.add({
+        id = a.id;
+        at = a.at;
+        runId = a.runId;
+        accountsToCompare = a.accountsToCompare;
+        accountsCompared = a.accountsCompared;
+        message = a.message;
+        unresolved = open;
+      });
+    };
+    switch (dexBatch.alert) {
+      case (?a) {
+        if (not openListed) {
+          rows.add({
+            id = a.id;
+            at = a.at;
+            runId = a.runId;
+            accountsToCompare = a.accountsToCompare;
+            accountsCompared = a.accountsCompared;
+            message = a.message;
+            unresolved = true;
+          });
+        };
+      };
+      case null {};
+    };
+    rows.toArray();
+  };
+  func zeroedAccountRows() : [ZeroedAccountRow] {
+    let rows = List.empty<ZeroedAccountRow>();
+    for ((key, markedAt) in dexBatch.zeroed.entries()) {
+      rows.add({ key; markedAt });
+    };
+    rows.toArray();
+  };
+
   include Expose({
     entities = [
       OQL.Entity.manual<(Nat, RetryTypes.TransferAttempt)>("forwardAttempt", func() = retry.forwards.entries(), "ForwardAttempt", "purchaseId")
@@ -1183,41 +1991,57 @@ actor TTTIToken {
         .ownedByWith("n", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
         .controllerOrScoped()
         .build(),
-      OQL.Entity.manual<BuybackTypes.Buyback>("buyback", func() = buybacks.records.values(), "Buyback", "id")
-        .sample(buybackSample)
-        .payload("id", func b = b.id)
-        .payload("purchaseId", func b = b.purchaseId)
-        .payload("buyer", func b = b.buyer)
-        .payload("timestamp", func b = b.timestamp)
-        .payload("originalToken", func b = switch (b.originalToken) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
-        .payload("tokenReturned", func b = switch (b.tokenReturned) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
-        .payload("percent", func b = b.percent)
-        .payload("massTotalNet", func b = b.massTotalNet)
-        .payload("massTotalTtti", func b = b.massTotalTtti)
-        .payload("massRemainingNet", func b = b.massRemainingNet)
-        .payload("massRemainingTtti", func b = b.massRemainingTtti)
-        .payload("originalRateUsdE8", func b = b.originalRateUsdE8)
-        .payload("returnedRateUsdE8", func b = b.returnedRateUsdE8)
-        .payload("rule", func b = switch (b.rule) { case (#originalNet) "originalNet"; case (#dayRate) "dayRate" })
-        .payload("originalNetAmount", func b = b.originalNetAmount)
-        .payload("baseAmount", func b = b.baseAmount)
-        .payload("baseAmountReturned", func b = b.baseAmountReturned)
-        .payload("buybackFee", func b = b.buybackFee)
-        .payload("thirdPartyFees", func b = b.thirdPartyFees)
-        .payload("tttiTransferFee", func b = b.tttiTransferFee)
-        .payload("tttiEscrowFee", func b = b.tttiEscrowFee)
-        .payload("amountReturned", func b = b.amountReturned)
-        .payload("tttiAmount", func b = b.tttiAmount)
-        .payload("pullBlock", func b = b.pullBlock)
-        .payload("payoutBlock", func b = b.payoutBlock)
-        .payload("payoutAttemptCount", func b = b.payoutAttempts.size())
-        .payload("releaseBlock", func b = b.releaseBlock)
-        .payload("cancelBlock", func b = b.cancelBlock)
-        .payload("legacy", func b = b.legacy)
-        .payload("status", func b = switch (b.status) { case (#inProgress) "inProgress"; case (#completed) "completed"; case (#payoutFailed) "payoutFailed"; case (#cancelled) "cancelled" })
-        .payload("message", func b = b.message)
-        .ownedByWith("buyer", func(caller, owner) = accessControlState.userRoles.get(caller) == ?#admin or owner == #text(caller.toText()))
+      OQL.Entity.manual<GuaranteeTypes.Redemption>("redemption", func() = redemptions.redemptions.values(), "Redemption", "id")
+        .sample(redemptionSample)
+        .payload("id", func r = r.id)
+        .payload("owner", func r = r.owner)
+        .payload("kind", func r = switch (r.kind) { case (#redeem) "redeem"; case (#excessWithdrawal) "excessWithdrawal" })
+        .payload("token", func r = switch (r.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
+        .payload("phase", func r = switch (r.phase) { case (#duringMint) "duringMint"; case (#afterMint) "afterMint" })
+        .payload("rule", func r = switch (r.rule) { case (#depositedGuarantee) "depositedGuarantee"; case (#dayRate) "dayRate"; case (#proRata) "proRata" })
+        .payload("tttiAmount", func r = r.tttiAmount)
+        .payload("tttiPullBlock", func r = r.tttiPullBlock)
+        .payload("depositedGuarantee", func r = r.depositedGuarantee)
+        .payload("rateUsdE8", func r = r.rateUsdE8)
+        .payload("returnedAmount", func r = r.returnedAmount)
+        .payload("excessKept", func r = r.excessKept)
+        .payload("redemptionFee", func r = r.redemptionFee)
+        .payload("thirdPartyFee", func r = r.thirdPartyFee)
+        .payload("netAmount", func r = r.netAmount)
+        .payload("createdAt", func r = r.createdAt)
+        .payload("status", func r = switch (r.status) { case (#inProgress) "inProgress"; case (#needsReview) "needsReview"; case (#completed(_)) "completed"; case (#failed(_)) "failed" })
+        .ownedByWith("owner", func(caller, owner) = accessControlState.userRoles.get(caller) == ?#admin or owner == #text(caller.toText()))
         .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<GuaranteeTypes.RedemptionFee>("redemptionFee", func() = redemptions.fees.values(), "RedemptionFee", "redemptionId")
+        .sample(redemptionFeeSample)
+        .payload("redemptionId", func f = f.redemptionId)
+        .payload("token", func f = switch (f.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
+        .payload("amount", func f = f.amount)
+        .payload("createdAt", func f = f.createdAt)
+        .ownedByWith("redemptionId", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<(Principal, GuaranteeTypes.GuaranteeMass)>("guaranteeMass", guaranteeMassRows, "GuaranteeMass", "key")
+        .sample(guaranteeMassSample)
+        .payload("key", func((o, m)) = GuaranteeLib.lockKey(o, m.token))
+        .payload("owner", func((o, _)) = o)
+        .payload("token", func((_, m)) = switch (m.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
+        .payload("totalTtti", func((_, m)) = m.totalTtti)
+        .payload("totalGuarantee", func((_, m)) = m.totalGuarantee)
+        .payload("remainingTtti", func((_, m)) = m.remainingTtti)
+        .payload("remainingGuarantee", func((_, m)) = m.remainingGuarantee)
+        .payload("excess", func((_, m)) = m.excess)
+        .ownedByWith("owner", func(caller, owner) = accessControlState.userRoles.get(caller) == ?#admin or owner == #text(caller.toText()))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<GuaranteeTypes.GuaranteeAccountView>("guaranteeAccount", func() = GuaranteeLib.accountViews(guaranteeMasses, guaranteeAccount).values(), "GuaranteeAccount", "symbol")
+        .sample(guaranteeAccountSample)
+        .payload("symbol", func v = DexLib.tokenSymbol(v.token))
+        .payload("massTotal", func v = v.massTotal)
+        .payload("accountBalance", func v = v.accountBalance)
+        .payload("equal", func v = v.equal)
+        .public_()
         .build(),
       OQL.Entity.manual<UpgradeTypes.ReservedReconciliation>("reservedReconciliation", func() = reservedReconciliations.history.values(), "ReservedReconciliation", "reconciledAt")
         .sample(reconciliationSample)
@@ -1300,6 +2124,43 @@ actor TTTIToken {
         .ownedByWith("owner", func(caller, owner) = owner == #text(caller.toText()))
         .controllerOrScoped()
         .build(),
+      OQL.Entity.manual<LiquidityMintTypes.LiquidityMint>("liquidityMint", func() = liquidityMints.mints.values(), "LiquidityMint", "id")
+        .sample(liquidityMintSample)
+        .payload("id", func m = m.id)
+        .payload("payer", func m = m.payer)
+        .payload("owner", func m = m.owner)
+        .payload("token", func m = switch (m.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
+        .payload("tttiAmount", func m = m.tttiAmount)
+        .payload("payAmount", func m = m.payAmount)
+        .payload("rateUsdE8", func m = m.rateUsdE8)
+        .payload("poolId", func m = m.poolId)
+        .payload("positionId", func m = m.positionId)
+        .payload("paymentBlock", func m = m.paymentBlock)
+        .payload("status", func m = switch (m.status) { case (#inProgress) "inProgress"; case (#completed) "completed"; case (#refunding) "refunding"; case (#refunded) "refunded"; case (#refundFailed) "refundFailed" })
+        .payload("createdAt", func m = m.createdAt)
+        .payload("refundWithdrawalN", func m = m.refundWithdrawalN)
+        .payload("refusalCause", func m = m.refusalCause)
+        .ownedByWith("owner", func(caller, owner) = owner == #text(caller.toText()) or accessControlState.userRoles.get(caller) == ?#admin)
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<LiquidityMintTypes.Guarantee>("guarantee", func() = liquidityMints.guarantees.values(), "Guarantee", "mintId")
+        .sample(guaranteeSample)
+        .payload("mintId", func g = g.mintId)
+        .payload("owner", func g = g.owner)
+        .payload("token", func g = switch (g.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
+        .payload("amount", func g = g.amount)
+        .payload("createdAt", func g = g.createdAt)
+        .ownedByWith("owner", func(caller, owner) = owner == #text(caller.toText()) or accessControlState.userRoles.get(caller) == ?#admin)
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<LiquidityMintTypes.CreatorSetAside>("creatorSetAside", func() = liquidityMints.creatorSetAsides.values(), "CreatorSetAside", "mintId")
+        .sample(creatorSetAsideSample)
+        .payload("mintId", func c = c.mintId)
+        .payload("token", func c = switch (c.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
+        .payload("amount", func c = c.amount)
+        .ownedByWith("mintId", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
+        .controllerOrScoped()
+        .build(),
       OQL.Entity.manual<DexTypes.Pool>("dexPool", func() = dex.pools.values(), "DexPool", "id")
         .sample(dexPoolSample)
         .payload("id", func p = p.id)
@@ -1324,6 +2185,8 @@ actor TTTIToken {
         .payload("lockedShares", func p = p.lockedShares)
         .payload("protocolFee0", func p = p.protocolFee0)
         .payload("protocolFee1", func p = p.protocolFee1)
+        .payload("lockedFeesPaid0", func p = p.lockedFeesPaid0)
+        .payload("lockedFeesPaid1", func p = p.lockedFeesPaid1)
         .ownedByWith("id", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
         .controllerOrScoped()
         .build(),
@@ -1337,6 +2200,10 @@ actor TTTIToken {
         .payload("lockDurationNs", func p = p.lockDurationNs)
         .payload("unlockAt", func p = p.unlockAt)
         .payload("isCreator", func p = p.isCreator)
+        .payload("lockStartedAt", func p = p.lockStartedAt)
+        .payload("relayReceivedNs", func p = p.relayReceivedNs)
+        .payload("feesCollected0", func p = p.feesCollected0)
+        .payload("feesCollected1", func p = p.feesCollected1)
         .public_()
         .build(),
       OQL.Entity.manual<DexTypes.PairRequest>("dexPairRequest", func() = dex.requests.values(), "DexPairRequest", "id")
@@ -1369,6 +2236,25 @@ actor TTTIToken {
         .payload("refundBlock", func r = r.refundBlock)
         .ownedByWith("requester", func(caller, owner) = accessControlState.userRoles.get(caller) == ?#admin or owner == #text(caller.toText()))
         .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<DexTypes.PairRemoval>("dexRemoval", func() = dex.removals.values(), "DexRemoval", "poolId")
+        .sample(dexRemovalSample)
+        .payload("poolId", func r = r.poolId)
+        .payload("reason", func r = r.reason)
+        .payload("announcedAt", func r = r.announcedAt)
+        .payload("effectiveAt", func r = r.effectiveAt)
+        .payload("state", func r = dexRemovalStateText(r.state))
+        .payload("stateAt", func r = dexRemovalStateAt(r.state))
+        .public_()
+        .build(),
+      OQL.Entity.manual<DexTypes.IcpSwapSample>("dexIcpSwapSample", func() = dex.icpswapSamples.values(), "DexIcpSwapSample", "poolCanister")
+        .sample(dexIcpSwapSampleSample)
+        .payload("poolCanister", func r = r.poolCanister)
+        .payload("counter", func r = DexLib.tokenSymbol(r.counter))
+        .payload("counterPerTttiE8", func r = r.counterPerTttiE8)
+        .payload("counterReserve", func r = r.counterReserve)
+        .payload("readAt", func r = r.readAt)
+        .public_()
         .build(),
       OQL.Entity.manual<DexBalanceRow>("dexBalance", func() = dexBalanceRows().values(), "DexBalance", "key")
         .sample(dexBalanceSample)
@@ -1556,6 +2442,22 @@ actor TTTIToken {
         .payload("at", func r = r.at)
         .payload("reserve0", func r = r.reserve0)
         .payload("reserve1", func r = r.reserve1)
+        .public_()
+        .build(),
+      // PTM-5: consolidated TTTI-T price samples (USD x 1e8), public like the pool samples.
+      OQL.Entity.manual<ConsolidatedPriceRow>("consolidatedPriceSample", func() = consolidatedPriceRows().values(), "ConsolidatedPriceSample", "key")
+        .sample(consolidatedPriceRowSample)
+        .payload("key", func r = r.key)
+        .payload("at", func r = r.at)
+        .payload("priceUsdE8", func r = r.priceUsdE8)
+        .public_()
+        .build(),
+      // PTM-10a: pools-to-capitalisation ratio samples (ratio / 10^12 = fraction), public like the price samples.
+      OQL.Entity.manual<PoolCapRatioRow>("poolCapRatioSample", func() = poolCapRatioRows().values(), "PoolCapRatioSample", "key")
+        .sample(poolCapRatioRowSample)
+        .payload("key", func r = r.key)
+        .payload("at", func r = r.at)
+        .payload("ratio", func r = r.ratio)
         .public_()
         .build(),
       // --- Mint revenue: owner sends and the earlier sweep (admin only) ------
@@ -1824,6 +2726,151 @@ actor TTTIToken {
         .ownedByWith("key", func(caller, _) = isAppAdmin(caller))
         .controllerOrScoped()
         .build(),
+      // --- DEX-1: per-account reserve results, custody sweep (admin only) ----
+      OQL.Entity.manual<DexReserveTypes.AccountResult>("dexReserveAccount", func() = dexReserve.accounts.values(), "DexReserveAccount", "key")
+        .sample(dexReserveAccountSample)
+        .payload("key", func r = dexAccountKindText(r.kind) # "/" # DexLib.tokenSymbol(r.token))
+        .payload("kind", func r = dexAccountKindText(r.kind))
+        .payload("accountLabel", func r = r.accountLabel)
+        .payload("token", func r = DexLib.tokenSymbol(r.token))
+        .payload("ledgerBalance", func r = r.ledgerBalance)
+        .payload("owed", func r = r.owed)
+        .payload("difference", func r = r.difference)
+        .payload("status", func r = dexReserveStatusText(r.status))
+        .payload("checkedAt", func r = r.checkedAt)
+        .ownedByWith("key", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<DexSweepLib.SweepTransferView>("dexSweepTransfer", func() = DexSweepLib.allTransfers(sweepContext).values(), "DexSweepTransfer", "n")
+        .sample(dexSweepTransferSample)
+        .payload("n", func t = t.n)
+        .payload("token", func t = DexLib.tokenSymbol(t.token))
+        .payload("sourceKind", func t = dexSweepSourceRow(t.source).kind)
+        .payload("sourceRef", func t = dexSweepSourceRow(t.source).ref)
+        .payload("fromOwner", func t = t.from.owner)
+        .payload("toOwner", func t = t.to.owner)
+        .payload("ledgerBalance", func t = t.ledgerBalance)
+        .payload("amount", func t = t.amount)
+        .payload("fee", func t = t.fee)
+        .payload("memo", func t = t.memoText)
+        .payload("createdAtTime", func t = t.createdAtTimeNs)
+        .payload("attempt", func t = t.attempt)
+        .payload("sends", func t = t.sends)
+        .payload("status", func t = dexStatusText(t.status))
+        .payload("block", func t = dexStatusBlock(t.status))
+        .payload("lastError", func t = t.lastError)
+        .payload("recordedAt", func t = t.recordedAt)
+        .ownedByWith("n", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<DexSweepLib.TokenReport>("dexSweepReport", func() = dexSweep.reports.values(), "DexSweepReport", "token")
+        .sample(dexSweepReportSample)
+        .payload("token", func r = DexLib.tokenSymbol(r.token))
+        .payload("lastRunAt", func r = r.lastRunAt)
+        .payload("legacyAccountsFound", func r = r.legacyAccountsFound)
+        .payload("accountsWithBalance", func r = r.accountsWithBalance)
+        .payload("accountsSkipped", func r = r.accountsSkipped)
+        .payload("notes", func r = r.notes.values().join(" | "))
+        .payload("comparisonPending", func r = r.comparisonPending)
+        .payload("custodyLedger", func r = dexSweepComparisonNat(r.comparison, func c = c.custodyLedger))
+        .payload("owed", func r = dexSweepComparisonNat(r.comparison, func c = c.owed))
+        .payload("surplus", func r = dexSweepComparisonNat(r.comparison, func c = c.surplus))
+        .payload("shortfall", func r = dexSweepComparisonNat(r.comparison, func c = c.shortfall))
+        .payload("comparisonStatus", func r = dexSweepComparisonStatusText(r.comparison))
+        .ownedByWith("token", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      // --- PTM-9e: owner swap index, in-flight index, batch store ------------
+      // Swap ids per owner: each user sees their own rows, the controller all.
+      OQL.Entity.manual<OwnerSwapRow>("routerOwnerSwap", func() = ownerSwapRows().values(), "RouterOwnerSwap", "key")
+        .sample(ownerSwapSample)
+        .payload("key", func r = r.key)
+        .payload("owner", func r = r.owner)
+        .payload("swapId", func r = r.swapId)
+        .ownedBy("owner")
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<InflightRow>("inflightEntry", func() = inflightRows().values(), "InflightEntry", "key")
+        .sample(inflightSample)
+        .payload("key", func r = r.key)
+        .payload("kind", func r = r.kind)
+        .payload("n", func r = r.n)
+        .payload("tokens", func r = r.tokens)
+        .payload("owner", func r = r.owner)
+        .payload("since", func r = r.since)
+        .ownedByWith("key", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<ReserveAlertRow>("dexReserveAlert", func() = reserveAlertRows().values(), "DexReserveAlert", "id")
+        .sample(reserveAlertSample)
+        .payload("id", func r = r.id)
+        .payload("at", func r = r.at)
+        .payload("runId", func r = r.runId)
+        .payload("accountsToCompare", func r = r.accountsToCompare)
+        .payload("accountsCompared", func r = r.accountsCompared)
+        .payload("message", func r = r.message)
+        .payload("unresolved", func r = r.unresolved)
+        .ownedByWith("id", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<ZeroedAccountRow>("dexZeroedAccount", func() = zeroedAccountRows().values(), "DexZeroedAccount", "key")
+        .sample(zeroedAccountSample)
+        .payload("key", func r = r.key)
+        .payload("markedAt", func r = r.markedAt)
+        .ownedByWith("key", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<BatchTypes.ReserveProgress>("dexReserveRun", func() = [DexReserveLib.progressOf(dexReserveContext)].values(), "DexReserveRun", "runId")
+        .sample(reserveRunSample)
+        .payload("runId", func r = r.runId)
+        .payload("phase", func r = switch (r.phase) { case (#idle) "idle"; case (#inProgress) "inProgress"; case (#finished) "finished" })
+        .payload("batch", func r = r.batch)
+        .payload("totalBatches", func r = r.totalBatches)
+        .payload("alertDecided", func r = r.alertDecided)
+        .payload("active", func r = r.active)
+        .payload("startedAt", func r = r.startedAt)
+        .payload("targetIndex", func r = r.targetIndex)
+        .payload("targetCount", func r = r.targetCount)
+        .payload("accountIndex", func r = r.accountIndex)
+        .payload("accountsToCompare", func r = r.accountsToCompare)
+        .payload("accountsCompared", func r = r.accountsCompared)
+        .payload("excludedZero", func r = r.excludedZero)
+        .payload("unreadable", func r = r.unreadable)
+        .payload("batchSize", func r = r.batchSize)
+        .payload("lastBatchAt", func r = r.lastBatchAt)
+        .ownedByWith("runId", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<BatchTypes.ExcludedRereadProgress>("dexExcludedReread", func() = [DexReserveLib.rereadView(dexBatch)].values(), "DexExcludedReread", "runId")
+        .sample(excludedRereadSample)
+        .payload("runId", func r = r.runId)
+        .payload("active", func r = r.active)
+        .payload("startedAt", func r = r.startedAt)
+        .payload("excludedCount", func r = r.excludedCount)
+        .payload("read", func r = r.read)
+        .payload("reincluded", func r = r.reincluded)
+        .payload("unreadable", func r = r.unreadable)
+        .payload("batchSize", func r = r.batchSize)
+        .payload("lastBatchAt", func r = r.lastBatchAt)
+        .payload("lastFinishedAt", func r = r.lastFinishedAt)
+        .payload("nextRunAt", func r = r.nextRunAt)
+        .ownedByWith("runId", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<BatchTypes.SweepTokenProgressView>("dexSweepRunToken", func() = DexSweepLib.progressOf(sweepContext).tokens.values(), "DexSweepRunToken", "token")
+        .sample(sweepTokenProgressSample)
+        .payload("token", func r = DexLib.tokenSymbol(r.token))
+        .payload("accountsListed", func r = r.accountsListed)
+        .payload("accountsRead", func r = r.accountsRead)
+        .payload("withBalance", func r = r.withBalance)
+        .payload("skipped", func r = r.skipped)
+        .payload("unreadable", func r = r.unreadable)
+        .payload("inFlight", func r = r.inFlight)
+        .payload("excludedZero", func r = r.excludedZero)
+        .payload("done", func r = r.done)
+        .ownedByWith("token", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
       // --- DEX lot 7: indicators (stored hourly snapshot, public) ------------
       OQL.Entity.manual<DexIndicatorTypes.IndicatorRow>("dexIndicator", func() = DexIndicatorsLib.rows(dexIndicators).values(), "DexIndicator", "poolId")
         .sample(dexIndicatorSample)
@@ -1883,9 +2930,458 @@ actor TTTIToken {
         .payload("fee1", func r = r.fee1)
         .public_()
         .build(),
+      OQL.Entity.manual<CreatorFeesTypes.CreatorTokenTotals>("creatorFeeTotal", func() = creatorFees.totals.values(), "CreatorFeeTotal", "symbol")
+        .sample(creatorTotalsSample)
+        .payload("symbol", func t = DexLib.tokenSymbol(t.token))
+        .payload("swapFeeShare", func t = t.swapFeeShare)
+        .payload("routerShare", func t = t.routerShare)
+        .payload("mintFee", func t = t.mintFee)
+        .payload("buybackFee", func t = t.buybackFee)
+        .payload("transferFee", func t = t.transferFee)
+        .payload("paidOut", func t = t.paidOut)
+        .payload("inFlight", func t = t.inFlight)
+        .payload("lastCreditAt", func t = t.lastCreditAt)
+        .public_()
+        .build(),
+      OQL.Entity.manual<CreatorFeesTypes.CreatorPayout>("creatorPayout", func() = creatorFees.payouts.values(), "CreatorPayout", "n")
+        .sample(creatorPayoutSample)
+        .payload("n", func p = p.n)
+        .payload("symbol", func p = DexLib.tokenSymbol(p.token))
+        .payload("grossAmount", func p = p.grossAmount)
+        .payload("netAmount", func p = p.netAmount)
+        .payload("createdAt", func p = p.createdAt)
+        .payload("memo", func p = p.attempt.memo.decodeUtf8())
+        .payload("sends", func p = p.attempt.sends)
+        .payload("lastError", func p = p.attempt.lastError)
+        .payload("status", func p = dexStatusText(p.status))
+        .ownedByWith("n", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<ProtocolFeeTypes.PermanentLogEntry>("permanentLiquidityLog", func() = permanentLiquidity.log.values(), "PermanentLiquidityLog", "id")
+        .sample(permanentLogSample)
+        .payload("id", func e = e.id)
+        .payload("at", func e = e.at)
+        .payload("kind", func e = permanentKindText(e.kind))
+        .payload("token", func e = DexLib.tokenSymbol(e.token))
+        .payload("amount", func e = e.amount)
+        .payload("otherToken", func e = switch (e.otherToken) { case (?t) ?DexLib.tokenSymbol(t); case null null })
+        .payload("otherAmount", func e = e.otherAmount)
+        .payload("route", func e = permanentRouteText(e.route))
+        .payload("poolId", func e = e.poolId)
+        .payload("shares", func e = e.shares)
+        .payload("reason", func e = e.reason)
+        .public_()
+        .build(),
+      OQL.Entity.manual<PermanentSetAsideRow>("permanentSetAside", func() = permanentSetAsideRows().values(), "PermanentSetAside", "symbol")
+        .sample(permanentSetAsideSample)
+        .payload("symbol", func r = r.symbol)
+        .payload("amount", func r = r.amount)
+        .public_()
+        .build(),
+      OQL.Entity.manual<CyclesTypes.CyclesFeeSettlement>("cyclesFeeSettlement", func() = cyclesFees.settlements.values(), "CyclesFeeSettlement", "n")
+        .sample(cyclesFeeSettlementSample)
+        .payload("n", func s = s.n)
+        .payload("grossE8s", func s = s.grossE8s)
+        .payload("netE8s", func s = s.netE8s)
+        .payload("createdAt", func s = s.createdAt)
+        .payload("memo", func s = s.attempt.memo.decodeUtf8())
+        .payload("sends", func s = s.attempt.sends)
+        .payload("lastError", func s = s.attempt.lastError)
+        .payload("status", func s = dexStatusText(s.status))
+        .ownedByWith("n", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
+        .controllerOrScoped()
+        .build(),
+      OQL.Entity.manual<CyclesFeeSplitRow>("cyclesFeeSplit", func() = cyclesFeeSplitRows().values(), "CyclesFeeSplit", "key")
+        .sample(cyclesFeeSplitSample)
+        .payload("key", func r = r.key)
+        .payload("id", func r = r.id)
+        .payload("source", func r = r.source)
+        .payload("cyclesE8s", func r = r.cyclesE8s)
+        .payload("creator", func r = r.creator)
+        .ownedByWith("key", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
+        .controllerOrScoped()
+        .build(),
+      // PTM-6a: auction bids, sealed: a signed-in user reads only their own.
+      OQL.Entity.manual<AuctionTypes.Bid>("auctionBid", func() = auction.bids.values(), "AuctionBid", "id")
+        .sample(auctionBidSample)
+        .payload("id", func b = b.id)
+        .payload("auctionId", func b = b.auctionId)
+        .payload("bidder", func b = b.bidder)
+        .payload("token", func b = switch (b.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
+        .payload("quantityE8s", func b = b.quantityE8s)
+        .payload("priceB", func b = b.priceB)
+        .payload("requiredDeposit", func b = b.requiredDeposit)
+        .payload("deposited", func b = b.deposited)
+        .payload("createdAt", func b = b.createdAt)
+        .payload("memo", func b = b.memo.decodeUtf8())
+        .payload("block", func b = b.block)
+        .ownedBy("bidder")
+        .scopedPerUser()
+        .build(),
+      // PTM-6b: closed auctions, published after closing.
+      OQL.Entity.manual<AuctionTypes.ClosedAuction>("closedAuction", func() = auctionClosing.closed.values(), "ClosedAuction", "id")
+        .sample(closedAuctionSample)
+        .payload("id", func a = a.id)
+        .payload("openedAt", func a = a.openedAt)
+        .payload("closesAt", func a = a.closesAt)
+        .payload("closedAt", func a = a.closedAt)
+        .payload("lotSizeE8s", func a = a.lotSizeE8s)
+        .payload("reserveUsdE8", func a = a.reserve.reserveUsdE8)
+        .payload("floorUsdE8", func a = a.reserve.floorUsdE8)
+        .payload("consolidatedUsdE8", func a = a.reserve.consolidatedUsdE8)
+        .payload("dailyAverageUsdE8", func a = a.reserve.dailyAverageUsdE8)
+        .payload("reserveBinding", func a = switch (a.reserve.binding) { case (#floor) "floor"; case (#consolidated) "consolidated"; case (#dailyAverage) "dailyAverage" })
+        .payload("icpRateUsdE8", func a = closingRateOf(a, #icp))
+        .payload("ckbtcRateUsdE8", func a = closingRateOf(a, #ckbtc))
+        .payload("ckusdcRateUsdE8", func a = closingRateOf(a, #ckusdc))
+        .payload("ckusdtRateUsdE8", func a = closingRateOf(a, #ckusdt))
+        .payload("bidCount", func a = a.bidCount)
+        .payload("servedE8s", func a = a.servedE8s)
+        .payload("carriedOverE8s", func a = a.carriedOverE8s)
+        .payload("failedCarriedE8s", func a = auctionClosing.failedCarriedE8s.get(a.id) ?? 0)
+        .payload("settled", func a = auctionClosing.settledAuctions.contains(a.id))
+        .payload("status", func a = switch (a.status) { case (#fullySold) "fullySold"; case (#partiallySold) "partiallySold"; case (#unsold) "unsold" })
+        .public_()
+        .build(),
+      // PTM-6b: bids of closed auctions, published after closing.
+      OQL.Entity.manual<AuctionTypes.ClosedBid>("closedBid", func() = closedBidRows(), "ClosedBid", "id")
+        .sample(closedBidSample)
+        .payload("id", func b = b.id)
+        .payload("auctionId", func b = b.auctionId)
+        .payload("bidder", func b = b.bidder)
+        .payload("token", func b = auctionTokenText(b.token))
+        .payload("quantityE8s", func b = b.quantityE8s)
+        .payload("priceB", func b = b.priceB)
+        .payload("requiredDeposit", func b = b.requiredDeposit)
+        .payload("deposited", func b = b.deposited)
+        .payload("createdAt", func b = b.createdAt)
+        .payload("outcome", func b = switch (b.outcome) { case (#served) "served"; case (#partiallyServed) "partiallyServed"; case (#notServed) "notServed"; case (#discardedBelowReserve) "discardedBelowReserve" })
+        .payload("servedE8s", func b = b.servedE8s)
+        .payload("pricePaidB", func b = b.pricePaidB)
+        .payload("servedDeposit", func b = b.servedDeposit)
+        .payload("returned", func b = b.returned)
+        .payload("settlementStatus", func b = switch (auctionClosing.settlements.get(b.id)) { case (?s) auctionSettlementStatusText(s.status); case null (if (b.servedE8s == 0) "notRequired" else "pending") })
+        .public_()
+        .build(),
+      // PTM-6c: settlement of each served bid, published like the closed bids.
+      OQL.Entity.manual<AuctionTypes.BidSettlement>("bidSettlement", func() = auctionClosing.settlements.values(), "BidSettlement", "bidId")
+        .sample(bidSettlementSample)
+        .payload("bidId", func s = s.bidId)
+        .payload("auctionId", func s = s.auctionId)
+        .payload("bidder", func s = s.bidder)
+        .payload("token", func s = auctionTokenText(s.token))
+        .payload("status", func s = auctionSettlementStatusText(s.status))
+        .payload("settledE8s", func s = s.settledE8s)
+        .payload("takenAmount", func s = s.takenAmount)
+        .payload("creatorShare", func s = s.creatorShare)
+        .payload("positionAmount", func s = s.positionAmount)
+        .payload("guaranteeAmount", func s = s.guaranteeAmount)
+        .payload("surplusReturned", func s = s.surplusReturned)
+        .payload("carriedE8s", func s = s.carriedE8s)
+        .payload("positionId", func s = s.positionId)
+        .payload("failureReason", func s = s.failureReason)
+        .payload("attemptedAt", func s = s.attemptedAt)
+        .payload("settledAt", func s = s.settledAt)
+        .public_()
+        .build(),
+      // PTM-6c: moves of deposits from the auction custody to the DEX custody, private.
+      OQL.Entity.manual<AuctionTypes.AuctionMove>("auctionMove", func() = auctionClosing.moves.values(), "AuctionMove", "n")
+        .sample(auctionMoveSample)
+        .payload("n", func m = m.n)
+        .payload("owner", func m = m.owner)
+        .payload("token", func m = auctionTokenText(m.token))
+        .payload("gross", func m = m.gross)
+        .payload("fromPending", func m = m.fromPending)
+        .payload("fromWithdrawable", func m = m.fromWithdrawable)
+        .payload("credited", func m = m.credited)
+        .payload("bidId", func m = m.bidId)
+        .payload("createdAt", func m = m.createdAt)
+        .payload("status", func m = switch (m.status) { case (#inProgress) "inProgress"; case (#completed(_)) "completed"; case (#failed(_)) "failed"; case (#needsReview) "needsReview" })
+        .ownedBy("owner")
+        .scopedPerUser()
+        .build(),
+      // PTM-6b: bidder balances, private: a signed-in user reads only their own.
+      OQL.Entity.manual<AuctionTypes.BidderBalance>("bidderBalance", func() = auctionClosing.balances.values(), "BidderBalance", "key")
+        .sample(bidderBalanceSample)
+        .payload("key", func b = AuctionLib.balanceKey(b.owner, b.token))
+        .payload("owner", func b = b.owner)
+        .payload("token", func b = auctionTokenText(b.token))
+        .payload("withdrawable", func b = b.withdrawable)
+        .payload("pendingSettlement", func b = b.pendingSettlement)
+        .ownedBy("owner")
+        .scopedPerUser()
+        .build(),
+      // PTM-9d: pending LP fee pot of each pool and its sliced-sharing state, public.
+      OQL.Entity.manual<DexTypes.PoolPot>("dexPoolPot", func() = dex.fees.pots.values(), "DexPoolPot", "poolId")
+        .sample(dexPoolPotSample)
+        .payload("poolId", func p = p.poolId)
+        .payload("pending0", func p = p.pending0)
+        .payload("pending1", func p = p.pending1)
+        .payload("phase", func p = switch (p.phase) { case (#idle) "idle"; case (#summing) "summing"; case (#paying) "paying" })
+        .payload("frozen0", func p = p.frozen0)
+        .payload("frozen1", func p = p.frozen1)
+        .payload("cursor", func p = p.cursor)
+        .payload("totalProductNs", func p = p.totalProductNs)
+        .payload("paid0", func p = p.paid0)
+        .payload("paid1", func p = p.paid1)
+        .payload("sharedDayStart", func p = p.sharedDayStart)
+        .payload("sharedDayEnd", func p = p.sharedDayEnd)
+        .public_()
+        .build(),
+      // PTM-9d: lock-time record of each position for the current day, public like positions.
+      OQL.Entity.manual<DexTypes.PositionLock>("dexPositionLock", func() = dex.fees.locks.values(), "DexPositionLock", "positionId")
+        .sample(dexPositionLockSample)
+        .payload("positionId", func l = l.positionId)
+        .payload("poolId", func l = l.poolId)
+        .payload("owner", func l = l.owner)
+        .payload("weight", func l = l.weight)
+        .payload("lockedFrom", func l = l.lockedFrom)
+        .payload("lockedUntil", func l = l.lockedUntil)
+        .public_()
+        .build(),
+      // PTM-9d: unpaid shares of removed positions per owner and pool, private.
+      OQL.Entity.manual<DexTypes.UnpaidShare>("dexUnpaidShare", func() = dex.fees.unpaid.values(), "DexUnpaidShare", "key")
+        .sample(dexUnpaidShareSample)
+        .payload("key", func u = u.owner.toText() # ":" # u.poolId.toText())
+        .payload("owner", func u = u.owner)
+        .payload("poolId", func u = u.poolId)
+        .payload("productNs", func u = u.productNs)
+        .ownedBy("owner")
+        .scopedPerUser()
+        .build(),
+      // PTM-9d: auction dust carried per bidder and token, private.
+      OQL.Entity.manual<AuctionTypes.BidderDust>("auctionDust", func() = auctionClosing.dust.values(), "AuctionDust", "key")
+        .sample(bidderDustSample)
+        .payload("key", func d = AuctionLib.balanceKey(d.owner, d.token))
+        .payload("owner", func d = d.owner)
+        .payload("token", func d = auctionTokenText(d.token))
+        .payload("amount", func d = d.amount)
+        .ownedBy("owner")
+        .scopedPerUser()
+        .build(),
     ];
   });
   include ApiDocMixin();
+
+  // Ingress filter: every message is accepted as before, except topUpCycles
+  // while no top-up is needed (cycles balance at or above the threshold and
+  // nothing pending). Rejecting it here keeps repeated calls from consuming
+  // the canister's cycles.
+  // PTM-9d: startDexDayRoll and runDexPotSlice are driven by the timer (a
+  // self-call, which is not subject to this filter); from outside only an
+  // admin may call them.
+  system func inspect({
+    caller : Principal;
+    msg : {
+      #_initialize_access_control : Any;
+      #_internet_identity_sign_in_finish : Any;
+      #_internet_identity_sign_in_start : Any;
+      #acceptPurchaseAcknowledgements : Any;
+      #addContact : Any;
+      #addLiquidity : Any;
+      #adminGetRouterFees : Any;
+      #adminListRoutedSwaps : Any;
+      #approvePair : Any;
+      #assignCallerUserRole : Any;
+      #auctionSettleCore : Any;
+      #cancelPairRemoval : Any;
+      #checkBtcPurchaseDeposit : Any;
+      #checkBtcWalletDeposit : Any;
+      #checkBtcWalletDepositFor : Any;
+      #claimLpBonus : Any;
+      #claimMintFee : Any;
+      #clearDeliveryAddress : Any;
+      #convertDeposit : Any;
+      #convertDepositWith : Any;
+      #deleteContact : Any;
+      #depositToDex : Any;
+      #execute : Any;
+      #exportBalanceSnapshot : Any;
+      #extendLock : Any;
+      #getApiDoc : Any;
+      #getAuctionResult : Any;
+      #getAuctionView : Any;
+      #getBtcDepositInfo : Any;
+      #getBtcPurchaseAddress : Any;
+      #getBtcUsdRate : Any;
+      #getBtcWalletAddress : Any;
+      #getBtcWalletAddressFor : Any;
+      #getBtcWalletDepositsFor : Any;
+      #getBurnAccount : Any;
+      #getCallerUserRole : Any;
+      #getCanisterPrincipal : Any;
+      #getClosedAuctions : Any;
+      #getConsolidatedTttiPrice : Any;
+      #getConversions : Any;
+      #getCreatorHoldings : Any;
+      #getCyclesAutonomy : Any;
+      #getCyclesShare : Any;
+      #getCyclesShareHistory : Any;
+      #getCyclesStatus : Any;
+      #getDeliveryAddress : Any;
+      #getDexBalances : Any;
+      #getDexConfig : Any;
+      #getDexCustodyAccounts : Any;
+      #getDexCustodyComparison : Any;
+      #getDexDepositAccount : Any;
+      #getDexEstimatedShare : Any;
+      #getDexIndicators : Any;
+      #getDexIndicatorsStatus : Any;
+      #getDexPauseStatus : Any;
+      #getDexPendingPot : Any;
+      #getDexPendingPots : Any;
+      #getDexPool : Any;
+      #getDexPoolAccount : Any;
+      #getDexPosition : Any;
+      #getDexReserveStatus : Any;
+      #getDexSweepProgress : Any;
+      #getDexSweepState : Any;
+      #getDexTokens : Any;
+      #getDexTransfers : Any;
+      #getDexTransfersPage : Any;
+      #getFeeCollector : Any;
+      #getGuaranteeAccounts : Any;
+      #getIcpPrice : Any;
+      #getLastWeeklyAllocation : Any;
+      #getLegacyBlockInfo : Any;
+      #getMintFeeAccount : Any;
+      #getMintTreasuryAccounts : Any;
+      #getMyAuctionBids : Any;
+      #getMyBtcDeposits : Any;
+      #getMyConversions : Any;
+      #getMyDexEstimatedShares : Any;
+      #getMyGuaranteeMasses : Any;
+      #getMyGuarantees : Any;
+      #getMyLiquidityMints : Any;
+      #getMyLpBonus : Any;
+      #getMyMintFees : Any;
+      #getMyPairRequests : Any;
+      #getMyPoolSpreadAlerts : Any;
+      #getMyPurchaseAcknowledgement : Any;
+      #getMyRoutedSwaps : Any;
+      #getMyWithdrawable : Any;
+      #getOwnerAccumulated : Any;
+      #getPermanentLiquiditySummary : Any;
+      #getPoolCapRatio : Any;
+      #getPoolSpreads : Any;
+      #getProtocolLiquidity : Any;
+      #getPublicBoard : Any;
+      #getPublicTreasuryInfo : Any;
+      #getReceivingWallets : Any;
+      #getReferencePrice : Any;
+      #getSaleStatus : Any;
+      #getSetAsideAmounts : Any;
+      #getSettlementStatus : Any;
+      #getTechnicalDetails : Any;
+      #getTokenPrices : Any;
+      #getTreasuryConfig : Any;
+      #getTreasurySweepStatus : Any;
+      #getUnclaimedMassTotal : Any;
+      #getUpgradeReadiness : Any;
+      #get_account_transactions : Any;
+      #get_fee : Any;
+      #get_fee_bounds : Any;
+      #get_max_supply : Any;
+      #icrc10_supported_standards : Any;
+      #icrc1_balance_of : Any;
+      #icrc1_decimals : Any;
+      #icrc1_fee : Any;
+      #icrc1_metadata : Any;
+      #icrc1_minting_account : Any;
+      #icrc1_name : Any;
+      #icrc1_supported_standards : Any;
+      #icrc1_symbol : Any;
+      #icrc1_total_supply : Any;
+      #icrc1_transfer : Any;
+      #icrc2_allowance : Any;
+      #icrc2_approve : Any;
+      #icrc2_transfer_from : Any;
+      #icrc3_get_archives : Any;
+      #icrc3_get_blocks : Any;
+      #icrc3_get_tip_certificate : Any;
+      #icrc3_supported_block_types : Any;
+      #isCallerAdmin : Any;
+      #ledger_id : Any;
+      #liquidityMintCore : Any;
+      #listAdminHistory : Any;
+      #listCreatorPayoutsToReview : Any;
+      #listCreatorSetAsides : Any;
+      #listCyclesFeeSettlements : Any;
+      #listCyclesFeeSettlementsToReview : Any;
+      #listCyclesFeeSplits : Any;
+      #listDcBatches : Any;
+      #listDexPools : Any;
+      #listDexPositionsOf : Any;
+      #listDexSweepTransfers : Any;
+      #listGuarantees : Any;
+      #listLiquidityInjections : Any;
+      #listMyContacts : Any;
+      #listMyRedemptions : Any;
+      #listOwnerSends : Any;
+      #listPairRequests : Any;
+      #listPermanentLiquidityLog : Any;
+      #listPoolPositions : Any;
+      #listRedemptionFees : Any;
+      #listTransfersToReview : Any;
+      #listTransfersToReviewFiltered : Any;
+      #listTreasuryWithdrawals : Any;
+      #listWeeklyAllocations : Any;
+      #list_subaccounts : Any;
+      #markCreatorPayoutArrived : Any;
+      #markCreatorPayoutNotArrived : Any;
+      #markCyclesFeeSettlementArrived : Any;
+      #markCyclesFeeSettlementNotArrived : Any;
+      #markRefundedManually : Any;
+      #markTransferArrived : Any;
+      #markTransferNotArrived : Any;
+      #mintLiquidity : Any;
+      #openAuction : Any;
+      #payCreatorFees : Any;
+      #placeAuctionBid : Any;
+      #quoteAddLiquidity : Any;
+      #quoteAuctionDeposit : Any;
+      #quoteGuaranteeRedeem : Any;
+      #quoteLiquidityMint : Any;
+      #quoteRoutedSwap : Any;
+      #quoteSwap : Any;
+      #reconcileReserved : Any;
+      #redeemGuarantee : Any;
+      #refreshIcpPrice : Any;
+      #refreshReferenceSources : Any;
+      #refreshTokenPrice : Any;
+      #refusePair : Any;
+      #removeLiquidity : Any;
+      #removePair : Any;
+      #requestPair : Any;
+      #resendDexSweepTransfers : Any;
+      #resumeDex : Any;
+      #routedSwap : Any;
+      #runDexPotSlice : Any;
+      #runDexReserveCheck : Any;
+      #runDexSweep : Any;
+      #schema : Any;
+      #setDeliveryAddress : Any;
+      #setReceivingWallet : Any;
+      #setSalesPaused : Any;
+      #setUtilityPairMinimums : Any;
+      #settleAuctionWinners : Any;
+      #startDexDayRoll : Any;
+      #status : Any;
+      #swap : Any;
+      #topUpCycles : Any;
+      #transform : Any;
+      #updateContact : Any;
+      #withdrawFromDex : Any;
+      #withdrawGuaranteeExcess : Any
+    }
+  }) : Bool {
+    switch (msg) {
+      case (#topUpCycles _) { CyclesReserveLib.topUpNeeded(cyclesReserve) };
+      case (#startDexDayRoll _) { isAppAdmin(caller) };
+      case (#runDexPotSlice _) { isAppAdmin(caller) };
+      case (_) { true };
+    };
+  };
 
   // Persists every filling pool that now reaches the launch target at the
   // usable stored rates (absent or expired rates open nothing).
@@ -1911,10 +3407,10 @@ actor TTTIToken {
   // (also records the cycles sample and adjusts the cycles share once a day).
   CyclesReserveLib.startTimer<system>(cyclesReserve, cyclesAutonomy, reserveLock, canisterPrincipal);
 
-  // Runs on every install and upgrade (mint revenue correction): price samples
-  // (5 min), 10-minute DL / MF retries and the 10-minute fee recycling and
-  // liquidity injection pass. No DC batch and no weekly allocation timer (DC,
-  // dynamic cycles share and weekly allocation stay as read-only history).
+  // Runs on every install and upgrade: price samples (5 min), 10-minute DL / MF
+  // retries and the 10-minute pass that feeds refused deposits, splits pool fees
+  // and marks interrupted injections. No DC batch and no weekly allocation timer
+  // (DC, dynamic cycles share and weekly allocation stay as read-only history).
   ProtocolFeesLib.startTimers<system>(weeklyContext);
 
   // Runs on every install and upgrade: read canister_info now, then daily.
@@ -1923,13 +3419,27 @@ actor TTTIToken {
   // Runs on every install and upgrade: re-arm the BTC deposit timer (minter
   // info refresh, background update_balance of every stable BTC address and
   // purchase finalizations).
-  BtcDepositLib.startTimer<system>(btcDeposits, btcPurchaseContext, purchasesInFlight);
+  BtcDepositLib.startTimer<system>(btcDeposits, btcPurchaseContext, liquidityMintContext, purchasesInFlight);
 
   // Runs on every install and upgrade: re-arm the 10-minute retry timer
   // (FW / SH / RF, then owner sends OW and the one-time treasury sweep SR + OW,
   // which run before the pause check; owner sends follow the pause).
   RetryLib.startTimer<system>(transferContext);
-  RetryLib.startDexTimer<system>(dexContext);
+  // PTM-9b: same 10-minute DEX retry pass (pair removals included), then the
+  // reserves of the contract-held shares of a pair whose removal just finished
+  // are reinjected right away (the router run stays the retry path).
+  ignore Timer.recurringTimer<system>(
+    #seconds(RetryLib.TIMER_INTERVAL_SECONDS),
+    func() : async () {
+      try { await RetryLib.runDexRetries(dexContext) } catch (_) {};
+      ProtocolFeesLib.reinjectRemovedPools(protocolFeeContext, Time.now());
+    },
+  );
+  // PTM-2: guarantee redemption payouts (GR), same 10-minute rhythm.
+  GuaranteeLib.startTimer<system>(guaranteeContext);
+  // PTM-6a: opens the next sealed-bid auction and settles resolved bid
+  // deposits, re-armed on every install and upgrade.
+  AuctionLib.startTimer<system>(auction, auctionClosing, ledger, dexContext, canisterPrincipal, oracle, tokenRates, consolidatedPrices.samples, auctionSettleContext);
 
   // Mint revenue routing: 10-minute one-time settlement pass, re-armed on
   // every install and upgrade.
@@ -1938,26 +3448,74 @@ actor TTTIToken {
   // DEX lot 6: hourly reserve check, re-armed on every install and upgrade.
   DexReserveLib.startReserveTimer<system>(dexReserveContext);
 
+  // DEX-1: 10-minute resend of unsettled sweep transfers, re-armed on every
+  // install and upgrade.
+  DexSweepLib.startSweepTimer<system>(sweepContext);
+
+  // PTM-9f: daily batched re-read of the accounts excluded after a sweep to
+  // zero, re-armed on every install and upgrade. A pass starts when now is at
+  // least lastFinishedAt + 24 h; read only (no transfer), per-batch sweep lock.
+  DexSweepLib.startRereadTimer<system>(sweepContext);
+
   // DEX lot 7: the hourly snapshot timer is re-armed on every install and
   // upgrade and runs once shortly after start when no snapshot exists.
   DexIndicatorsLib.startTimer<system>(dexIndicatorsContext);
 
-  // Runs on every install and upgrade (DEX lot 5): every 10 minutes, pays the
-  // set-aside 70 % of the router's 0.1 % to native pools that now have LPs.
+  // Runs on every install and upgrade (DEX-2): every 5 minutes, refreshes the
+  // ICPSwap TTTI-T reference samples when the last attempt is an hour old or the
+  // hourly rate was refreshed since. Read only: no order, no TTTI-T created.
+  ignore Timer.recurringTimer<system>(
+    #seconds 300,
+    func() : async () {
+      if (referenceSamplesDue()) {
+        ignore await refreshReferenceSamples();
+      };
+    },
+  );
+
+  // Runs on every install and upgrade (DEX lot 5, PTM-4): every 10 minutes, pays the
+  // set-aside 70 % of the router's 0.1 % to native pools that now have LPs, resends
+  // creator payouts and rebalances / injects the permanent liquidity.
   ignore Timer.recurringTimer<system>(
     #seconds(RetryLib.TIMER_INTERVAL_SECONDS),
     func() : async () {
       RouterLib.paySetAside(routerContext);
+      await CreatorFeesLib.runRetries(creatorFeeContext);
+      await RouterLib.runPermanentLiquidity(routerContext);
     },
   );
 
-  // Runs on every install and upgrade: re-arm the 10-minute buyback payout
-  // retry (resend within 23 h, new attempt after a ledger Err, under the
-  // buyback lock).
-  ignore Timer.recurringTimer<system>(
-    #seconds(RetryLib.TIMER_INTERVAL_SECONDS),
-    func() : async () {
-      await BuybackLib.runRetries({ store = buybacks; inFlight = buybacksInFlight; ledger; canister = canisterPrincipal; retry }, sale);
-    },
-  );
+  // Runs on every install and upgrade (PTM-4): 10-minute settlement of the
+  // cycles share of the 1 % mint and buyback fees to the cycles reserve.
+  RetryLib.startCyclesFeeTimer<system>(cyclesFeeContext);
+
+  // PTM-9d: daily sharing of the LP fee pots (checked hourly). Each message does one step:
+  // the day roll (a no-op before nextSharingAt), then one slice per message
+  // for each pool whose sharing is running, until it reports no more work.
+  // A slice that fails stops the pass; the sharing state is kept and the next
+  // pass resumes it.
+  func runDexSharingPass() : async () {
+    try { ignore await startDexDayRoll() } catch (_) {};
+    for (poolId in DexPotLib.runningPools(dex).values()) {
+      var more = true;
+      var slices = 0;
+      while (more and slices < 100_000) {
+        slices += 1;
+        try {
+          let report = await runDexPotSlice(poolId);
+          more := report.more;
+        } catch (_) {
+          more := false;
+        };
+      };
+    };
+  };
+  // Re-armed on every install and upgrade: hourly pass. The day roll itself
+  // happens once a day (it does nothing before nextSharingAt, which is anchored
+  // to the previous boundary), so the sharing starts at most an hour after its
+  // boundary whatever the phase of the timer.
+  ignore Timer.recurringTimer<system>(#seconds 3_600, runDexSharingPass);
+  // Follow-up one minute after every install and upgrade: resumes a sharing
+  // interrupted by the upgrade and runs the day roll if it is already due.
+  ignore Timer.setTimer<system>(#seconds 60, runDexSharingPass);
 };

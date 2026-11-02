@@ -3,7 +3,7 @@ import Blob "mo:core/Blob";
 import Nat8 "mo:core/Nat8";
 import Result "mo:core/Result";
 import Types "../types/icpswap";
-import PayTypes "../types/pay-token";
+import DexTypes "../types/dex";
 
 // ICPSwap v3 SwapPool inter-canister calls used by the set-aside liquidity
 // injection (swap of 50 % of a set-aside amount into TTTI-T while no native
@@ -33,13 +33,6 @@ module {
   };
 
   public func pool(poolId : Principal) : SwapPool = actor (poolId.toText());
-
-  // The ICPSwap TTTI-T/<token> pool known statically for `token`: none, as
-  // the TTTI-T ledger is this canister; pools are resolved with `findPool`.
-  public func poolFor(token : PayTypes.PayToken) : ?Principal {
-    ignore token;
-    null;
-  };
 
   // The ICPSwap pool of two ledgers (fee tiers 0.3 %, 0.05 %, 1 %; ICRC2
   // then ICRC1), or null when the factory has none or the call fails.
@@ -150,5 +143,50 @@ module {
     } catch (e) {
       #err("ICPSwap withdrawToSubaccount call rejected: " # e.message());
     };
+  };
+
+  // Amounts held by a pool (SwapPool.getTokenAmountState, query).
+  type AmountStateResult = { #ok : { token0Amount : Nat; token1Amount : Nat }; #err : Types.IcpSwapError };
+  type AmountStatePool = actor {
+    getTokenAmountState : shared query () -> async AmountStateResult;
+  };
+
+  // Probe size of the price reading: 0.01 TTTI-T (8 decimals).
+  let PROBE_AMOUNT : Nat = 1_000_000;
+  let FEE_SCALE : Nat = 1_000_000;
+
+  // Reads the TTTI-T price on the ICPSwap TTTI-T/<counter> pair (read only, no
+  // transfer, no order): the pair is found through the factory, a 0.01 TTTI-T
+  // quote gives the counter amount per TTTI-T (pool fee added back), and the
+  // pool amounts give the counter-side depth. Null when the pair does not
+  // exist, a call fails or the quote is empty.
+  public func readTttiSample(counter : DexTypes.DexToken, counterLedger : Principal, counterDecimals : Nat8, tttiLedger : Principal, now : Int) : async ?DexTypes.IcpSwapSample {
+    let poolId = switch (await findPool(tttiLedger, counterLedger)) {
+      case (?p) p;
+      case null return null;
+    };
+    let i = switch (await info(poolId, tttiLedger)) {
+      case (#ok(i)) i;
+      case (#err(_)) return null;
+    };
+    if (i.fee >= FEE_SCALE) return null;
+    let out = switch (await quote(poolId, i.tttiIsToken0, PROBE_AMOUNT)) {
+      case (#ok(v)) v;
+      case (#err(_)) return null;
+    };
+    if (out == 0) return null;
+    let gross = out * FEE_SCALE / (FEE_SCALE - i.fee);
+    let counterPerTttiE8 = gross * 100_000_000 * 100_000_000 / (PROBE_AMOUNT * 10 ** counterDecimals.toNat());
+    if (counterPerTttiE8 == 0) return null;
+    let state : AmountStatePool = actor (poolId.toText());
+    let counterReserve = try {
+      switch (await state.getTokenAmountState()) {
+        case (#ok(s)) { if (i.tttiIsToken0) s.token1Amount else s.token0Amount };
+        case (#err(_)) return null;
+      };
+    } catch (_) {
+      return null;
+    };
+    ?{ poolCanister = poolId; counter; counterPerTttiE8; counterReserve; readAt = now };
   };
 };

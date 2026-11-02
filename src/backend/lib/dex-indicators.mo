@@ -13,7 +13,7 @@ import DexLib "dex";
 
 // DEX lot 7: public indicators. The whole snapshot is computed from the current
 // stored state by an hourly canister timer and stored; reads only return the
-// stored snapshot. Facts only: no APY, no yield projection.
+// stored snapshot. Facts only: fees actually paid over 30 days, no projection.
 module {
   public let COMPUTE_INTERVAL_SECONDS : Nat = 3600;
   // First computation shortly after start when no snapshot exists.
@@ -128,7 +128,9 @@ module {
   // Indicators of one pool, or an error text when its shares do not add up.
   func poolIndicators(ctx : IndicatorsContext, pool : DexTypes.Pool, now : Int, rateOf : DexLib.UsdRateOf) : { #ok : Types.PoolIndicators; #err : Text } {
     let total = pool.totalShares;
-    let open = DexLib.effectiveStatus(pool, rateOf) == #active;
+    // Swap-open state evaluated from the current reserves (depth threshold,
+    // valid rate, no announced / executing removal), not from the stored status.
+    let open = DexLib.swapStateOf(ctx.dex, pool, rateOf, now).open;
 
     func amount0(shares : Nat) : Nat = if (total == 0) 0 else shares * pool.reserve0 / total;
     func amount1(shares : Nat) : Nat = if (total == 0) 0 else shares * pool.reserve1 / total;
@@ -176,7 +178,9 @@ module {
     let activity = ctx.store.activity.get(pool.id);
     let w24 = sumWindow(activity, nowHour, 24);
     let w7 = sumWindow(activity, nowHour, DexLib.ACTIVITY_HOURS);
-    let value = DexLib.usdGauge(pool, rateOf).currentUsdE8;
+    // Depth at the pool price in USD (2 x the non-TTTI-T side, or both sides
+    // for a utility pair); null when a rate is missing or expired.
+    let value = DexLib.poolDepth(pool, rateOf).usdE8;
     let fees7 = usdOfPair(pool, w7.fee0, w7.fee1, rateOf);
     let feeToLiquidity : ?Nat = switch (fees7, value) {
       case (?f, ?l) { if (l == 0) null else ?(f * BPS / l) };

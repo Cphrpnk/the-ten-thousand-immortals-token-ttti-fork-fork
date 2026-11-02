@@ -1,3 +1,4 @@
+import List "mo:core/List";
 import Map "mo:core/Map";
 import Dex "dex";
 import Retry "retry";
@@ -5,7 +6,9 @@ import Retry "retry";
 // DEX lot 5: ICPSwap router. A routed swap runs on exactly one route: the
 // native pool of the registry pair (0.3 %) or the ICPSwap pool of the same
 // pair (ICPSwap 0.3 % plus a 0.1 % protocol fee on the input token, split
-// 70 % to the native pool LPs and 30 % to its permanent liquidity).
+// 70 % to the native pool LPs and 30 % protocol share; PTM-4: the protocol
+// share is split two thirds to the creator and one third to permanent
+// liquidity).
 module {
   public type DexToken = Dex.DexToken;
   public type PoolId = Dex.PoolId;
@@ -29,7 +32,7 @@ module {
       protocolFeeBps : Nat; // 10
       protocolFee : Nat; // 0.1 % of amountIn
       protocolLpShare : Nat; // 70 % of protocolFee
-      protocolPermanentShare : Nat; // 30 % of protocolFee
+      protocolPermanentShare : Nat; // 30 % of protocolFee: the protocol share (two thirds creator, one third permanent liquidity)
     };
   };
 
@@ -194,4 +197,11 @@ module {
     setAside : Map.Map<PoolId, RouterSetAside>;
     redirected : Map.Map<PoolId, RouterRedirect>;
   };
+
+  // PTM-9e: swap ids of each owner in creation order (ascending id), read by
+  // listByOwner instead of walking the whole swap registry. Stored in the actor
+  // as `routerOwnerIndex` (built from `router.swaps` by migration
+  // 20261207_000000); a swap is appended once, when it is created. The swaps
+  // themselves are never altered by the index.
+  public type OwnerSwapIndex = Map.Map<Principal, List.List<Nat>>;
 };

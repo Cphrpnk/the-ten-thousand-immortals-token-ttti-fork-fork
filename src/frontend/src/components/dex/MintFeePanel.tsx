@@ -14,12 +14,15 @@ import { DEX_TEXT } from "../../i18n/pages/dex";
 import { formatPayAmount, payTokenSymbol } from "../../lib/token";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
-import { formatDexDate } from "./dexFormat";
+import { DexFiat, useDexFiatText } from "./DexFiat";
 
-type MintText = (typeof MINT_REVENUE_TEXT)["en"];
+export type MintText = (typeof MINT_REVENUE_TEXT)["en"];
 type Feedback = { token: PayToken; tone: "info" | "danger"; text: string };
 
-function claimStatusLabel(m: MintText, status: MintFeeClaimStatus): string {
+export function claimStatusLabel(
+  m: MintText,
+  status: MintFeeClaimStatus,
+): string {
   switch (status.__kind__) {
     case "completed":
       return m.statusSent;
@@ -54,6 +57,7 @@ export function MintFeePanel({ owner }: { owner: Principal | undefined }) {
   const m = useDict(MINT_REVENUE_TEXT);
   const t = useDict(DEX_TEXT);
   const { lang } = useLanguage();
+  const fiatText = useDexFiatText();
   const fees = useMyMintFees(owner?.toText());
   const claim = useClaimMintFee();
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -69,7 +73,7 @@ export function MintFeePanel({ owner }: { owner: Principal | undefined }) {
                 token,
                 tone: "info",
                 text: m.claimDone(
-                  formatPayAmount(outcome.ok.amount, outcome.ok.token, lang),
+                  `${formatPayAmount(outcome.ok.amount, outcome.ok.token, lang)} ${fiatText(outcome.ok.token, outcome.ok.amount)}`,
                 ),
               }
             : {
@@ -84,8 +88,11 @@ export function MintFeePanel({ owner }: { owner: Principal | undefined }) {
   };
 
   return (
-    <div className="flex flex-col gap-3" data-ocid="pools.mint_fees.panel">
-      <h3 className="font-display text-xl tracking-wide">{m.mintFeesTitle}</h3>
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      data-ocid="pools.mint_fees.panel"
+    >
+      <h4 className="font-display text-lg tracking-wide">{m.mintFeesTitle}</h4>
       <p className="text-xs text-muted-foreground">{m.mintFeesScope}</p>
       {!owner ? (
         <p
@@ -108,7 +115,7 @@ export function MintFeePanel({ owner }: { owner: Principal | undefined }) {
           {m.mintFeesLoadError}
         </p>
       ) : (
-        <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 text-sm">
+        <div className="flex flex-col gap-4 text-sm">
           {data.balances.length === 0 ? (
             <p
               className="text-muted-foreground"
@@ -151,10 +158,12 @@ export function MintFeePanel({ owner }: { owner: Principal | undefined }) {
                       >
                         <td className="py-1.5 pe-3">{symbol}</td>
                         <td className="py-1.5 pe-3 text-end">
-                          {formatPayAmount(b.claimable, b.token, lang)}
+                          {formatPayAmount(b.claimable, b.token, lang)}{" "}
+                          <DexFiat token={b.token} amount={b.claimable} />
                         </td>
                         <td className="py-1.5 pe-3 text-end">
-                          {formatPayAmount(b.claimed, b.token, lang)}
+                          {formatPayAmount(b.claimed, b.token, lang)}{" "}
+                          <DexFiat token={b.token} amount={b.claimed} />
                         </td>
                         <td className="py-1.5 text-end">
                           <Button
@@ -195,37 +204,6 @@ export function MintFeePanel({ owner }: { owner: Principal | undefined }) {
               {feedback.text}
             </p>
           )}
-
-          <div className="flex flex-col gap-2 border-t border-border pt-3">
-            <p className="font-medium">{m.claimsTitle}</p>
-            {data.claims.length === 0 ? (
-              <p
-                className="text-xs text-muted-foreground"
-                data-ocid="pools.mint_fees.claims_empty_state"
-              >
-                {m.claimsEmpty}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-1.5 text-xs tabular-nums">
-                {data.claims.map((c, i) => (
-                  <li
-                    key={c.n.toString()}
-                    className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"
-                    data-ocid={`pools.mint_fees.claim.item.${i + 1}`}
-                  >
-                    <span>{formatPayAmount(c.amount, c.token, lang)}</span>
-                    <span className="text-muted-foreground break-words">
-                      {formatDexDate(c.createdAt, lang)} ·{" "}
-                      {claimStatusLabel(m, c.status)}
-                    </span>
-                    <span className="w-full font-mono text-muted-foreground break-all">
-                      {c.memoText}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
       )}
     </div>

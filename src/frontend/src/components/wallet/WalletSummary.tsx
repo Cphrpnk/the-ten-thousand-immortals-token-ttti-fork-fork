@@ -1,21 +1,28 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowDownLeft, ArrowLeftRight, Coins, Send } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowLeftRight,
+  Coins,
+  RefreshCw,
+  Send,
+} from "lucide-react";
 import type { Account } from "../../backend";
+import { fiatUsdE8, useFiatRates } from "../../hooks/useFiatValue";
+import { useGuaranteeMasses } from "../../hooks/useGuarantee";
+import {
+  useIcpswapTttiPrice,
+  useRefreshIcpswapTttiPrice,
+} from "../../hooks/useIcpSwap";
 import { useWalletBalances } from "../../hooks/useWallet";
 import { useDict, useLanguage } from "../../i18n/core";
 import { WALLET_BUY_TEXT } from "../../i18n/pages/swap";
 import { WALLET_TEXT } from "../../i18n/pages/wallet";
-import { formatUsdE8 } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
-import {
-  NO_VALUE,
-  TTTI_CALCULATION_USD_E8,
-  formatUsdValue,
-  usdValueE8,
-} from "./valuation";
+import { isTttiToken } from "./TokenBalanceCard";
+import { NO_VALUE, fiatTokenOfDescriptor, formatUsdValue } from "./valuation";
 
 const ACTION =
   "h-auto min-h-11 flex-col gap-1.5 whitespace-normal rounded-lg px-2 py-3 text-center leading-tight transition-smooth";
@@ -25,7 +32,8 @@ const OUTLINE = `${ACTION} border-gold hover:border-gold-strong hover:bg-primary
 interface WalletSummaryProps {
   tokens: Array<TokenDescriptor>;
   account: Account | undefined;
-  rates: Map<string, bigint | null>;
+  /** Kept for the page contract; USD values follow the shared fiat rates. */
+  rates?: Map<string, bigint | null>;
   onReceive: () => void;
   onSend: () => void;
   onSwap: () => void;
@@ -35,7 +43,6 @@ interface WalletSummaryProps {
 export function WalletSummary({
   tokens,
   account,
-  rates,
   onReceive,
   onSend,
   onSwap,
@@ -43,6 +50,7 @@ export function WalletSummary({
   const t = useDict(WALLET_TEXT);
   const tm = useDict(WALLET_BUY_TEXT);
   const { lang } = useLanguage();
+  const fiatRates = useFiatRates();
   const balances = useWalletBalances(
     tokens.map((token) => token.canisterId),
     account,
@@ -53,10 +61,12 @@ export function WalletSummary({
   let pending = false;
   tokens.forEach((token, i) => {
     const query = balances[i];
-    const rate = rates.get(token.canisterId.toText()) ?? null;
     if (query?.data !== undefined) {
-      if (rate !== null) {
-        total += usdValueE8(query.data, token.decimals, rate);
+      const fiat = fiatTokenOfDescriptor(token);
+      const value =
+        fiat === null ? null : fiatUsdE8(fiatRates, fiat, query.data);
+      if (value !== null) {
+        total += value;
         known += 1;
       }
     } else if (query && !query.isError && query.failureCount === 0) {
@@ -65,6 +75,30 @@ export function WalletSummary({
   });
   const loading = !!account && (tokens.length === 0 || pending);
 
+  const { isPending: priceLoading } = useIcpswapTttiPrice();
+  const refreshPrice = useRefreshIcpswapTttiPrice();
+  const tttiUnvalued =
+    !priceLoading &&
+    tokens.some(
+      (token) => isTttiToken(token) && fiatRates.usdE8PerToken("ttti") === null,
+    );
+
+  // Recoverable guarantee: shown beside the total, never added into it.
+  const { data: masses } = useGuaranteeMasses();
+  let guaranteeUsdE8 = 0n;
+  let guaranteeKnown = 0;
+  for (const mass of masses ?? []) {
+    if (mass.guaranteeValueUsdE8 !== undefined) {
+      guaranteeUsdE8 += mass.guaranteeValueUsdE8;
+      guaranteeKnown += 1;
+    }
+  }
+  const showGuarantee = !!account && masses !== undefined;
+  const guaranteeText =
+    masses !== undefined && masses.length > 0 && guaranteeKnown === 0
+      ? NO_VALUE
+      : formatUsdValue(guaranteeUsdE8, lang);
+
   return (
     <Card
       className="rounded-lg border-gold bg-gradient-surface shadow-elevated"
@@ -72,9 +106,26 @@ export function WalletSummary({
     >
       <CardContent className="flex flex-col items-center gap-6 py-8 text-center">
         <div className="flex flex-col items-center gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            {t.totalValue}
-          </p>
+          <div className="flex items-center gap-1">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {t.totalValue}
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => refreshPrice.mutate()}
+              disabled={refreshPrice.isPending}
+              aria-label={t.refreshPrice}
+              title={t.refreshPrice}
+              data-ocid="wallet.summary.refresh_button"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${refreshPrice.isPending ? "animate-spin motion-reduce:animate-none" : ""}`}
+              />
+            </Button>
+          </div>
           {loading ? (
             <Skeleton
               className="h-11 w-48"
@@ -86,6 +137,17 @@ export function WalletSummary({
               data-ocid="wallet.summary.total"
             >
               {account && known > 0 ? formatUsdValue(total, lang) : NO_VALUE}
+            </p>
+          )}
+          {showGuarantee && (
+            <p
+              className="text-sm text-muted-foreground"
+              data-ocid="wallet.summary.guarantee"
+            >
+              {t.guaranteeLabel}{" "}
+              <span className="font-semibold text-foreground tabular-nums">
+                {guaranteeText}
+              </span>
             </p>
           )}
         </div>
@@ -133,7 +195,8 @@ export function WalletSummary({
         </div>
 
         <p className="max-w-md text-xs text-muted-foreground">
-          {t.totalNote(formatUsdE8(TTTI_CALCULATION_USD_E8, 2, lang))}
+          {t.totalNote}
+          {tttiUnvalued && ` ${t.tttiUnvalued}`}
         </p>
       </CardContent>
     </Card>

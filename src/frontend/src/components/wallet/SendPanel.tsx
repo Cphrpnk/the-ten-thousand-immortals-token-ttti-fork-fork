@@ -66,6 +66,8 @@ import {
   RecipientSuggestions,
 } from "./RecipientSuggestions";
 import { isTttiToken, normalizeToken } from "./TokenBalanceCard";
+import { TokenFiat } from "./TokenFiat";
+import { fiatTokenOfDescriptor } from "./valuation";
 
 /** Ledger block of the last successful send and its explorer target. */
 interface SentBlock {
@@ -133,6 +135,11 @@ export function SendPanel({
   };
 
   const selected = tokens.find((tk) => tk.canisterId.toText() === tokenId);
+  const enteredAmount = selected ? parseUnits(amount, selected.decimals) : null;
+  const [sentValue, setSentValue] = useState<{
+    token: TokenDescriptor;
+    amount: bigint;
+  } | null>(null);
   const disabled = !account || tokens.length === 0;
 
   const { data: balanceData, isError: balanceError } = useWalletBalance(
@@ -308,6 +315,7 @@ export function SendPanel({
               },
         );
         const done = pickDict(WALLET_TEXT);
+        setSentValue({ token, amount: baseAmount });
         setSuccess(
           done.sentSuccess(
             formatAmount(baseAmount, token.decimals),
@@ -466,6 +474,23 @@ export function SendPanel({
                   formatAmount(balance, selected.decimals),
                   selected.symbol,
                 )}
+              <TokenFiat
+                token={selected}
+                amount={selected.fee}
+                className="ml-2"
+                ocid="wallet.send.fee.fiat"
+              />
+            </p>
+          )}
+          {selected && enteredAmount !== null && enteredAmount > 0n && (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {formatAmount(enteredAmount, selected.decimals)} {selected.symbol}
+              <TokenFiat
+                token={selected}
+                amount={enteredAmount}
+                className="ml-2"
+                ocid="wallet.send.amount.fiat"
+              />
             </p>
           )}
           {selected && (
@@ -484,6 +509,7 @@ export function SendPanel({
               disabled={disabled || isSubmitting}
               text={percentText}
               formatAmount={(value) => formatAmount(value, selected.decimals)}
+              fiatToken={fiatTokenOfDescriptor(selected)}
               ocidPrefix="wallet.send.percent_bar"
               labelId="send-percent-label"
               onSelect={handlePercentSelect}
@@ -508,7 +534,17 @@ export function SendPanel({
           >
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="flex min-w-0 flex-col gap-1">
-              <p>{success}</p>
+              <p>
+                {success}
+                {sentValue && (
+                  <TokenFiat
+                    token={sentValue.token}
+                    amount={sentValue.amount}
+                    className="ml-2 text-success/80"
+                    ocid="wallet.send.success.fiat"
+                  />
+                )}
+              </p>
               {sentBlock ? (
                 <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                   <span>{tx.recordedInBlock}</span>

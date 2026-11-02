@@ -1,3 +1,4 @@
+import type { Principal } from "@icp-sdk/core/principal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   RoutedQuoteArgs,
@@ -7,7 +8,13 @@ import type {
   backendInterface,
 } from "../backend";
 import { useActor } from "./useActor";
-import { useInvalidateLiquidity } from "./useDex";
+import {
+  useDexPullApproval,
+  useInvalidateDexFunds,
+  useInvalidateLiquidity,
+} from "./useDex";
+import { useInternetIdentity } from "./useInternetIdentity";
+import { type PagedList, usePagedList } from "./usePagedList";
 import { useIsCallerAdmin } from "./useQueries";
 
 export type {
@@ -31,6 +38,7 @@ export type RoutedSwapOutcome = Outcome<"routedSwap">;
 
 export const ROUTER_KEYS = {
   adminSwaps: ["adminRoutedSwaps"],
+  mySwaps: ["myRoutedSwaps"],
   adminFees: ["adminRouterFees"],
 } as const;
 
@@ -54,39 +62,75 @@ export function useQuoteRoutedSwap(args: RoutedQuoteArgs | null) {
   });
 }
 
-/** Routed swap along the quoted route. */
-export function useRoutedSwap() {
-  const { actor } = useActor();
+/**
+ * Routed swap along the quoted route. The amount in minus the DEX balance is
+ * approved to the canister automatically, signed by the wallet that holds
+ * `owner`.
+ */
+export function useRoutedSwap(owner?: Principal | null) {
+  const { actor, begin, ensureApproved } = useDexPullApproval(owner);
   const queryClient = useQueryClient();
   const invalidate = useInvalidateLiquidity();
+  const invalidateFunds = useInvalidateDexFunds();
   return useMutation<RoutedSwapOutcome, Error, RoutedSwapArgs>({
     mutationFn: async (args) => {
       if (!actor) throw new Error("Actor not available");
-      return actor.routedSwap(args);
+      const release = begin();
+      try {
+        await ensureApproved(actor, [
+          { token: args.tokenIn, amount: args.amountIn },
+        ]);
+        return await actor.routedSwap(args);
+      } finally {
+        release();
+      }
     },
     onSettled: () => {
       invalidate();
+      invalidateFunds();
       void queryClient.invalidateQueries({ queryKey: ["quoteRoutedSwap"] });
       void queryClient.invalidateQueries({ queryKey: ROUTER_KEYS.adminSwaps });
+      void queryClient.invalidateQueries({ queryKey: ROUTER_KEYS.mySwaps });
       void queryClient.invalidateQueries({ queryKey: ROUTER_KEYS.adminFees });
       void queryClient.invalidateQueries({ queryKey: ["transfersToReview"] });
     },
   });
 }
 
-/** Admin: every routed swap, as recorded by the router. */
-export function useAdminRoutedSwaps() {
+const routedSwapKey = (swap: RoutedSwap): string => swap.id.toString();
+
+/** Admin: every routed swap, as recorded by the router, one page at a time. */
+export function useAdminRoutedSwaps(): PagedList<RoutedSwap> {
   const { actor, isFetching } = useActor();
   const { data: isAdmin } = useIsCallerAdmin();
-  return useQuery<Array<RoutedSwap>>({
+  return usePagedList<RoutedSwap>({
     queryKey: ROUTER_KEYS.adminSwaps,
-    queryFn: async () => {
-      if (!actor) return [];
-      const res = await actor.adminListRoutedSwaps();
+    enabled: !!actor && !isFetching && isAdmin === true,
+    getKey: routedSwapKey,
+    fetchPage: async (cursor, limit) => {
+      if (!actor) throw new Error("Actor not available");
+      const res = await actor.adminListRoutedSwaps(cursor, limit);
       if (res.__kind__ === "err") throw new Error("Not authorized");
       return res.ok;
     },
-    enabled: !!actor && !isFetching && isAdmin === true,
+  });
+}
+
+/** The signed-in caller's own routed swaps, one page at a time. */
+export function useMyRoutedSwaps(): PagedList<RoutedSwap> {
+  const { actor, isFetching } = useActor();
+  const { identity } = useInternetIdentity();
+  const principal = identity?.getPrincipal();
+  const callerText =
+    principal && !principal.isAnonymous() ? principal.toText() : undefined;
+  return usePagedList<RoutedSwap>({
+    queryKey: [...ROUTER_KEYS.mySwaps, callerText ?? ""],
+    enabled: !!actor && !isFetching && !!callerText,
+    getKey: routedSwapKey,
+    fetchPage: async (cursor, limit) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getMyRoutedSwaps(cursor, limit);
+    },
   });
 }
 

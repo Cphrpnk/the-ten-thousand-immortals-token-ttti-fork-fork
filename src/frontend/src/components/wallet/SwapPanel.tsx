@@ -3,8 +3,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftRight, ArrowUpDown, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import type { Account } from "../../backend";
+import type { Account, DexToken } from "../../backend";
 import { SIGNER_NAMES, useAccountSigner } from "../../hooks/useAccountSigner";
+import { DexApprovalError } from "../../hooks/useDex";
 import {
   useAddedSwapTokens,
   useSwapPool,
@@ -12,9 +13,13 @@ import {
   useSwapUnusedBalance,
   useTttiLedgerId,
 } from "../../hooks/useIcpSwap";
+import { useNativeRoute } from "../../hooks/useNativeRoute";
+import { useNativeWalletSwap } from "../../hooks/useNativeSwap";
 import { walletFailureMessage } from "../../hooks/useSignerWallet";
 import { useWalletBalance } from "../../hooks/useWallet";
 import { pickDict, useDict, useLanguage } from "../../i18n/core";
+import { DEX_TEXT } from "../../i18n/pages/dex";
+import { ROUTER_TEXT } from "../../i18n/pages/dexRouter";
 import { SWAP_TEXT } from "../../i18n/pages/swap";
 import {
   SEND_PERCENT_TEXT,
@@ -30,10 +35,18 @@ import {
   isSlippageError,
   minimumOut,
   preparePlugForSwap,
+  readSwapQuote,
   signedSwapPool,
   unwrapNat,
   zeroForOne,
 } from "../../lib/icpswap";
+import {
+  type RouteKind,
+  type RouteState,
+  activeRoute,
+  emptyRoute,
+  suggestRoute,
+} from "../../lib/swapRoutes";
 import {
   addSwapToken,
   readLiveFee,
@@ -54,6 +67,7 @@ import {
 } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
 import { ExplorerLink } from "../ExplorerLink";
+import { swapErrorText } from "../dex/liquidityFormat";
 import { PercentBar } from "../exchange/WalletPercentBar";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -66,18 +80,20 @@ import {
   SelectValue,
 } from "../ui/select";
 import { AddSwapToken } from "./AddSwapToken";
+import { RouteCards } from "./RouteCards";
+import { RouteQuoteDetails } from "./RouteQuoteDetails";
 import {
   AddTokenTrigger,
   ConfirmStep,
-  QuoteDetails,
   SwapNotice,
   UnusedBalance,
   formatSwapAmount,
   netOfFee,
 } from "./SwapParts";
+import { TokenFiat } from "./TokenFiat";
 import { TokenLogo } from "./TokenLogo";
 import { dashboardAccountUrl } from "./accountExplorer";
-import { payTokenForLedger } from "./valuation";
+import { fiatTokenOfDescriptor, payTokenForLedger } from "./valuation";
 
 /** Ledger fees kept out of the balance: the approve and the deposit transfer. */
 const SWAP_FEE_COUNT = 2;
@@ -89,11 +105,20 @@ const CKBTC_ID = PAY_TOKENS.ckbtc.ledgerCanisterId;
 type Step = "approve" | "deposit" | "swap" | "withdraw";
 
 interface Plan {
+  route: RouteKind;
   from: TokenDescriptor;
   to: TokenDescriptor;
-  pool: SwapPoolInfo;
+  /** ICPSwap pool; null on the native route. */
+  pool: SwapPoolInfo | null;
+  /** Native pool and DEX tokens; null on the ICPSwap route. */
+  native: { poolId: bigint; tokenIn: DexToken; tokenOut: DexToken } | null;
   amountIn: bigint;
+  /** Guaranteed minimum from the pool, before the withdrawal fee. */
   minOut: bigint;
+  /** Estimated amount received, withdrawal fee deducted. */
+  received: bigint;
+  feePct: number;
+  poolFee: bigint;
 }
 
 interface SwapPanelProps {
@@ -172,6 +197,8 @@ export function SwapPanel({
   const tx = useDict(WALLET_EXPLORER_TEXT);
   const percentText = useDict(SEND_PERCENT_TEXT);
   const ts = useDict(WALLET_SIGNING_TEXT);
+  const r = useDict(ROUTER_TEXT);
+  const dex = useDict(DEX_TEXT);
   const { lang } = useLanguage();
   const queryClient = useQueryClient();
   const { data: tttiId } = useTttiLedgerId();
@@ -186,6 +213,7 @@ export function SwapPanel({
   const [amount, setAmount] = useState("");
   const [percent, setPercent] = useState<number | null>(null);
   const [slippage, setSlippage] = useState(DEFAULT_SLIPPAGE);
+  const [chosen, setChosen] = useState<RouteKind | null>(null);
   const [debounced, setDebounced] = useState<bigint | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -247,7 +275,68 @@ export function SwapPanel({
     quote !== undefined && slippageValid
       ? minimumOut(quote, slippageBps)
       : null;
-  const tooSmall = to && minOut !== null && minOut <= to.fee;
+  const amountEntered = amountIn !== null && amountIn > 0n && !overMax;
+
+  // Native pool route: existing pools, quoted by the DEX.
+  const native = useNativeRoute({
+    from,
+    to,
+    amountIn: quoteFresh ? debounced : null,
+    slippageBps: slippageValid ? slippageBps : null,
+    accountOk: !account || owner !== null,
+  });
+  const nativeSwap = useNativeWalletSwap(owner);
+
+  // ICPSwap route: last resort, quoted by the ICPSwap pool.
+  const icpswapRoute: RouteState = (() => {
+    if (same || !from || !to) return emptyRoute("icpswap", "idle");
+    if (poolQuery.isLoading) return emptyRoute("icpswap", "loading");
+    if (poolQuery.isError) {
+      return emptyRoute("icpswap", "error", { kind: "failed" });
+    }
+    if (pool === null) {
+      return emptyRoute("icpswap", "unavailable", { kind: "noPool" });
+    }
+    if (!pool || !amountEntered || !slippageValid) {
+      return emptyRoute("icpswap", "idle");
+    }
+    if (quote === undefined || minOut === null) {
+      return quoteFresh && quoteQuery.isError
+        ? emptyRoute("icpswap", "error", { kind: "failed" })
+        : emptyRoute("icpswap", "loading");
+    }
+    return {
+      kind: "icpswap",
+      status: "ready",
+      issue: null,
+      received: netOfFee(quote, to.fee),
+      minReceived: netOfFee(minOut, to.fee),
+      feePct: Number(pool.fee) / 10_000,
+      poolFee: (amountIn * pool.fee) / 1_000_000n,
+    };
+  })();
+
+  // While the debounced amount catches up, no route shows an older amount.
+  const settle = (state: RouteState): RouteState =>
+    amountEntered &&
+    !quoteFresh &&
+    (state.status === "idle" || state.status === "ready")
+      ? emptyRoute(state.kind, "loading")
+      : state;
+  const routes = [settle(native.state), settle(icpswapRoute)];
+  const suggested = suggestRoute(routes);
+  const activeKind = activeRoute(routes, chosen);
+  const activeState = routes.find((route) => route.kind === activeKind);
+  const tooSmall =
+    !!activeState &&
+    activeState.status === "ready" &&
+    activeState.minReceived === 0n;
+  const noRoute =
+    !same &&
+    !!from &&
+    !!to &&
+    amountEntered &&
+    routes.every((route) => route.status === "unavailable");
   const running = step !== null;
 
   const resetResult = () => {
@@ -258,17 +347,20 @@ export function SwapPanel({
 
   const pickFrom = (value: string) => {
     setFromId(value);
+    setChosen(null);
     setPercent(null);
     setAmount("");
     resetResult();
   };
   const pickTo = (value: string) => {
     setToId(value);
+    setChosen(null);
     resetResult();
   };
   const flip = () => {
     setFromId(toId);
     setToId(fromId);
+    setChosen(null);
     setAmount("");
     setPercent(null);
     resetResult();
@@ -316,37 +408,82 @@ export function SwapPanel({
     !!from &&
     !!to &&
     !same &&
-    !!pool &&
     amountIn !== null &&
     amountIn > 0n &&
     !overMax &&
-    quote !== undefined &&
-    !expired &&
-    minOut !== null &&
+    activeState?.status === "ready" &&
+    !(activeKind === "icpswap" && (!pool || expired || minOut === null)) &&
+    !(activeKind === "native" && !native.quote) &&
     !tooSmall &&
     !running &&
     !reviewing;
 
   const review = () => {
-    if (!canReview || !from || !to || !pool || amountIn === null) return;
-    if (minOut === null) return;
-    const planMinOut = minOut;
+    if (!canReview || !from || !to || amountIn === null) return;
+    if (!activeState || activeState.received === null) return;
+    if (activeKind === "native") {
+      const quoted = native.quote;
+      if (!quoted || !native.pool || !native.tokenIn || !native.tokenOut)
+        return;
+      setChecked(false);
+      resetResult();
+      setPlan({
+        route: "native",
+        from,
+        to,
+        pool: null,
+        native: {
+          poolId: native.pool.id,
+          tokenIn: native.tokenIn.token,
+          tokenOut: native.tokenOut.token,
+        },
+        amountIn,
+        minOut: quoted.minimumReceived,
+        received: activeState.received,
+        feePct: Number(quoted.feeBps) / 100,
+        poolFee: quoted.fee,
+      });
+      return;
+    }
+    if (!pool || minOut === null || !slippageValid) return;
     setChecked(false);
     resetResult();
     setReviewing(true);
+    // The price is read from ICPSwap now, never from a cached or displayed quote.
     // TTTI-T and added tokens: the chain uses each ledger's current fee.
-    void Promise.all([withLiveFee(from), withLiveFee(to)])
-      .then(([liveFrom, liveTo]) => {
+    void Promise.all([
+      readSwapQuote(pool, fromId, amountIn).then(
+        (live) => (live > 0n ? live : null),
+        () => null,
+      ),
+      withLiveFee(from),
+      withLiveFee(to),
+    ])
+      .then(([liveQuote, liveFrom, liveTo]) => {
+        if (liveQuote === null) {
+          setError(pickDict(SWAP_TEXT).livePriceUnavailable);
+          return;
+        }
+        queryClient.setQueryData(
+          ["icpswapQuote", pool.poolId, fromId, amountIn.toString()],
+          liveQuote,
+        );
+        const planMinOut = minimumOut(liveQuote, slippageBps);
         if (planMinOut <= liveTo.fee) {
           setError(pickDict(SWAP_TEXT).tooSmall);
           return;
         }
         setPlan({
+          route: "icpswap",
           from: liveFrom,
           to: liveTo,
           pool,
+          native: null,
           amountIn,
           minOut: planMinOut,
+          received: netOfFee(liveQuote, liveTo.fee),
+          feePct: Number(pool.fee) / 10_000,
+          poolFee: (amountIn * pool.fee) / 1_000_000n,
         });
       })
       .catch(() => setError(pickDict(SWAP_TEXT).feeError))
@@ -356,6 +493,7 @@ export function SwapPanel({
   const describeFailure = (failure: unknown): string => {
     const text = pickDict(SWAP_TEXT);
     if (failure instanceof ApproveFailure) return failure.message;
+    if (failure instanceof DexApprovalError) return failure.message;
     if (failure instanceof SwapPoolCallError) {
       if (failure.step === "swap" && isSlippageError(failure.detail)) {
         return text.slippageError;
@@ -375,6 +513,12 @@ export function SwapPanel({
   const confirm = () => {
     if (!plan || !checked || !owner) return;
     const current = plan;
+    if (current.route === "native" && current.native) {
+      confirmNative(current, current.native);
+      return;
+    }
+    const icpPool = current.pool;
+    if (!icpPool) return;
     const plugSigner = signer.kind === "plug";
     // Opens the OISY / NFID window from this click, before any await.
     const release = signer.begin();
@@ -384,19 +528,19 @@ export function SwapPanel({
       const fromLedger = current.from.canisterId.toText();
       const toLedger = current.to.canisterId.toText();
       if (plugSigner) {
-        await preparePlugForSwap(current.pool.poolId, [fromLedger, toLedger]);
+        await preparePlugForSwap(icpPool.poolId, [fromLedger, toLedger]);
       }
       const outcome = await signer.approve(
         current.from,
         buildApproveArgs(
-          Principal.fromText(current.pool.poolId),
+          Principal.fromText(icpPool.poolId),
           current.amountIn,
           current.from.fee,
         ),
       );
       if (!outcome.ok) throw new ApproveFailure(outcome.message);
       const actor = await signedSwapPool(
-        current.pool.poolId,
+        icpPool.poolId,
         plugSigner,
         signer.ledgerAgent,
         [fromLedger, toLedger],
@@ -414,7 +558,7 @@ export function SwapPanel({
       const out = unwrapNat(
         await actor.swap({
           amountIn: current.amountIn.toString(),
-          zeroForOne: zeroForOne(current.pool, fromLedger),
+          zeroForOne: zeroForOne(icpPool, fromLedger),
           amountOutMinimum: current.minOut.toString(),
         }),
         "swap",
@@ -454,8 +598,67 @@ export function SwapPanel({
       .finally(() => {
         release();
         setStep(null);
-        invalidate(current.pool.poolId);
+        invalidate(icpPool.poolId);
       });
+  };
+
+  /** Native pool swap: approval signed by the right wallet, swap, withdrawal. */
+  const confirmNative = (current: Plan, route: NonNullable<Plan["native"]>) => {
+    setStep("approve");
+    setError(null);
+    void nativeSwap
+      .run(
+        {
+          poolId: route.poolId,
+          tokenIn: route.tokenIn,
+          tokenOut: route.tokenOut,
+          amountIn: current.amountIn,
+          minAmountOut: current.minOut,
+        },
+        setStep,
+      )
+      .then((outcome) => {
+        setPlan(null);
+        if (outcome.kind === "refused") {
+          const message = swapErrorText(
+            dex,
+            outcome.error,
+            current.from,
+            current.to,
+            lang,
+          );
+          setError(message);
+          toast.error(message);
+          return;
+        }
+        const net = netOfFee(outcome.amountOut, current.to.fee);
+        if (outcome.kind === "withdrawFailed") {
+          const message = pickDict(SWAP_TEXT).nativeWithdrawFailed(
+            formatSwapAmount(net, current.to.decimals),
+            current.to.symbol,
+            outcome.detail,
+          );
+          setError(message);
+          toast.error(message);
+          return;
+        }
+        setReceived({ amount: net, token: current.to });
+        setAmount("");
+        setPercent(null);
+        toast.success(
+          pickDict(SWAP_TEXT).success(
+            formatSwapAmount(net, current.to.decimals),
+            current.to.symbol,
+          ),
+        );
+      })
+      .catch((failure: unknown) => {
+        const message = describeFailure(failure);
+        setError(message);
+        setPlan(null);
+        toast.error(message);
+      })
+      .finally(() => setStep(null));
   };
 
   const unusedEntries = pool
@@ -527,24 +730,6 @@ export function SwapPanel({
           {t.sameToken}
         </SwapNotice>
       );
-    if (poolQuery.isLoading)
-      return (
-        <SwapNotice tone="info" ocid="wallet.swap.pool_loading_state">
-          {t.poolLoading}
-        </SwapNotice>
-      );
-    if (poolQuery.isError)
-      return (
-        <SwapNotice tone="error" ocid="wallet.swap.pool_error_state">
-          {t.poolError}
-        </SwapNotice>
-      );
-    if (pool === null && from && to)
-      return (
-        <SwapNotice tone="error" ocid="wallet.swap.no_pool_state">
-          {t.noPool(from.symbol, to.symbol)}
-        </SwapNotice>
-      );
     if (amount.trim() !== "" && (amountIn === null || amountIn <= 0n) && from)
       return (
         <SwapNotice tone="error" ocid="wallet.swap.amount_error_state">
@@ -563,19 +748,12 @@ export function SwapPanel({
           {t.slippageInvalid}
         </SwapNotice>
       );
-    if (amountIn !== null && amountIn > 0n && quote === undefined) {
-      if (quoteFresh && quoteQuery.isError)
-        return (
-          <SwapNotice tone="error" ocid="wallet.swap.quote_error_state">
-            {t.quoteError}
-          </SwapNotice>
-        );
+    if (noRoute)
       return (
-        <SwapNotice tone="info" ocid="wallet.swap.quote_loading_state">
-          {t.quoteLoading}
+        <SwapNotice tone="error" ocid="wallet.swap.no_route_state">
+          {r.errNoRoute}
         </SwapNotice>
       );
-    }
     if (tooSmall)
       return (
         <SwapNotice tone="error" ocid="wallet.swap.too_small_state">
@@ -588,12 +766,26 @@ export function SwapPanel({
   if (plan) {
     return (
       <div className="flex flex-col gap-4" data-ocid="wallet.swap_panel">
+        <RouteQuoteDetails
+          route={plan.route}
+          from={plan.from}
+          to={plan.to}
+          amountIn={plan.amountIn}
+          received={plan.received}
+          minReceived={netOfFee(plan.minOut, plan.to.fee)}
+          feePct={plan.feePct}
+          poolFee={plan.poolFee}
+          expired={false}
+          refreshing={false}
+          onRefresh={() => undefined}
+        />
         <ConfirmStep
+          route={plan.route}
           from={plan.from}
           to={plan.to}
           amountIn={plan.amountIn}
           minOut={plan.minOut}
-          poolId={plan.pool.poolId}
+          poolId={plan.pool?.poolId ?? ""}
           signerName={signer.kind ? SIGNER_NAMES[signer.kind] : ""}
           checked={checked}
           onCheckedChange={setChecked}
@@ -721,8 +913,13 @@ export function SwapPanel({
             data-ocid="wallet.swap.amount_input"
           />
           {balance !== undefined && (
-            <p className="text-xs text-muted-foreground tabular-nums">
+            <p className="flex flex-wrap items-baseline gap-1.5 text-xs text-muted-foreground tabular-nums">
               {t.balance(formatSwapAmount(balance, from.decimals), from.symbol)}
+              <TokenFiat
+                token={from}
+                amount={balance}
+                ocid="wallet.swap.balance.fiat"
+              />
             </p>
           )}
           <PercentBar
@@ -738,6 +935,7 @@ export function SwapPanel({
             disabled={running}
             text={percentText}
             formatAmount={(value) => formatSwapAmount(value, from.decimals)}
+            fiatToken={fiatTokenOfDescriptor(from)}
             ocidPrefix="wallet.swap.percent_bar"
             labelId="swap-percent-label"
             onSelect={handlePercent}
@@ -782,20 +980,44 @@ export function SwapPanel({
 
       {status}
 
-      {from && to && pool && quote !== undefined && minOut !== null && (
-        <QuoteDetails
+      {from && to && !same && (
+        <RouteCards
+          routes={routes}
           from={from}
           to={to}
-          quote={quote}
-          minOut={minOut}
-          poolFee={pool.fee}
-          expired={expired}
-          refreshing={quoteQuery.isFetching}
-          onRefresh={() => {
-            void quoteQuery.refetch();
-          }}
+          amountEntered={amountEntered}
+          suggested={suggested}
+          active={activeKind}
+          disabled={running}
+          onSelect={setChosen}
         />
       )}
+
+      {from &&
+        to &&
+        activeState &&
+        activeState.status === "ready" &&
+        activeState.received !== null &&
+        activeState.minReceived !== null &&
+        activeState.feePct !== null &&
+        activeState.poolFee !== null &&
+        amountIn !== null && (
+          <RouteQuoteDetails
+            route={activeState.kind}
+            from={from}
+            to={to}
+            amountIn={amountIn}
+            received={activeState.received}
+            minReceived={activeState.minReceived}
+            feePct={activeState.feePct}
+            poolFee={activeState.poolFee}
+            expired={activeState.kind === "icpswap" && expired}
+            refreshing={quoteQuery.isFetching}
+            onRefresh={() => {
+              void quoteQuery.refetch();
+            }}
+          />
+        )}
 
       {error && (
         <SwapNotice tone="error" ocid="wallet.swap.error_state">

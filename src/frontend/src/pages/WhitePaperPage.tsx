@@ -10,6 +10,7 @@ import {
 import { MINT_REVENUE_TEXT, SITE_TEXT } from "../i18n/common";
 import { useDict } from "../i18n/core";
 import { MINT_INFO_EN } from "../i18n/pages/buy";
+import { DEX_TEXT, PLAIN_RULES_TEXT } from "../i18n/pages/dex";
 import { FAQ_TEXT } from "../i18n/pages/landing";
 import { WHITE_PAPER_TEXT } from "../i18n/pages/whitePaper";
 import {
@@ -25,6 +26,9 @@ const RATE_TEXT =
 
 /** English mint revenue sentences; sections 02 to 08 stay in English. */
 const REVENUE_EN = MINT_REVENUE_TEXT.en;
+/** English plain-language rules (lot PTM-7) and pool rules. */
+const PLAIN_EN = PLAIN_RULES_TEXT.en;
+const DEX_EN = DEX_TEXT.en;
 
 /** Maximum supply of the future TTTI version. */
 const FUTURE_MAX_SUPPLY = 10_000;
@@ -151,7 +155,7 @@ export function WhitePaperPage() {
                 <p>{t.readingP1}</p>
                 <p>{t.readingP2}</p>
                 <p data-ocid="white_paper.reading_revenue.text">
-                  {revenue.wpReadingP3}
+                  {revenue.ownerShare}
                 </p>
               </section>
               {t.englishOnlyNotice ? (
@@ -254,7 +258,14 @@ export function WhitePaperPage() {
                   </p>
                   <p>{MINT_INFO_EN.paragraphs[0]}</p>
                   <p>{MINT_INFO_EN.paragraphs[1]}</p>
+                  <p data-ocid="white_paper.chance.text">{PLAIN_EN.chance}</p>
+                  <p data-ocid="white_paper.zap.text">
+                    <strong>{PLAIN_EN.zapTitle}.</strong> {PLAIN_EN.zap}
+                  </p>
                 </div>
+                <p data-ocid="white_paper.auction_rules.text">
+                  {PLAIN_EN.auctionRules}
+                </p>
                 <p data-ocid="white_paper.rate.text">
                   {rateText} A rate is never used more than 5 minutes past its
                   one-hour validity. When every source fails, the fetch is
@@ -329,8 +340,7 @@ export function WhitePaperPage() {
                   04 / {revenue.wpRevenueHeading}
                 </h2>
                 <p data-ocid="white_paper.mint_price.text">
-                  {REVENUE_EN.priceRule} {REVENUE_EN.ownerShare}{" "}
-                  {REVENUE_EN.ownerAccumulates}
+                  {REVENUE_EN.ownerShare} {REVENUE_EN.ownerAccumulates}
                 </p>
                 <p data-ocid="white_paper.treasury_return.text">
                   Funds held in the internal mint treasuries stay in the
@@ -338,11 +348,9 @@ export function WhitePaperPage() {
                   has topped the cycles reserve up to 2 ICP.
                 </p>
                 <p data-ocid="white_paper.mint_fee.text">
-                  {REVENUE_EN.feeShare} {REVENUE_EN.halfLp}{" "}
-                  {REVENUE_EN.halfPermanent} The swap goes through ICPSwap
-                  first, then the native pools; while the rate of the paid token
-                  is absent or expired, the amount waits. The addition is never
-                  conditioned on price. {REVENUE_EN.noTttiCreated}
+                  The rest of the amount paid forms the minter's position and
+                  guarantee, held in the minter's name. The minter withdraws the
+                  position under the lock rules.
                 </p>
                 <p data-ocid="white_paper.swap_fee.text">
                   {REVENUE_EN.swapFeeSplit} {REVENUE_EN.routerFeeRule} Nothing
@@ -350,7 +358,20 @@ export function WhitePaperPage() {
                 </p>
                 <p data-ocid="white_paper.pools_public.text">
                   Liquidity positions are public and linked to the identifier on
-                  TTTI. Observed yield is only what was actually earned.
+                  TTTI.
+                </p>
+                <p data-ocid="white_paper.no_reward.text">
+                  {PLAIN_EN.noReward} {PLAIN_EN.permanentDepth}{" "}
+                  {PLAIN_EN.observedYield}
+                </p>
+                <p data-ocid="white_paper.relay_lock.text">
+                  {DEX_EN.relayExplain} {DEX_EN.feeSplitExplain}
+                </p>
+                <p data-ocid="white_paper.impermanent_loss.text">
+                  <strong>{PLAIN_EN.ilTitle}.</strong> {PLAIN_EN.il}
+                </p>
+                <p data-ocid="white_paper.exposure.text">
+                  <strong>{PLAIN_EN.exposureTitle}.</strong> {PLAIN_EN.exposure}
                 </p>
                 <p data-ocid="white_paper.cycles_topup.text">
                   {REVENUE_EN.cyclesRule} The conversion goes through the Cycles
@@ -399,20 +420,26 @@ export function WhitePaperPage() {
                   Administrators cannot mint tokens and cannot freeze transfers.
                   The TTTI-T transfer-fee collector account and the cycles
                   reserve cannot be withdrawn. The code also lets administrators
-                  pause or resume sales, withdraw mint revenue to a destination
-                  typed at each withdrawal, and export a balance snapshot. The
-                  ledger transfer fee can be changed within fixed bounds only in
-                  this test (TTTI-T) version. Ledger transactions carry the
-                  current transfer fee.
+                  pause or resume sales, and export a balance snapshot. The
+                  creator receives only 1 % of the amount paid, after the cycles
+                  reserve; the rest forms the minter's position and guarantee.
+                  The ledger transfer fee can be changed within fixed bounds
+                  only in this test (TTTI-T) version. Ledger transactions carry
+                  the current transfer fee.
                 </p>
                 <p data-ocid="white_paper.upgrade.text">
                   This canister can be upgraded by its controllers. The
                   guarantees on this page describe the current code, identified
                   by its module hash.
                 </p>
-                <p>
-                  Holding the token grants no voting, revenue, redemption or
-                  guaranteed liquidity. A listing, secondary market, buyback or
+                <p data-ocid="white_paper.guarantee.text">
+                  Holding the token grants no voting or revenue rights.{" "}
+                  {PLAIN_EN.guarantee} The amount returned is the lower of the
+                  guarantee deposited with the minted quantity and the quantity
+                  worth 10,000 USD at the stored rate while the mint is ongoing,
+                  then pro rata to the mass remaining; a redemption fee and the
+                  ledger fee are deducted, and returned TTTI-T are held by the
+                  contract and never burned. A listing, secondary market or
                   later full release is{" "}
                   <strong>not a present entitlement</strong>. A secondary
                   market, if one appears, may be illiquid and highly volatile.
@@ -430,18 +457,18 @@ export function WhitePaperPage() {
                 <p>
                   No free tokens. The creator received no TTTI or TTTI-T at
                   creation. Any token the creator holds was minted at the same
-                  price as everyone else.
+                  price as everyone else, or received as the TTTI-T transfer
+                  fee.
                 </p>
                 <p>
-                  Holdings: at launch, the creator holds no TTTI-T. Any later
-                  holding will be published here.
+                  Holdings: the creator's holdings are declared and public. The
+                  amounts held for the creator, per token, are listed on the
+                  Pools page. The creator is not named.
                 </p>
                 <p>
-                  No guaranteed price support. The protocol places no
-                  price-linked order and creates no TTTI-T. The mint fee buys
-                  TTTI-T without any price condition, to feed liquidity. The
-                  creator may fund optional, limited buybacks with personal
-                  funds, but does not defend a price or trade to create volume.
+                  The protocol never places a price-linked order and creates no
+                  TTTI-T for pools. {PLAIN_EN.permanentDepth} The creator does
+                  not defend a price or trade to create volume.
                 </p>
                 <p>
                   No mechanical link to THAT. TTTI cannot be exchanged for THAT
@@ -450,8 +477,8 @@ export function WhitePaperPage() {
                 </p>
                 <p>
                   Anyone, the creator included, may provide liquidity at their
-                  discretion and withdraw it at any time. Trust only what you
-                  can verify.
+                  discretion and withdraw it under the lock rules. Trust only
+                  what you can verify.
                 </p>
               </section>
               <section

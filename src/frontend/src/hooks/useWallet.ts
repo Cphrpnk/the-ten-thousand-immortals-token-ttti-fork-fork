@@ -146,6 +146,24 @@ export function useWalletBalances(
   });
 }
 
+/** The backend never uses a rate beyond validUntil + 5 minutes. */
+const BTC_RATE_GRACE_MS = 5 * 60_000;
+
+/**
+ * usdE8 of a stored BTC/USD rate, or null when the rate is absent, not
+ * positive or past validUntil + 5 minutes at `nowMs`.
+ */
+export function usableBtcUsdE8(
+  rate: BtcUsdRate | null | undefined,
+  nowMs: number,
+): bigint | null {
+  if (!rate || rate.usdE8 <= 0n) return null;
+  const validUntilMs = Number(rate.validUntil / 1_000_000n);
+  if (validUntilMs <= 0 || validUntilMs + BTC_RATE_GRACE_MS < nowMs)
+    return null;
+  return rate.usdE8;
+}
+
 /** Stored BTC/USD rate (usdE8 = USD × 1e8); null before the first fetch. */
 export function useBtcUsdRate() {
   const { actor, isFetching } = useActor();

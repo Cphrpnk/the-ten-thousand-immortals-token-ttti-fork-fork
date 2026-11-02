@@ -1,9 +1,7 @@
 import type { DexBalanceView, DexTokenInfo } from "../../hooks/useDex";
 import { useDict } from "../../i18n/core";
 import { DEX_TEXT } from "../../i18n/pages/dex";
-import { Button } from "../ui/button";
-import type { DexDialogKind } from "./DexAmountDialog";
-import { DexPausedHint, useDexPaused } from "./DexPausedNotice";
+import { DexFiat } from "./DexFiat";
 import { DexTokenLogo } from "./DexTokenLogo";
 import { DEX_TOKEN_ORDER, dexLogoToken, formatDexUnits } from "./dexFormat";
 
@@ -33,20 +31,16 @@ export function buildBalanceRows(
     });
 }
 
+const grid = "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
+
 export function DexBalanceTable({
   rows,
   ocid,
-  onAction,
 }: {
   rows: Array<DexBalanceRow>;
   ocid: string;
-  onAction?: (kind: DexDialogKind, row: DexBalanceRow) => void;
 }) {
   const t = useDict(DEX_TEXT);
-  const paused = useDexPaused();
-  const grid = onAction
-    ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-    : "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
 
   return (
     <div className="flex flex-col text-sm" data-ocid={`${ocid}.table`}>
@@ -56,7 +50,6 @@ export function DexBalanceTable({
         <span>{t.colToken}</span>
         <span className="text-end">{t.colAvailable}</span>
         <span className="text-end">{t.colReserved}</span>
-        {onAction && <span className="sr-only">{t.depositButton}</span>}
       </div>
       <ul className="flex flex-col">
         {rows.map((row, i) => (
@@ -76,6 +69,7 @@ export function DexBalanceTable({
               <span className="font-mono tabular-nums break-all">
                 {formatDexUnits(row.available, row.token)}
               </span>
+              <DexFiat token={row.token} amount={row.available} />
             </span>
             <span className="flex flex-col text-end">
               <span className="text-xs text-muted-foreground sm:hidden">
@@ -84,34 +78,8 @@ export function DexBalanceTable({
               <span className="font-mono tabular-nums break-all">
                 {formatDexUnits(row.reserved, row.token)}
               </span>
+              <DexFiat token={row.token} amount={row.reserved} />
             </span>
-            {onAction && (
-              <span className="col-span-2 flex gap-2 sm:col-span-1 sm:justify-end">
-                <DexPausedHint paused={paused} className="flex-1 sm:flex-none">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="min-h-11 flex-1 sm:min-h-9 sm:flex-none"
-                    onClick={() => onAction("deposit", row)}
-                    disabled={paused}
-                    data-ocid={`${ocid}.deposit_button.${i + 1}`}
-                  >
-                    {t.depositButton}
-                  </Button>
-                </DexPausedHint>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="min-h-11 flex-1 sm:min-h-9 sm:flex-none"
-                  onClick={() => onAction("withdraw", row)}
-                  disabled={row.available === 0n}
-                  data-ocid={`${ocid}.withdraw_button.${i + 1}`}
-                >
-                  {t.withdrawButton}
-                </Button>
-              </span>
-            )}
           </li>
         ))}
       </ul>

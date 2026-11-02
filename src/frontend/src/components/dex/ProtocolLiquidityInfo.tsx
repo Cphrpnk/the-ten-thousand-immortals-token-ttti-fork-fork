@@ -3,6 +3,7 @@ import { useDexTokens, useProtocolLiquidity } from "../../hooks/useDex";
 import { useDict, useLanguage } from "../../i18n/core";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { Skeleton } from "../ui/skeleton";
+import { useDexUnitsText } from "./DexFiat";
 import { protocolLiquidityLines } from "./liquidityFormat";
 
 /** Protocol-owned liquidity of one pool, locked forever. */
@@ -15,12 +16,13 @@ export function ProtocolLiquidityInfo({
 }) {
   const t = useDict(DEX_TEXT);
   const { lang } = useLanguage();
+  const unitsText = useDexUnitsText();
   const protocol = useProtocolLiquidity();
   const tokens = useDexTokens();
   const view = protocol.data?.find((v) => v.poolId === poolId);
   const lines =
     view && view.shares > 0n
-      ? protocolLiquidityLines(t, view, tokens.data ?? [], lang)
+      ? protocolLiquidityLines(t, view, tokens.data ?? [], lang, unitsText)
       : null;
 
   return (

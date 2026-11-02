@@ -22,6 +22,7 @@ import {
   CardTitle,
 } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
+import { TokenFiat } from "./TokenFiat";
 
 export { formatUnits };
 
@@ -146,6 +147,7 @@ export function TokenBalanceCard({
             <span className="text-base font-normal text-primary">
               {token.symbol}
             </span>
+            <TokenFiat token={token} amount={data} />
           </p>
         )}
       </CardContent>

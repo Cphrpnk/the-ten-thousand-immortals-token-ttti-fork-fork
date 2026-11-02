@@ -19,6 +19,8 @@ import SaleLib "presale";
 import RetryLib "retry";
 import MinterLib "ckbtc-minter";
 import PayTokenLib "pay-token";
+import DexLib "dex";
+import LiquidityMintLib "liquidity-mint";
 
 // BTC deposit flows through the ckBTC minter: per-buyer deposit subaccount,
 // update_balance progress tracking, purchase finalization (ckBTC -> TTTI-T)
@@ -639,11 +641,17 @@ module {
   // BTC cost send `n` arrived in `block`. Purchase not recorded (unknown
   // first outcome): its payment to refund is confirmed with that block and
   // the deposit entry no longer accounts for the cost.
-  func costArrived(store : BtcDepositStore, tctx : TransferContext, n : Nat, block : Nat) {
+  func costArrived(store : BtcDepositStore, mctx : LiquidityMintLib.MintContext, tctx : TransferContext, n : Nat, block : Nat) {
     let c = tctx.retry.btcCosts.get(n) ?? (return);
     tctx.retry.btcCosts.add(n, { c with attempt = { c.attempt with outcome = #succeeded(block) } });
     if (c.conversionId == null) {
       RetryLib.confirmPayment(tctx, n, block);
+      // PTM-1: a liquidity-mint payment whose first outcome was unknown has
+      // now arrived in the ckBTC DEX custody: credit it to the buyer's DEX
+      // balance (withdrawable; the mint was not made).
+      if (c.attempt.request.to == DexLib.custodyAccount(mctx.canister, #ckbtc)) {
+        DexLib.credit(mctx.dex.balances, c.buyer, #ckbtc, c.attempt.request.amount);
+      };
       let debit = c.attempt.request.amount + (c.attempt.request.fee ?? FEE);
       updateEntry(store, c.buyer, c.depositIndex, func e = { e with ckbtcPendingSats = if (e.ckbtcPendingSats > debit) Nat.sub(e.ckbtcPendingSats, debit) else 0 });
     };
@@ -652,7 +660,7 @@ module {
   // Retry timer: resends BTC cost send `n` identically (same memo,
   // created_at_time and request) within 23 h, under its trace lock (also held
   // by a purchase in flight), released in a finally.
-  func stepBtcCost(store : BtcDepositStore, tctx : TransferContext, n : Nat) : async () {
+  func stepBtcCost(store : BtcDepositStore, mctx : LiquidityMintLib.MintContext, tctx : TransferContext, n : Nat) : async () {
     let c = tctx.retry.btcCosts.get(n) ?? (return);
     switch (RetryLib.nextAction(c.attempt, RetryLib.now64())) {
       case (#resend) {};
@@ -668,7 +676,7 @@ module {
       let result = await RetryLib.sendBtcCounted(sending);
       RetryLib.setBtcCostAttempt(tctx, n, result);
       switch (result.outcome) {
-        case (#succeeded(b)) { costArrived(store, tctx, n, b) };
+        case (#succeeded(b)) { costArrived(store, mctx, tctx, n, b) };
         case (_) {};
       };
     } catch (_) {} finally {
@@ -677,7 +685,7 @@ module {
   };
 
   // Timer pass over every unsettled BTC cost send (not while sales are paused).
-  func retryBtcCosts(store : BtcDepositStore, ctx : SaleLib.PurchaseContext) : async () {
+  func retryBtcCosts(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext) : async () {
     if (ctx.sale.salesPaused) {
       return;
     };
@@ -686,7 +694,7 @@ module {
       func((_, c) : (Nat, RetryTypes.BtcCostSend)) : Bool = RetryLib.nextAction(c.attempt, now) == #resend
     ).map(func((n, _) : (Nat, RetryTypes.BtcCostSend)) : Nat = n).toArray();
     for (n in ids.values()) {
-      await stepBtcCost(store, ctx.transfers, n);
+      await stepBtcCost(store, mctx, ctx.transfers, n);
     };
   };
 
@@ -783,7 +791,7 @@ module {
 
   // Admin: BR (id = BR attempt n) or BC (id = trace n) under review arrived
   // in `block`. Other kinds -> #notApplicable.
-  public func markBtcArrived(store : BtcDepositStore, tctx : TransferContext, kind : RetryTypes.TransferKind, id : Nat, block : Nat) : RetryTypes.ReviewResult {
+  public func markBtcArrived(store : BtcDepositStore, mctx : LiquidityMintLib.MintContext, tctx : TransferContext, kind : RetryTypes.TransferKind, id : Nat, block : Nat) : RetryTypes.ReviewResult {
     let now = RetryLib.now64();
     switch (kind) {
       case (#BR) {
@@ -799,7 +807,7 @@ module {
         if (RetryLib.nextAction(c.attempt, now) != #needsReview) {
           return #err(#notUnderReview);
         };
-        costArrived(store, tctx, id, block);
+        costArrived(store, mctx, tctx, id, block);
         #ok;
       };
       case (_) { #err(#notApplicable) };
@@ -876,7 +884,7 @@ module {
   // Converts each minted purchase entry for its own amount, oldest first, one
   // at a time (excess beyond the delivered amount is refunded), then retries
   // failed excess refunds. The caller holds the purchase lock for `caller`.
-  func finalize(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, caller : Principal, t : DepositTracking) : async* DepositTracking {
+  func finalize(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, caller : Principal, t : DepositTracking) : async* DepositTracking {
     let subaccount = purchaseSubaccount(caller);
     let payLedger = PayTokenLib.ledger(#ckbtc);
     let own = { owner = caller; subaccount = null };
@@ -904,9 +912,11 @@ module {
         };
         let amount = Nat.min(wanted, balance);
         if (amount > FEE) {
-          switch (await SaleLib.purchaseFromDeposit(ctx, caller, subaccount, i, amount)) {
-            case (#Ok(conversion)) {
-              let excess = if (amount > conversion.payAmount) Nat.sub(amount, conversion.payAmount) else 0;
+          switch (await LiquidityMintLib.mintFromDeposit(mctx, caller, subaccount, i, amount)) {
+            case (#ok(minted)) {
+              // The mint moved payAmount + the ledger fee out of the deposit account.
+              let spent = minted.payAmount + FEE;
+              let excess = if (amount > spent) Nat.sub(amount, spent) else 0;
               // R1: the excess refund attempt is recorded before its send.
               let refund = openBtcRefund(tctx, caller, #excess, excess);
               save(
@@ -914,9 +924,9 @@ module {
                 func e = {
                   e with
                   stage = #delivered;
-                  tttiDelivered = e.tttiDelivered + conversion.tttiAmount;
+                  tttiDelivered = e.tttiDelivered + minted.tttiAmount;
                   ckbtcPendingSats = excess;
-                  conversionId = ?conversion.id;
+                  conversionId = ?minted.mintId;
                   errorKind = null;
                   errorMessage = null;
                   btcRefund = switch (refund) { case (?r) { ?r }; case null { e.btcRefund } };
@@ -924,44 +934,41 @@ module {
               );
               if (refund != null) await stepBtcRefund(store, tctx, caller, i);
             };
-            case (#Err(err)) {
-              switch (err.code) {
-                case (#priceUnavailable(_)) {
-                  save(i, func e = { e with stage = #pendingRate; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?err.message });
+            case (#err(err)) {
+              switch (err) {
+                case (#rateUnavailable(_)) {
+                  save(i, func e = { e with stage = #pendingRate; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?"No valid BTC-USD rate is available for this hour; the ckBTC stays in your deposit account" });
                 };
-                case (#receivingWalletNotConfigured(_)) {
-                  // Nothing taken: the ckBTC stays in the deposit account until a wallet exists.
-                  save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = ?#receivingWalletNotConfigured; errorMessage = ?err.message });
-                };
-                case (#saleComplete or #belowMinimum(_)) {
+                case (#belowMinimum(_) or #aboveCap(_)) {
                   // R2: the full refund attempt is recorded before its send.
                   let refund = openBtcRefund(tctx, caller, #fullRefund, amount);
-                  save(i, func e = { e with stage = #error; ckbtcPendingSats = amount; errorKind = ?#unrecoverable; errorMessage = ?(err.message # "; the ckBTC is being refunded to your account minus the 10 sat ledger fee"); btcRefund = switch (refund) { case (?r) { ?r }; case null { e.btcRefund } } });
+                  save(i, func e = { e with stage = #error; ckbtcPendingSats = amount; errorKind = ?#unrecoverable; errorMessage = ?("This ckBTC amount cannot form a liquidity mint (minimum 0.0001 TTTI-T or the 1 TTTI-T cap is reached); the ckBTC is being refunded to your account minus the 10 sat ledger fee"); btcRefund = switch (refund) { case (?r) { ?r }; case null { e.btcRefund } } });
                   if (refund != null) await stepBtcRefund(store, tctx, caller, i);
                 };
-                case (#deliveryFailedRefundFailed) {
-                  let paid = switch (err.conversion) { case (?c) { c.payAmount }; case null { 0 } };
-                  let excess = if (amount > paid) Nat.sub(amount, paid) else 0;
-                  let convId = switch (err.conversion) { case (?c) { ?c.id }; case null { null } };
-                  // The excess goes through lib/retry.mo; the cost is refunded by hand (BM).
-                  let refund = openBtcRefund(tctx, caller, #deliveryFailedExcess, excess);
-                  save(
-                    i,
-                    func e = {
-                      e with
-                      stage = #error;
-                      ckbtcPendingSats = excess;
-                      conversionId = switch (convId) { case (?id) { ?id }; case null { e.conversionId } };
-                      errorKind = ?#unrecoverable;
-                      errorMessage = ?err.message;
-                      btcRefund = switch (refund) { case (?r) { ?r }; case null { e.btcRefund } };
-                      costToRefund = ?{ amount = paid; conversionId = convId; refundedBlock = null };
-                    },
-                  );
-                  if (refund != null) await stepBtcRefund(store, tctx, caller, i);
+                case (#depositFailedRefunding(r)) {
+                  // The mint was refused (nothing minted) and the refund withdrawal is not settled yet:
+                  // never delivered, never converted again; the funds are in the DEX custody on their way back,
+                  // and the mint status (getMyLiquidityMints) follows the withdrawal.
+                  save(i, func e = { e with stage = #error; ckbtcPendingSats = 0; errorKind = ?#other; errorMessage = ?("The liquidity mint " # r.mintId.toText() # " was refused and the ckBTC refund is in progress; it is resent until it settles, and the mint status shows the outcome") });
+                };
+                case (#depositFailedRefundFailed(_)) {
+                  // The payment is in the buyer's DEX balance (withdrawable); nothing is lost.
+                  save(i, func e = { e with stage = #error; ckbtcPendingSats = 0; errorKind = ?#unrecoverable; errorMessage = ?"The liquidity mint was refused and its refund failed; the ckBTC is in your DEX balance and can be withdrawn there" });
+                };
+                case (#depositFailedRefunded(_)) {
+                  // Refunded from the DEX custody to the buyer's own account.
+                  save(i, func e = { e with stage = #refunded; ckbtcPendingSats = 0; errorKind = null; errorMessage = ?"The liquidity mint failed and the ckBTC was refunded to your account" });
                 };
                 case (_) {
-                  save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?err.message });
+                  // Nothing taken (pool or sales unavailable, unknown outcome...): stays in the deposit account.
+                  let text = switch (err) {
+                    case (#poolUnavailable(m)) m.message;
+                    case (#ledgerError(m)) m.message;
+                    case (#salesPaused) "Sales are paused";
+                    case (#dexPaused) "The DEX is paused";
+                    case _ "The liquidity mint is not available right now";
+                  };
+                  save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?(text # "; the ckBTC stays in your deposit account") });
                 };
               };
             };
@@ -1001,7 +1008,7 @@ module {
   // tracking (acknowledgements required), the address is derived and a
   // tracking is stored only when a deposit is detected; otherwise an unsaved
   // #addressShown tracking with no deposits is returned ("no deposit yet").
-  public func checkPurchase(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, caller : Principal) : async* BtcDepositResult {
+  public func checkPurchase(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, caller : Principal) : async* BtcDepositResult {
     if (caller.isAnonymous()) {
       return failure(#anonymousCaller, "Please sign in to check a Bitcoin deposit");
     };
@@ -1027,7 +1034,7 @@ module {
       return checkResult(updated, outcome);
     };
     store.purchases.add(caller, updated);
-    let tracking = await* finalize(store, ctx, caller, updated);
+    let tracking = await* finalize(store, ctx, mctx, caller, updated);
     checkResult(tracking, outcome);
   };
 
@@ -1110,16 +1117,18 @@ module {
   };
 
   // Purchase finalization only, under the shared purchase lock.
-  func finalizeLocked(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, inFlight : Set.Set<Principal>, principal : Principal) : async* () {
-    if (inFlight.contains(principal)) return;
+  func finalizeLocked(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, inFlight : Set.Set<Principal>, principal : Principal) : async* () {
     switch (store.purchases.get(principal)) {
       case (?t) {
         if (not needsFinalize(t)) return;
-        inFlight.add(principal);
+        let stamp = switch (LiquidityMintLib.takePurchaseLock(mctx.lockTimes, inFlight, principal)) {
+          case (?s) s;
+          case null return;
+        };
         try {
-          ignore await* finalize(store, ctx, principal, t);
+          ignore await* finalize(store, ctx, mctx, principal, t);
         } finally {
-          inFlight.remove(principal);
+          LiquidityMintLib.releasePurchaseLock(mctx.lockTimes, inFlight, principal, stamp);
         };
       };
       case null {};
@@ -1134,7 +1143,7 @@ module {
   // MAX_MINTER_CALLS_PER_TICK minter calls, all purchase trackings first, then
   // wallet trackings, each group from the most recently active. Purchases
   // take the shared purchase lock per principal.
-  public func retryPending(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, inFlight : Set.Set<Principal>) : async* () {
+  public func retryPending(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, inFlight : Set.Set<Principal>) : async* () {
     let now = Time.now();
     let purchasePolls = List.empty<Candidate>();
     let walletPolls = List.empty<Candidate>();
@@ -1165,25 +1174,27 @@ module {
         };
         case (#purchase) {
           if (calls < MAX_MINTER_CALLS_PER_TICK) {
-            if (not inFlight.contains(c.principal)) {
-              calls += 1;
-              inFlight.add(c.principal);
-              try {
-                ignore await* checkPurchase(store, ctx, c.principal);
-              } finally {
-                inFlight.remove(c.principal);
+            switch (LiquidityMintLib.takePurchaseLock(mctx.lockTimes, inFlight, c.principal)) {
+              case (?stamp) {
+                calls += 1;
+                try {
+                  ignore await* checkPurchase(store, ctx, mctx, c.principal);
+                } finally {
+                  LiquidityMintLib.releasePurchaseLock(mctx.lockTimes, inFlight, c.principal, stamp);
+                };
               };
+              case null {};
             };
           } else {
-            await* finalizeLocked(store, ctx, inFlight, c.principal);
+            await* finalizeLocked(store, ctx, mctx, inFlight, c.principal);
           };
         };
       };
     };
     for (principal in finalizeOnly.values()) {
-      await* finalizeLocked(store, ctx, inFlight, principal);
+      await* finalizeLocked(store, ctx, mctx, inFlight, principal);
     };
-    await retryBtcCosts(store, ctx);
+    await retryBtcCosts(store, ctx, mctx);
   };
 
   // Caches get_minter_info; failures keep the previous cache.
@@ -1206,19 +1217,19 @@ module {
   };
 
   // Re-armed on every install and upgrade from the actor body.
-  public func startTimer<system>(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, inFlight : Set.Set<Principal>) : () {
+  public func startTimer<system>(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, inFlight : Set.Set<Principal>) : () {
     ignore Timer.setTimer<system>(
       #seconds 0,
       func() : async () {
         await* refreshMinterInfo(store);
-        await* retryPending(store, ctx, inFlight);
+        await* retryPending(store, ctx, mctx, inFlight);
       },
     );
     ignore Timer.recurringTimer<system>(
       #seconds RETRY_TIMER_SECONDS,
       func() : async () {
         await* refreshMinterInfo(store);
-        await* retryPending(store, ctx, inFlight);
+        await* retryPending(store, ctx, mctx, inFlight);
       },
     );
   };

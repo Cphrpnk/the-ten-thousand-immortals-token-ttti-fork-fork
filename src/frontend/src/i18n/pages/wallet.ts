@@ -122,9 +122,12 @@ export const WALLET_TEXT = defineDict({
     totalValue: "Total value",
     swap: "Swap",
     tokens: "Tokens",
-    calculationValue: "calculation value",
-    totalNote: (price: string) =>
-      `TTTI-T counted at a calculation value of ${price} per token. Tokens without a USD rate are not counted.`,
+    priceHourlyAverage: "ICPSwap price",
+    refreshPrice: "Refresh the TTTI-T price from ICPSwap",
+    totalNote:
+      "TTTI-T is valued at the ICPSwap price, refreshed at most once every 24 hours or when you refresh it. The recoverable guarantee is shown separately and is not included in the total. Tokens without a USD rate are not counted.",
+    guaranteeLabel: "Recoverable guarantee:",
+    tttiUnvalued: "The ICPSwap price is unavailable, so TTTI-T is not valued.",
     historyButton: "History",
     buy: "Buy",
     advancedTransfer: "Advanced transfer",
@@ -271,9 +274,13 @@ export const WALLET_TEXT = defineDict({
     totalValue: "Valeur totale",
     swap: "Échanger",
     tokens: "Jetons",
-    calculationValue: "valeur de calcul",
-    totalNote: (price: string) =>
-      `TTTI-T compté à une valeur de calcul de ${price} par jeton. Les jetons sans cours en USD ne sont pas comptés.`,
+    priceHourlyAverage: "prix ICPSwap",
+    refreshPrice: "Actualiser le prix du TTTI-T depuis ICPSwap",
+    totalNote:
+      "Le TTTI-T est valorisé au prix ICPSwap, relu au plus une fois toutes les 24 heures ou quand vous l'actualisez. La garantie récupérable est affichée à part et n'est pas incluse dans le total. Les jetons sans cours en USD ne sont pas comptés.",
+    guaranteeLabel: "Garantie récupérable :",
+    tttiUnvalued:
+      "Le prix ICPSwap est indisponible : le TTTI-T n'est pas valorisé.",
     historyButton: "Historique",
     buy: "Acheter",
     advancedTransfer: "Transfert avancé",
@@ -421,9 +428,13 @@ export const WALLET_TEXT = defineDict({
     totalValue: "Valor total",
     swap: "Intercambiar",
     tokens: "Tokens",
-    calculationValue: "valor de cálculo",
-    totalNote: (price: string) =>
-      `TTTI-T contabilizado a un valor de cálculo de ${price} por token. Los tokens sin cotización en USD no se contabilizan.`,
+    priceHourlyAverage: "precio de ICPSwap",
+    refreshPrice: "Actualizar el precio del TTTI-T desde ICPSwap",
+    totalNote:
+      "El TTTI-T se valora al precio de ICPSwap, releído como máximo una vez cada 24 horas o cuando lo actualizas. La garantía recuperable se muestra por separado y no está incluida en el total. Los tokens sin cotización en USD no se contabilizan.",
+    guaranteeLabel: "Garantía recuperable:",
+    tttiUnvalued:
+      "El precio de ICPSwap no está disponible, por lo que el TTTI-T no se valora.",
     historyButton: "Historial",
     buy: "Comprar",
     advancedTransfer: "Transferencia avanzada",
@@ -565,9 +576,12 @@ export const WALLET_TEXT = defineDict({
     totalValue: "总价值",
     swap: "兑换",
     tokens: "代币",
-    calculationValue: "计算价值",
-    totalNote: (price: string) =>
-      `TTTI-T 按每枚 ${price} 的计算价值计入。没有美元汇率的代币不计入。`,
+    priceHourlyAverage: "ICPSwap 价格",
+    refreshPrice: "从 ICPSwap 刷新 TTTI-T 价格",
+    totalNote:
+      "TTTI-T 按 ICPSwap 价格估值，该价格每 24 小时最多重新读取一次，或在您刷新时读取。可收回的担保单独显示，不计入总额。没有美元汇率的代币不计入。",
+    guaranteeLabel: "可收回的担保：",
+    tttiUnvalued: "ICPSwap 价格不可用，因此未对 TTTI-T 估值。",
     historyButton: "记录",
     buy: "购买",
     advancedTransfer: "高级转账",
@@ -714,9 +728,13 @@ export const WALLET_TEXT = defineDict({
     totalValue: "Valor total",
     swap: "Trocar",
     tokens: "Tokens",
-    calculationValue: "valor de cálculo",
-    totalNote: (price: string) =>
-      `TTTI-T contabilizado a um valor de cálculo de ${price} por token. Tokens sem cotação em USD não são contabilizados.`,
+    priceHourlyAverage: "preço da ICPSwap",
+    refreshPrice: "Atualizar o preço do TTTI-T pela ICPSwap",
+    totalNote:
+      "O TTTI-T é avaliado ao preço da ICPSwap, relido no máximo uma vez a cada 24 horas ou quando você o atualiza. A garantia recuperável é exibida separadamente e não está incluída no total. Tokens sem cotação em USD não são contabilizados.",
+    guaranteeLabel: "Garantia recuperável:",
+    tttiUnvalued:
+      "O preço da ICPSwap está indisponível, portanto o TTTI-T não é avaliado.",
     historyButton: "Histórico",
     buy: "Comprar",
     advancedTransfer: "Transferência avançada",
@@ -865,9 +883,12 @@ export const WALLET_TEXT = defineDict({
     totalValue: "총 가치",
     swap: "스왑",
     tokens: "토큰",
-    calculationValue: "계산 가치",
-    totalNote: (price: string) =>
-      `TTTI-T는 토큰당 ${price}의 계산 가치로 합산됩니다. USD 시세가 없는 토큰은 합산되지 않습니다.`,
+    priceHourlyAverage: "ICPSwap 가격",
+    refreshPrice: "ICPSwap에서 TTTI-T 가격 새로고침",
+    totalNote:
+      "TTTI-T는 ICPSwap 가격으로 평가되며, 이 가격은 24시간에 한 번만 다시 읽거나 새로고침할 때 다시 읽습니다. 회수 가능한 보증금은 별도로 표시되며 총액에 포함되지 않습니다. USD 시세가 없는 토큰은 합산되지 않습니다.",
+    guaranteeLabel: "회수 가능한 보증금:",
+    tttiUnvalued: "ICPSwap 가격을 사용할 수 없어 TTTI-T는 평가되지 않습니다.",
     historyButton: "내역",
     buy: "구매",
     advancedTransfer: "고급 전송",
@@ -1010,9 +1031,12 @@ export const WALLET_TEXT = defineDict({
     totalValue: "ਕੁੱਲ ਮੁੱਲ",
     swap: "ਸਵੈਪ",
     tokens: "ਟੋਕਨ",
-    calculationValue: "ਗਣਨਾ ਮੁੱਲ",
-    totalNote: (price: string) =>
-      `TTTI-T ਨੂੰ ਪ੍ਰਤੀ ਟੋਕਨ ${price} ਦੇ ਗਣਨਾ ਮੁੱਲ 'ਤੇ ਗਿਣਿਆ ਜਾਂਦਾ ਹੈ। USD ਦਰ ਤੋਂ ਬਿਨਾਂ ਟੋਕਨ ਨਹੀਂ ਗਿਣੇ ਜਾਂਦੇ।`,
+    priceHourlyAverage: "ICPSwap ਕੀਮਤ",
+    refreshPrice: "ICPSwap ਤੋਂ TTTI-T ਦੀ ਕੀਮਤ ਤਾਜ਼ਾ ਕਰੋ",
+    totalNote:
+      "TTTI-T ਦਾ ਮੁੱਲ ICPSwap ਕੀਮਤ ਅਨੁਸਾਰ ਲਗਾਇਆ ਜਾਂਦਾ ਹੈ, ਜੋ ਹਰ 24 ਘੰਟਿਆਂ ਵਿੱਚ ਵੱਧ ਤੋਂ ਵੱਧ ਇੱਕ ਵਾਰ ਜਾਂ ਤੁਹਾਡੇ ਤਾਜ਼ਾ ਕਰਨ ਉੱਤੇ ਮੁੜ ਪੜ੍ਹੀ ਜਾਂਦੀ ਹੈ। ਵਾਪਸ ਲੈਣਯੋਗ ਗਾਰੰਟੀ ਵੱਖਰੀ ਦਿਖਾਈ ਜਾਂਦੀ ਹੈ ਅਤੇ ਕੁੱਲ ਵਿੱਚ ਸ਼ਾਮਲ ਨਹੀਂ ਹੈ। USD ਦਰ ਤੋਂ ਬਿਨਾਂ ਟੋਕਨ ਨਹੀਂ ਗਿਣੇ ਜਾਂਦੇ।",
+    guaranteeLabel: "ਵਾਪਸ ਲੈਣਯੋਗ ਗਾਰੰਟੀ:",
+    tttiUnvalued: "ICPSwap ਕੀਮਤ ਉਪਲਬਧ ਨਹੀਂ ਹੈ, ਇਸ ਲਈ TTTI-T ਦਾ ਮੁੱਲ ਨਹੀਂ ਲਗਾਇਆ ਗਿਆ।",
     historyButton: "ਇਤਿਹਾਸ",
     buy: "ਖਰੀਦੋ",
     advancedTransfer: "ਉੱਨਤ ਟ੍ਰਾਂਸਫਰ",

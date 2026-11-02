@@ -33,6 +33,7 @@ import {
   BTC_DEFAULT_MIN_CONFIRMATIONS,
   formatSats,
 } from "../../lib/token";
+import { FiatAmount } from "../FiatAmount";
 import { BtcDepositAddressCard } from "../btc/BtcDepositAddressCard";
 import { BtcDepositProgress } from "../btc/BtcDepositProgress";
 import { Button } from "../ui/button";
@@ -259,6 +260,14 @@ export function BtcToCkbtcPanel({ requestAddress }: BtcToCkbtcPanelProps) {
                       {ownerBalance.data !== undefined
                         ? formatSats(ownerBalance.data, "ckBTC")
                         : t.btcBalanceUnavailable}
+                      {ownerBalance.data !== undefined && (
+                        <FiatAmount
+                          token={PayToken.ckbtc}
+                          amount={ownerBalance.data}
+                          className="ml-2 font-sans"
+                          ocid="wallet.btc.internal_balance.fiat"
+                        />
+                      )}
                     </span>
                   )}
                 </div>

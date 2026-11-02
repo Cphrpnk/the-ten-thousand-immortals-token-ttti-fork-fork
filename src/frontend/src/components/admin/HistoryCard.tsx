@@ -11,6 +11,8 @@ import {
   HISTORY_PAGE_SIZE,
   useAdminHistory,
 } from "../../hooks/useAdminTreasury";
+import { FiatAmount } from "../FiatAmount";
+import { fiatTokenOfDex } from "../dex/DexFiat";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -33,7 +35,7 @@ const FILTERS: ReadonlyArray<ChipOption<HistoryFilter>> = [
   { value: HistoryFilter.mintDeposit, label: "Mint/Deposit" },
   { value: HistoryFilter.revenueSent, label: "Revenue sent" },
   { value: HistoryFilter.refund, label: "Refund" },
-  { value: HistoryFilter.buyback, label: "Buyback" },
+  { value: HistoryFilter.redemption, label: "Redemption" },
   { value: HistoryFilter.swap, label: "Swap" },
   { value: HistoryFilter.liquidity, label: "Liquidity" },
   { value: HistoryFilter.destination, label: "Destination" },
@@ -43,7 +45,7 @@ const KIND_LABELS: Record<HistoryKind, string> = {
   [HistoryKind.mintDeposit]: "Mint/Deposit",
   [HistoryKind.revenueSent]: "Revenue sent",
   [HistoryKind.refund]: "Refund",
-  [HistoryKind.buyback]: "Buyback",
+  [HistoryKind.redemption]: "Redemption",
   [HistoryKind.swap]: "Swap",
   [HistoryKind.liquidity]: "Liquidity",
   [HistoryKind.destination]: "Destination",
@@ -144,6 +146,14 @@ function Row({ row, index }: { row: HistoryRow; index: number }) {
           {row.amount !== undefined && dexToken !== null
             ? formatTokenAmount(row.amount, dexToken)
             : (row.amount?.toString() ?? "—")}
+          {row.amount !== undefined && dexToken !== null && (
+            <FiatAmount
+              token={fiatTokenOfDex(dexToken)}
+              amount={row.amount}
+              className="ml-1.5"
+              ocid={`${ocid}_fiat`}
+            />
+          )}
         </p>
         <p className="text-xs text-muted-foreground">{row.status}</p>
         {row.block !== undefined && dexToken !== null && (

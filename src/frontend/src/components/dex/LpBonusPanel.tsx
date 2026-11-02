@@ -1,19 +1,16 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import { PayToken } from "../../backend";
 import type { PoolView } from "../../backend";
 import { useClaimLpBonus, useMyLpBonus } from "../../hooks/useDex";
-import { useDict, useLanguage } from "../../i18n/core";
+import { useDict } from "../../i18n/core";
 import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
-import {
-  claimBonusErrorText,
-  formatBonusIcp,
-  formatDexDate,
-  transferStatusLabel,
-} from "./dexFormat";
+import { DexFiat, useDexFiatText } from "./DexFiat";
+import { claimBonusErrorText, formatBonusIcp } from "./dexFormat";
 import { formatBonusWeight, remainingLockText } from "./liquidityFormat";
 
 type Feedback = { tone: "info" | "danger"; text: string };
@@ -27,7 +24,7 @@ export function LpBonusPanel({
   pools: ReadonlyArray<PoolView>;
 }) {
   const t = useDict(DEX_TEXT);
-  const { lang } = useLanguage();
+  const fiatText = useDexFiatText();
   const bonus = useMyLpBonus(owner?.toText());
   const claim = useClaimLpBonus();
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -45,7 +42,9 @@ export function LpBonusPanel({
           outcome.__kind__ === "ok"
             ? {
                 tone: "info",
-                text: t.claimDone(formatBonusIcp(outcome.ok.amountE8s)),
+                text: t.claimDone(
+                  `${formatBonusIcp(outcome.ok.amountE8s)} ${fiatText(PayToken.icp, outcome.ok.amountE8s)}`,
+                ),
               }
             : { tone: "danger", text: claimBonusErrorText(t, outcome.err) },
         ),
@@ -55,8 +54,11 @@ export function LpBonusPanel({
   };
 
   return (
-    <div className="flex flex-col gap-3" data-ocid="pools.lp_bonus.panel">
-      <h3 className="font-display text-xl tracking-wide">{t.bonusTitle}</h3>
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      data-ocid="pools.lp_bonus.panel"
+    >
+      <h4 className="font-display text-lg tracking-wide">{t.bonusTitle}</h4>
       <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         <p>{t.bonusScope}</p>
         <p>{t.bonusWeightRule}</p>
@@ -76,13 +78,17 @@ export function LpBonusPanel({
           {t.bonusLoadError}
         </p>
       ) : (
-        <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 text-sm">
+        <div className="flex flex-col gap-4 text-sm">
           <div className="flex flex-col gap-1 tabular-nums">
             <p className="font-medium" data-ocid="pools.lp_bonus.claimable">
-              {t.bonusClaimable(formatBonusIcp(data.claimableE8s))}
+              {t.bonusClaimable(
+                `${formatBonusIcp(data.claimableE8s)} ${fiatText(PayToken.icp, data.claimableE8s)}`,
+              )}
             </p>
             <p className="text-muted-foreground">
-              {t.bonusClaimedTotal(formatBonusIcp(data.claimedE8s))}
+              {t.bonusClaimedTotal(
+                `${formatBonusIcp(data.claimedE8s)} ${fiatText(PayToken.icp, data.claimedE8s)}`,
+              )}
             </p>
           </div>
 
@@ -132,7 +138,8 @@ export function LpBonusPanel({
                         )}
                       </td>
                       <td className="py-1.5 pe-3 text-end">
-                        {formatBonusIcp(p.valueIcpE8s)}
+                        {formatBonusIcp(p.valueIcpE8s)}{" "}
+                        <DexFiat token={PayToken.icp} amount={p.valueIcpE8s} />
                       </td>
                       <td className="py-1.5 pe-3 text-end">
                         {remainingLockText(t, p.remainingLockNs)}
@@ -175,37 +182,6 @@ export function LpBonusPanel({
               >
                 {feedback.text}
               </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2 border-t border-border pt-3">
-            <p className="font-medium">{t.bonusClaimsTitle}</p>
-            {data.claims.length === 0 ? (
-              <p
-                className="text-xs text-muted-foreground"
-                data-ocid="pools.lp_bonus.claims_empty_state"
-              >
-                {t.bonusClaimsEmpty}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-1.5 text-xs tabular-nums">
-                {data.claims.map((c, i) => (
-                  <li
-                    key={c.n.toString()}
-                    className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"
-                    data-ocid={`pools.lp_bonus.claim.item.${i + 1}`}
-                  >
-                    <span>{formatBonusIcp(c.amountE8s)}</span>
-                    <span className="text-muted-foreground">
-                      {formatDexDate(c.createdAt, lang)} ·{" "}
-                      {transferStatusLabel(t, c.status)}
-                    </span>
-                    <span className="w-full font-mono text-muted-foreground break-all">
-                      {c.memoText}
-                    </span>
-                  </li>
-                ))}
-              </ul>
             )}
           </div>
         </div>

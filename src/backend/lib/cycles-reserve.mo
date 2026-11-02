@@ -14,7 +14,10 @@ import TreasuryLib "treasury";
 
 // Cycles reserve domain logic: reserve share, cached balance, automatic CMC
 // top-up (timer), cycles samples, autonomy and the dynamic cycles share of the
-// 20 % pool protocol share (DEX lot 4). The reserve has no withdrawal path.
+// 30 % pool protocol share (DEX lot 4). The reserve has no withdrawal path.
+// PTM-4: the ICP part of the 1 % mint and buyback fees fills the reserve first,
+// up to one year of measured consumption (planFeeSplit), and is moved to the
+// reserve account later by the settlement in lib/retry.mo.
 module {
   public type Account = Types.Account;
   public type CyclesReserveStore = Types.CyclesReserveStore;
@@ -30,12 +33,17 @@ module {
   public type ShareChange = Types.ShareChange;
   public type AutonomyView = Types.AutonomyView;
   public type CyclesShareView = Types.CyclesShareView;
+  public type CyclesFeeStore = Types.CyclesFeeStore;
+  public type CyclesFeeRouting = Types.CyclesFeeRouting;
+  public type FeeSplit = Types.FeeSplit;
+  public type ReserveCoverage = Types.ReserveCoverage;
+  public type TopUpResult = Types.TopUpResult;
 
   // --- DEX lot 4: autonomy and cycles share constants (code, not settable) ---
 
   public let AUTONOMY_TARGET_DAYS : Nat = 90;
-  public let MIN_CYCLES_SHARE_BPS : Nat = 500; // 5 % of the 20 % protocol share
-  public let MAX_CYCLES_SHARE_BPS : Nat = 4_000; // 40 % of the 20 % protocol share
+  public let MIN_CYCLES_SHARE_BPS : Nat = 500; // 5 % of the 30 % protocol share
+  public let MAX_CYCLES_SHARE_BPS : Nat = 4_000; // 40 % of the 30 % protocol share
   public let LOW_AUTONOMY_DAYS : Nat = 45; // max share below
   public let HIGH_AUTONOMY_DAYS : Nat = 180; // min share above
   // At most 10 percentage points (absolute, 1 000 bps) per adjustment.
@@ -62,6 +70,13 @@ module {
   // Identical resend window of a top-up attempt, from its created_at_time:
   // 23 h (same rule as lib/retry.mo, defined here to avoid importing it).
   public let TOPUP_RESEND_WINDOW_NS : Nat = 82_800_000_000_000;
+
+  // PTM-4: the reserve is filled up to 365 days of measured consumption.
+  public let TARGET_DAYS_YEAR : Nat = 365;
+  public let DAYS_PER_MONTH : Nat = 30;
+  // Smallest cycles share settled to the reserve (0.001 ICP): smaller
+  // recorded shares wait and accumulate.
+  public let MIN_SETTLE_E8S : Nat = 100_000;
 
   // Cycles Minting Canister (mainnet).
   public let CMC_CANISTER_ID : Text = "rkp4c-7iaaa-aaaaa-aaaca-cai";
@@ -130,7 +145,7 @@ module {
 
   // --- Views -----------------------------------------------------------------
 
-  public func status(store : CyclesReserveStore, canister : Principal) : CyclesStatus {
+  public func status(store : CyclesReserveStore, autonomy : AutonomyStore, fees : CyclesFeeStore, canister : Principal, now : Int) : CyclesStatus {
     {
       cyclesBalance = Cycles.balance();
       topUpThreshold = TOPUP_THRESHOLD;
@@ -139,6 +154,53 @@ module {
       reserveFloorE8s = RESERVE_FLOOR_E8S;
       lastTopUp = store.lastTopUp;
       withdrawals = store.withdrawals.toArray();
+      pendingFeeShareE8s = fees.pendingE8s + fees.inFlightE8s;
+      coverage = coverage(store, autonomy, now);
+    };
+  };
+
+  // Rate of the last notified top-up, null while unknown (or zero).
+  func knownRate(store : CyclesReserveStore) : ?Nat {
+    switch (cyclesPerIcpEstimate(store)) {
+      case (?c) { if (c == 0) null else ?c };
+      case null { null };
+    };
+  };
+
+  // Measured daily consumption, the larger of the 7-day and 30-day averages
+  // (as autonomyView); 0 while nothing can be measured.
+  func measuredDaily(autonomy : AutonomyStore, now : Int) : Nat {
+    Nat.max(averageCyclesPerDay(autonomy, 7, now) ?? 0, averageCyclesPerDay(autonomy, 30, now) ?? 0);
+  };
+
+  // Months of measured consumption covered by the reserve (cycles balance +
+  // reserve ICP at the last top-up rate) and the one-year target; null
+  // without measured consumption.
+  public func coverage(store : CyclesReserveStore, autonomy : AutonomyStore, now : Int) : ?ReserveCoverage {
+    let daily = measuredDaily(autonomy, now);
+    if (daily == 0) {
+      return null;
+    };
+    let rate = knownRate(store);
+    let reserveCycles = switch (rate) {
+      case (?c) { store.reserveBalanceE8s * c / TreasuryLib.ICP_DECIMALS };
+      case null { 0 };
+    };
+    let total = Cycles.balance() + reserveCycles;
+    let monthly = daily * DAYS_PER_MONTH;
+    let target = daily * TARGET_DAYS_YEAR;
+    ?{
+      dailyConsumptionCycles = daily;
+      monthlyConsumptionCycles = monthly;
+      totalCycles = total;
+      monthsCoveredX100 = total * 100 / monthly;
+      yearTargetCycles = target;
+      yearTargetE8s = switch (rate) {
+        case (?c) { ?((target * TreasuryLib.ICP_DECIMALS + c - 1) / c) };
+        case null { null };
+      };
+      fillBps = Nat.min(10_000, total * 10_000 / target);
+      rateKnown = rate != null;
     };
   };
 
@@ -267,7 +329,7 @@ module {
     Nat.sub(MAX_CYCLES_SHARE_BPS, down);
   };
 
-  // The current cycles share (bps of the 20 % protocol share).
+  // The current cycles share (bps of the 30 % protocol share).
   public func cyclesShareBps(autonomy : AutonomyStore) : Nat {
     Nat.min(MAX_CYCLES_SHARE_BPS, Nat.max(MIN_CYCLES_SHARE_BPS, autonomy.cyclesShareBps));
   };
@@ -333,6 +395,59 @@ module {
       case (#failed(_)) { false };
       case (#needsReview) { false };
     };
+  };
+
+  // --- PTM-4: 1 % mint and buyback fees ----------------------------------------
+
+  public func emptyFeeStore() : CyclesFeeStore {
+    {
+      var pendingE8s = 0;
+      var inFlightE8s = 0;
+      var settledE8s = 0;
+      var recordedE8s = 0;
+      settlements = Map.empty();
+      mintSplits = Map.empty();
+      buybackSplits = Map.empty();
+    };
+  };
+
+  // ICP e8s still missing to fill the reserve: up to 365 days of measured
+  // consumption, counting the cycles balance, the reserve balance and the
+  // shares already recorded (waiting or in flight). Without measured
+  // consumption (or without a known top-up rate) the target is the floor.
+  func missingE8s(r : CyclesFeeRouting, now : Int) : Nat {
+    let held = r.reserve.reserveBalanceE8s + r.fees.pendingE8s + r.fees.inFlightE8s;
+    let daily = measuredDaily(r.autonomy, now);
+    switch (knownRate(r.reserve)) {
+      case (?c) {
+        if (daily == 0) {
+          sat(RESERVE_FLOOR_E8S, held);
+        } else {
+          let have = Cycles.balance() + held * c / TreasuryLib.ICP_DECIMALS;
+          let missingCycles = sat(daily * TARGET_DAYS_YEAR, have);
+          (missingCycles * TreasuryLib.ICP_DECIMALS + c - 1) / c;
+        };
+      };
+      case null { sat(RESERVE_FLOOR_E8S, held) };
+    };
+  };
+
+  // Pure split of a received 1 % fee. ICP: the reserve first, up to its
+  // target; the rest to the creator. Any other token: all to the creator.
+  // Nothing is recorded here (see recordCyclesShare).
+  public func planFeeSplit(r : CyclesFeeRouting, isIcp : Bool, amount : Nat, now : Int) : FeeSplit {
+    if (not isIcp or amount == 0) {
+      return { cyclesE8s = 0; creator = amount };
+    };
+    let cycles = Nat.min(amount, missingE8s(r, now));
+    { cyclesE8s = cycles; creator = Nat.sub(amount, cycles) };
+  };
+
+  // Books the cycles share of a split (synchronous, no transfer): it waits in
+  // the contract's ICP DEX balance until the settlement sends it.
+  public func recordCyclesShare(fees : CyclesFeeStore, cyclesE8s : Nat) {
+    fees.pendingE8s += cyclesE8s;
+    fees.recordedE8s += cyclesE8s;
   };
 
   // --- Top-up ----------------------------------------------------------------
@@ -542,6 +657,36 @@ module {
     } catch (_) {} finally {
       lock.busy := false;
     };
+  };
+
+  // True when a top-up pass has something to do: the cycles balance is below
+  // the threshold, or a top-up transfer or notify is waiting. Used by topUpNow
+  // and by the actor's inspect check, so both stay in sync.
+  public func topUpNeeded(store : CyclesReserveStore) : Bool {
+    Cycles.balance() < TOPUP_THRESHOLD or isPendingNotify(store) or hasOpenTopUp(store);
+  };
+
+  // Public top-up (any caller): the same pass as the timer, with the same
+  // lock. It does nothing while the cycles balance is at or above the
+  // threshold and no top-up transfer or notify is waiting, and it does nothing
+  // while another pass runs.
+  public func topUpNow(store : CyclesReserveStore, lock : ReserveLock, canister : Principal) : async TopUpResult {
+    if (lock.busy) {
+      return #busy;
+    };
+    if (not topUpNeeded(store)) {
+      return #notNeeded({ cyclesBalance = Cycles.balance(); threshold = TOPUP_THRESHOLD });
+    };
+    await runTopUp(store, lock, canister);
+    #ran({
+      cyclesBalance = Cycles.balance();
+      reserveBalanceE8s = store.reserveBalanceE8s;
+      lastTopUp = store.lastTopUp;
+      attemptOpen = switch (store.pendingTopUp) {
+        case (?a) { hasOpenTopUp(store) or a.needsReview };
+        case null { false };
+      };
+    });
   };
 
   func notifiedBlock(store : CyclesReserveStore) : ?Nat {

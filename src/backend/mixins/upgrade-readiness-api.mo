@@ -18,14 +18,14 @@ import OwnerTypes "../types/owner-revenue";
 import SettlementLib "../lib/settlement";
 import MintFeeTypes "../types/mint-fee";
 
-// Admin upgrade readiness: pause, purchases and BTC lock in flight, buybacks
+// Admin upgrade readiness: pause, purchases and BTC lock in flight, guarantee redemptions
 // in flight, reserve lock and stored top-up attempt, open purchase traces,
 // sale.reserved and its reconciliation, plus (DEX lot 4) the DC / DL /
 // weekly locks and the DC sends and DL claims still in flight.
 mixin (
   sale : SaleLib.SaleStore,
   purchasesInFlight : Set.Set<Principal>,
-  buybacksInFlight : Set.Set<Text>,
+  redemptionsInFlight : Set.Set<Text>,
   reserveLock : CyclesReserveLib.ReserveLock,
   cyclesReserve : CyclesReserveLib.CyclesReserveStore,
   retry : RetryTypes.RetryStore,
@@ -88,8 +88,8 @@ mixin (
       purchasesInFlightCount = purchasesInFlight.size();
       purchasesInFlight = purchasesInFlight.toArray();
       btcLockHeld = not purchasesInFlight.isEmpty();
-      buybacksInFlightCount = buybacksInFlight.size();
-      buybacksInFlight = buybacksInFlight.toArray();
+      redemptionsInFlightCount = redemptionsInFlight.size();
+      redemptionsInFlight = redemptionsInFlight.toArray();
       reserveLockBusy = reserveLock.busy;
       pendingTopUp = cyclesReserve.pendingTopUp;
       openTraceCount = retry.traces.size();

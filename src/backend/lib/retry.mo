@@ -1,4 +1,5 @@
 import Array "mo:core/Array";
+import List "mo:core/List";
 import Blob "mo:core/Blob";
 import Int "mo:core/Int";
 import Principal "mo:core/Principal";
@@ -19,6 +20,8 @@ import PayTokenLib "pay-token";
 import IcrcLib "icrc";
 import DexTypes "../types/dex";
 import DexReserveTypes "../types/dex-reserve";
+import BatchTypes "../types/dex-batch";
+import PageTypes "../types/page";
 import IndicatorTypes "../types/dex-indicators";
 import DexLib "dex";
 import OwnerTypes "../types/owner-revenue";
@@ -51,14 +54,14 @@ module {
 
   // --- Generic retry rule ----------------------------------------------------
 
-  // "PC", "RF", "FW", "SH", "BB", "BR", "DD", "DW", "DQ".
+  // "PC", "RF", "FW", "SH", "GR", "BR", "DD", "DW", "DQ".
   public func prefixText(prefix : TransferPrefix) : Text {
     switch (prefix) {
       case (#PC) { "PC" };
       case (#RF) { "RF" };
       case (#FW) { "FW" };
       case (#SH) { "SH" };
-      case (#BB) { "BB" };
+      case (#GR) { "GR" };
       case (#BR) { "BR" };
       case (#DD) { "DD" };
       case (#DW) { "DW" };
@@ -70,6 +73,11 @@ module {
       case (#MF) { "MF" };
       case (#IR) { "IR" };
       case (#ST) { "ST" };
+      case (#SW) { "SW" };
+      case (#LQ) { "LQ" };
+      case (#CF) { "CF" };
+      case (#CY) { "CY" };
+      case (#AB) { "AB" };
     };
   };
 
@@ -240,18 +248,18 @@ module {
     { a with memo = btcRefundMemo(a.n, a.attempt) };
   };
 
-  // --- Buyback payouts (BB) ---------------------------------------------------
+  // --- Guarantee redemption payouts (GR) ----------------------------------------
 
-  // "TTTI-BB-<n>-<m>" (always with the attempt index), <= 32 bytes.
-  public func buybackPayoutMemo(n : Nat, m : Nat) : Blob {
-    ("TTTI-BB-" # n.toText() # "-" # m.toText()).encodeUtf8();
+  // "TTTI-GR-<n>-<m>" (always with the attempt index), <= 32 bytes.
+  public func redemptionPayoutMemo(n : Nat, m : Nat) : Blob {
+    ("TTTI-GR-" # n.toText() # "-" # m.toText()).encodeUtf8();
   };
 
-  // New BB attempt (memo TTTI-BB-<n>-<m>, created_at_time = now, #pending);
-  // call before the first await and store it on the buyback record.
-  public func newBuybackPayoutAttempt(store : RetryStore, previous : ?TransferAttempt, request : TransferRequest, now : Nat64) : TransferAttempt {
-    let a = newAttempt(store, #BB, previous, request, now);
-    { a with memo = buybackPayoutMemo(a.n, a.attempt) };
+  // New GR attempt (memo TTTI-GR-<n>-<m>, created_at_time = now, #pending);
+  // call before the first await and store it on the redemption record.
+  public func newRedemptionPayoutAttempt(store : RetryStore, previous : ?TransferAttempt, request : TransferRequest, now : Nat64) : TransferAttempt {
+    let a = newAttempt(store, #GR, previous, request, now);
+    { a with memo = redemptionPayoutMemo(a.n, a.attempt) };
   };
 
   // Legacy BTC refund failure whose outcome is unknown (rejected call, trap or
@@ -1024,10 +1032,10 @@ module {
         setSweep(ctx, { ctx.ownerRevenue.sweep with reserveTopUp = ?{ a with outcome = #succeeded(block) } });
       };
       // BTC rows are handled by lib/btc-deposit.mo (deposit entries).
-      // BTC rows are handled by lib/btc-deposit.mo, BB rows by lib/buyback.mo.
+      // BTC rows are handled by lib/btc-deposit.mo, GR rows by lib/guarantee.mo.
       // DEX rows (DD, DW, DQ) are handled by markDexArrived.
       // Mint-fee rows (MF) are not handled here.
-      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF or #IR or #ST) { return #err(#notApplicable) };
+      case (#BR or #BC or #BM or #GR or #DD or #DW or #DQ or #DC or #DL or #MF or #IR or #ST or #SW or #LQ or #CS) { return #err(#notApplicable) };
     };
     #ok;
   };
@@ -1123,10 +1131,10 @@ module {
         setSweep(ctx, { ctx.ownerRevenue.sweep with reserveTopUp = ?newAttempt(ctx.retry, #SR, ?a, a.request, now) });
       };
       // BTC rows are handled by lib/btc-deposit.mo (deposit entries).
-      // BB rows are handled by lib/buyback.mo.
+      // GR rows are handled by lib/guarantee.mo.
       // DEX rows (DD, DW, DQ) are handled by markDexNotArrived.
       // Mint-fee rows (MF) are not handled here.
-      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #MF or #IR or #ST) { return #err(#notApplicable) };
+      case (#BR or #BC or #BM or #GR or #DD or #DW or #DQ or #DC or #DL or #MF or #IR or #ST or #SW or #LQ or #CS) { return #err(#notApplicable) };
     };
     #ok;
   };
@@ -1153,9 +1161,9 @@ module {
         };
       };
       // BTC rows are handled by lib/btc-deposit.mo (deposit entries).
-      // BB: buyback payouts are not refunded by hand (cancelBuyback instead).
+      // GR: redemption payouts are not refunded by hand.
       // DEX rows: no hand refund.
-      case (#BR or #BC or #BM or #BB or #DD or #DW or #DQ or #DC or #DL or #OW or #SR or #MF or #IR or #ST) { #err(#notApplicable) };
+      case (#BR or #BC or #BM or #GR or #DD or #DW or #DQ or #DC or #DL or #OW or #SR or #MF or #IR or #ST or #SW or #LQ or #CS) { #err(#notApplicable) };
     };
   };
 
@@ -1173,6 +1181,23 @@ module {
     canister : Principal;
     pause : DexReserveTypes.PauseState; // DEX lot 6 pause (retries keep running)
     indicators : IndicatorTypes.IndicatorsStore; // DEX lot 7 swap activity recording
+    batch : BatchTypes.BatchStore; // PTM-9f: zeroed-account exclusions (re-included on activity)
+    // Called with the withdrawal number and its status each time a DW withdrawal
+    // settles (completed or failed), so a liquidity mint refund follows it.
+    onWithdrawal : (Nat, DexTypes.DexTransferStatus) -> ();
+  };
+
+  // PTM-9f: re-includes the user deposit accounts of `owner` for `tokens` after
+  // new DEX activity (deposit, pair request, swap, withdrawal): the zero mark
+  // written by the sweep is removed, so the next reserve check and the next
+  // sweep read the account again. Key = "<tokenKey>/<owner text>" (the key of
+  // lib/dex-sweep.mo zeroKey). Removes a mark only; no balance, block or
+  // sale.reserved is touched. No effect when the account is not excluded.
+  public func reincludeOnActivity(batch : BatchTypes.BatchStore, owner : Principal, tokens : [DexTypes.DexToken]) {
+    let suffix = "/" # owner.toText();
+    for (token in tokens.values()) {
+      batch.zeroed.remove(DexLib.tokenKey(token) # suffix);
+    };
   };
 
   // Lock key of one deposit or withdrawal in flight per principal and token.
@@ -1428,15 +1453,66 @@ module {
   };
 
   // DD: records the attempt (before any await) and the deposit #inProgress.
+  // The transfer_from goes from the owner's default account into the token's
+  // DEX custody account (DEX-1).
   public func openDexDeposit(ctx : DexContext, owner : Principal, token : DexTypes.DexToken, amount : Nat) : Types.DexTransfer {
     let request : Types.DexTransferRequest = {
       token;
       from = { owner; subaccount = null };
-      to = DexLib.userDepositAccount(ctx.canister, owner);
+      to = DexLib.custodyAccount(ctx.canister, token);
       amount;
       fee = ?dexFee(ctx, token);
     };
     let attempt = newDexAttempt(ctx.retry, #DD, null, request, nowNat64());
+    let transfer : Types.DexTransfer = { n = attempt.n; owner; token; amount; attempt; status = #inProgress };
+    ctx.transfers.deposits.add(attempt.n, transfer);
+    reincludeOnActivity(ctx.batch, owner, [token]);
+    transfer;
+  };
+
+  // --- PTM-6a: auction bid deposits (AB) ---------------------------------------
+  // The deposit of a sealed bid is an ICRC-2 transfer_from recorded as a DD
+  // transfer (same attempt, resend and To review rules) whose destination is
+  // the token's auction custody account. It never credits an internal DEX
+  // balance; lib/auction.mo records the bid when the transfer succeeded.
+
+  // 32-byte ASCII subaccount "AUCTION-BIDS-<symbol>-" padded with "0". The
+  // prefix "AUCTION-BIDS-" overlaps no other custody, pool, fee, deposit,
+  // mint, returned or injection subaccount.
+  public func auctionCustodySubaccount(token : DexTypes.DexToken) : Blob {
+    var text = "AUCTION-BIDS-" # DexLib.tokenSymbol(token) # "-";
+    while (text.size() < 32) {
+      text := text # "0";
+    };
+    text.encodeUtf8();
+  };
+
+  public func auctionCustodyAccount(canister : Principal, token : DexTypes.DexToken) : DexTypes.DexAccount {
+    { owner = canister; subaccount = ?auctionCustodySubaccount(token) };
+  };
+
+  // Lock key of one auction bid in flight per principal.
+  public func auctionLockKey(owner : Principal) : Text {
+    "AB/" # owner.toText();
+  };
+
+  // True for a DD transfer whose destination is an auction custody account.
+  public func isAuctionDeposit(t : Types.DexTransfer) : Bool {
+    t.attempt.request.to.subaccount == ?auctionCustodySubaccount(t.token);
+  };
+
+  // AB: records the deposit attempt (before any await): transfer_from of
+  // `amount` from the owner's default account into the token's auction
+  // custody account, memo TTTI-AB-<n>, created_at_time = now. Credits nothing.
+  public func openAuctionDeposit(ctx : DexContext, owner : Principal, token : DexTypes.DexToken, amount : Nat) : Types.DexTransfer {
+    let request : Types.DexTransferRequest = {
+      token;
+      from = { owner; subaccount = null };
+      to = auctionCustodyAccount(ctx.canister, token);
+      amount;
+      fee = ?dexFee(ctx, token);
+    };
+    let attempt = newDexAttempt(ctx.retry, #AB, null, request, nowNat64());
     let transfer : Types.DexTransfer = { n = attempt.n; owner; token; amount; attempt; status = #inProgress };
     ctx.transfers.deposits.add(attempt.n, transfer);
     transfer;
@@ -1460,7 +1536,10 @@ module {
     };
     let status : DexTypes.DexTransferStatus = switch (attempt.outcome) {
       case (#succeeded(block)) {
-        DexLib.credit(ctx.balances, current.owner, current.token, current.amount);
+        // An auction deposit (AB) never credits an internal DEX balance.
+        if (not isAuctionDeposit(current)) {
+          DexLib.credit(ctx.balances, current.owner, current.token, current.amount);
+        };
         #completed(block);
       };
       case (#failed(text)) { #failed(text) };
@@ -1483,7 +1562,8 @@ module {
   };
 
   // DW: reserves `amount` of the internal balance and records the attempt
-  // (amount - fee sent to the owner's default account). Null when the
+  // (amount - fee sent from the token's DEX custody account to the owner's
+  // default account). Null when the
   // available balance does not cover `amount`.
   public func openDexWithdrawal(ctx : DexContext, owner : Principal, token : DexTypes.DexToken, amount : Nat, fee : Nat) : ?Types.DexTransfer {
     if (amount <= fee or not DexLib.reserve(ctx.balances, owner, token, amount)) {
@@ -1491,7 +1571,7 @@ module {
     };
     let request : Types.DexTransferRequest = {
       token;
-      from = DexLib.userDepositAccount(ctx.canister, owner);
+      from = DexLib.custodyAccount(ctx.canister, token);
       to = { owner; subaccount = null };
       amount = Nat.sub(amount, fee);
       fee = ?fee;
@@ -1499,6 +1579,7 @@ module {
     let attempt = newDexAttempt(ctx.retry, #DW, null, request, nowNat64());
     let transfer : Types.DexTransfer = { n = attempt.n; owner; token; amount; attempt; status = #inProgress };
     ctx.transfers.withdrawals.add(attempt.n, transfer);
+    reincludeOnActivity(ctx.batch, owner, [token]);
     ?transfer;
   };
 
@@ -1531,6 +1612,7 @@ module {
     };
     let updated = { current with attempt; status };
     ctx.transfers.withdrawals.add(n, updated);
+    ctx.onWithdrawal(n, status);
     updated;
   };
 
@@ -1647,7 +1729,7 @@ module {
     let now = nowNat64();
     let deposits = ctx.transfers.deposits.values().filter(func t = t.status == #inProgress).toArray();
     for (t in deposits.values()) {
-      let key = dexLockKey(t.owner, t.token);
+      let key = if (isAuctionDeposit(t)) auctionLockKey(t.owner) else dexLockKey(t.owner, t.token);
       if (tryLock(ctx.locks, key)) {
         try {
           switch (dexTransferAction(t, now)) {
@@ -1673,7 +1755,9 @@ module {
             case (#needsReview) { ctx.transfers.withdrawals.add(t.n, { t with status = #needsReview }) };
             case (#newAttempt) {
               DexLib.release(ctx.balances, t.owner, t.token, t.amount);
-              ctx.transfers.withdrawals.add(t.n, { t with status = #failed("Not sent within 23 h; the balance was given back") });
+              let text = "Not sent within 23 h; the balance was given back";
+              ctx.transfers.withdrawals.add(t.n, { t with status = #failed(text) });
+              ctx.onWithdrawal(t.n, #failed(text));
             };
             case (#done) {};
           };
@@ -1693,6 +1777,8 @@ module {
         };
       };
     };
+    // DEX-2: announced pair removals due, and LQ payout resend / retry.
+    try { await processPairRemovals(ctx) } catch (_) {};
   };
 
   // 10-minute recurring timer; armed on every install and upgrade.
@@ -1726,9 +1812,61 @@ module {
 
   // Deposits and withdrawals of `owner`, newest first.
   public func dexTransfersOf(ctx : DexContext, owner : Principal) : [DexTypes.DexTransferView] {
-    let deposits = ctx.transfers.deposits.values().filter(func t = t.owner == owner).map(func t = dexTransferView(ctx, t, #deposit)).toArray();
+    let deposits = ctx.transfers.deposits.values().filter(func t = t.owner == owner and not isAuctionDeposit(t)).map(func t = dexTransferView(ctx, t, #deposit)).toArray();
     let withdrawals = ctx.transfers.withdrawals.values().filter(func t = t.owner == owner).map(func t = dexTransferView(ctx, t, #withdrawal)).toArray();
     deposits.concat(withdrawals).sort(func(x, y) = Nat.compare(y.n, x.n));
+  };
+
+  // PTM-9f: deposits and withdrawals of `owner`, newest first, by pages. The
+  // transfer number n is global and unique across deposits and withdrawals, so
+  // it is the cursor: cursor = null starts at the newest transfer, cursor = ?c
+  // returns the transfers with n strictly below c. `limit` is clamped by
+  // PageTypes.clampLimit. nextCursor = n of the last returned transfer while
+  // older ones remain, null on the last page. Same transfers as dexTransfersOf
+  // (auction bid deposits left out); each one appears exactly once across pages.
+  public func dexTransfersPageOf(ctx : DexContext, owner : Principal, cursor : ?Nat, limit : Nat) : PageTypes.Page<DexTypes.DexTransferView> {
+    dexTransfersPageWith(ctx.transfers, owner, cursor, limit, func(t, direction) = dexTransferView(ctx, t, direction));
+  };
+
+  // The paging itself, over the transfer stores and a view function (lets the
+  // interpreter tests run it without a full DexContext).
+  public func dexTransfersPageWith(
+    transfers : Types.DexTransferStore,
+    owner : Principal,
+    cursor : ?Nat,
+    limit : Nat,
+    view : (Types.DexTransfer, DexTypes.DexTransferDirection) -> DexTypes.DexTransferView,
+  ) : PageTypes.Page<DexTypes.DexTransferView> {
+    let size = PageTypes.clampLimit(limit);
+    let (depositsIt, withdrawalsIt) = switch (cursor) {
+      case null (transfers.deposits.reverseEntries(), transfers.withdrawals.reverseEntries());
+      case (?0) return PageTypes.emptyPage<DexTypes.DexTransferView>();
+      case (?c) (transfers.deposits.reverseEntriesFrom(c - 1), transfers.withdrawals.reverseEntriesFrom(c - 1));
+    };
+    // At most size + 1 matching transfers of each kind: enough to fill the page
+    // and to know whether an older one remains.
+    let found = List.empty<(Nat, DexTypes.DexTransferDirection, Types.DexTransfer)>();
+    var taken = 0;
+    label deposits for ((n, t) in depositsIt) {
+      if (t.owner == owner and not isAuctionDeposit(t)) {
+        found.add((n, #deposit, t));
+        taken += 1;
+        if (taken > size) break deposits;
+      };
+    };
+    taken := 0;
+    label withdrawals for ((n, t) in withdrawalsIt) {
+      if (t.owner == owner) {
+        found.add((n, #withdrawal, t));
+        taken += 1;
+        if (taken > size) break withdrawals;
+      };
+    };
+    let sorted = found.toArray().sort(func(x, y) = Nat.compare(y.0, x.0));
+    let more = sorted.size() > size;
+    let count = Nat.min(sorted.size(), size);
+    let items = Array.tabulate(count, func i = view(sorted[i].2, sorted[i].1));
+    { items; nextCursor = if (more and count > 0) ?(items[count - 1].n) else null };
   };
 
   public func dexReview(kind : TransferKind, id : Nat, owner : Principal, a : Types.DexTransferAttempt) : TransferReview {
@@ -1765,7 +1903,7 @@ module {
         case null { null };
       }
     ).toArray();
-    deposits.concat(withdrawals).concat(refunds);
+    deposits.concat(withdrawals).concat(refunds).concat(liquidationToReview(ctx));
   };
 
   // DD: credits the balance once; DW: final debit; DQ: request refunded.
@@ -1774,7 +1912,9 @@ module {
       case (#DD) {
         let t = ctx.transfers.deposits.get(id) ?? (return #err(#notFound));
         if (t.status != #needsReview) { return #err(#notUnderReview) };
-        DexLib.credit(ctx.balances, t.owner, t.token, t.amount);
+        if (not isAuctionDeposit(t)) {
+          DexLib.credit(ctx.balances, t.owner, t.token, t.amount);
+        };
         ctx.transfers.deposits.add(id, { t with status = #completed(block); attempt = { t.attempt with outcome = #succeeded(block) } });
       };
       case (#DW) {
@@ -1782,6 +1922,7 @@ module {
         if (t.status != #needsReview) { return #err(#notUnderReview) };
         DexLib.settleReserved(ctx.balances, t.owner, t.token, t.amount);
         ctx.transfers.withdrawals.add(id, { t with status = #completed(block); attempt = { t.attempt with outcome = #succeeded(block) } });
+        ctx.onWithdrawal(id, #completed(block));
       };
       case (#DQ) {
         let r = ctx.dex.requests.get(id) ?? (return #err(#notFound));
@@ -1792,6 +1933,7 @@ module {
         };
         setRefundStatus(ctx, id, #refunded(block));
       };
+      case (#LQ) { return markLiquidationArrived(ctx, id, block) };
       case (_) { return #err(#notApplicable) };
     };
     #ok;
@@ -1812,6 +1954,7 @@ module {
         if (t.status != #needsReview) { return #err(#notUnderReview) };
         DexLib.release(ctx.balances, t.owner, t.token, t.amount);
         ctx.transfers.withdrawals.add(id, { t with status = #failed(text); attempt = { t.attempt with outcome = #failed(text) } });
+        ctx.onWithdrawal(id, #failed(text));
       };
       case (#DQ) {
         let r = ctx.dex.requests.get(id) ?? (return #err(#notFound));
@@ -1820,9 +1963,297 @@ module {
         ctx.transfers.pairRefunds.add(id, newPairRefundAttempt(id, ?previous, previous.request, nowNat64()));
         setRefundStatus(ctx, id, #inProgress);
       };
+      case (#LQ) { return markLiquidationNotArrived(ctx, id) };
       case (_) { return #err(#notApplicable) };
     };
     #ok;
+  };
+
+  // --- DEX-2: LQ liquidation payouts of an announced pair removal -----------
+  // A payout whose amount did not cover the ledger fee: never sent, nothing
+  // reserved (request amount 0). It stays #needsReview for the admin and the
+  // amount stays in the owner's internal balance.
+  func liquidationUnfunded(t : Types.LiquidationPayout) : Bool {
+    t.attempt.request.amount == 0;
+  };
+
+  // Listed in To review: #needsReview (unknown outcome older than 23 h, or not
+  // covering the fee), or still #inProgress with a known ledger Err (a new
+  // attempt follows) or an unknown outcome (resent identically within 23 h).
+  func liquidationListed(t : Types.LiquidationPayout) : Bool {
+    switch (t.status) {
+      case (#needsReview) { true };
+      case (#inProgress) {
+        switch (t.attempt.outcome) {
+          case (#failed(_) or #unknown) { true };
+          case (_) { false };
+        };
+      };
+      case (_) { false };
+    };
+  };
+
+  func liquidationReview(t : Types.LiquidationPayout) : TransferReview {
+    let base = dexReview(#LQ, t.n, t.owner, t.attempt);
+    // conversionId = pool id, depositIndex = position id for LQ rows.
+    {
+      base with
+      amount = if (liquidationUnfunded(t)) t.amount else base.amount;
+      conversionId = ?t.poolId;
+      depositIndex = ?t.positionId;
+    };
+  };
+
+  // LQ: reserves `amount` of the owner's internal balance (credited by
+  // DexLib.liquidatePosition) and records the attempt with memo
+  // TTTI-LQ-<n> and created_at_time before any await (amount - fee sent from
+  // the token's custody account to the owner's default account). A payout whose
+  // amount does not cover the fee is recorded #needsReview without a send and
+  // without reserving anything (the amount stays in the internal balance). Null
+  // for a zero amount, or when the balance cannot be reserved.
+  public func openLiquidationPayout(ctx : DexContext, poolId : Nat, positionId : Nat, owner : Principal, token : DexTypes.DexToken, amount : Nat, fee : Nat) : ?Types.LiquidationPayout {
+    if (amount == 0) {
+      return null;
+    };
+    let now = nowNat64();
+    let funded = amount > fee;
+    if (funded and not DexLib.reserve(ctx.balances, owner, token, amount)) {
+      return null;
+    };
+    let request : Types.DexTransferRequest = {
+      token;
+      from = DexLib.custodyAccount(ctx.canister, token);
+      to = { owner; subaccount = null };
+      amount = if (funded) Nat.sub(amount, fee) else 0;
+      fee = ?fee;
+    };
+    let fresh = newDexAttempt(ctx.retry, #LQ, null, request, now);
+    let attempt = if (funded) {
+      fresh;
+    } else {
+      { fresh with lastError = ?("The amount does not cover the " # DexLib.tokenSymbol(token) # " ledger fee; it was not sent and stays in the owner's internal balance") };
+    };
+    let payout : Types.LiquidationPayout = {
+      n = attempt.n;
+      poolId;
+      positionId;
+      owner;
+      token;
+      amount;
+      attempt;
+      status = if (funded) #inProgress else #needsReview;
+    };
+    ctx.transfers.liquidations.add(payout.n, payout);
+    ?payout;
+  };
+
+  // LQ: sends the recorded request. Ok / #Duplicate = final debit (#completed);
+  // known Err = outcome #failed, the payout stays #inProgress, is listed in To
+  // review and the timer opens a new attempt (new memo and created_at_time);
+  // reject or trap = stays #inProgress (unknown outcome) and is resent
+  // identically for 23 h, then #needsReview. Caller holds the payout lock.
+  public func sendLiquidationPayout(ctx : DexContext, n : Nat) : async Types.LiquidationPayout {
+    let payout = ctx.transfers.liquidations.get(n) ?? Runtime.trap("Unknown liquidation payout");
+    if (payout.status != #inProgress or liquidationUnfunded(payout)) {
+      return payout;
+    };
+    // Recorded (with this send counted) before the await.
+    let sending = { payout.attempt with sends = payout.attempt.sends + 1 };
+    ctx.transfers.liquidations.add(n, { payout with attempt = sending });
+    let result = await dexTransferSend(ctx, sending);
+    let current = ctx.transfers.liquidations.get(n) ?? Runtime.trap("Unknown liquidation payout");
+    if (current.status != #inProgress or current.attempt.attempt != sending.attempt) {
+      // Settled by the admin meanwhile: nothing is changed or debited twice.
+      return current;
+    };
+    let attempt = applyDexResult(sending, result);
+    let status : DexTypes.DexTransferStatus = switch (attempt.outcome) {
+      case (#succeeded(block)) {
+        DexLib.settleReserved(ctx.balances, current.owner, current.token, current.amount);
+        #completed(block);
+      };
+      case (_) { #inProgress };
+    };
+    let updated = { current with attempt; status };
+    ctx.transfers.liquidations.add(n, updated);
+    updated;
+  };
+
+  // Every LQ payout to check by hand (#needsReview, or failed / ambiguous),
+  // purchaseId = n, buyer = owner, conversionId = pool id, depositIndex =
+  // position id.
+  public func liquidationToReview(ctx : DexContext) : [TransferReview] {
+    ctx.transfers.liquidations.values().filter(liquidationListed).map(liquidationReview).toArray();
+  };
+
+  // LQ Arrived: final debit of the reserved amount, payout #completed(block).
+  // A payout that never reserved anything (amount below the fee) has nothing
+  // to confirm.
+  public func markLiquidationArrived(ctx : DexContext, n : Nat, block : Nat) : ReviewResult {
+    let t = ctx.transfers.liquidations.get(n) ?? (return #err(#notFound));
+    if (not liquidationListed(t)) {
+      return #err(#notUnderReview);
+    };
+    if (liquidationUnfunded(t)) {
+      return #err(#notApplicable);
+    };
+    DexLib.settleReserved(ctx.balances, t.owner, t.token, t.amount);
+    ctx.transfers.liquidations.add(n, { t with status = #completed(block); attempt = { t.attempt with outcome = #succeeded(block) } });
+    #ok;
+  };
+
+  // LQ Not arrived: new attempt (new memo and created_at_time) sent by the
+  // timer. Refused while an unknown attempt is still being resent within 23 h
+  // or a send is in flight. A payout below the fee is closed (#failed).
+  public func markLiquidationNotArrived(ctx : DexContext, n : Nat) : ReviewResult {
+    let t = ctx.transfers.liquidations.get(n) ?? (return #err(#notFound));
+    if (not liquidationListed(t) or ctx.locks.contains(lockKey(#LQ, n))) {
+      return #err(#notUnderReview);
+    };
+    if (liquidationUnfunded(t)) {
+      ctx.transfers.liquidations.add(n, { t with status = #failed("Closed by the admin; nothing was sent and the amount stays in the owner's internal balance") });
+      return #ok;
+    };
+    switch (t.status) {
+      case (#needsReview) {};
+      case (_) {
+        switch (t.attempt.outcome) {
+          case (#failed(_)) {};
+          case (_) { return #err(#notUnderReview) };
+        };
+      };
+    };
+    ctx.transfers.liquidations.add(
+      n,
+      {
+        t with
+        attempt = newDexAttempt(ctx.retry, #LQ, ?t.attempt, t.attempt.request, nowNat64());
+        status = #inProgress;
+      },
+    );
+    #ok;
+  };
+
+  // One step of the retry rule for an #inProgress LQ payout: at most one send.
+  func stepLiquidation(ctx : DexContext, n : Nat) : async () {
+    let t = ctx.transfers.liquidations.get(n) ?? (return);
+    if (t.status != #inProgress or liquidationUnfunded(t)) {
+      return;
+    };
+    let now = nowNat64();
+    switch (dexNextAction(t.attempt, now)) {
+      case (#done) {
+        switch (t.attempt.outcome) {
+          case (#succeeded(block)) {
+            DexLib.settleReserved(ctx.balances, t.owner, t.token, t.amount);
+            ctx.transfers.liquidations.add(n, { t with status = #completed(block) });
+          };
+          case (_) {};
+        };
+      };
+      case (#needsReview) {
+        ctx.transfers.liquidations.add(n, { t with status = #needsReview });
+      };
+      case (#resend) {
+        ignore await sendLiquidationPayout(ctx, n);
+      };
+      case (#newAttempt) {
+        // Known Err (or never sent and too old): nothing moved. New memo and
+        // created_at_time, recorded before the send.
+        ctx.transfers.liquidations.add(n, { t with attempt = newDexAttempt(ctx.retry, #LQ, ?t.attempt, t.attempt.request, now) });
+        ignore await sendLiquidationPayout(ctx, n);
+      };
+    };
+  };
+
+  // One step of LQ payout `n` under its lock (released in a finally).
+  func runLiquidationStep(ctx : DexContext, n : Nat) : async () {
+    let key = lockKey(#LQ, n);
+    if (not tryLock(ctx.locks, key)) {
+      return;
+    };
+    try {
+      await stepLiquidation(ctx, n);
+    } catch (_) {
+      // The attempt stays recorded; the timer applies the rule again.
+    } finally {
+      unlock(ctx.locks, key);
+    };
+  };
+
+  func removalLockKey(poolId : Nat) : Text {
+    "LQP/" # poolId.toText();
+  };
+
+  // One removal run for a due pool: starts the execution (idempotent), then
+  // for every remaining position liquidates it and opens its payouts in one
+  // synchronous section (so a position is paid exactly once), sends the
+  // payouts, and finishes the removal once no position remains.
+  func stepPairRemoval(ctx : DexContext, poolId : Nat) : async () {
+    if (not DexLib.startRemovalExecution(ctx.dex, poolId, Time.now())) {
+      return;
+    };
+    // PTM-9d: positions of this pool through the per-pool index.
+    let positionIds = DexLib.positionsInPool(ctx.dex, poolId).map(func p = p.id);
+    for (positionId in positionIds.values()) {
+      if (ctx.pause.paused) {
+        return;
+      };
+      let opened : [Nat] = switch (DexLib.liquidatePosition(ctx.dex, ctx.balances, positionId)) {
+        case (#err(#positionNotFound)) { [] }; // withdrawn by its owner meanwhile
+        case (#err(_)) { return };
+        case (#ok(acc)) {
+          var ns : [Nat] = [];
+          for ((token, amount) in [(acc.token0, acc.amount0), (acc.token1, acc.amount1)].values()) {
+            switch (openLiquidationPayout(ctx, poolId, positionId, acc.owner, token, amount, dexFee(ctx, token))) {
+              case (?payout) { ns := ns.concat([payout.n]) };
+              case null {};
+            };
+          };
+          ns;
+        };
+      };
+      for (n in opened.values()) {
+        await runLiquidationStep(ctx, n);
+      };
+    };
+    if (not DexLib.poolHasPositions(ctx.dex, poolId)) {
+      ignore DexLib.finishRemoval(ctx.dex, poolId, Time.now());
+    };
+  };
+
+  // Called by the retry timer: for every due announced removal (DexLib.dueRemovals)
+  // starts execution, liquidates each remaining position (DexLib.liquidatePosition),
+  // opens and sends its LQ payouts, then DexLib.finishRemoval once none remains.
+  // Resumes after an upgrade; also resends unknown LQ attempts within 23 h,
+  // opens new attempts after a known Err and marks them for review after 23 h.
+  // Nothing runs while the DEX is paused.
+  public func processPairRemovals(ctx : DexContext) : async () {
+    if (ctx.pause.paused) {
+      return;
+    };
+    for (poolId in DexLib.dueRemovals(ctx.dex, Time.now()).values()) {
+      if (ctx.pause.paused) {
+        return;
+      };
+      let key = removalLockKey(poolId);
+      if (tryLock(ctx.locks, key)) {
+        try {
+          await stepPairRemoval(ctx, poolId);
+        } catch (_) {
+          // Resumed by the next timer pass.
+        } finally {
+          unlock(ctx.locks, key);
+        };
+      };
+    };
+    let ids = ctx.transfers.liquidations.values().filter(func t = t.status == #inProgress and not liquidationUnfunded(t)).map(func t = t.n).toArray();
+    for (n in ids.values()) {
+      if (ctx.pause.paused) {
+        return;
+      };
+      await runLiquidationStep(ctx, n);
+    };
   };
 
   // --- Mint owner revenue (OW) and one-time treasury sweep (SR) -------------
@@ -2202,6 +2633,201 @@ module {
     let moves = ctx.mintRevenue.feeMoves.values().filter(feeMoveActive).map(func(m : OwnerTypes.FeeMove) : Nat = m.n).toArray();
     for (n in moves.values()) {
       await sendFeeMove(ctx, n);
+    };
+  };
+
+  // --- PTM-4: settlement of the cycles share of the 1 % mint and buyback fees ---
+  //
+  // The share is recorded synchronously with the fee (CyclesFeeStore.pendingE8s)
+  // and stays in the contract's ICP DEX balance. The settlement moves it from
+  // the ICP custody account to the cycles reserve account, recorded before the
+  // first await (memo TTTI-CY-<n>, created_at_time), resent identically for
+  // 23 h, then To review (admin). While a settlement is open its gross amount
+  // is reserved in the contract's DEX balance. It lives in this module because
+  // lib/cycles-reserve.mo cannot import it (this module imports that one).
+
+  public type CyclesFeeContext = {
+    fees : CyclesTypes.CyclesFeeStore;
+    reserve : CyclesTypes.CyclesReserveStore;
+    dex : DexContext;
+  };
+
+  let CYCLES_FEE_LOCK : Text = "CY";
+
+  func cySat(a : Nat, b : Nat) : Nat = if (a > b) Nat.sub(a, b) else 0;
+
+  func cyclesFeeIsOpen(s : CyclesTypes.CyclesFeeSettlement) : Bool {
+    switch (s.status) {
+      case (#inProgress) { true };
+      case (#needsReview) { true };
+      case (_) { false };
+    };
+  };
+
+  // Closes an open settlement: #completed finalises the debit and counts the
+  // net amount in the cached reserve balance (the next refresh overwrites it
+  // with the ledger value); any other status returns the amount to pending.
+  func closeCyclesFee(ctx : CyclesFeeContext, s : CyclesTypes.CyclesFeeSettlement, attempt : Types.DexTransferAttempt, status : DexTypes.DexTransferStatus) {
+    if (not cyclesFeeIsOpen(s)) {
+      return;
+    };
+    switch (status) {
+      case (#completed(_)) {
+        DexLib.settleReserved(ctx.dex.balances, ctx.dex.canister, #icp, s.grossE8s);
+        ctx.fees.inFlightE8s := cySat(ctx.fees.inFlightE8s, s.grossE8s);
+        ctx.fees.settledE8s += s.grossE8s;
+        ctx.reserve.reserveBalanceE8s += s.netE8s;
+      };
+      case (_) {
+        DexLib.release(ctx.dex.balances, ctx.dex.canister, #icp, s.grossE8s);
+        ctx.fees.inFlightE8s := cySat(ctx.fees.inFlightE8s, s.grossE8s);
+        ctx.fees.pendingE8s += s.grossE8s;
+      };
+    };
+    ctx.fees.settlements.add(s.n, { s with attempt; status });
+  };
+
+  func applyCyclesFeeSend(ctx : CyclesFeeContext, n : Nat, sent : Types.DexTransferAttempt) {
+    let s = switch (ctx.fees.settlements.get(n)) {
+      case (?s) { s };
+      case null { return };
+    };
+    switch (sent.outcome) {
+      case (#succeeded(block)) { closeCyclesFee(ctx, s, sent, #completed(block)) };
+      case (#failed(reason)) { closeCyclesFee(ctx, s, sent, #failed(reason)) };
+      case (_) { ctx.fees.settlements.add(n, { s with attempt = sent }) };
+    };
+  };
+
+  func openCyclesFeeSettlement(ctx : CyclesFeeContext) : Bool {
+    for (s in ctx.fees.settlements.values()) {
+      if (cyclesFeeIsOpen(s)) {
+        return true;
+      };
+    };
+    false;
+  };
+
+  // Sends the pending cycles share to the reserve account (one open
+  // settlement at a time). Never changes a balance before the transfer is
+  // recorded; a fresh send is identical on resend (same memo and time).
+  public func settleCyclesFees(ctx : CyclesFeeContext, now : Int) : async CyclesTypes.SettleResult {
+    if (ctx.dex.locks.contains(CYCLES_FEE_LOCK) or openCyclesFeeSettlement(ctx)) {
+      return #inProgress;
+    };
+    let pending = ctx.fees.pendingE8s;
+    if (pending == 0) {
+      return #nothingToSettle;
+    };
+    let fee = dexFee(ctx.dex, #icp);
+    if (pending < CyclesReserveLib.MIN_SETTLE_E8S or pending <= fee) {
+      return #belowMinimum({ pendingE8s = pending; minimumE8s = Nat.max(CyclesReserveLib.MIN_SETTLE_E8S, fee + 1) });
+    };
+    if (not DexLib.reserve(ctx.dex.balances, ctx.dex.canister, #icp, pending)) {
+      return #notCovered;
+    };
+    let net = Nat.sub(pending, fee);
+    let request : Types.DexTransferRequest = {
+      token = #icp;
+      from = DexLib.custodyAccount(ctx.dex.canister, #icp);
+      to = CyclesReserveLib.reserveAccount(ctx.dex.canister);
+      amount = net;
+      fee = ?fee;
+    };
+    // Recorded before the first await.
+    let attempt = newDexAttempt(ctx.dex.retry, #CY, null, request, nowNat64());
+    let record : CyclesTypes.CyclesFeeSettlement = {
+      n = attempt.n;
+      grossE8s = pending;
+      netE8s = net;
+      createdAt = now;
+      attempt;
+      status = #inProgress;
+    };
+    ctx.fees.pendingE8s := 0;
+    ctx.fees.inFlightE8s += pending;
+    ctx.fees.settlements.add(record.n, record);
+    ctx.dex.locks.add(CYCLES_FEE_LOCK);
+    try {
+      let sent = await sendDexAttempt(ctx.dex, attempt);
+      applyCyclesFeeSend(ctx, record.n, sent);
+    } finally {
+      ctx.dex.locks.remove(CYCLES_FEE_LOCK);
+    };
+    #sent(ctx.fees.settlements.get(record.n) ?? record);
+  };
+
+  // Timer (10 minutes): resends a settlement whose outcome is unknown with
+  // the identical request, moves it to review after 23 h, then settles any
+  // newly recorded share. The DEX pause does not stop it.
+  public func runCyclesFeeSettlement(ctx : CyclesFeeContext) : async () {
+    let now = nowNat64();
+    for (s in ctx.fees.settlements.values().toArray().values()) {
+      if (s.status == #inProgress and not ctx.dex.locks.contains(CYCLES_FEE_LOCK)) {
+        switch (dexNextAction(s.attempt, now)) {
+          case (#resend) {
+            ctx.dex.locks.add(CYCLES_FEE_LOCK);
+            try {
+              let sent = await sendDexAttempt(ctx.dex, s.attempt);
+              applyCyclesFeeSend(ctx, s.n, sent);
+            } finally {
+              ctx.dex.locks.remove(CYCLES_FEE_LOCK);
+            };
+          };
+          case (#newAttempt) {
+            // Never sent, or a known ledger error: the amount returns to pending.
+            closeCyclesFee(ctx, s, s.attempt, #failed(s.attempt.lastError ?? "Transfer not sent"));
+          };
+          case (#needsReview) {
+            ctx.fees.settlements.add(s.n, { s with status = #needsReview });
+          };
+          case (#done) {};
+        };
+      };
+    };
+    ignore await settleCyclesFees(ctx, Time.now());
+  };
+
+  // Arms the 10-minute settlement timer (call on every install and upgrade).
+  public func startCyclesFeeTimer<system>(ctx : CyclesFeeContext) {
+    ignore Timer.recurringTimer<system>(
+      #seconds(TIMER_INTERVAL_SECONDS),
+      func() : async () { await runCyclesFeeSettlement(ctx) },
+    );
+  };
+
+  // Admin: settlements waiting for review (outcome unknown after 23 h).
+  public func cyclesFeesToReview(ctx : CyclesFeeContext) : [CyclesTypes.CyclesFeeSettlement] {
+    ctx.fees.settlements.values().filter(func s = s.status == #needsReview).toArray();
+  };
+
+  // Admin: the ledger shows the settlement arrived at `block`.
+  public func markCyclesFeeArrived(ctx : CyclesFeeContext, n : Nat, block : Nat) : { #ok; #err : Text } {
+    switch (ctx.fees.settlements.get(n)) {
+      case (?s) {
+        if (s.status != #needsReview) {
+          return #err("Settlement is not waiting for review");
+        };
+        closeCyclesFee(ctx, s, { s.attempt with outcome = #succeeded(block) }, #completed(block));
+        #ok;
+      };
+      case null { #err("Unknown settlement") };
+    };
+  };
+
+  // Admin: the ledger shows the settlement did not arrive; the amount returns
+  // to pending and a new settlement sends it.
+  public func markCyclesFeeNotArrived(ctx : CyclesFeeContext, n : Nat) : { #ok; #err : Text } {
+    switch (ctx.fees.settlements.get(n)) {
+      case (?s) {
+        if (s.status != #needsReview) {
+          return #err("Settlement is not waiting for review");
+        };
+        let text = "Not arrived (admin verification)";
+        closeCyclesFee(ctx, s, { s.attempt with outcome = #failed(text) }, #failed(text));
+        #ok;
+      };
+      case null { #err("Unknown settlement") };
     };
   };
 };

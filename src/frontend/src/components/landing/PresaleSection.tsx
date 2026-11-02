@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useGetSaleStatus } from "../../hooks/useQueries";
 import { MINT_REVENUE_TEXT } from "../../i18n/common";
 import { useDict } from "../../i18n/core";
+import { AUCTION_TEXT } from "../../i18n/pages/auction";
 import { CAP_TEXT, PRESALE_TEXT } from "../../i18n/pages/landing";
 import {
   TOKEN_PRICE_USD,
@@ -11,6 +12,7 @@ import {
   formatTtti,
   usePriceText,
 } from "../../lib/token";
+import { FiatAmount } from "../FiatAmount";
 import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
 import { Skeleton } from "../ui/skeleton";
@@ -19,6 +21,7 @@ export function PresaleSection() {
   const { data: status, isLoading, isError, refetch } = useGetSaleStatus();
   const t = useDict(PRESALE_TEXT);
   const cap = useDict(CAP_TEXT);
+  const auction = useDict(AUCTION_TEXT);
   const priceText = usePriceText();
   const mintRevenue = useDict(MINT_REVENUE_TEXT);
   const percent =
@@ -92,6 +95,19 @@ export function PresaleSection() {
                     ? t.statusPaused
                     : t.statusCurrent}
               </p>
+              {status.mintEnded && (
+                <div
+                  className="mb-6 max-w-2xl"
+                  data-ocid="landing.snapshot.mint_ended_state"
+                >
+                  <p className="text-sm font-medium text-foreground">
+                    {auction.mintEndedTitle}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    {auction.mintEndedBody(formatTtti(status.remainderE8s))}
+                  </p>
+                </div>
+              )}
               <dl className="grid gap-8 sm:grid-cols-3">
                 <div data-ocid="landing.snapshot.price_card">
                   <dt className="text-xs text-muted-foreground">
@@ -108,7 +124,8 @@ export function PresaleSection() {
                   </dt>
                   <dd className="mt-2 font-display text-2xl tabular-nums text-foreground">
                     {formatTtti(status.totalSupply)}{" "}
-                    <span className="font-body text-xs">{TTTI_SYMBOL}</span>
+                    <span className="font-body text-xs">{TTTI_SYMBOL}</span>{" "}
+                    <FiatAmount token="ttti" amount={status.totalSupply} />
                   </dd>
                 </div>
                 <div data-ocid="landing.snapshot.remaining_card">
@@ -117,7 +134,11 @@ export function PresaleSection() {
                   </dt>
                   <dd className="mt-2 font-display text-2xl tabular-nums text-foreground">
                     {formatTtti(status.mintableRemaining)}{" "}
-                    <span className="font-body text-xs">{TTTI_SYMBOL}</span>
+                    <span className="font-body text-xs">{TTTI_SYMBOL}</span>{" "}
+                    <FiatAmount
+                      token="ttti"
+                      amount={status.mintableRemaining}
+                    />
                   </dd>
                 </div>
               </dl>

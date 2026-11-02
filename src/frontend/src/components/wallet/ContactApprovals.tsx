@@ -32,6 +32,7 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
 import { normalizeToken } from "./TokenBalanceCard";
+import { TokenFiat } from "./TokenFiat";
 import { TokenLogo } from "./TokenLogo";
 
 type Text = (typeof ADDRESS_BOOK_TEXT)["en"];
@@ -89,7 +90,8 @@ function AllowanceStatus({ approval }: { approval: TokenApproval }) {
   return (
     <span className="flex flex-wrap gap-x-2">
       <span className={cn("tabular-nums", expired && "line-through")}>
-        {t.allowanceAmount(amountText(allowance.allowance, token, lang))}
+        {t.allowanceAmount(amountText(allowance.allowance, token, lang))}{" "}
+        <TokenFiat token={token} amount={allowance.allowance} />
       </span>
       <span className={expired ? "text-destructive" : undefined}>
         {expired
@@ -252,7 +254,8 @@ function ApprovalAction({
             )}
             {balance !== undefined && (
               <p className="text-xs text-muted-foreground tabular-nums">
-                {t.balanceLine(amountText(balance, token, lang))}
+                {t.balanceLine(amountText(balance, token, lang))}{" "}
+                <TokenFiat token={token} amount={balance} />
               </p>
             )}
           </div>
@@ -309,7 +312,8 @@ function ApprovalAction({
         <dl className="grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-3 text-sm">
           <dt className="text-muted-foreground">{t.maxAmountLabel}</dt>
           <dd className="text-right font-mono tabular-nums">
-            {amountText(parsed, token, lang)}
+            {amountText(parsed, token, lang)}{" "}
+            <TokenFiat token={token} amount={parsed} />
           </dd>
           <dt className="text-muted-foreground">{t.expirationLabel}</dt>
           <dd className="text-right">
@@ -319,7 +323,8 @@ function ApprovalAction({
       )}
 
       <p className="text-xs text-muted-foreground tabular-nums">
-        {t.feeLine(amountText(token.fee, token, lang))}
+        {t.feeLine(amountText(token.fee, token, lang))}{" "}
+        <TokenFiat token={token} amount={token.fee} />
       </p>
       <Warnings t={t} strong={strongLines} />
 

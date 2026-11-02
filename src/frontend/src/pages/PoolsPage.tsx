@@ -2,54 +2,53 @@ import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { PoolView } from "../backend";
 import { AddLiquidityDialog } from "../components/dex/AddLiquidityDialog";
+import { ConsolidatedPrice } from "../components/dex/ConsolidatedPrice";
+import {
+  DexAccordion,
+  DexAccordionGroup,
+  PoolsSection,
+} from "../components/dex/DexAccordion";
+import { DexActivityHistory } from "../components/dex/DexActivityHistory";
 import { DexBalanceLookup } from "../components/dex/DexBalanceLookup";
 import { DexBalancesPanel } from "../components/dex/DexBalancesPanel";
 import { DexIndicators } from "../components/dex/DexIndicators";
 import { DexPausedNotice } from "../components/dex/DexPausedNotice";
-import { LpBonusPanel } from "../components/dex/LpBonusPanel";
-import { MintFeePanel } from "../components/dex/MintFeePanel";
+import { HowPoolsWork } from "../components/dex/HowPoolsWork";
 import { MyPositions } from "../components/dex/MyPositions";
-import { PairRequestForm } from "../components/dex/PairRequestForm";
-import { PairRequestList } from "../components/dex/PairRequestList";
-import { type PoolAction, PoolCard } from "../components/dex/PoolCard";
+import { PairRequestsSection } from "../components/dex/PairRequestsSection";
 import { PoolPositionsDialog } from "../components/dex/PoolPositionsDialog";
+import { type PoolAction, PoolRow } from "../components/dex/PoolRow";
+import { PoolsNav } from "../components/dex/PoolsNav";
+import { RewardsPanel } from "../components/dex/RewardsPanel";
 import { SetAsideInjections } from "../components/dex/SetAsideInjections";
 import { SwapDialog } from "../components/dex/SwapDialog";
 import { dexTokenOf } from "../components/dex/liquidityFormat";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
-import {
-  useDexConfig,
-  useDexPools,
-  useDexTokens,
-  useMyPairRequests,
-  usePairRequests,
-} from "../hooks/useDex";
+import { useDexConfig, useDexPools, useDexTokens } from "../hooks/useDex";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { MINT_REVENUE_TEXT } from "../i18n/common";
 import { LAYOUT_TEXT } from "../i18n/common/layout";
 import { useDict } from "../i18n/core";
 import { DEX_TEXT } from "../i18n/pages/dex";
+import { DEX_INDICATORS_TEXT } from "../i18n/pages/dexIndicators";
 
 const POOL_SKELETONS = Array.from(
   { length: 7 },
   (_, i) => `pool-skeleton-${i}`,
 );
 
-/** Public Pools page (/pools). */
+/** Public Pools page (/pools): sticky section nav and five ledger sections. */
 export function PoolsPage() {
   const t = useDict(DEX_TEXT);
+  const ti = useDict(DEX_INDICATORS_TEXT);
   const layout = useDict(LAYOUT_TEXT);
-  const m = useDict(MINT_REVENUE_TEXT);
   const { identity, login, loginStatus } = useInternetIdentity();
   const principal = identity?.getPrincipal();
   const caller = principal && !principal.isAnonymous() ? principal : undefined;
+  const signingIn = loginStatus === "logging-in";
 
   const pools = useDexPools();
   const config = useDexConfig();
-  const requests = usePairRequests();
-  const myRequests = useMyPairRequests(caller?.toText());
-
   const sortedPools = [...(pools.data ?? [])].sort((a, b) =>
     a.id === b.id ? 0 : a.id < b.id ? -1 : 1,
   );
@@ -78,37 +77,26 @@ export function PoolsPage() {
   const close = () => setOpen(null);
 
   return (
-    <div className="flex flex-col gap-14" data-ocid="pools.page">
-      <header className="flex flex-col gap-4">
-        <DexPausedNotice />
-        <h1 className="font-display text-4xl uppercase tracking-[0.25em]">
-          {t.title}
-        </h1>
-        <p className="max-w-2xl text-muted-foreground">{t.intro}</p>
-        <p
-          className="callout-info max-w-2xl px-3 py-2 text-sm"
-          data-ocid="pools.protocol_statement"
-        >
-          {t.protocolStatement}
-        </p>
-        <p
-          className="max-w-2xl text-sm text-muted-foreground"
-          data-ocid="pools.swap_fee_split"
-        >
-          {m.swapFeeSplit}
-        </p>
-        <div className="divider-gold mt-2" />
-      </header>
+    <div className="flex min-w-0 flex-col gap-10" data-ocid="pools.page">
+      <PoolsNav />
 
-      <section aria-label={t.title} data-ocid="pools.section">
+      <PoolsSection id="pools" index={1} title={t.navPools}>
+        <div className="flex flex-col gap-4">
+          <DexPausedNotice />
+          <h1 className="font-display text-4xl uppercase tracking-[0.25em] md:text-5xl">
+            {t.title}
+          </h1>
+          <p className="max-w-2xl text-muted-foreground">{t.introShort}</p>
+        </div>
+
         {pools.isPending ? (
           <div
-            className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+            className="flex flex-col gap-2"
             data-ocid="pools.loading_state"
             aria-label={t.loading}
           >
             {POOL_SKELETONS.map((id) => (
-              <Skeleton key={id} className="h-80 rounded-lg" />
+              <Skeleton key={id} className="h-16 w-full" />
             ))}
           </div>
         ) : pools.isError ? (
@@ -128,10 +116,20 @@ export function PoolsPage() {
               <RefreshCw className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
+        ) : sortedPools.length === 0 ? (
+          <p
+            className="border-t border-border pt-4 text-sm text-muted-foreground"
+            data-ocid="pools.empty_state"
+          >
+            {t.poolsEmpty}
+          </p>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <ul
+            className="flex flex-col border-b border-border"
+            data-ocid="pools.list"
+          >
             {sortedPools.map((pool, i) => (
-              <PoolCard
+              <PoolRow
                 key={pool.id.toString()}
                 pool={pool}
                 config={config.data}
@@ -141,9 +139,79 @@ export function PoolsPage() {
                 tradeNote={tradeNoteOf(pool)}
               />
             ))}
+          </ul>
+        )}
+
+        <DexAccordionGroup>
+          <ConsolidatedPrice />
+          <HowPoolsWork config={config.data} />
+        </DexAccordionGroup>
+      </PoolsSection>
+
+      <PoolsSection id="indicators" index={2} title={ti.title}>
+        <DexIndicators />
+      </PoolsSection>
+
+      <PoolsSection id="my-liquidity" index={3} title={t.navMyLiquidity}>
+        <div
+          className="flex flex-col gap-1 text-sm text-muted-foreground"
+          data-ocid="pools.balances.privacy"
+        >
+          <p>{t.privacyPositions}</p>
+          <p>{t.privacyDeposit}</p>
+        </div>
+        {caller ? (
+          <div className="flex flex-col gap-8">
+            <DexBalancesPanel owner={caller} />
+            <MyPositions
+              owner={caller}
+              pools={sortedPools}
+              config={config.data}
+            />
+            <RewardsPanel owner={caller} pools={sortedPools} />
+            <DexAccordionGroup>
+              <DexActivityHistory owner={caller} />
+            </DexAccordionGroup>
+          </div>
+        ) : (
+          <div
+            className="flex flex-col items-start gap-4 rounded-lg border border-border bg-card p-6"
+            data-ocid="pools.balances.signin_state"
+          >
+            <p className="text-sm text-muted-foreground">
+              {t.myLiquiditySignIn}
+            </p>
+            <Button
+              type="button"
+              onClick={() => login()}
+              disabled={signingIn}
+              className="min-h-11"
+              data-ocid="pools.balances.signin_button"
+            >
+              {layout.signIn}
+            </Button>
           </div>
         )}
-      </section>
+      </PoolsSection>
+
+      <PoolsSection id="protocol" index={4} title={t.navProtocol}>
+        <DexAccordionGroup>
+          <SetAsideInjections pools={sortedPools} />
+          <DexAccordion label={t.lookupTitle} ocid="pools.lookup">
+            <DexBalanceLookup />
+          </DexAccordion>
+        </DexAccordionGroup>
+      </PoolsSection>
+
+      <PoolsSection id="requests" index={5} title={t.navRequests}>
+        <PairRequestsSection
+          caller={caller}
+          config={config.data}
+          configError={config.isError}
+          onSignIn={() => login()}
+          signingIn={signingIn}
+        />
+      </PoolsSection>
 
       {openPool && open?.action === "positions" && (
         <PoolPositionsDialog pool={openPool} onClose={close} />
@@ -166,112 +234,6 @@ export function PoolsPage() {
           onClose={close}
         />
       )}
-
-      <DexIndicators />
-
-      <section
-        className="mx-auto flex w-full max-w-3xl flex-col gap-4"
-        data-ocid="pools.balances.section"
-      >
-        <h2 className="font-display text-2xl tracking-wide">
-          {t.balancesTitle}
-        </h2>
-        <div
-          className="callout-info flex flex-col gap-1 px-3 py-2 text-sm"
-          data-ocid="pools.balances.privacy"
-        >
-          <p>{t.privacyPositions}</p>
-          <p>{t.privacyDeposit}</p>
-        </div>
-        {caller ? (
-          <>
-            <DexBalancesPanel owner={caller} />
-            <MyPositions
-              owner={caller}
-              pools={sortedPools}
-              config={config.data}
-            />
-          </>
-        ) : (
-          <div
-            className="flex flex-col items-start gap-4 rounded-lg border border-border bg-card p-6"
-            data-ocid="pools.balances.signin_state"
-          >
-            <p className="text-sm text-muted-foreground">{t.balancesSignIn}</p>
-            <p className="text-sm text-muted-foreground">{t.bonusSignIn}</p>
-            <Button
-              type="button"
-              onClick={() => login()}
-              disabled={loginStatus === "logging-in"}
-              className="min-h-11"
-              data-ocid="pools.balances.signin_button"
-            >
-              {layout.signIn}
-            </Button>
-          </div>
-        )}
-        <MintFeePanel owner={caller} />
-        <LpBonusPanel owner={caller} pools={sortedPools} />
-        <DexBalanceLookup />
-      </section>
-
-      <SetAsideInjections pools={sortedPools} />
-
-      <section
-        className="mx-auto flex w-full max-w-xl flex-col gap-4"
-        data-ocid="pair_request.section"
-      >
-        <h2 className="font-display text-2xl tracking-wide">
-          {t.requestTitle}
-        </h2>
-        {!caller ? (
-          <div
-            className="flex flex-col items-start gap-4 rounded-lg border border-border bg-card p-6"
-            data-ocid="pair_request.signin_state"
-          >
-            <p className="text-sm text-muted-foreground">{t.signInNeeded}</p>
-            <Button
-              type="button"
-              onClick={() => login()}
-              disabled={loginStatus === "logging-in"}
-              className="min-h-11"
-              data-ocid="pair_request.signin_button"
-            >
-              {layout.signIn}
-            </Button>
-          </div>
-        ) : config.data ? (
-          <PairRequestForm config={config.data} />
-        ) : config.isError ? (
-          <p
-            className="callout-danger px-3 py-2 text-sm"
-            data-ocid="pair_request.error_state"
-          >
-            {t.loadError}
-          </p>
-        ) : (
-          <Skeleton
-            className="h-96 rounded-lg"
-            data-ocid="pair_request.loading_state"
-          />
-        )}
-      </section>
-
-      {caller && (
-        <PairRequestList
-          title={t.myRequestsTitle}
-          requests={myRequests.data}
-          loading={myRequests.isPending}
-          ocid="my_requests"
-        />
-      )}
-
-      <PairRequestList
-        title={t.requestsTitle}
-        requests={requests.data}
-        loading={requests.isPending}
-        ocid="pair_requests"
-      />
     </div>
   );
 }

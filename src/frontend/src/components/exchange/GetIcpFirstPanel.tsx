@@ -1,5 +1,6 @@
 import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { PayToken } from "../../backend";
 import { useDict } from "../../i18n/core/dict";
 import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
 import {
@@ -7,6 +8,7 @@ import {
   copyToClipboard,
 } from "../../lib/onramper";
 import { formatIcp } from "../../lib/token";
+import { FiatAmount } from "../FiatAmount";
 import { Button } from "../ui/button";
 
 interface GetIcpFirstPanelProps {
@@ -68,6 +70,12 @@ export function GetIcpFirstPanel({
             <span className="font-mono tabular-nums text-foreground">
               {formatIcp(shortfall)} ICP
             </span>
+            <FiatAmount
+              token={PayToken.icp}
+              amount={shortfall}
+              className="ml-1.5"
+              ocid="exchange.get_icp.shortfall_fiat"
+            />
           </>
         ) : (
           t.getIcpAddToBuy
@@ -125,6 +133,11 @@ export function GetIcpFirstPanel({
           >
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
             {t.getIcpBalance(formatIcp(balanceE8s))}
+            <FiatAmount
+              token={PayToken.icp}
+              amount={balanceE8s}
+              ocid="exchange.get_icp.balance_fiat"
+            />
           </span>
         )}
       </p>

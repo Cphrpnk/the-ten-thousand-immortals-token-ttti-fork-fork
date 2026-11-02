@@ -13,15 +13,12 @@ import {
   ReviewError,
   TransferKind,
 } from "../../backend";
-import { useAllBuybacks } from "../../hooks/useBuyback";
 import {
-  useMarkBuybackCancelled,
   useMarkRefundedManually,
   useMarkTransferArrived,
   useMarkTransferNotArrived,
   useTransfersToReviewFiltered,
 } from "../../hooks/useTransferReview";
-import { buybackFailureMessage } from "../../lib/buyback";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -51,17 +48,20 @@ const KIND_LABELS: Record<TransferKind, string> = {
   [TransferKind.BR]: "BTC refund to verify (BR)",
   [TransferKind.BC]: "BTC cost send to treasury (BC)",
   [TransferKind.BM]: "Delivery-failure cost to refund (BM)",
-  [TransferKind.BB]: "Buyback payment (BB)",
+  [TransferKind.GR]: "Redemption payment (GR)",
   [TransferKind.DD]: "DEX deposit (DD)",
   [TransferKind.DW]: "DEX withdrawal (DW)",
   [TransferKind.DQ]: "Pair request deposit refund (DQ)",
   [TransferKind.DC]: "Converted fees sent to the cycles reserve (DC)",
   [TransferKind.DL]: "ICP bonus claim paid to an LP (DL)",
+  [TransferKind.LQ]: "Liquidation payout at pair removal (LQ)",
   [TransferKind.OW]: "Mint revenue send to the receiving wallet (OW)",
   [TransferKind.SR]: "Treasury sweep send (SR)",
   [TransferKind.MF]: "Mint fee claim paid to an LP (MF)",
   [TransferKind.IR]: "ICPSwap routed swap transfer (IR)",
   [TransferKind.ST]: "One-time settlement send (ST)",
+  [TransferKind.SW]: "DEX custody sweep transfer (SW)",
+  [TransferKind.CS]: "DEX custody surplus (CS)",
 };
 
 function tokenSymbol(token: DexToken): string {
@@ -73,7 +73,7 @@ type ReviewGroup =
   | "mint"
   | "revenue"
   | "refund"
-  | "buyback"
+  | "redemption"
   | "dex"
   | "swap"
   | "fees";
@@ -97,9 +97,19 @@ const REVIEW_GROUPS: ReadonlyArray<
     label: "Refund",
     kinds: [TransferKind.RF, TransferKind.BR, TransferKind.BM, TransferKind.DQ],
   },
-  { value: "buyback", label: "Buyback", kinds: [TransferKind.BB] },
+  { value: "redemption", label: "Redemption", kinds: [TransferKind.GR] },
   { value: "swap", label: "Swap", kinds: [TransferKind.IR] },
-  { value: "dex", label: "DEX", kinds: [TransferKind.DD, TransferKind.DW] },
+  {
+    value: "dex",
+    label: "DEX",
+    kinds: [
+      TransferKind.DD,
+      TransferKind.DW,
+      TransferKind.LQ,
+      TransferKind.SW,
+      TransferKind.CS,
+    ],
+  },
   {
     value: "fees",
     label: "Fees & claims",
@@ -135,17 +145,20 @@ const ID_LABELS: Record<TransferKind, string> = {
   [TransferKind.BR]: "Attempt",
   [TransferKind.BC]: "Trace",
   [TransferKind.BM]: "Conversion",
-  [TransferKind.BB]: "Buyback",
+  [TransferKind.GR]: "Redemption",
   [TransferKind.DD]: "Transfer",
   [TransferKind.DW]: "Transfer",
   [TransferKind.DQ]: "Pair request",
   [TransferKind.DC]: "DC send",
   [TransferKind.DL]: "Bonus claim",
+  [TransferKind.LQ]: "Liquidation payout (pool id and position id below)",
   [TransferKind.OW]: "Owner send",
   [TransferKind.SR]: "Sweep send",
   [TransferKind.MF]: "Claim",
   [TransferKind.IR]: "Routed swap",
   [TransferKind.ST]: "Settlement send",
+  [TransferKind.SW]: "Sweep transfer",
+  [TransferKind.CS]: "Token index",
 };
 
 const COLLECT_LABELS: Record<CollectState, string> = {
@@ -200,11 +213,10 @@ function commonFields(t: TransferReview): Field[] {
   ];
 }
 
-function reviewFields(t: TransferReview, legacy: boolean): Field[] {
-  if (t.kind === TransferKind.BB) {
+function reviewFields(t: TransferReview): Field[] {
+  if (t.kind === TransferKind.GR) {
     return [
-      { label: "Buyer", value: t.buyer?.toText() ?? "—" },
-      { label: "Legacy (before escrow)", value: legacy ? "Yes" : "No" },
+      { label: "Owner", value: t.buyer?.toText() ?? "—" },
       ...commonFields(t),
       {
         label: "Fee",
@@ -285,6 +297,70 @@ function reviewFields(t: TransferReview, legacy: boolean): Field[] {
       { label: "Outcome", value: outcomeText(t.outcome) },
     ];
   }
+  if (t.kind === TransferKind.LQ) {
+    return [
+      { label: "Pool id", value: t.conversionId?.toString() ?? "—" },
+      { label: "Position id", value: t.depositIndex?.toString() ?? "—" },
+      { label: "Owner", value: t.buyer?.toText() ?? "—" },
+      ...commonFields(t),
+      {
+        label: "Fee",
+        value: t.fee === undefined ? "—" : amountText(t.fee, t),
+      },
+      {
+        label: "Destination owner",
+        value: t.destination?.owner.toText() ?? "—",
+      },
+      {
+        label: "Destination subaccount (hex)",
+        value: t.destination
+          ? toHex(t.destination.subaccount) || "Default"
+          : "—",
+      },
+      { label: "Sends", value: t.sends.toString() },
+      { label: "Last error", value: t.lastError ?? "—" },
+      { label: "Outcome", value: outcomeText(t.outcome) },
+    ];
+  }
+  if (t.kind === TransferKind.CS) {
+    return [
+      { label: "Token", value: tokenSymbol(t.token) },
+      { label: "Surplus", value: amountText(t.amount, t) },
+      {
+        label: "Date",
+        value:
+          t.createdAtTimeNs === undefined
+            ? "—"
+            : formatTimestamp(t.createdAtTimeNs),
+      },
+      { label: "Credited to", value: "No one" },
+      {
+        label: "Custody account owner",
+        value: t.destination?.owner.toText() ?? "—",
+      },
+      { label: "Note", value: t.lastError ?? "—" },
+    ];
+  }
+  if (t.kind === TransferKind.SW) {
+    return [
+      {
+        label: "Source",
+        value: t.buyer ? `User deposit ${t.buyer.toText()}` : "Pool account",
+      },
+      ...commonFields(t),
+      {
+        label: "Fee",
+        value: t.fee === undefined ? "—" : amountText(t.fee, t),
+      },
+      {
+        label: "Custody account owner",
+        value: t.destination?.owner.toText() ?? "—",
+      },
+      { label: "Sends", value: t.sends.toString() },
+      { label: "Last error", value: t.lastError ?? "—" },
+      { label: "Outcome", value: outcomeText(t.outcome) },
+    ];
+  }
   if (t.kind === TransferKind.PC) {
     return [
       { label: "Buyer", value: t.destination?.owner.toText() ?? "—" },
@@ -323,8 +399,8 @@ const NOT_ARRIVED_SUCCESS: Record<TransferKind, string> = {
   [TransferKind.BR]: "Marked as not arrived. A new refund attempt is pending.",
   [TransferKind.BC]: "Marked as not arrived. A new attempt is pending.",
   [TransferKind.BM]: "This action does not apply to this item",
-  [TransferKind.BB]:
-    "Marked as not arrived. The buyer can retry the payout or cancel the buyback.",
+  [TransferKind.GR]:
+    "Marked as not arrived. A new redemption payout attempt is pending.",
   [TransferKind.DD]:
     "Marked as not arrived. The deposit is failed; no balance was credited.",
   [TransferKind.DW]:
@@ -333,12 +409,17 @@ const NOT_ARRIVED_SUCCESS: Record<TransferKind, string> = {
     "Marked as not arrived. A new refund attempt with a new memo is pending.",
   [TransferKind.DC]: "Marked as not arrived. A new attempt is pending.",
   [TransferKind.DL]: "Marked as not arrived. A new attempt is pending.",
+  [TransferKind.LQ]:
+    "Marked as not arrived. A new liquidation payout attempt is pending.",
   [TransferKind.OW]: "Marked as not arrived. A new attempt is pending.",
   [TransferKind.SR]: "Marked as not arrived. A new attempt is pending.",
   [TransferKind.MF]: "Marked as not arrived. A new attempt is pending.",
   [TransferKind.IR]:
     "Marked as not arrived. The input amount is back in the owner's DEX balance.",
   [TransferKind.ST]: "Marked as not arrived. A new attempt is pending.",
+  [TransferKind.SW]:
+    "Marked as not arrived. The legacy account keeps its balance; run the sweep again to move it.",
+  [TransferKind.CS]: "This action does not apply to this item",
 };
 
 const ARRIVED_SUCCESS: Partial<Record<TransferKind, string>> = {
@@ -350,8 +431,10 @@ const ARRIVED_SUCCESS: Partial<Record<TransferKind, string>> = {
   [TransferKind.OW]: "The send to the receiving wallet is recorded.",
   [TransferKind.ST]: "The settlement send is recorded.",
   [TransferKind.SR]: "The treasury sweep send is recorded.",
+  [TransferKind.LQ]: "The liquidation payout is recorded.",
   [TransferKind.MF]: "The mint fee claim is paid.",
   [TransferKind.IR]: "The IR transfer to ICPSwap is recorded with its block.",
+  [TransferKind.SW]: "The sweep transfer to custody is recorded.",
 };
 
 /** Short effect of each button for the DEX kinds. */
@@ -374,6 +457,10 @@ const DEX_HINTS: Partial<Record<TransferKind, string>> = {
     "Enter the ledger block of the treasury sweep send. Arrived records the block. Not arrived opens a new attempt.",
   [TransferKind.MF]:
     "Enter the ledger block of the mint fee claim payment. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.LQ]:
+    "Liquidation payout of a position when a pair is removed. Enter the ledger block of the payout to the owner's wallet. Arrived records the block. Not arrived opens a new attempt.",
+  [TransferKind.SW]:
+    "Enter the ledger block of the sweep transfer to the custody account. Arrived records the block. Not arrived closes the transfer as failed; run the sweep again to move the balance.",
   [TransferKind.IR]:
     "Enter the ledger block of the IR transfer to the ICPSwap deposit subaccount. Arrived records the block. Not arrived records that nothing moved and gives the input amount back to the owner's DEX balance.",
 };
@@ -381,8 +468,7 @@ const DEX_HINTS: Partial<Record<TransferKind, string>> = {
 function ReviewRow({
   transfer,
   index,
-  legacy,
-}: { transfer: TransferReview; index: number; legacy: boolean }) {
+}: { transfer: TransferReview; index: number }) {
   const [blockText, setBlockText] = useState("");
   const [feedback, setFeedback] = useState<{
     ok: boolean;
@@ -391,24 +477,21 @@ function ReviewRow({
   const arrived = useMarkTransferArrived();
   const notArrived = useMarkTransferNotArrived();
   const refunded = useMarkRefundedManually();
-  const cancelled = useMarkBuybackCancelled();
   const pending =
-    arrived.isPending ||
-    notArrived.isPending ||
-    refunded.isPending ||
-    cancelled.isPending;
+    arrived.isPending || notArrived.isPending || refunded.isPending;
   const trimmed = blockText.trim();
   const blockValid = /^\d+$/.test(trimmed);
   const showBlockError = trimmed !== "" && !blockValid;
   const kind = transfer.kind;
   const purchaseId = transfer.purchaseId;
-  const canArrive = kind !== TransferKind.PC && kind !== TransferKind.BM;
+  const isSurplus = kind === TransferKind.CS;
+  const canArrive =
+    kind !== TransferKind.PC && kind !== TransferKind.BM && !isSurplus;
   const canRefund =
     kind === TransferKind.RF ||
     kind === TransferKind.PC ||
     kind === TransferKind.BM;
-  const canNotArrive = kind !== TransferKind.BM;
-  const canCancel = kind === TransferKind.BB && legacy;
+  const canNotArrive = kind !== TransferKind.BM && !isSurplus;
 
   const report = (result: ReviewResult, success: string) => {
     const ok = result.__kind__ === "ok";
@@ -460,26 +543,6 @@ function ReviewRow({
     else handleRefunded();
   };
 
-  const handleCancelled = () => {
-    if (!blockValid || pending) return;
-    setFeedback(null);
-    cancelled.mutate(
-      { buybackId: purchaseId, block: BigInt(trimmed) },
-      {
-        onSuccess: () => {
-          const text = `Marked as cancelled with TTTI-T return block ${trimmed}.`;
-          setFeedback({ ok: true, text });
-          toast.success(text);
-        },
-        onError: (error) => {
-          const text = buybackFailureMessage(error, "en");
-          setFeedback({ ok: false, text });
-          toast.error(text);
-        },
-      },
-    );
-  };
-
   const handleNotArrived = () => {
     if (pending) return;
     setFeedback(null);
@@ -509,88 +572,87 @@ function ReviewRow({
         </span>
       </div>
       <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
-        {reviewFields(transfer, legacy).map((field) => (
+        {reviewFields(transfer).map((field) => (
           <div key={field.label} className="contents">
             <dt className="text-muted-foreground">{field.label}</dt>
             <dd className="font-mono break-all">{field.value}</dd>
           </div>
         ))}
       </dl>
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-wrap items-end gap-3"
-        noValidate
-      >
-        <div className="space-y-1.5">
-          <Label htmlFor={inputId}>Block number</Label>
-          <Input
-            id={inputId}
-            inputMode="numeric"
-            required
-            value={blockText}
-            onChange={(e) => setBlockText(e.target.value)}
-            placeholder="e.g. 18204311"
-            className="w-48 font-mono"
-            aria-invalid={showBlockError}
-            data-ocid={ocid("block_input")}
-          />
-        </div>
-        {canArrive && (
-          <Button
-            type="submit"
-            disabled={!blockValid || pending}
-            className={PRIMARY_GOLD}
-            data-ocid={ocid("arrived_button")}
-          >
-            {arrived.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Arrived
-          </Button>
-        )}
-        {canRefund && (
-          <Button
-            type={canArrive ? "button" : "submit"}
-            variant={canArrive ? "outline" : "default"}
-            disabled={!blockValid || pending}
-            onClick={canArrive ? handleRefunded : undefined}
-            className={canArrive ? SECONDARY_GOLD : PRIMARY_GOLD}
-            data-ocid={ocid("refunded_manually_button")}
-          >
-            {refunded.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {kind === TransferKind.BM ? "Refunded" : "Refunded manually"}
-          </Button>
-        )}
-        {canNotArrive && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={pending}
-            onClick={handleNotArrived}
-            className={SECONDARY_GOLD}
-            data-ocid={ocid("not_arrived_button")}
-          >
-            {notArrived.isPending && (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            )}
-            Not arrived
-          </Button>
-        )}
-        {canCancel && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!blockValid || pending}
-            onClick={handleCancelled}
-            className={SECONDARY_GOLD}
-            data-ocid={ocid("cancelled_button")}
-          >
-            {cancelled.isPending && (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            )}
-            Cancelled
-          </Button>
-        )}
-      </form>
-      {showBlockError ? (
+      {isSurplus ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-ocid={ocid("surplus_note")}
+        >
+          The custody account holds more than the total owed. The surplus is
+          credited to no one and no action is available here.
+        </p>
+      ) : (
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-wrap items-end gap-3"
+          noValidate
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor={inputId}>Block number</Label>
+            <Input
+              id={inputId}
+              inputMode="numeric"
+              required
+              value={blockText}
+              onChange={(e) => setBlockText(e.target.value)}
+              placeholder="e.g. 18204311"
+              className="w-48 font-mono"
+              aria-invalid={showBlockError}
+              data-ocid={ocid("block_input")}
+            />
+          </div>
+          {canArrive && (
+            <Button
+              type="submit"
+              disabled={!blockValid || pending}
+              className={PRIMARY_GOLD}
+              data-ocid={ocid("arrived_button")}
+            >
+              {arrived.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              Arrived
+            </Button>
+          )}
+          {canRefund && (
+            <Button
+              type={canArrive ? "button" : "submit"}
+              variant={canArrive ? "outline" : "default"}
+              disabled={!blockValid || pending}
+              onClick={canArrive ? handleRefunded : undefined}
+              className={canArrive ? SECONDARY_GOLD : PRIMARY_GOLD}
+              data-ocid={ocid("refunded_manually_button")}
+            >
+              {refunded.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              {kind === TransferKind.BM ? "Refunded" : "Refunded manually"}
+            </Button>
+          )}
+          {canNotArrive && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={handleNotArrived}
+              className={SECONDARY_GOLD}
+              data-ocid={ocid("not_arrived_button")}
+            >
+              {notArrived.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              Not arrived
+            </Button>
+          )}
+        </form>
+      )}
+      {isSurplus ? null : showBlockError ? (
         <p className="text-xs text-destructive" data-ocid={ocid("block_error")}>
           Enter the block number as a whole number.
         </p>
@@ -604,11 +666,9 @@ function ReviewRow({
                 ? "Refund this cost by hand, then enter the ledger block of the refund to mark it as refunded."
                 : kind === TransferKind.RF
                   ? "Enter the ledger block number to mark the refund as arrived or as refunded manually."
-                  : canCancel
-                    ? "Enter the ledger block of the payment to mark it as arrived, or the TTTI-T block of the TTTI-T returned by hand to mark the buyback as cancelled. Not arrived lets the buyer retry."
-                    : kind === TransferKind.BB
-                      ? "Enter the ledger block of the payment to mark it as arrived. Not arrived lets the buyer retry or cancel."
-                      : "Enter the ledger block number to mark the transfer as arrived."}
+                  : kind === TransferKind.GR
+                    ? "Enter the ledger block of the redemption payment to mark it as arrived. Not arrived opens a new payout attempt."
+                    : "Enter the ledger block number to mark the transfer as arrived."}
         </p>
       ) : null}
       {feedback && (
@@ -634,13 +694,6 @@ export function ToReviewCard({ className }: { className?: string }) {
     isError,
     refetch,
   } = useTransfersToReviewFiltered(kinds, token === ALL_TOKENS ? null : token);
-  const { data: buybacks } = useAllBuybacks();
-  // Legacy buybacks (before the escrow) have no payout memo when the list of
-  // buybacks is not loaded yet.
-  const isLegacy = (transfer: TransferReview) =>
-    transfer.kind === TransferKind.BB &&
-    (buybacks?.find((b) => b.id === transfer.purchaseId)?.legacy ??
-      transfer.memoText === undefined);
 
   return (
     <div
@@ -721,7 +774,6 @@ export function ToReviewCard({ className }: { className?: string }) {
                 key={`${transfer.kind}-${transfer.purchaseId.toString()}`}
                 transfer={transfer}
                 index={index}
-                legacy={isLegacy(transfer)}
               />
             ))}
           </ul>

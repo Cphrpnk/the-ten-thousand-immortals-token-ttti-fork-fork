@@ -51,8 +51,8 @@ module {
     purchasesInFlight : [Principal];
     // The BTC lock is the same purchasesInFlight set (BTC finalization).
     btcLockHeld : Bool;
-    buybacksInFlightCount : Nat;
-    buybacksInFlight : [Text]; // BuybackLib.lockKey keys
+    redemptionsInFlightCount : Nat;
+    redemptionsInFlight : [Text]; // GuaranteeLib lock keys
     reserveLockBusy : Bool;
     pendingTopUp : ?TopUpAttempt; // stored cycles top-up attempt
     openTraceCount : Nat;

@@ -23,18 +23,22 @@ import Nat8 "mo:core/Nat8";
 import PayTokenLib "pay-token";
 import IcrcLib "icrc";
 import OracleLib "oracle";
-import IcpSwapLib "icpswap";
+import CreatorFeesLib "creator-fees";
 import MintFeeTypes "../types/mint-fee";
 import PayTypes "../types/pay-token";
 
-// Native swap fees: 70 % stays in the reserves (LPs), 30 % is added to the
-// same pool as permanent locked liquidity (recyclePoolFees); nothing goes to
-// cycles. DC batches, the dynamic cycles share, the DL bonus credited from
-// swap fees and the weekly allocation no longer run: DC batches stay as
-// read-only history, already-earned DL bonuses stay claimable, ICP held in
-// cyclesHeldE8s stays recorded. Mint fee (1/101) routing, LP mint-fee claims
-// (memo TTTI-MF-<n>), set-aside amounts and liquidity injections. Transfers
-// use lib/retry.mo (created_at_time, identical resend for 23 h, then To review).
+// Native swap fees: 70 % stays in the reserves (LPs); the 30 % protocol share
+// kept in protocolFee0/1 (and the 30 % of the router 0.1 %) is split in two
+// thirds for the creator (lib/creator-fees.mo, credited, kept in the DEX
+// custody until paid out) and one third for permanent liquidity, set aside per
+// token and rebalanced by the router (lib/router.mo runPermanentLiquidity)
+// into contract-locked shares of the least liquid TTTI-T pool (public
+// journal). Nothing is recycled into the same pool and nothing goes to cycles
+// from swap fees. DC batches stay as read-only history, already-earned DL
+// bonuses stay claimable, ICP held in cyclesHeldE8s stays recorded. Mint fee
+// (1/101) routing and LP mint-fee claims (memo TTTI-MF-<n>) and set-aside
+// amounts stay; the old set-aside injection no longer runs. Transfers use
+// lib/retry.mo (created_at_time, identical resend for 23 h, then To review).
 module {
   public type ProtocolFeeStore = Types.ProtocolFeeStore;
   public type FeeBuckets = Types.FeeBuckets;
@@ -46,7 +50,8 @@ module {
 
   // --- Constants (code, not admin-settable) ----------------------------------
 
-  // Recycling: a fixed 10 % of the 20 % protocol share (bps of that share).
+  // Legacy recycle buckets (stored before PTM-4): a fixed 10 % of the former
+  // protocol share; still added as protocol liquidity, never refilled.
   public let RECYCLE_BPS : Nat = 1_000;
   // DC: no conversion when the execution deviates more than 2 % from the average.
   public let DC_MAX_DEVIATION_BPS : Nat = 200;
@@ -67,7 +72,6 @@ module {
   // Smallest DL claim: twice the ICP ledger fee.
   public let MIN_CLAIM_E8S : Nat = 20_000; // 2 x TreasuryLib.ICP_FEE (10_000)
 
-  let BPS : Nat = 10_000;
   let SAMPLE_INTERVAL_SECONDS : Nat = 300;
   let RETRY_SECONDS : Nat = 600;
   let INJECTION_SECONDS : Nat = 600;
@@ -90,6 +94,14 @@ module {
     refusedFeeds : Map.Map<DexTypes.RequestId, DexTypes.RefusedDepositFeed>;
     // DEX lot 6 pause: automatic fee, injection and recycling processing skips while paused.
     pause : DexReserveTypes.PauseState;
+    // PTM-4: creator holdings (two thirds of every protocol share) and the
+    // permanent liquidity set-aside and journal (one third).
+    creator : CreatorFeesLib.CreatorFeeStore;
+    permanent : Types.PermanentLiquidityStore;
+    // PTM-5: 24 h of consolidated TTTI-T price samples (USD x 1e8).
+    consolidated : Types.ConsolidatedPriceStore;
+    // PTM-10a: 24 h of pools-to-capitalisation ratio samples.
+    ratioSamples : Types.PoolCapRatioStore;
   };
 
   // Weekly allocation run context. Transient.
@@ -112,6 +124,21 @@ module {
   func bucketsOf(store : ProtocolFeeStore, poolId : Nat) : FeeBuckets = store.buckets.get(poolId) ?? ZERO_BUCKETS;
 
   func isIcp(token : DexTypes.PoolToken) : Bool = DexLib.poolDexToken(token) == ?#icp;
+
+  // True from the announcement of a pair removal (adds are suspended) until
+  // the pool is #removed.
+  func underRemoval(dex : DexTypes.DexStore, poolId : Nat) : Bool {
+    switch (dex.removals.get(poolId)) {
+      case (?r) {
+        switch (r.state) {
+          case (#announced) true;
+          case (#executing(_)) true;
+          case _ false;
+        };
+      };
+      case null false;
+    };
+  };
 
   func isOpen(pool : DexTypes.Pool) : Bool {
     pool.status == #active and pool.removedAt == null and pool.reserve0 > 0 and pool.reserve1 > 0 and pool.totalShares > 0;
@@ -142,9 +169,11 @@ module {
   };
 
   // Value of `amount` of `token` in ICP e8s at the average price, null when unknown.
+  // TTTI-T is valued at the consolidated price, never at one pool's price.
   func valueIcp(ctx : ProtocolFeeContext, token : DexTypes.PoolToken, amount : Nat, now : Int) : ?Nat {
     if (amount == 0) return ?0;
     if (isIcp(token)) return ?amount;
+    if (DexLib.poolDexToken(token) == ?#tttiT) return tttiValueIcp(ctx, amount, now);
     switch (icpPoolFor(ctx.dex, token)) {
       case (?(pool, zeroForOne)) { referenceOut(ctx.store, pool.id, zeroForOne, amount, now) };
       case null { null };
@@ -202,6 +231,88 @@ module {
         samples.retain(func(s : Types.PriceSample) : Bool = now - s.at <= AVERAGE_WINDOW_MAX_NS);
       };
     };
+    // PTM-5: consolidated USD sample, same timer; samples older than 24 h go.
+    switch (DexLib.consolidatedNow(ctx.dex, rateOf(ctx, now), now).price) {
+      case (?price) { ctx.consolidated.samples.add({ at = now; priceUsdE8 = price }) };
+      case null {};
+    };
+    ctx.consolidated.samples.retain(func(s : Types.ConsolidatedSample) : Bool = now - s.at <= Types.CONSOLIDATED_RETENTION_NS);
+    // PTM-10a: pools-to-capitalisation ratio sample, same timer (only when the
+    // ratio is available); samples older than 24 h go.
+    switch (poolCapRatioView(ctx, now).currentRatio) {
+      case (?ratio) { ctx.ratioSamples.samples.add({ at = now; ratio }) };
+      case null {};
+    };
+    ctx.ratioSamples.samples.retain(func(s : Types.PoolCapRatioSample) : Bool = now - s.at <= Types.CONSOLIDATED_RETENTION_NS);
+  };
+
+  // PTM-10a: circulating TTTI-T (base units) = everything minted minus the
+  // TTTI-T the contract keeps for auctions (the returned account).
+  func circulatingTttiT(ctx : ProtocolFeeContext) : Nat {
+    sat(IcrcLib.totalSupply(ctx.ledger), IcrcLib.balanceOf(ctx.ledger, IcrcLib.returnedAccount(ctx.canister)));
+  };
+
+  // PTM-10a: public indicators (pools value, capitalisation, ratios, m). The
+  // capitalisation uses the instantaneous consolidated price, measured at the
+  // same moment as the pools value; nothing is stored.
+  public func poolCapRatioView(ctx : ProtocolFeeContext, now : Int) : Types.PoolCapRatioView {
+    DexLib.poolCapRatioReport(ctx.dex, rateOf(ctx, now), circulatingTttiT(ctx), DexLib.consolidatedNow(ctx.dex, rateOf(ctx, now), now).price, ctx.ratioSamples.samples, now);
+  };
+
+  // PTM-5: hourly average of the consolidated TTTI-T price (USD x 1e8) used by
+  // every reader of a TTTI-T price. Like referenceOut, null until the samples
+  // cover 30 minutes; with no sample the reader waits.
+  public func consolidatedReferenceUsd(ctx : ProtocolFeeContext, now : Int) : ?Nat {
+    let w = DexLib.sampleWindow(ctx.consolidated.samples, now, Types.CONSOLIDATED_HOUR_NS);
+    if (w.count == 0 or now - w.oldest < AVERAGE_WINDOW_MIN_NS) return null;
+    switch (w.average) {
+      case (?p) { if (p == 0) null else ?p };
+      case null null;
+    };
+  };
+
+  // TTTI-T in ICP e8s at the consolidated hourly price and the ICP rate.
+  func tttiValueIcp(ctx : ProtocolFeeContext, amount : Nat, now : Int) : ?Nat {
+    if (amount == 0) return ?0;
+    switch (consolidatedReferenceUsd(ctx, now), payRate(ctx, #icp, now)) {
+      case (?p, ?icpRate) { if (icpRate == 0) null else ?(amount * p / icpRate) };
+      case _ null;
+    };
+  };
+
+  // (USD e8 rate, decimals) of a pay token at the hourly rate.
+  func dexRate(ctx : ProtocolFeeContext, token : DexTypes.DexToken, now : Int) : ?(Nat, Nat) {
+    switch (RetryLib.dexPayToken(token)) {
+      case (?pay) {
+        switch (payRate(ctx, pay, now)) {
+          case (?r) { if (r == 0) null else ?(r, PayTokenLib.expectedDecimals(pay).toNat()) };
+          case null null;
+        };
+      };
+      case null null;
+    };
+  };
+
+  // Expected output of a swap between TTTI-T and another token at the
+  // consolidated hourly price and the current rate of that token (no price
+  // impact). null when the consolidated price or the rate is unavailable, or
+  // when the swap does not involve TTTI-T exactly once.
+  public func tttiExpectedOut(ctx : ProtocolFeeContext, tokenIn : DexTypes.DexToken, tokenOut : DexTypes.DexToken, amountIn : Nat, now : Int) : ?Nat {
+    let p = switch (consolidatedReferenceUsd(ctx, now)) {
+      case (?p) p;
+      case null return null;
+    };
+    if (tokenIn == #tttiT and tokenOut != #tttiT) {
+      switch (dexRate(ctx, tokenOut, now)) {
+        case (?(rate, dec)) { ?(amountIn * p * 10 ** dec / (DexLib.USD_RATE_SCALE * rate)) };
+        case null null;
+      };
+    } else if (tokenOut == #tttiT and tokenIn != #tttiT) {
+      switch (dexRate(ctx, tokenIn, now)) {
+        case (?(rate, dec)) { ?(amountIn * rate * DexLib.USD_RATE_SCALE / (10 ** dec * p)) };
+        case null null;
+      };
+    } else null;
   };
 
   // Output of `amountIn` at the average of the samples of the last 60
@@ -331,23 +442,6 @@ module {
 
   // --- Recycling and DC batches ----------------------------------------------
 
-  // Adds the recycle buckets as protocol liquidity at the pool ratio; the
-  // part beyond the ratio waits in the bucket.
-  func recycleFees(ctx : ProtocolFeeContext, now : Int) {
-    if (ctx.pause.paused) return;
-    for ((poolId, b) in ctx.store.buckets.entries().toArray().values()) {
-      if (b.recycle0 > 0 and b.recycle1 > 0) {
-        switch (addProtocolLiquidity(ctx, poolId, b.recycle0, b.recycle1, false, now)) {
-          case (#ok(r)) {
-            let fresh = bucketsOf(ctx.store, poolId);
-            ctx.store.buckets.add(poolId, { fresh with recycle0 = sat(fresh.recycle0, r.used0); recycle1 = sat(fresh.recycle1, r.used1) });
-          };
-          case (#err(_)) {};
-        };
-      };
-    };
-  };
-
   // Resends recorded DC (history only: no new batch), DL and MF attempts
   // (10-minute retry rule). ICP held in cyclesHeldE8s stays recorded.
   public func runRetries(ctx : ProtocolFeeContext) : async () {
@@ -411,24 +505,22 @@ module {
   // Weights of locked positions of TTTI-T pairs (all owners, or `only`).
   func weights(ctx : ProtocolFeeContext, only : ?Principal, now : Int) : [(Principal, Types.PositionBonusWeight)] {
     let out = List.empty<(Principal, Types.PositionBonusWeight)>();
-    for (pos in ctx.dex.positions.values()) {
-      let matches = switch (only) {
-        case (?o) pos.owner == o;
-        case null true;
-      };
-      if (matches and pos.unlockAt > now) {
-        switch (ctx.dex.pools.get(pos.poolId)) {
-          case (?pool) {
-            if (pool.kind == #tttiPair and pool.removedAt == null and pool.totalShares > 0) {
-              let a0 = pos.shares * pool.reserve0 / pool.totalShares;
-              let a1 = pos.shares * pool.reserve1 / pool.totalShares;
-              let value = (valueIcp(ctx, pool.token0, a0, now) ?? 0) + (valueIcp(ctx, pool.token1, a1, now) ?? 0);
-              let remaining = (pos.unlockAt - now).toNat();
-              let weight = value * Nat.min(remaining, FIVE_YEARS_NS) / FIVE_YEARS_NS;
-              out.add((pos.owner, { positionId = pos.id; poolId = pool.id; valueIcpE8s = value; remainingLockNs = remaining; weight }));
-            };
+    // PTM-9d: only the positions of the TTTI-T pairs, through the per-pool index.
+    for ((_, pool) in ctx.dex.pools.entries()) {
+      if (pool.kind == #tttiPair and pool.removedAt == null and pool.totalShares > 0) {
+        for (pos in DexLib.positionsInPool(ctx.dex, pool.id).values()) {
+          let matches = switch (only) {
+            case (?o) pos.owner == o;
+            case null true;
           };
-          case null {};
+          if (matches and pos.unlockAt > now) {
+            let a0 = pos.shares * pool.reserve0 / pool.totalShares;
+            let a1 = pos.shares * pool.reserve1 / pool.totalShares;
+            let value = (valueIcp(ctx, pool.token0, a0, now) ?? 0) + (valueIcp(ctx, pool.token1, a1, now) ?? 0);
+            let remaining = (pos.unlockAt - now).toNat();
+            let weight = value * Nat.min(remaining, FIVE_YEARS_NS) / FIVE_YEARS_NS;
+            out.add((pos.owner, { positionId = pos.id; poolId = pool.id; valueIcpE8s = value; remainingLockNs = remaining; weight }));
+          };
         };
       };
     };
@@ -654,7 +746,7 @@ module {
     };
   };
 
-  // Arms the price sample, retry and fee-recycling / injection timers (every
+  // Arms the price sample, retry and fee / injection timers (every
   // install and upgrade). No DC batch or weekly allocation timer.
   public func startTimers<system>(ctx : WeeklyContext) {
     ignore Timer.recurringTimer<system>(
@@ -671,10 +763,9 @@ module {
         let now = Time.now();
         feedRefusedDeposits(ctx.fees, now);
         for (poolId in ctx.fees.dex.pools.keys().toArray().values()) {
-          recyclePoolFees(ctx.fees, poolId, now);
+          splitPoolFees(ctx.fees, poolId, now);
         };
-        recycleFees(ctx.fees, now);
-        await runInjections(ctx.fees, now);
+        markInterruptedInjections(ctx.fees);
       },
     );
   };
@@ -683,8 +774,6 @@ module {
 
   // Set-aside threshold: 0.001 TTTI-T = 10 USD (USD e8).
   public let SET_ASIDE_THRESHOLD_USD_E8 : Nat = 1_000_000_000;
-  // Bounded slippage of the injection swap (bps).
-  public let INJECTION_MAX_SLIPPAGE_BPS : Nat = 100;
 
   // TTTI-T account receiving the TTTI-T withdrawn from ICPSwap (the default
   // account of this canister is the TTTI-T minting account): canister +
@@ -694,10 +783,26 @@ module {
   // + 32-byte ASCII subaccount, distinct from every other subaccount. Read-only:
   // no endpoint withdraws from it; MF claims and injections are paid from it.
   public let MINT_FEE_ACCOUNT_SUBACCOUNT : Blob = "MINT-FEE-ACCOUNT-TTTI-T-00000001";
-  let INJECTIONS_LOCK : Text = "MF-INJECTIONS";
 
-  type LockedAdd = { shares : Nat; used0 : Nat; used1 : Nat };
-  type InjectionPlan = { amountIn : Nat; swapAmountIn : Nat; pairAmountIn : Nat };
+  public type LockedAdd = { shares : Nat; used0 : Nat; used1 : Nat };
+
+  // What injectPermanent needs (a ProtocolFeeContext satisfies it).
+  public type InjectContext = {
+    store : { protocolLiquidity : Map.Map<DexTypes.PoolId, Types.ProtocolLiquidity> };
+    dex : DexTypes.DexStore;
+    oracle : OracleLib.OracleStore;
+    tokenRates : OracleLib.TokenRateStore;
+  };
+
+  // What the reinjection of a removed pair needs (a ProtocolFeeContext satisfies it).
+  public type ReinjectContext = {
+    store : { protocolLiquidity : Map.Map<DexTypes.PoolId, Types.ProtocolLiquidity> };
+    dex : DexTypes.DexStore;
+    oracle : OracleLib.OracleStore;
+    tokenRates : OracleLib.TokenRateStore;
+    pause : DexReserveTypes.PauseState;
+    permanent : Types.PermanentLiquidityStore;
+  };
 
   func tokenKey(p : PayTypes.PayToken) : Text {
     switch (p) {
@@ -710,15 +815,16 @@ module {
 
   func mfKey(owner : Principal, k : Text) : Text = "MF-" # owner.toText() # "-" # k;
 
-  func payRate(ctx : ProtocolFeeContext, p : PayTypes.PayToken, now : Int) : ?Nat {
+  func payRate(ctx : { oracle : OracleLib.OracleStore; tokenRates : OracleLib.TokenRateStore }, p : PayTypes.PayToken, now : Int) : ?Nat {
     OracleLib.usableRate(OracleLib.storeFor(ctx.oracle, ctx.tokenRates, p), now);
   };
 
-  // USD e8 rate of a pool token: TTTI-T fixed, others at the hourly rate.
-  public func rateOf(ctx : ProtocolFeeContext, now : Int) : DexLib.UsdRateOf {
+  // USD e8 rate of a pool token at the hourly rate. TTTI-T has no USD value
+  // (no fixed price): null.
+  public func rateOf(ctx : { oracle : OracleLib.OracleStore; tokenRates : OracleLib.TokenRateStore }, now : Int) : DexLib.UsdRateOf {
     func(token : DexTypes.PoolToken) : ?Nat {
       switch (DexLib.poolDexToken(token)) {
-        case (?#tttiT) ?DexLib.TTTI_T_USD_E8;
+        case (?#tttiT) null;
         case (?t) {
           switch (RetryLib.dexPayToken(t)) {
             case (?pay) payRate(ctx, pay, now);
@@ -740,14 +846,14 @@ module {
     if (t0 == ?#tttiT and t1 == t) ?true else if (t1 == ?#tttiT and t0 == t) ?false else null;
   };
 
-  // USD liquidity of a TTTI-T pair; without a usable rate, twice the TTTI-T side.
+  // USD depth of a TTTI-T pair (2 x the non-TTTI-T side at the hourly rate);
+  // without a usable rate the pair counts as 0 (fed first). TTTI-T is never
+  // valued at a fixed price.
   func poolUsd(pool : DexTypes.Pool, tttiIs0 : Bool, rate : DexLib.UsdRateOf) : Nat {
-    switch (DexLib.usdGauge(pool, rate).currentUsdE8) {
+    ignore tttiIs0;
+    switch (DexLib.poolDepth(pool, rate).usdE8) {
       case (?v) v;
-      case null {
-        let r = if (tttiIs0) pool.reserve0 else pool.reserve1;
-        2 * r * DexLib.TTTI_T_USD_E8 / 100_000_000;
-      };
+      case null 0;
     };
   };
 
@@ -799,7 +905,7 @@ module {
   public func leastLiquidTttiPool(dex : DexTypes.DexStore, rate : DexLib.UsdRateOf, token : PayTypes.PayToken) : ?Nat {
     var best : ?(Nat, Nat) = null;
     for (pool in dex.pools.values()) {
-      if (pool.status != #removed and pool.removedAt == null) {
+      if (pool.status != #removed and pool.removedAt == null and not underRemoval(dex, pool.id)) {
         switch (tttiSide(pool, token)) {
           case (?tttiIs0) {
             let usd = poolUsd(pool, tttiIs0, rate);
@@ -832,13 +938,15 @@ module {
     switch (poolId) {
       case (?id) {
         // Position shares only: the contract-held locked shares have no position.
+        // PTM-9d: positions of this pool only, through the per-pool index.
+        let poolPositions = DexLib.positionsInPool(ctx.dex, id);
         var total = 0;
-        for (pos in ctx.dex.positions.values()) {
-          if (pos.poolId == id) total += pos.shares;
+        for (pos in poolPositions.values()) {
+          total += pos.shares;
         };
         if (total > 0 and halfA > 0) {
-          for (pos in ctx.dex.positions.values()) {
-            if (pos.poolId == id and pos.shares > 0) {
+          for (pos in poolPositions.values()) {
+            if (pos.shares > 0) {
               let share = halfA * pos.shares / total;
               if (share > 0) {
                 setBalance(ctx.mintFees.claimable, pos.owner, k, balanceIn(ctx.mintFees.claimable, pos.owner, k) + share);
@@ -979,49 +1087,7 @@ module {
     { items = all.sliceToArray(start, end); total = all.size(); offset };
   };
 
-  // --- Injections ------------------------------------------------------------
-
-  func poolAccount(ctx : ProtocolFeeContext, pool : DexTypes.Pool) : Types.Account {
-    { owner = ctx.canister; subaccount = ?pool.subaccount };
-  };
-
-  func memoOf(a : RetryTypes.DexTransferAttempt) : Text = a.memo.decodeUtf8() ?? "";
-
-  // One recorded pay-token move from the dedicated fee account (memo
-  // TTTI-MF-<n>, created_at_time), sent once; the outcome stays on the
-  // injection record.
-  func payMove(ctx : ProtocolFeeContext, p : PayTypes.PayToken, to : Types.Account, amount : Nat) : async RetryTypes.DexTransferAttempt {
-    let fee = PayTokenLib.expectedFee(p);
-    let a = RetryLib.newDexAttempt(ctx.retry, #MF, null, { token = payDex(p); from = { owner = ctx.canister; subaccount = ?MINT_FEE_ACCOUNT_SUBACCOUNT }; to; amount; fee = ?fee }, RetryLib.dexNow());
-    await RetryLib.sendPayDexAttempt({ a with sends = 1 });
-  };
-
-  func putInjection(ctx : ProtocolFeeContext, inj : MintFeeTypes.LiquidityInjection) {
-    ctx.mintFees.injections.add(inj.id, { inj with updatedAt = Time.now() });
-  };
-
-  func endInjection(ctx : ProtocolFeeContext, inj : MintFeeTypes.LiquidityInjection, status : MintFeeTypes.InjectionStatus, error : Text) {
-    putInjection(ctx, { inj with status; error = ?error });
-  };
-
-  func completeInjection(ctx : ProtocolFeeContext, inj : MintFeeTypes.LiquidityInjection, r : LockedAdd) {
-    putInjection(ctx, { inj with liquidityShares = r.shares; used0 = r.used0; used1 = r.used1; status = #completed; error = null });
-    let sa = setAsideOf(ctx, inj.token);
-    ctx.mintFees.setAside.add(tokenKey(inj.token), { sa with totalInjected = sa.totalInjected + inj.amountIn; lastInjectionAt = ?Time.now() });
-  };
-
-  // Amount already in the pool subaccount that waits in the pool's protocol
-  // fee (added as permanent liquidity by recyclePoolFees).
-  func toPoolFee(ctx : ProtocolFeeContext, poolId : Nat, side0 : Bool, amount : Nat) {
-    switch (ctx.dex.pools.get(poolId)) {
-      case (?pool) {
-        ctx.dex.pools.add(poolId, if (side0) { { pool with protocolFee0 = pool.protocolFee0 + amount } } else { { pool with protocolFee1 = pool.protocolFee1 + amount } });
-      };
-      case null {};
-    };
-  };
-
-  func recordLiquidity(ctx : ProtocolFeeContext, poolId : Nat, used0 : Nat, used1 : Nat, shares : Nat, now : Int) {
+  func recordLiquidity(ctx : { store : { protocolLiquidity : Map.Map<DexTypes.PoolId, Types.ProtocolLiquidity> } }, poolId : Nat, used0 : Nat, used1 : Nat, shares : Nat, now : Int) {
     let current : Types.ProtocolLiquidity = switch (ctx.store.protocolLiquidity.get(poolId)) {
       case (?l) l;
       case null { { poolId; shares = 0; fromFees0 = 0; fromFees1 = 0; fromTreasury0 = 0; fromTreasury1 = 0; lastAddedAt = null } };
@@ -1038,317 +1104,81 @@ module {
     );
   };
 
-  // Adds amounts already in the pool subaccount as contract-held locked
-  // shares (no position): at the pool ratio, or both sides at the given ratio
-  // on an empty pool (sqrt(a0 x a1)). The part beyond the ratio waits in the
-  // pool's protocol fee. Shares rounded down, used amounts rounded up.
-  func addLocked(ctx : ProtocolFeeContext, poolId : Nat, a0 : Nat, a1 : Nat, now : Int) : LockedAdd {
-    let pool = switch (ctx.dex.pools.get(poolId)) {
-      case (?p) p;
-      case null return { shares = 0; used0 = 0; used1 = 0 };
-    };
-    var shares = 0;
-    var used0 = 0;
-    var used1 = 0;
-    if (pool.status != #removed and pool.removedAt == null) {
-      if (pool.totalShares == 0) {
-        if (a0 > 0 and a1 > 0) {
-          shares := DexLib.isqrt(a0 * a1);
-          if (shares > 0) {
-            used0 := a0;
-            used1 := a1;
-          };
-        };
-      } else if (pool.reserve0 > 0 and pool.reserve1 > 0) {
-        shares := Nat.min(a0 * pool.totalShares / pool.reserve0, a1 * pool.totalShares / pool.reserve1);
-        if (shares > 0) {
-          used0 := Nat.min(a0, ceilDiv(shares * pool.reserve0, pool.totalShares));
-          used1 := Nat.min(a1, ceilDiv(shares * pool.reserve1, pool.totalShares));
-        };
-      };
-    };
-    ctx.dex.pools.add(
-      poolId,
-      {
-        pool with
-        reserve0 = pool.reserve0 + used0;
-        reserve1 = pool.reserve1 + used1;
-        totalShares = pool.totalShares + shares;
-        lockedShares = pool.lockedShares + shares;
-        protocolFee0 = pool.protocolFee0 + sat(a0, used0);
-        protocolFee1 = pool.protocolFee1 + sat(a1, used1);
-      },
-    );
-    if (shares > 0) {
-      recordLiquidity(ctx, poolId, used0, used1, shares, now);
-      ignore DexLib.refreshOpening(ctx.dex, poolId, rateOf(ctx, now));
-    };
-    { shares; used0; used1 };
+  // --- PTM-4: protocol share split and permanent liquidity -------------------
+
+  // A protocol share is split in two thirds for the creator (the remainder)
+  // and one third (rounded down) for permanent liquidity: nothing is lost or
+  // created.
+  public func permanentPart(share : Nat) : Nat = share / 3;
+
+  public func creatorPart(share : Nat) : Nat = share - share / 3;
+
+  public func permanentAmount(store : Types.PermanentLiquidityStore, token : DexTypes.DexToken) : Nat {
+    store.setAside.get(DexLib.tokenKey(token)) ?? 0;
   };
 
-  // 50 / 50 split of the whole set-aside amount when it is worth at least
-  // the threshold at a usable rate (missing or expired rate: wait). Never
-  // depends on the price of TTTI-T.
-  func planFor(ctx : ProtocolFeeContext, p : PayTypes.PayToken, now : Int) : ?InjectionPlan {
-    let sa = setAsideOf(ctx, p);
-    let value = switch (setAsideValue(ctx, p, sa.amount, now)) {
-      case (?v) v;
-      case null return null;
-    };
-    if (value < SET_ASIDE_THRESHOLD_USD_E8) return null;
-    let fee = PayTokenLib.expectedFee(p);
-    let swapAmountIn = sa.amount / 2;
-    let pairAmountIn = sat(sa.amount, swapAmountIn);
-    if (swapAmountIn <= 2 * fee or pairAmountIn <= 2 * fee) return null;
-    ?{ amountIn = sa.amount; swapAmountIn; pairAmountIn };
+  public func setPermanentAmount(store : Types.PermanentLiquidityStore, token : DexTypes.DexToken, amount : Nat) {
+    store.setAside.add(DexLib.tokenKey(token), amount);
   };
 
-  // Takes the planned amount out of the set-aside amount and records the
-  // injection (before any transfer).
-  func openInjection(ctx : ProtocolFeeContext, p : PayTypes.PayToken, poolId : Nat, plan : InjectionPlan, venue : MintFeeTypes.SwapVenue, now : Int) : MintFeeTypes.LiquidityInjection {
-    let sa = setAsideOf(ctx, p);
-    ctx.mintFees.setAside.add(tokenKey(p), { sa with amount = sat(sa.amount, plan.amountIn) });
-    let id = if (ctx.mintFees.nextInjectionId == 0) 1 else ctx.mintFees.nextInjectionId;
-    ctx.mintFees.nextInjectionId := id + 1;
-    let inj : MintFeeTypes.LiquidityInjection = {
-      id;
-      token = p;
-      poolId;
-      amountIn = plan.amountIn;
-      swapAmountIn = plan.swapAmountIn;
-      pairAmountIn = plan.pairAmountIn;
-      venue;
-      minTttiOut = 0;
-      tttiReceived = 0;
-      liquidityShares = 0;
-      used0 = 0;
-      used1 = 0;
-      status = #swapping;
-      error = null;
-      startedAt = now;
-      updatedAt = now;
-    };
-    ctx.mintFees.injections.add(id, inj);
-    inj;
+  // Appends one public journal entry (never rewritten).
+  public func logPermanent(
+    store : Types.PermanentLiquidityStore,
+    kind : Types.PermanentKind,
+    token : DexTypes.DexToken,
+    amount : Nat,
+    otherToken : ?DexTypes.DexToken,
+    otherAmount : Nat,
+    route : ?Types.PermanentRoute,
+    poolId : ?Nat,
+    shares : Nat,
+    reason : ?Text,
+    now : Int,
+  ) {
+    store.log.add({ id = store.nextLogId; at = now; kind; token; amount; otherToken; otherAmount; route; poolId; shares; reason });
+    store.nextLogId += 1;
   };
 
-  // Native venue (pool open): the whole amount goes to the pool subaccount,
-  // 50 % is swapped fee-free inside the pool, the TTTI-T obtained is paired
-  // with the other 50 % as locked shares.
-  func injectNative(ctx : ProtocolFeeContext, p : PayTypes.PayToken, pool : DexTypes.Pool, plan : InjectionPlan, now : Int) : async () {
-    let fee = PayTokenLib.expectedFee(p);
-    let inj = openInjection(ctx, p, pool.id, plan, #native(pool.id), now);
-    let arrived = sat(plan.amountIn, fee);
-    let a = await payMove(ctx, p, poolAccount(ctx, pool), arrived);
-    switch (a.outcome) {
-      case (#succeeded(_)) {};
-      case (#failed(text)) {
-        addSetAside(ctx, p, plan.amountIn, false);
-        endInjection(ctx, inj, #failed(text), "Transfer to the native pool refused; amount returned to the set-aside amount: " # text);
-        return;
-      };
-      case (_) {
-        endInjection(ctx, inj, #needsReview, "Transfer to the native pool with unknown outcome (memo " # memoOf(a) # "); amount recorded in this injection");
-        return;
-      };
-    };
-    let current = ctx.dex.pools.get(pool.id) ?? pool;
-    let tttiIs0 = tttiSide(current, p) ?? true;
-    let swapIn = Nat.min(plan.swapAmountIn, arrived);
-    let pairIn = sat(arrived, swapIn);
-    let (rPay, rTtti) = if (tttiIs0) (current.reserve1, current.reserve0) else (current.reserve0, current.reserve1);
-    let out = DexLib.amountOut(rPay, rTtti, swapIn, 0, true).amountOut;
-    if (not isOpen(current) or out == 0 or out >= rTtti) {
-      toPoolFee(ctx, pool.id, not tttiIs0, arrived);
-      let text = "Native swap not possible; the amount waits in the pool's protocol fee for permanent liquidity";
-      endInjection(ctx, inj, #failed(text), text);
-      return;
-    };
-    let swapped : DexTypes.Pool = if (tttiIs0) {
-      { current with reserve0 = Nat.sub(current.reserve0, out); reserve1 = current.reserve1 + swapIn };
-    } else {
-      { current with reserve1 = Nat.sub(current.reserve1, out); reserve0 = current.reserve0 + swapIn };
-    };
-    ctx.dex.pools.add(pool.id, swapped);
-    let adding = { inj with minTttiOut = out; tttiReceived = out; status = #addingLiquidity };
-    putInjection(ctx, adding);
-    let r = if (tttiIs0) addLocked(ctx, pool.id, out, pairIn, Time.now()) else addLocked(ctx, pool.id, pairIn, out, Time.now());
-    completeInjection(ctx, adding, r);
+  // A waiting or failed entry is written once per reason until progress is
+  // made (clearPermanentWaiting), so a long wait does not fill the journal.
+  public func logPermanentWaiting(store : Types.PermanentLiquidityStore, key : Text, kind : Types.PermanentKind, token : DexTypes.DexToken, amount : Nat, reason : Text, now : Int) {
+    if (store.lastWaiting.get(key) == ?reason) return;
+    store.lastWaiting.add(key, reason);
+    logPermanent(store, kind, token, amount, null, 0, null, null, 0, ?reason, now);
   };
 
-  // Gets the deposited swap half back from ICPSwap after a failed quote or
-  // swap; on failure it stays on this canister's ICPSwap balance (review).
-  func recoverDeposit(ctx : ProtocolFeeContext, p : PayTypes.PayToken, inj : MintFeeTypes.LiquidityInjection, swapPool : Principal, credited : Nat, why : Text) : async () {
-    let fee = PayTokenLib.expectedFee(p);
-    switch (await IcpSwapLib.withdraw(swapPool, PayTokenLib.ledgerId(p), credited, fee)) {
-      case (#ok(_)) {
-        addSetAside(ctx, p, inj.pairAmountIn + sat(credited, fee), false);
-        endInjection(ctx, inj, #failed(why), why # "; amounts returned to the set-aside amount");
-      };
-      case (#err(e)) {
-        addSetAside(ctx, p, inj.pairAmountIn, false);
-        endInjection(ctx, inj, #needsReview, why # "; ICPSwap withdrawal failed: " # e # "; the swap half stays on this canister's ICPSwap balance, the pair half returned to the set-aside amount");
-      };
+  public func clearPermanentWaiting(store : Types.PermanentLiquidityStore) {
+    store.lastWaiting.clear();
+  };
+
+  // Sets aside the permanent third (tokens stay in the DEX custody).
+  public func addPermanent(ctx : ProtocolFeeContext, token : DexTypes.DexToken, amount : Nat, poolId : ?Nat, now : Int) {
+    if (amount == 0) return;
+    setPermanentAmount(ctx.permanent, token, permanentAmount(ctx.permanent, token) + amount);
+    logPermanent(ctx.permanent, #accrued, token, amount, null, 0, null, poolId, 0, null, now);
+  };
+
+  // Splits one protocol share of `token` (native swap fee or 0.1 % routed
+  // fee): the creator part is credited, the permanent third is set aside.
+  public func splitProtocolShare(ctx : ProtocolFeeContext, poolId : Nat, token : DexTypes.DexToken, share : Nat, source : CreatorFeesLib.CreatorFeeSource, now : Int) {
+    if (share == 0) return;
+    CreatorFeesLib.credit(ctx.creator, token, creatorPart(share), source, now);
+    addPermanent(ctx, token, permanentPart(share), ?poolId, now);
+  };
+
+  func poolDexTokens(pool : DexTypes.Pool) : ?(DexTypes.DexToken, DexTypes.DexToken) {
+    switch (DexLib.poolDexToken(pool.token0), DexLib.poolDexToken(pool.token1)) {
+      case (?a, ?b) ?(a, b);
+      case _ null;
     };
   };
 
-  // ICPSwap venue (native pool not open): deposit, swap with a bounded
-  // amountOutMinimum, TTTI-T withdrawn to INJECTION_SUBACCOUNT, then both
-  // sides moved into the native pool subaccount and added as locked shares.
-  func injectIcpswap(ctx : ProtocolFeeContext, p : PayTypes.PayToken, pool : DexTypes.Pool, plan : InjectionPlan, now : Int) : async () {
-    let ledgerId = PayTokenLib.ledgerId(p);
-    let swapPool = switch (await IcpSwapLib.findPool(ledgerId, ctx.canister)) {
-      case (?id) id;
-      case null return; // no ICPSwap pool: waits
-    };
-    let info = switch (await IcpSwapLib.info(swapPool, ctx.canister)) {
-      case (#ok(i)) i;
-      case (#err(_)) return; // waits
-    };
-    let fee = PayTokenLib.expectedFee(p);
-    let inj = openInjection(ctx, p, pool.id, plan, #icpswap(swapPool), now);
-    let toDeposit = sat(plan.swapAmountIn, fee);
-    let t1 = await payMove(ctx, p, { owner = swapPool; subaccount = ?IcpSwapLib.depositSubaccount(ctx.canister) }, toDeposit);
-    switch (t1.outcome) {
-      case (#succeeded(_)) {};
-      case (#failed(text)) {
-        addSetAside(ctx, p, plan.amountIn, false);
-        endInjection(ctx, inj, #failed(text), "Transfer to ICPSwap refused; amount returned to the set-aside amount: " # text);
-        return;
-      };
-      case (_) {
-        addSetAside(ctx, p, plan.pairAmountIn, false);
-        endInjection(ctx, inj, #needsReview, "Transfer to ICPSwap with unknown outcome (memo " # memoOf(t1) # "); the swap half is recorded in this injection, the pair half returned to the set-aside amount");
-        return;
-      };
-    };
-    let credited = switch (await IcpSwapLib.deposit(swapPool, ledgerId, toDeposit, fee)) {
-      case (#ok(v)) v;
-      case (#err(e)) {
-        addSetAside(ctx, p, plan.pairAmountIn, false);
-        endInjection(ctx, inj, #needsReview, "ICPSwap deposit failed: " # e # "; the swap half stays on this canister's ICPSwap deposit subaccount, the pair half returned to the set-aside amount");
-        return;
-      };
-    };
-    let zeroForOne = not info.tttiIsToken0;
-    let quoted = switch (await IcpSwapLib.quote(swapPool, zeroForOne, credited)) {
-      case (#ok(q)) q;
-      case (#err(e)) {
-        await recoverDeposit(ctx, p, inj, swapPool, credited, "ICPSwap quote failed: " # e);
-        return;
-      };
-    };
-    let minOut = quoted * (BPS - INJECTION_MAX_SLIPPAGE_BPS) / BPS;
-    let quotedInj = { inj with minTttiOut = minOut };
-    putInjection(ctx, quotedInj);
-    if (minOut == 0) {
-      await recoverDeposit(ctx, p, quotedInj, swapPool, credited, "ICPSwap quote gives no TTTI-T");
-      return;
-    };
-    let out = switch (await IcpSwapLib.swap(swapPool, zeroForOne, credited, minOut)) {
-      case (#ok(v)) v;
-      case (#err(e)) {
-        await recoverDeposit(ctx, p, quotedInj, swapPool, credited, "ICPSwap swap failed: " # e);
-        return;
-      };
-    };
-    let tttiFee = IcrcLib.fee(ctx.ledger);
-    let injAccount : Types.Account = { owner = ctx.canister; subaccount = ?INJECTION_SUBACCOUNT };
-    let before = IcrcLib.balanceOf(ctx.ledger, injAccount);
-    switch (await IcpSwapLib.withdrawToSubaccount(swapPool, ctx.canister, out, tttiFee, INJECTION_SUBACCOUNT)) {
-      case (#ok(_)) {};
-      case (#err(e)) {
-        addSetAside(ctx, p, plan.pairAmountIn, false);
-        endInjection(ctx, { quotedInj with tttiReceived = out }, #needsReview, "ICPSwap TTTI-T withdrawal failed: " # e # "; the TTTI-T obtained stays on this canister's ICPSwap balance, the pair half returned to the set-aside amount");
-        return;
-      };
-    };
-    let received = sat(IcrcLib.balanceOf(ctx.ledger, injAccount), before);
-    if (received <= tttiFee) {
-      addSetAside(ctx, p, plan.pairAmountIn, false);
-      endInjection(ctx, { quotedInj with tttiReceived = received }, #needsReview, "No usable TTTI-T received on the injection subaccount; the pair half returned to the set-aside amount");
-      return;
-    };
-    let tttiNet = sat(received, tttiFee);
-    let target = poolAccount(ctx, pool);
-    let move = RetryLib.newDexAttempt(ctx.retry, #MF, null, { token = #tttiT; from = injAccount; to = target; amount = tttiNet; fee = ?tttiFee }, RetryLib.dexNow());
-    switch (IcrcLib.transfer(ctx.ledger, ctx.canister, ctx.canister, { from_subaccount = ?INJECTION_SUBACCOUNT; to = target; amount = tttiNet; fee = ?tttiFee; memo = ?move.memo; created_at_time = ?move.created_at_time })) {
-      case (#Ok(_)) {};
-      case (#Err(#Duplicate(_))) {};
-      case (#Err(_)) {
-        addSetAside(ctx, p, plan.pairAmountIn, false);
-        endInjection(ctx, { quotedInj with tttiReceived = received }, #needsReview, "TTTI-T move to the native pool refused; the TTTI-T stays on the injection subaccount, the pair half returned to the set-aside amount");
-        return;
-      };
-    };
-    let adding = { quotedInj with tttiReceived = tttiNet; status = #addingLiquidity };
-    putInjection(ctx, adding);
-    let pairNet = sat(plan.pairAmountIn, fee);
-    let t2 = await payMove(ctx, p, target, pairNet);
-    let current = ctx.dex.pools.get(pool.id) ?? pool;
-    let tttiIs0 = tttiSide(current, p) ?? true;
-    switch (t2.outcome) {
-      case (#succeeded(_)) {
-        let r = if (tttiIs0) addLocked(ctx, pool.id, tttiNet, pairNet, Time.now()) else addLocked(ctx, pool.id, pairNet, tttiNet, Time.now());
-        completeInjection(ctx, adding, r);
-      };
-      case (#failed(text)) {
-        toPoolFee(ctx, pool.id, tttiIs0, tttiNet);
-        addSetAside(ctx, p, plan.pairAmountIn, false);
-        endInjection(ctx, adding, #failed(text), "Pair half transfer refused: " # text # "; returned to the set-aside amount; the TTTI-T waits in the pool's protocol fee for permanent liquidity");
-      };
-      case (_) {
-        toPoolFee(ctx, pool.id, tttiIs0, tttiNet);
-        endInjection(ctx, adding, #needsReview, "Pair half transfer with unknown outcome (memo " # memoOf(t2) # "); the TTTI-T waits in the pool's protocol fee for permanent liquidity");
-      };
-    };
-  };
-
-  func injectToken(ctx : ProtocolFeeContext, p : PayTypes.PayToken, now : Int) : async () {
-    let plan = switch (planFor(ctx, p, now)) {
-      case (?pl) pl;
-      case null return;
-    };
-    let poolId = switch (mintFeePool(ctx, p)) {
-      case (?id) id;
-      case null return;
-    };
-    ignore DexLib.refreshOpening(ctx.dex, poolId, rateOf(ctx, now));
-    let pool = switch (ctx.dex.pools.get(poolId)) {
-      case (?pl) pl;
-      case null return;
-    };
-    if (isOpen(pool)) await injectNative(ctx, p, pool, plan, now) else await injectIcpswap(ctx, p, pool, plan, now);
-  };
-
-  // Threshold-triggered injection pass (timer): for each token whose
-  // set-aside is worth >= 10 USD at a valid rate, swap 50 % into TTTI-T
-  // (ICPSwap while no native pool of the pair is open, else native) and add
-  // the TTTI-T with the other 50 % as locked protocol liquidity. One pass at
-  // a time, so one injection in flight per token.
-  public func runInjections(ctx : ProtocolFeeContext, now : Int) : async () {
-    if (ctx.pause.paused) return;
-    if (ctx.locks.contains(INJECTIONS_LOCK)) return;
-    ctx.locks.add(INJECTIONS_LOCK);
-    try {
-      // An injection still open here was interrupted (upgrade or trap).
-      for (inj in ctx.mintFees.injections.values().toArray().values()) {
-        if (inj.status == #swapping or inj.status == #addingLiquidity) {
-          endInjection(ctx, inj, #needsReview, "Interrupted before completion; amounts recorded in this injection");
-        };
-      };
-      for (p in PayTokenLib.ALL.values()) {
-        await injectToken(ctx, p, now);
-      };
-    } finally {
-      ctx.locks.remove(INJECTIONS_LOCK);
-    };
-  };
-
-  // Native swap fee split: the 30 % kept in protocolFee0/1 is added to the
-  // same pool's reserves as contract-held locked shares, minted on the
-  // growth of sqrt(reserve0 x reserve1) (LP share value unchanged).
-  public func recyclePoolFees(ctx : ProtocolFeeContext, poolId : Nat, now : Int) {
+  // Native swap fee: the 30 % kept in protocolFee0/1 is split by
+  // splitProtocolShare. Amounts accrued before PTM-4 follow the same rule
+  // from now on: only the pool counters are reset (their tokens stay in the
+  // DEX custody and move to the creator holdings and the set-aside), no
+  // balance or block is rewritten.
+  public func splitPoolFees(ctx : ProtocolFeeContext, poolId : Nat, now : Int) {
     if (ctx.pause.paused) return;
     let pool = switch (ctx.dex.pools.get(poolId)) {
       case (?p) p;
@@ -1357,12 +1187,35 @@ module {
     let a0 = pool.protocolFee0;
     let a1 = pool.protocolFee1;
     if (a0 == 0 and a1 == 0) return;
-    if (pool.status == #removed or pool.removedAt != null) return;
-    if (pool.reserve0 == 0 or pool.reserve1 == 0 or pool.totalShares == 0) return;
+    switch (poolDexTokens(pool)) {
+      case (?(t0, t1)) {
+        ctx.dex.pools.add(poolId, { pool with protocolFee0 = 0; protocolFee1 = 0 });
+        splitProtocolShare(ctx, poolId, t0, a0, #swapFeeShare, now);
+        splitProtocolShare(ctx, poolId, t1, a1, #swapFeeShare, now);
+      };
+      case null {};
+    };
+  };
+
+  // Shares minted by adding a0 / a1 to a pool on the growth of
+  // sqrt(reserve0 x reserve1) (LP share value unchanged); 0 when not possible.
+  func growthShares(pool : DexTypes.Pool, a0 : Nat, a1 : Nat) : Nat {
+    if (pool.status == #removed or pool.removedAt != null) return 0;
+    if (pool.reserve0 == 0 or pool.reserve1 == 0 or pool.totalShares == 0) return 0;
     let rootK = DexLib.isqrt(pool.reserve0 * pool.reserve1);
     let rootK2 = DexLib.isqrt((pool.reserve0 + a0) * (pool.reserve1 + a1));
-    if (rootK == 0 or rootK2 <= rootK) return;
-    let shares = pool.totalShares * (rootK2 - rootK) / rootK;
+    if (rootK == 0 or rootK2 <= rootK) return 0;
+    pool.totalShares * (rootK2 - rootK) / rootK;
+  };
+
+  // Adds amounts already in the DEX custody as contract-held locked shares
+  // at the sqrt growth (one-sided amounts allowed).
+  func lockGrowth(ctx : ProtocolFeeContext, poolId : Nat, a0 : Nat, a1 : Nat, now : Int) {
+    let pool = switch (ctx.dex.pools.get(poolId)) {
+      case (?p) p;
+      case null return;
+    };
+    let shares = growthShares(pool, a0, a1);
     if (shares == 0) return;
     ctx.dex.pools.add(
       poolId,
@@ -1372,19 +1225,215 @@ module {
         reserve1 = pool.reserve1 + a1;
         totalShares = pool.totalShares + shares;
         lockedShares = pool.lockedShares + shares;
-        protocolFee0 = 0;
-        protocolFee1 = 0;
       },
     );
     recordLiquidity(ctx, poolId, a0, a1, shares, now);
   };
 
+  // Adds a0 / a1 (already in the DEX custody) to the pool as contract-held
+  // locked shares at the pool ratio. Shares rounded down, used amounts
+  // rounded up; the part beyond the ratio is not used (the caller keeps it
+  // in the set-aside). Nobody can withdraw these shares.
+  public func injectPermanent(ctx : InjectContext, poolId : Nat, a0 : Nat, a1 : Nat, now : Int) : LockedAdd {
+    let none = { shares = 0; used0 = 0; used1 = 0 };
+    let pool = switch (ctx.dex.pools.get(poolId)) {
+      case (?p) p;
+      case null return none;
+    };
+    if (not isOpen(pool) or underRemoval(ctx.dex, poolId)) return none;
+    let shares = Nat.min(a0 * pool.totalShares / pool.reserve0, a1 * pool.totalShares / pool.reserve1);
+    if (shares == 0) return none;
+    let used0 = Nat.min(a0, ceilDiv(shares * pool.reserve0, pool.totalShares));
+    let used1 = Nat.min(a1, ceilDiv(shares * pool.reserve1, pool.totalShares));
+    ctx.dex.pools.add(
+      poolId,
+      {
+        pool with
+        reserve0 = pool.reserve0 + used0;
+        reserve1 = pool.reserve1 + used1;
+        totalShares = pool.totalShares + shares;
+        lockedShares = pool.lockedShares + shares;
+      },
+    );
+    recordLiquidity(ctx, poolId, used0, used1, shares, now);
+    ignore DexLib.refreshOpening(ctx.dex, poolId, rateOf(ctx, now));
+    { shares; used0; used1 };
+  };
+
+  // PTM-9b: reinjection of the permanent liquidity of a removed TTTI-T pair.
+  // The reserves of the contract-held shares of the removed pool (never a
+  // wallet's) leave that pool (DexLib.releaseContractReserves) and enter the
+  // permanent set-aside (tokens stay in the DEX custody, as for every other
+  // permanent amount). When the least liquid other open TTTI-T pool shares the
+  // removed pair's counter token, they are injected at once with
+  // injectPermanent and a public #injected line; what is not used, or the whole
+  // amount when no such pool exists, stays in the set-aside with a public
+  // #waiting line and is balanced and injected by the router run. Nothing is
+  // lost and no existing balance or block is rewritten. Does nothing while the
+  // DEX is paused or when the pool has nothing left to release (idempotent).
+  public func reinjectRemovedPool(ctx : ReinjectContext, poolId : Nat, now : Int) {
+    if (ctx.pause.paused) return;
+    let released = switch (DexLib.releaseContractReserves(ctx.dex, poolId)) {
+      case (?r) r;
+      case null return;
+    };
+    let store = ctx.permanent;
+    let pair = DexLib.tokenSymbol(released.token0) # "/" # DexLib.tokenSymbol(released.token1);
+    let head = "Pair removal " # pair # " (pool #" # poolId.toText() # "): ";
+    setPermanentAmount(store, released.token0, permanentAmount(store, released.token0) + released.amount0);
+    setPermanentAmount(store, released.token1, permanentAmount(store, released.token1) + released.amount1);
+    let tttiIs0 = released.token0 == #tttiT;
+    let counter = if (tttiIs0) released.token1 else released.token0;
+    let (aT, aX) = if (tttiIs0) (released.amount0, released.amount1) else (released.amount1, released.amount0);
+    switch (feedTarget(ctx.dex, rateOf(ctx, now))) {
+      case null {
+        logPermanent(store, #waiting, #tttiT, aT, ?counter, aX, null, ?poolId, released.shares, ?(head # "no other open TTTI-T pool; reserves wait in the set-aside"), now);
+      };
+      case (?(target, targetTttiIs0)) {
+        let second = switch (DexLib.poolDexToken(if (targetTttiIs0) target.token1 else target.token0)) {
+          case (?t) t;
+          case null {
+            logPermanent(store, #waiting, #tttiT, aT, ?counter, aX, null, ?poolId, released.shares, ?(head # "target pool has an unknown token; reserves wait in the set-aside"), now);
+            return;
+          };
+        };
+        if (second != counter) {
+          logPermanent(store, #waiting, #tttiT, aT, ?counter, aX, null, ?poolId, released.shares, ?(head # "the least liquid TTTI-T pool pairs with " # DexLib.tokenSymbol(second) # "; reserves wait in the set-aside for the router balance"), now);
+          return;
+        };
+        let (a0, a1) = if (targetTttiIs0) (aT, aX) else (aX, aT);
+        let added = injectPermanent(ctx, target.id, a0, a1, now);
+        if (added.shares == 0) {
+          logPermanent(store, #waiting, #tttiT, aT, ?counter, aX, null, ?poolId, released.shares, ?(head # "injection into pool #" # target.id.toText() # " refused; reserves wait in the set-aside"), now);
+          return;
+        };
+        let (usedT, usedX) = if (targetTttiIs0) (added.used0, added.used1) else (added.used1, added.used0);
+        setPermanentAmount(store, #tttiT, sat(permanentAmount(store, #tttiT), usedT));
+        setPermanentAmount(store, counter, sat(permanentAmount(store, counter), usedX));
+        logPermanent(store, #injected, #tttiT, usedT, ?counter, usedX, null, ?target.id, added.shares, ?(head # "reserves of the contract-held shares reinjected into pool #" # target.id.toText()), now);
+        if (aT > usedT or aX > usedX) {
+          logPermanent(store, #waiting, #tttiT, sat(aT, usedT), ?counter, sat(aX, usedX), null, ?poolId, 0, ?(head # "the part beyond the pool ratio waits in the set-aside"), now);
+        };
+      };
+    };
+  };
+
+  // Reinjects every removed TTTI-T pool that still holds contract-held shares
+  // (retry of a removal whose reinjection did not run yet). Called by the
+  // router run before the permanent liquidity balance.
+  public func reinjectRemovedPools(ctx : ReinjectContext, now : Int) {
+    for (pool in ctx.dex.pools.values().toArray().values()) {
+      if (pool.status == #removed and pool.kind == #tttiPair and pool.lockedShares > 0) {
+        reinjectRemovedPool(ctx, pool.id, now);
+      };
+    };
+  };
+
+  // Value in ICP e8s at the hourly average price; null when unknown (no
+  // pool, no samples). PTM-5: TTTI-T is valued at the consolidated hourly
+  // price (USD) divided by the ICP rate, never through one pool.
+  public func valueIcpDex(ctx : ProtocolFeeContext, token : DexTypes.DexToken, amount : Nat, now : Int) : ?Nat {
+    if (amount == 0) return ?0;
+    switch (token) {
+      case (#icp) ?amount;
+      case (#tttiT) tttiValueIcp(ctx, amount, now);
+      case _ {
+        for (pool in ctx.dex.pools.values()) {
+          if (isOpen(pool)) {
+            switch (poolDexTokens(pool)) {
+              case (?(a, b)) {
+                if (a == token and b == #icp) return referenceOut(ctx.store, pool.id, true, amount, now);
+                if (b == token and a == #icp) return referenceOut(ctx.store, pool.id, false, amount, now);
+              };
+              case null {};
+            };
+          };
+        };
+        null;
+      };
+    };
+  };
+
+  // Newest first; `limit` capped at 100.
+  public func listPermanentLog(store : Types.PermanentLiquidityStore, offset : Nat, limit : Nat) : Types.PermanentLogPage {
+    let total = store.log.size();
+    let start = Nat.min(offset, total);
+    let end = Nat.min(start + Nat.min(limit, 100), total);
+    let entries = Array.tabulate(end - start, func(i : Nat) : Types.PermanentLogEntry = store.log.at(total - 1 - (start + i)));
+    { total; entries };
+  };
+
+  public func permanentSummary(ctx : ProtocolFeeContext, now : Int) : Types.PermanentSummary {
+    let rate = rateOf(ctx, now);
+    let pools = List.empty<Types.PermanentPoolSummary>();
+    var totalLocked = 0;
+    for (pool in ctx.dex.pools.values()) {
+      if (pool.lockedShares > 0 and pool.totalShares > 0) {
+        totalLocked += pool.lockedShares;
+        let depth = DexLib.poolDepth(pool, rate);
+        pools.add({
+          poolId = pool.id;
+          token0Symbol = pool.token0.symbol;
+          token1Symbol = pool.token1.symbol;
+          lockedShares = pool.lockedShares;
+          totalShares = pool.totalShares;
+          amount0 = pool.reserve0 * pool.lockedShares / pool.totalShares;
+          amount1 = pool.reserve1 * pool.lockedShares / pool.totalShares;
+          valueUsdE8 = switch (depth.usdE8) {
+            case (?v) ?(v * pool.lockedShares / pool.totalShares);
+            case null null;
+          };
+        });
+      };
+    };
+    var setAsideValue : Nat = 0;
+    let views = DexLib.DEX_TOKENS.map(
+      func(t : DexTypes.DexToken) : Types.PermanentSetAsideView {
+        let amount = permanentAmount(ctx.permanent, t);
+        let value = valueIcpDex(ctx, t, amount, now);
+        switch (value) {
+          case (?v) { setAsideValue += v };
+          case null {};
+        };
+        { token = t; symbol = DexLib.tokenSymbol(t); amount; valueIcpE8s = value };
+      }
+    );
+    {
+      pools = pools.toArray();
+      totalLockedShares = totalLocked;
+      setAside = views;
+      setAsideValueIcpE8s = setAsideValue;
+      thresholdIcpE8s = DC_THRESHOLD_E8S;
+      maxDeviationBps = DC_MAX_DEVIATION_BPS;
+      targetPoolId = switch (feedTarget(ctx.dex, rate)) {
+        case (?(pool, _)) ?pool.id;
+        case null null;
+      };
+    };
+  };
+
+  // The old set-aside injection of the mint fee revenue no longer runs: an
+  // injection interrupted by an upgrade goes to review, nothing else changes.
+  public func markInterruptedInjections(ctx : ProtocolFeeContext) {
+    for (inj in ctx.mintFees.injections.values().toArray().values()) {
+      switch (inj.status) {
+        case (#swapping) {
+          ctx.mintFees.injections.add(inj.id, { inj with status = #needsReview; error = ?"Interrupted; the old injection no longer runs"; updatedAt = Time.now() });
+        };
+        case (#addingLiquidity) {
+          ctx.mintFees.injections.add(inj.id, { inj with status = #needsReview; error = ?"Interrupted; the old injection no longer runs"; updatedAt = Time.now() });
+        };
+        case _ {};
+      };
+    };
+  };
+
   // Open TTTI-T pair with the least USD liquidity (same rule as the router's
   // redirect) and whether TTTI-T is its token0; null while none is open.
-  func feedTarget(dex : DexTypes.DexStore, rate : DexLib.UsdRateOf) : ?(DexTypes.Pool, Bool) {
+  public func feedTarget(dex : DexTypes.DexStore, rate : DexLib.UsdRateOf) : ?(DexTypes.Pool, Bool) {
     var best : ?(DexTypes.Pool, Bool, Nat) = null;
     for (pool in dex.pools.values()) {
-      if (isOpen(pool) and pool.kind == #tttiPair) {
+      if (isOpen(pool) and pool.kind == #tttiPair and not underRemoval(dex, pool.id)) {
         let tttiIs0 = DexLib.poolDexToken(pool.token0) == ?#tttiT;
         let tttiIs1 = DexLib.poolDexToken(pool.token1) == ?#tttiT;
         if (tttiIs0 or tttiIs1) {
@@ -1406,8 +1455,8 @@ module {
   // TTTI-T kept in DEX-REQUEST-DEPOSIT-TTTI-T-00001 for a refused request is
   // moved (in-process ledger, synchronous) to the subaccount of the least
   // liquid open TTTI-T pair, minus one ledger fee, and added to that pool's
-  // protocolFee side, which recyclePoolFees turns into contract-held
-  // permanent liquidity (as for the native 30 % fee). The transfer and the
+  // reserves as contract-held permanent locked shares (sqrt growth, locked
+  // forever). The transfer and the
   // refusedFeeds record happen in the same message without an await, so each
   // refused request is counted exactly once, across retries and upgrades.
   // Nothing happens while no TTTI-T pair is open (the deposit waits). Pending
@@ -1426,6 +1475,8 @@ module {
         switch (feedTarget(ctx.dex, rate)) {
           case (?(pool, tttiIs0)) {
             let amount = Nat.sub(request.depositAmount, fee);
+            let growth = if (tttiIs0) growthShares(pool, amount, 0) else growthShares(pool, 0, amount);
+            if (growth > 0) {
             let result = IcrcLib.transfer(
               ctx.ledger,
               ctx.canister,
@@ -1442,10 +1493,10 @@ module {
             switch (result) {
               case (#Ok(block)) {
                 ctx.refusedFeeds.add(request.id, { requestId = request.id; poolId = pool.id; amount; fee; block; at = now });
-                toPoolFee(ctx, pool.id, tttiIs0, amount);
-                recyclePoolFees(ctx, pool.id, now);
+                if (tttiIs0) lockGrowth(ctx, pool.id, amount, 0, now) else lockGrowth(ctx, pool.id, 0, amount, now);
               };
               case (#Err(_)) {};
+            };
             };
           };
           case null {};

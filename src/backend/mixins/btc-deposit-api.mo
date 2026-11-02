@@ -3,6 +3,7 @@ import Set "mo:core/Set";
 import Btc "../types/btc-deposit";
 import BtcDepositLib "../lib/btc-deposit";
 import SaleLib "../lib/presale";
+import LiquidityMintLib "../lib/liquidity-mint";
 
 // Native BTC deposits via the ckBTC minter: purchase flow (BTC -> ckBTC ->
 // TTTI-T) and wallet-only flow (BTC -> ckBTC in the caller's wallet), with
@@ -11,6 +12,7 @@ import SaleLib "../lib/presale";
 mixin (
   btcDeposits : BtcDepositLib.BtcDepositStore,
   purchaseContext : SaleLib.PurchaseContext,
+  mintContext : LiquidityMintLib.MintContext,
   purchasesInFlight : Set.Set<Principal>,
   canisterPrincipal : Principal,
 ) {
@@ -27,7 +29,7 @@ mixin (
     };
     purchasesInFlight.add(caller);
     try {
-      await* BtcDepositLib.checkPurchase(btcDeposits, purchaseContext, caller);
+      await* BtcDepositLib.checkPurchase(btcDeposits, purchaseContext, mintContext, caller);
     } finally {
       purchasesInFlight.remove(caller);
     };

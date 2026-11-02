@@ -18,8 +18,10 @@ import { ConnectedWalletProvider } from "./hooks/useConnectedWallet";
 import { PlugProvider } from "./hooks/usePlug";
 import { LanguageProvider } from "./i18n/core";
 import { AdminPage } from "./pages/AdminPage";
+import { AuctionPage } from "./pages/AuctionPage";
 import { BuyIcpPage } from "./pages/BuyIcpPage";
 import { ExchangePage } from "./pages/ExchangePage";
+import { GuaranteePage } from "./pages/GuaranteePage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LandingPage } from "./pages/LandingPage";
 import { PoolsPage } from "./pages/PoolsPage";
@@ -89,6 +91,18 @@ const historyRoute = createRoute({
   component: HistoryPage,
 });
 
+const guaranteeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/guarantee",
+  component: GuaranteePage,
+});
+
+const auctionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/auction",
+  component: AuctionPage,
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -125,6 +139,8 @@ const routeTree = rootRoute.addChildren([
   buyRoute,
   exchangeRoute,
   historyRoute,
+  guaranteeRoute,
+  auctionRoute,
   adminRoute,
   transferRoute,
   walletRoute,

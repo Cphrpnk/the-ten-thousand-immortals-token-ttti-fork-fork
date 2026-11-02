@@ -7,7 +7,9 @@ import {
 import { AcknowledgementError, PayToken } from "../backend";
 import type {
   Account,
+  Backend,
   DeliveryAddressResult,
+  MintArgs,
   PurchaseAcknowledgement,
   PurchaseResult,
 } from "../backend";
@@ -82,9 +84,31 @@ function invalidateAfterPurchase(queryClient: QueryClient) {
     "tokenPrices",
     "deliveryAddress",
     "exactQuote",
+    "liquidityMints",
+    "myGuarantees",
+    "dexPositionsOf",
   ]) {
     void queryClient.invalidateQueries({ queryKey: [key] });
   }
+}
+
+/** Mint liquidity as the connected wallet (the same principal that approved). */
+export function useWalletMintLiquidity() {
+  const queryClient = useQueryClient();
+  const { getBackend } = useConnectedWallet();
+  return useMutation<
+    Awaited<ReturnType<Backend["mintLiquidity"]>>,
+    Error,
+    MintArgs
+  >({
+    mutationFn: async (args) => {
+      const backend = await getBackend();
+      return backend.mintLiquidity(args);
+    },
+    onSettled: () => {
+      invalidateAfterPurchase(queryClient);
+    },
+  });
 }
 
 export interface WalletPurchaseParams {

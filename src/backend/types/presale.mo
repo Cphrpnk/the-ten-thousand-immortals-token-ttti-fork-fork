@@ -37,8 +37,8 @@ module {
   // All TTTI-T amounts are base units (8 decimals, 1 TTTI-T = 100_000_000).
   // `mintableRemaining` = max(0, maxSupply - totalSupply) (fresh minting left;
   // tokens cannot be burned, so total supply never decreases).
-  // `available` = mintableRemaining + feeAccountBalance - reserved: what can
-  // still be sold (fee-account tokens are sold only after the mint cap).
+  // `available` = mintableRemaining - reserved: what can still be minted
+  // (transfer fees go to the creator and never count towards the mint).
   // `complete` = available == 0 and nothing is reserved.
   public type SaleStatus = {
     maxSupply : Nat; // 100_000_000 (1 TTTI-T)
@@ -49,6 +49,15 @@ module {
     reserved : Nat; // held for in-flight purchases
     available : Nat;
     complete : Bool;
+    // PTM-9b: true when mintableRemaining is below the minimum of one mint
+    // (minPurchase): no further mint is possible. mintableRemaining is fresh
+    // minting up to the cap only; transfer fees (credited to the creator,
+    // source #transferFee) are never counted in `available` at mint.
+    mintEnded : Bool;
+    // PTM-9b: what remains to mint once the mint has ended (mintableRemaining
+    // while mintEnded, else 0). It joins the first auction lot and is minted
+    // only at settlement, for the winner.
+    remainderE8s : Nat;
     minPurchase : Nat; // 10_000 (0.0001 TTTI-T)
     tokenPriceUsd : Nat; // 10_000 USD per whole TTTI-T (base price)
     cyclesFeeBps : Nat; // 100 = fixed 1% fee on ICP purchases, share kept for cycles
@@ -155,6 +164,9 @@ module {
     #ledgerError : { token : PayToken }; // any other ledger error or rejected call
     #deliveryFailedRefunded;
     #deliveryFailedRefundFailed;
+    // PTM-1: convertDeposit / convertDepositWith no longer mint new TTTI-T;
+    // nothing is taken. Use quoteLiquidityMint / mintLiquidity.
+    #replacedByLiquidityMint;
   };
 
   // `message` is the user-facing text. `conversion` is the recorded conversion

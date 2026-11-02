@@ -15,6 +15,7 @@ import {
   spendableWithFees,
 } from "../../lib/token";
 import { cn } from "../../lib/utils";
+import { FiatAmount, type FiatToken } from "../FiatAmount";
 
 const THUMB_PX = 20;
 
@@ -59,6 +60,8 @@ export interface PercentBarProps {
   text: PercentBarText;
   /** Amount display; defaults to formatUnits(amount, decimals). */
   formatAmount?: (amount: bigint) => string;
+  /** Token of the amount, for the discreet USD equivalent of the summary. */
+  fiatToken?: FiatToken | null;
   /** Optional quote for an amount (e.g. TTTI-T received); null without a rate. */
   quote?: (amount: bigint) => bigint | null;
   /** Quote display; defaults to formatAmount. */
@@ -84,6 +87,7 @@ export function PercentBar({
   disabled,
   text: t,
   formatAmount,
+  fiatToken,
   quote,
   formatQuote,
   ocidPrefix = "exchange.percent_bar",
@@ -227,6 +231,16 @@ export function PercentBar({
             format(amountAtPercent),
             quoteText,
           )}
+          {fiatToken ? (
+            <>
+              {" "}
+              <FiatAmount
+                token={fiatToken}
+                amount={amountAtPercent}
+                ocid={`${ocidPrefix}.fiat`}
+              />
+            </>
+          ) : null}
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
@@ -279,6 +293,7 @@ export function WalletPercentBar({
       disabled={disabled}
       text={t}
       formatAmount={(amount) => formatPayAmount(amount, token)}
+      fiatToken={token}
       quote={quote}
       formatQuote={(value) => formatTtti(value)}
       labelId="wallet-percent-label"

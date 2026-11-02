@@ -1,6 +1,8 @@
 import List "mo:core/List";
 import Map "mo:core/Map";
 import Common "common";
+import Dex "dex";
+import Retry "retry";
 
 // Cycles reserve: the 1% fee share of each delivered ICP purchase is kept in a
 // dedicated ICP subaccount of this canister and converted to cycles through
@@ -36,6 +38,22 @@ module {
     blockIndex : Nat; // ICP ledger block of the transfer to the treasury
   };
 
+  // PTM-4: how many months of measured consumption the reserve covers, and the
+  // one-year target. Absent (null in CyclesStatus.coverage) while no daily
+  // consumption can be measured. Consumption = max(7-day avg, 30-day avg).
+  // totalCycles = cycles balance + the reserve ICP converted at the rate of the
+  // last notified top-up (0 for the ICP part while that rate is unknown).
+  public type ReserveCoverage = {
+    dailyConsumptionCycles : Nat;
+    monthlyConsumptionCycles : Nat; // 30 days
+    totalCycles : Nat;
+    monthsCoveredX100 : Nat; // months of consumption covered, times 100 (e.g. 1250 = 12.5 months)
+    yearTargetCycles : Nat; // 365 days of consumption
+    yearTargetE8s : ?Nat; // the target as ICP e8s at the last top-up rate, null while that rate is unknown
+    fillBps : Nat; // totalCycles / yearTargetCycles in basis points, capped at 10 000
+    rateKnown : Bool;
+  };
+
   // Public transparency view (getCyclesStatus). The reserve has no withdrawal
   // path (DEX lot 4); `withdrawals` lists the past withdrawals only.
   public type CyclesStatus = {
@@ -46,6 +64,10 @@ module {
     reserveFloorE8s : Nat;
     lastTopUp : ?TopUpRecord;
     withdrawals : [ReserveWithdrawal];
+    // PTM-4: ICP of mint / buyback fees recorded for the reserve and not yet
+    // received by the reserve account (waiting or being sent).
+    pendingFeeShareE8s : Nat;
+    coverage : ?ReserveCoverage;
   };
 
   // --- DEX lot 4: cycles autonomy and the dynamic cycles share ---------------
@@ -59,7 +81,7 @@ module {
     toppedUpCycles : Nat;
   };
 
-  // One change of the cycles share (basis points of the 20 % pool protocol share).
+  // One change of the cycles share (basis points of the 30 % pool protocol share).
   public type ShareChange = {
     at : Timestamp;
     oldShareBps : Nat;
@@ -162,6 +184,84 @@ module {
     lastError : ?Text;
     outcome : TopUpOutcome;
     needsReview : Bool;
+  };
+
+  // --- PTM-4: 1 % mint and buyback fees --------------------------------------
+
+  // Split of one 1 % fee, recorded with the fee entry when the fee is booked.
+  // cyclesE8s = ICP part kept in the contract's ICP DEX balance until the
+  // settlement sends it to the cycles reserve; creator = part credited to the
+  // creator holdings (same token as the fee). A fee entry without a split (all
+  // entries created before PTM-4) keeps its previous meaning.
+  public type FeeSplit = {
+    cyclesE8s : Nat;
+    creator : Nat;
+  };
+
+  // One send of recorded cycles shares from the ICP custody to the reserve
+  // account (memo TTTI-CY-<n>). grossE8s leaves the ICP DEX balance of the
+  // contract; the reserve receives netE8s (gross minus the ICP ledger fee).
+  public type CyclesFeeSettlement = {
+    n : Nat;
+    grossE8s : Nat;
+    netE8s : Nat;
+    createdAt : Timestamp;
+    attempt : Retry.DexTransferAttempt;
+    status : Dex.DexTransferStatus;
+  };
+
+  // Stable (new stable field `cyclesFees`). recordedE8s = sum of all cycles
+  // shares ever recorded = pendingE8s + inFlightE8s + settledE8s.
+  // mintSplits / buybackSplits hold the split recorded with each 1 % fee, keyed
+  // by the id of the fee entry (CreatorSetAside.mintId, RedemptionFee.redemptionId).
+  // An entry without a split (every fee booked before PTM-4, or a fee whose
+  // split could not be applied) keeps its previous meaning.
+  public type CyclesFeeStore = {
+    var pendingE8s : Nat;
+    var inFlightE8s : Nat;
+    var settledE8s : Nat;
+    var recordedE8s : Nat;
+    settlements : Map.Map<Nat, CyclesFeeSettlement>;
+    mintSplits : Map.Map<Nat, FeeSplit>;
+    buybackSplits : Map.Map<Nat, FeeSplit>;
+  };
+
+  public type FeeSplitSource = { #mint; #buyback };
+
+  public type FeeSplitRow = {
+    id : Nat;
+    source : FeeSplitSource;
+    split : FeeSplit;
+  };
+
+  // Everything the fee split reads and writes (references). Transient.
+  public type CyclesFeeRouting = {
+    reserve : CyclesReserveStore;
+    autonomy : AutonomyStore;
+    fees : CyclesFeeStore;
+  };
+
+  public type SettleResult = {
+    #nothingToSettle;
+    #belowMinimum : { pendingE8s : Nat; minimumE8s : Nat };
+    #inProgress; // a settlement is already open
+    #notCovered; // the ICP DEX balance does not cover the pending share
+    #sent : CyclesFeeSettlement;
+  };
+
+  // Result of the public topUpCycles call.
+  public type TopUpResult = {
+    // The cycles balance is above the threshold and no top-up is waiting.
+    #notNeeded : { cyclesBalance : Nat; threshold : Nat };
+    // Another top-up pass is running.
+    #busy;
+    // A pass ran: what the reserve and the last top-up look like afterwards.
+    #ran : {
+      cyclesBalance : Nat;
+      reserveBalanceE8s : Nat;
+      lastTopUp : ?TopUpRecord;
+      attemptOpen : Bool;
+    };
   };
 
   // Stable reserve state.

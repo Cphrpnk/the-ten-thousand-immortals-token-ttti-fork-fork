@@ -1,12 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TransferKind } from "../backend";
-import type {
-  Buyback,
-  DexToken,
-  ReviewResult,
-  TransferReview,
-} from "../backend";
-import { BuybackFailure } from "../lib/buyback";
+import type { DexToken, ReviewResult, TransferReview } from "../backend";
 import { useActor } from "./useActor";
 import { useIsCallerAdmin } from "./useQueries";
 
@@ -58,10 +52,8 @@ function useInvalidateReview() {
     void queryClient.invalidateQueries({ queryKey: ["settlementStatus"] });
     void queryClient.invalidateQueries({ queryKey: ["conversions"] });
     void queryClient.invalidateQueries({ queryKey: ["cyclesStatus"] });
-    void queryClient.invalidateQueries({ queryKey: ["allBuybacks"] });
-    void queryClient.invalidateQueries({ queryKey: ["myBuybacks"] });
-    void queryClient.invalidateQueries({ queryKey: ["allBuybackMasses"] });
-    void queryClient.invalidateQueries({ queryKey: ["myBuybackMasses"] });
+    void queryClient.invalidateQueries({ queryKey: ["myRedemptions"] });
+    void queryClient.invalidateQueries({ queryKey: ["redemptionFees"] });
     void queryClient.invalidateQueries({ queryKey: ["dexBalances"] });
     void queryClient.invalidateQueries({ queryKey: ["dexTransfers"] });
     void queryClient.invalidateQueries({ queryKey: ["pairRequests"] });
@@ -85,32 +77,6 @@ export const PROTOCOL_FEE_REVIEW_KINDS: ReadonlyArray<TransferKind> = [
 
 export function isProtocolFeeReviewKind(kind: TransferKind): boolean {
   return kind === TransferKind.DC || kind === TransferKind.DL;
-}
-
-export interface MarkBuybackCancelledInput {
-  buybackId: bigint;
-  /** TTTI-T ledger block of the TTTI-T returned by hand. */
-  block: bigint;
-}
-
-/**
- * Admin: record a legacy #payoutFailed buyback as cancelled with the block of
- * the TTTI-T returned by hand. Rejects with a BuybackFailure on a refusal.
- */
-export function useMarkBuybackCancelled() {
-  const { actor } = useActor();
-  const invalidate = useInvalidateReview();
-  return useMutation<Buyback, Error, MarkBuybackCancelledInput>({
-    mutationFn: async ({ buybackId, block }) => {
-      if (!actor) throw new Error("Backend is not ready");
-      const result = await actor.markBuybackCancelled(buybackId, block);
-      if (result.__kind__ === "err") throw new BuybackFailure(result.err);
-      return result.ok;
-    },
-    onSettled: () => {
-      invalidate();
-    },
-  });
 }
 
 export interface MarkArrivedInput {

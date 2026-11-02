@@ -32,6 +32,7 @@ import {
   useCyclesFeeText,
 } from "../lib/token";
 import { ExplorerLink } from "./ExplorerLink";
+import { FiatAmount } from "./FiatAmount";
 import { useBtcPaymentText } from "./btcPaymentText";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -292,11 +293,13 @@ export function TokenInfo() {
             label={t.maximumSupply}
             value={formatTtti(tokenInfo.maxSupply, decimals)}
             unit={symbol}
+            fiat={tokenInfo.maxSupply}
           />
           <Metric
             label={t.totalSupply}
             value={formatTtti(tokenInfo.totalSupply, decimals)}
             unit={symbol}
+            fiat={tokenInfo.totalSupply}
           />
           <Metric
             label={t.referencePrice}
@@ -415,7 +418,14 @@ function Metric({
   value,
   unit,
   note,
-}: { label: string; value: string; unit: string; note?: string }) {
+  fiat,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  note?: string;
+  fiat?: bigint;
+}) {
   return (
     <div className="min-w-0 border-b border-border/70 py-6 first:pt-3 sm:[&:nth-child(-n+2)]:pt-3">
       <dt className="text-xs font-semibold uppercase tracking-[0.17em] text-muted-foreground">
@@ -428,6 +438,7 @@ function Metric({
         <span className="text-xs font-medium tracking-wider text-primary">
           {unit}
         </span>
+        {fiat !== undefined && <FiatAmount token="ttti" amount={fiat} />}
       </dd>
       {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
     </div>

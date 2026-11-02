@@ -31,6 +31,7 @@ import {
   timestampToDate,
 } from "../../lib/token";
 import { ExplorerLink } from "../ExplorerLink";
+import { FiatAmount, type FiatToken } from "../FiatAmount";
 import { Button } from "../ui/button";
 
 type StepState = "done" | "current" | "failed" | "pending";
@@ -137,17 +138,27 @@ function amountRows(
   amounts: Amounts,
   purchase: boolean,
   t: BtcText,
-): Array<{ id: string; label: string; value: string }> {
+): Array<{
+  id: string;
+  label: string;
+  value: string;
+  fiatToken: FiatToken;
+  fiatAmount: bigint;
+}> {
   const rows = [
     {
       id: "btc_detected",
       label: t.amountBtcDetected,
       value: formatSats(amounts.btcDetectedSats),
+      fiatToken: PayToken.ckbtc as FiatToken,
+      fiatAmount: amounts.btcDetectedSats,
     },
     {
       id: "ckbtc_created",
       label: t.amountCkbtcCreated,
       value: formatSats(amounts.ckbtcMintedSats, "ckBTC"),
+      fiatToken: PayToken.ckbtc as FiatToken,
+      fiatAmount: amounts.ckbtcMintedSats,
     },
   ];
   if (amounts.ckbtcPendingSats > 0n) {
@@ -155,6 +166,8 @@ function amountRows(
       id: "ckbtc_pending",
       label: t.amountCkbtcPending,
       value: formatSats(amounts.ckbtcPendingSats, "ckBTC"),
+      fiatToken: PayToken.ckbtc as FiatToken,
+      fiatAmount: amounts.ckbtcPendingSats,
     });
   }
   if (purchase && amounts.refundedSats > 0n) {
@@ -162,12 +175,16 @@ function amountRows(
       id: "refunded",
       label: t.amountRefunded,
       value: formatSats(amounts.refundedSats, "ckBTC"),
+      fiatToken: PayToken.ckbtc as FiatToken,
+      fiatAmount: amounts.refundedSats,
     });
   } else if (purchase) {
     rows.push({
       id: "ttti_delivered",
       label: t.amountTttiDelivered,
       value: `${formatTtti(amounts.tttiDelivered)} TTTI-T`,
+      fiatToken: "ttti" as FiatToken,
+      fiatAmount: amounts.tttiDelivered,
     });
   }
   return rows;
@@ -302,6 +319,12 @@ function RefundFailedNote({
       <span className="flex flex-col gap-1">
         <span>
           {t.refundFailed(formatSats(entry.ckbtcPendingSats, "ckBTC"))}
+          <FiatAmount
+            token={PayToken.ckbtc}
+            amount={entry.ckbtcPendingSats}
+            className="ml-1.5 text-current opacity-70"
+            ocid="btc.refund_failed_fiat"
+          />
         </span>
         {entry.errorMessage ? (
           <span className="break-words">{entry.errorMessage}</span>
@@ -507,6 +530,12 @@ export function BtcDepositProgress({
             <dt className="text-muted-foreground">{item.label}</dt>
             <dd className="font-mono tabular-nums text-foreground">
               {item.value}
+              <FiatAmount
+                token={item.fiatToken}
+                amount={item.fiatAmount}
+                className="ml-1.5"
+                ocid={`${ocidPrefix}.progress.${item.id}_fiat`}
+              />
             </dd>
           </div>
         ))}
@@ -593,6 +622,12 @@ export function BtcDepositProgress({
                         <dt className="text-muted-foreground">{row.label}</dt>
                         <dd className="font-mono tabular-nums text-foreground">
                           {row.value}
+                          <FiatAmount
+                            token={row.fiatToken}
+                            amount={row.fiatAmount}
+                            className="ml-1.5"
+                            ocid={`${ocidPrefix}.history.${row.id}_fiat`}
+                          />
                         </dd>
                       </div>
                     ))}

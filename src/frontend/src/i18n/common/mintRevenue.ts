@@ -14,7 +14,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeHeading: "Mint fee",
     priceRule: "Mint price: 101 paid for 100 received.",
     ownerShare:
-      "100/101 is sent directly to the admin's wallet, in the paid token (BTC mints in ckBTC).",
+      "The creator receives only 1% of the amount paid, after the cycles reserve, in the paid token (BTC mints in ckBTC). The rest forms the minter's position and guarantee.",
     ownerAccumulates:
       "The paid token's ledger fee is deducted from that share; every send is recorded with its status.",
     feeShare:
@@ -35,7 +35,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeAmount: (amount: string) => `Mint fee (1/101): ${amount}`,
     // Pools page: swap fees and bonuses
     swapFeeSplit:
-      "Swap fees: 70% stays in the pool for liquidity providers, 30% is added as permanent liquidity in the same pool.",
+      "Swap fees: 70% goes to liquidity providers. The 30% protocol share goes two thirds to the creator and one third to permanent liquidity.",
     bonusEarnedNote:
       "ICP bonuses already earned remain claimable. Swap fees add no new bonus.",
     // Pools page: mint fee shares of liquidity providers
@@ -112,7 +112,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeHeading: "Frais de mint",
     priceRule: "Prix du mint : 101 payés pour 100 reçus.",
     ownerShare:
-      "100/101 sont envoyés directement au wallet de l'administrateur, dans le jeton payé (les mints en BTC, en ckBTC).",
+      "Le créateur ne reçoit que 1 % du montant payé, après la réserve de cycles, dans le jeton payé (les mints en BTC, en ckBTC). Le reste constitue la position et la garantie du minteur.",
     ownerAccumulates:
       "Les frais du ledger du jeton payé sont déduits de cette part ; chaque envoi est enregistré avec son statut.",
     feeShare:
@@ -131,7 +131,7 @@ export const MINT_REVENUE_TEXT = defineDict({
       "Les frais de routeur de 0,1 % suivent la règle des frais d'échange : 70 % aux fournisseurs de liquidité et 30 % en liquidité permanente. Quand le pool natif n'a aucun fournisseur de liquidité, les 70 % vont aux fournisseurs de liquidité du pool TTTI-T le moins liquide.",
     feeAmount: (amount: string) => `Frais de mint (1/101) : ${amount}`,
     swapFeeSplit:
-      "Frais d'échange : 70 % restent dans le pool pour les fournisseurs de liquidité, 30 % sont ajoutés en liquidité permanente dans le même pool.",
+      "Frais d'échange : 70 % vont aux fournisseurs de liquidité. La part de 30 % du protocole va pour deux tiers au créateur et pour un tiers à la liquidité permanente.",
     bonusEarnedNote:
       "Les bonus en ICP déjà gagnés restent réclamables. Les frais d'échange n'ajoutent aucun nouveau bonus.",
     mintFeesTitle: "Parts des frais de mint",
@@ -206,7 +206,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeHeading: "Comisión de mint",
     priceRule: "Precio del mint: se pagan 101 por 100 recibidos.",
     ownerShare:
-      "100/101 se envían directamente al wallet del administrador, en el token pagado (los mints en BTC, en ckBTC).",
+      "El creador recibe solo el 1 % del importe pagado, después de la reserva de ciclos, en el token pagado (los mints en BTC, en ckBTC). El resto forma la posición y la garantía del minter.",
     ownerAccumulates:
       "La comisión del ledger del token pagado se descuenta de esta parte; cada envío se registra con su estado.",
     feeShare:
@@ -225,7 +225,7 @@ export const MINT_REVENUE_TEXT = defineDict({
       "La comisión del enrutador del 0,1 % sigue la regla de las comisiones de intercambio: 70 % para los proveedores de liquidez y 30 % como liquidez permanente. Cuando el pool nativo no tiene ningún proveedor de liquidez, el 70 % va a los proveedores de liquidez del pool TTTI-T con menos liquidez.",
     feeAmount: (amount: string) => `Comisión de mint (1/101): ${amount}`,
     swapFeeSplit:
-      "Comisiones de intercambio: el 70 % queda en el pool para los proveedores de liquidez, el 30 % se añade como liquidez permanente en el mismo pool.",
+      "Comisiones de intercambio: el 70 % va a los proveedores de liquidez. La parte del 30 % del protocolo va en dos tercios al creador y en un tercio a la liquidez permanente.",
     bonusEarnedNote:
       "Los bonos en ICP ya ganados siguen siendo reclamables. Las comisiones de intercambio no añaden ningún bono nuevo.",
     mintFeesTitle: "Partes de la comisión de mint",
@@ -300,7 +300,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeHeading: "铸造费用",
     priceRule: "铸造价格：支付 101，获得 100。",
     ownerShare:
-      "100/101 以所支付的代币直接发送至管理员的钱包（以 BTC 铸造时为 ckBTC）。",
+      "创建者仅获得所付金额的 1%，在 cycles 储备之后，以所支付的代币计（以 BTC 铸造时为 ckBTC）。其余部分构成铸造者的头寸和保障。",
     ownerAccumulates:
       "所支付代币的账本手续费从该部分中扣除；每次发送均连同其状态一并记录。",
     feeShare:
@@ -319,8 +319,8 @@ export const MINT_REVENUE_TEXT = defineDict({
       "0.1% 的路由费用遵循兑换费用规则：70% 归流动性提供者，30% 作为永久流动性。原生池没有流动性提供者时，70% 归流动性最低的 TTTI-T 池的流动性提供者。",
     feeAmount: (amount: string) => `铸造费用（1/101）：${amount}`,
     swapFeeSplit:
-      "兑换费用：70% 留在资金池中归流动性提供者，30% 作为永久流动性加入同一资金池。",
-    bonusEarnedNote: "已获得的 ICP 奖励仍可领取。兑换费用不再产生新的奖励。",
+      "兑换费用：70% 归流动性提供者。协议的 30% 份额中，三分之二归创建者，三分之一归永久流动性。",
+    bonusEarnedNote: "已获得的 ICP 加成仍可领取。兑换费用不再产生新的加成。",
     mintFeesTitle: "铸造费用份额",
     mintFeesScope:
       "每种支付代币中流动性最低的 TTTI-T 交易对的流动性提供者，按比例获得该代币的一半铸造费用。显示的金额为实际记录的金额。",
@@ -390,7 +390,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeHeading: "Taxa de mint",
     priceRule: "Preço do mint: 101 pagos por 100 recebidos.",
     ownerShare:
-      "100/101 são enviados diretamente ao wallet do administrador, no token pago (mints em BTC, em ckBTC).",
+      "O criador recebe apenas 1 % do valor pago, após a reserva de ciclos, no token pago (mints em BTC, em ckBTC). O restante forma a posição e a garantia do minter.",
     ownerAccumulates:
       "A taxa do ledger do token pago é deduzida dessa parte; cada envio é registrado com o seu status.",
     feeShare:
@@ -409,7 +409,7 @@ export const MINT_REVENUE_TEXT = defineDict({
       "A taxa do roteador de 0,1 % segue a regra das taxas de troca: 70 % para os provedores de liquidez e 30 % como liquidez permanente. Quando o pool nativo não tem nenhum provedor de liquidez, os 70 % vão para os provedores de liquidez do pool TTTI-T com menor liquidez.",
     feeAmount: (amount: string) => `Taxa de mint (1/101): ${amount}`,
     swapFeeSplit:
-      "Taxas de troca: 70 % ficam no pool para os provedores de liquidez, 30 % são adicionados como liquidez permanente no mesmo pool.",
+      "Taxas de troca: 70 % vão para os provedores de liquidez. A parte de 30 % do protocolo vai, em dois terços, para o criador e, em um terço, para a liquidez permanente.",
     bonusEarnedNote:
       "Os bônus em ICP já ganhos continuam resgatáveis. As taxas de troca não adicionam nenhum bônus novo.",
     mintFeesTitle: "Partes da taxa de mint",
@@ -483,7 +483,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeHeading: "민트 수수료",
     priceRule: "민트 가격: 101을 지불하고 100을 받습니다.",
     ownerShare:
-      "100/101은 지불한 토큰으로 관리자의 지갑에 직접 전송됩니다(BTC 민트는 ckBTC로).",
+      "창작자는 사이클 준비금을 제외한 지불 금액의 1%만 지불한 토큰으로 받습니다(BTC 민트는 ckBTC로). 나머지는 민터의 포지션과 보장을 구성합니다.",
     ownerAccumulates:
       "지불한 토큰의 원장 수수료는 이 몫에서 차감되며, 모든 전송은 상태와 함께 기록됩니다.",
     feeShare:
@@ -502,7 +502,7 @@ export const MINT_REVENUE_TEXT = defineDict({
       "0.1%의 라우터 수수료는 스왑 수수료 규칙을 따릅니다. 70%는 유동성 공급자에게, 30%는 영구 유동성으로 갑니다. 네이티브 풀에 유동성 공급자가 없으면 70%는 유동성이 가장 낮은 TTTI-T 풀의 유동성 공급자에게 갑니다.",
     feeAmount: (amount: string) => `민트 수수료(1/101): ${amount}`,
     swapFeeSplit:
-      "스왑 수수료: 70%는 유동성 공급자를 위해 풀에 남고, 30%는 같은 풀에 영구 유동성으로 추가됩니다.",
+      "스왑 수수료: 70%는 유동성 공급자에게 돌아갑니다. 프로토콜 몫인 30% 중 3분의 2는 창작자에게, 3분의 1은 영구 유동성에 배정됩니다.",
     bonusEarnedNote:
       "이미 획득한 ICP 보너스는 계속 청구할 수 있습니다. 스왑 수수료는 새 보너스를 추가하지 않습니다.",
     mintFeesTitle: "민트 수수료 몫",
@@ -575,7 +575,7 @@ export const MINT_REVENUE_TEXT = defineDict({
     feeHeading: "ਮਿੰਟ ਫੀਸ",
     priceRule: "ਮਿੰਟ ਕੀਮਤ: 100 ਪ੍ਰਾਪਤ ਕਰਨ ਲਈ 101 ਦਾ ਭੁਗਤਾਨ।",
     ownerShare:
-      "100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਸਿੱਧਾ ਐਡਮਿਨ ਦੇ ਵਾਲਿਟ ਨੂੰ ਭੇਜਿਆ ਜਾਂਦਾ ਹੈ (BTC ਮਿੰਟ ckBTC ਵਿੱਚ)।",
+      "ਨਿਰਮਾਤਾ ਨੂੰ ਸਾਈਕਲ ਰਿਜ਼ਰਵ ਤੋਂ ਬਾਅਦ, ਅਦਾ ਕੀਤੀ ਰਕਮ ਦਾ ਸਿਰਫ਼ 1% ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਮਿਲਦਾ ਹੈ (BTC ਮਿੰਟ ckBTC ਵਿੱਚ)। ਬਾਕੀ ਮਿੰਟਰ ਦੀ ਪੁਜ਼ੀਸ਼ਨ ਅਤੇ ਗਾਰੰਟੀ ਬਣਾਉਂਦਾ ਹੈ।",
     ownerAccumulates:
       "ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਦੀ ਲੈਜਰ ਫੀਸ ਇਸ ਹਿੱਸੇ ਵਿੱਚੋਂ ਕੱਟੀ ਜਾਂਦੀ ਹੈ; ਹਰ ਭੇਜਣਾ ਆਪਣੀ ਸਥਿਤੀ ਸਮੇਤ ਦਰਜ ਕੀਤਾ ਜਾਂਦਾ ਹੈ।",
     feeShare:
@@ -594,7 +594,7 @@ export const MINT_REVENUE_TEXT = defineDict({
       "0.1% ਰਾਊਟਰ ਫੀਸ ਸਵੈਪ ਫੀਸ ਦੇ ਨਿਯਮ ਦੀ ਪਾਲਣਾ ਕਰਦੀ ਹੈ: 70% ਲਿਕਵਿਡਿਟੀ ਪ੍ਰਦਾਤਾਵਾਂ ਨੂੰ ਅਤੇ 30% ਸਥਾਈ ਲਿਕਵਿਡਿਟੀ ਵਜੋਂ। ਜਦੋਂ ਨੇਟਿਵ ਪੂਲ ਵਿੱਚ ਕੋਈ ਲਿਕਵਿਡਿਟੀ ਪ੍ਰਦਾਤਾ ਨਹੀਂ ਹੁੰਦਾ, 70% ਸਭ ਤੋਂ ਘੱਟ ਲਿਕਵਿਡਿਟੀ ਵਾਲੇ TTTI-T ਪੂਲ ਦੇ ਲਿਕਵਿਡਿਟੀ ਪ੍ਰਦਾਤਾਵਾਂ ਨੂੰ ਜਾਂਦਾ ਹੈ।",
     feeAmount: (amount: string) => `ਮਿੰਟ ਫੀਸ (1/101): ${amount}`,
     swapFeeSplit:
-      "ਸਵੈਪ ਫੀਸਾਂ: 70% ਲਿਕਵਿਡਿਟੀ ਪ੍ਰਦਾਤਾਵਾਂ ਲਈ ਪੂਲ ਵਿੱਚ ਰਹਿੰਦਾ ਹੈ, 30% ਉਸੇ ਪੂਲ ਵਿੱਚ ਸਥਾਈ ਲਿਕਵਿਡਿਟੀ ਵਜੋਂ ਜੋੜਿਆ ਜਾਂਦਾ ਹੈ।",
+      "ਸਵੈਪ ਫੀਸਾਂ: 70% ਲਿਕਵਿਡਿਟੀ ਪ੍ਰਦਾਤਾਵਾਂ ਨੂੰ ਜਾਂਦਾ ਹੈ। ਪ੍ਰੋਟੋਕੋਲ ਦੇ 30% ਹਿੱਸੇ ਦਾ ਦੋ ਤਿਹਾਈ ਨਿਰਮਾਤਾ ਨੂੰ ਅਤੇ ਇੱਕ ਤਿਹਾਈ ਸਥਾਈ ਲਿਕਵਿਡਿਟੀ ਨੂੰ ਜਾਂਦਾ ਹੈ।",
     bonusEarnedNote:
       "ਪਹਿਲਾਂ ਕਮਾਏ ICP ਬੋਨਸ ਕਲੇਮ ਕੀਤੇ ਜਾ ਸਕਦੇ ਹਨ। ਸਵੈਪ ਫੀਸਾਂ ਕੋਈ ਨਵਾਂ ਬੋਨਸ ਨਹੀਂ ਜੋੜਦੀਆਂ।",
     mintFeesTitle: "ਮਿੰਟ ਫੀਸ ਦੇ ਹਿੱਸੇ",

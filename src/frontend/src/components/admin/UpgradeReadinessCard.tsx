@@ -250,13 +250,13 @@ export function UpgradeReadinessCard() {
                 ocid="admin.upgrade_readiness.btc_lock"
               />
             </Row>
-            <Row label="Buybacks in flight">
+            <Row label="Redemptions in flight">
               <span className="block font-mono">
-                {data.buybacksInFlightCount.toString()}
+                {data.redemptionsInFlightCount.toString()}
               </span>
               <List
-                items={data.buybacksInFlight}
-                ocid="admin.upgrade_readiness.buybacks_list"
+                items={data.redemptionsInFlight}
+                ocid="admin.upgrade_readiness.redemptions_list"
               />
             </Row>
             <Row label="Reserve lock busy">

@@ -1,13 +1,13 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "f4f6d78fb25b5fcee294e52b8ddd69004e041fb5d9521a0db5d21c02ce08f4d0",
+  "mopsTomlDepsHash": "74df40516a605033765aec4e6ef0735288c5c6d987aa8f181f942aedbef6d25c",
   "deps": {
     "base": "0.16.0",
     "caffeineai-authorization": "1.0.1",
-    "caffeineai-http-outcalls": "0.1.4",
+    "caffeineai-http-outcalls": "0.1.5",
     "caffeineai-lints": "0.1.1",
     "caffeineai-oql": "0.8.0",
-    "caffeineai-stripe": "1.0.0",
+    "caffeineai-stripe": "1.0.1",
     "core": "2.6.2",
     "ic": "4.2.0",
     "identity-attributes": "0.4.0",
@@ -19,18 +19,18 @@
       "core": "2.5.0",
       "identity-attributes": "0.4.0"
     },
-    "caffeineai-http-outcalls@0.1.4": {
+    "caffeineai-http-outcalls@0.1.5": {
       "core": "2.2.0",
-      "ic": "4.2.0"
+      "ic": "5.0.0"
     },
     "caffeineai-lints@0.1.1": {},
     "caffeineai-oql@0.8.0": {
       "core": "2.6.0",
       "jayson": "0.1.1"
     },
-    "caffeineai-stripe@1.0.0": {
+    "caffeineai-stripe@1.0.1": {
       "caffeineai-authorization": "1.0.1",
-      "caffeineai-http-outcalls": "0.1.4",
+      "caffeineai-http-outcalls": "0.1.5",
       "core": "2.5.0"
     },
     "core@2.2.0": {},
@@ -38,6 +38,9 @@
     "core@2.6.0": {},
     "core@2.6.2": {},
     "ic@4.2.0": {
+      "core": "2.5.0"
+    },
+    "ic@5.0.0": {
       "core": "2.5.0"
     },
     "identity-attributes@0.4.0": {
@@ -115,10 +118,10 @@
       "caffeineai-authorization@1.0.1/src/MixinAuthorization.mo": "2fb1834b4f239c9f7eba746cdc3af3359903cb2002caa3e3969683ddf4c2a309",
       "caffeineai-authorization@1.0.1/src/access-control.mo": "fc5e3a6d16aedd165b16241f6302c8358a997cb3b58635e46533ba8c738f4f40"
     },
-    "caffeineai-http-outcalls@0.1.4": {
-      "caffeineai-http-outcalls@0.1.4/README.md": "c8dd0ee7548ac60f5c82c6f5f0a517bbcb847e1e876b71351a5b174b9a46a3fd",
-      "caffeineai-http-outcalls@0.1.4/mops.toml": "d35b2cc52fc7960960fa332e90b12cd731f6058cd5925959cee18f0f671ae16e",
-      "caffeineai-http-outcalls@0.1.4/src/outcall.mo": "65c1aa321d9ae9d5d39f89d5d1f74d438c7bc91a816c4be0c58a03f9337982c2"
+    "caffeineai-http-outcalls@0.1.5": {
+      "caffeineai-http-outcalls@0.1.5/README.md": "c8dd0ee7548ac60f5c82c6f5f0a517bbcb847e1e876b71351a5b174b9a46a3fd",
+      "caffeineai-http-outcalls@0.1.5/mops.toml": "96c2ff4b137cfecab916d53ba86b4de69555f86a80955435397686b3910f3013",
+      "caffeineai-http-outcalls@0.1.5/src/outcall.mo": "4286d95f7417377f54c0e997124de43e79f478f27ae00eb069193b7a955a967b"
     },
     "caffeineai-lints@0.1.1": {
       "caffeineai-lints@0.1.1/README.md": "c0ac968c7d377cf7fd564b2cc2d211ba68055100e2a3c4152498fa11d6411e15",
@@ -175,17 +178,17 @@
       "caffeineai-oql@0.8.0/src/columnar/Image.mo": "1029ebe1225d072867ddd3c0bc738e7a38f5286981a76c83a72952e358aed7c4",
       "caffeineai-oql@0.8.0/src/lib.mo": "6f7e9f6d4ac9ed954b8d876fa1276159d27b34b875bb641878f27e288aaf0ede"
     },
-    "caffeineai-stripe@1.0.0": {
-      "caffeineai-stripe@1.0.0/README.md": "a74257ccf4bfb5c4864ae17e17f53d5a44db648d552380559f46c4454aee55fd",
-      "caffeineai-stripe@1.0.0/mops.toml": "583610c2bcfa60843030645af0152526d07731595db7f1454f7e296fd6c8e064",
-      "caffeineai-stripe@1.0.0/rules/mixin-stripe-included.toml": "f0f22cf3309f23ed12d82f19542886ad5a66810a7f9c33ebb1f5c816d3fdde88",
-      "caffeineai-stripe@1.0.0/rules/no-redeclare-create-checkout-session.toml": "12b94640fa9e907031ab2b2b8c468dec933a221ffe55114a761554af8a3cf045",
-      "caffeineai-stripe@1.0.0/rules/no-redeclare-get-stripe-session-status.toml": "cffc76b50e3bfc8d0bf06c6b0328e0376466044400b3fa04c54d78ee2849bdd3",
-      "caffeineai-stripe@1.0.0/rules/no-redeclare-is-stripe-configured.toml": "f0ebfde93bd5eb529e32b99b1a8c614b4610a8b4223550eabca4fac62086a709",
-      "caffeineai-stripe@1.0.0/rules/no-redeclare-set-stripe-configuration.toml": "6510bab65f45d299c9c03401e5f6ada2460c4d477639f2e75b5ab139043532ff",
-      "caffeineai-stripe@1.0.0/rules/no-redeclare-transform.toml": "ad10874fbd1f80ef60d5f1aa49c8342150f9d21db8a1297c382c1c3ed7f03435",
-      "caffeineai-stripe@1.0.0/src/MixinStripe.mo": "e5bf0f03df661e2ed3d8b3ef9b57ebf2c1ccfd7783da02fb1eba751afff7b742",
-      "caffeineai-stripe@1.0.0/src/stripe.mo": "2eea54aa33978dfe70478f985c4abcd13d10f3584b0eec64a17790bdbfc0e325"
+    "caffeineai-stripe@1.0.1": {
+      "caffeineai-stripe@1.0.1/README.md": "a74257ccf4bfb5c4864ae17e17f53d5a44db648d552380559f46c4454aee55fd",
+      "caffeineai-stripe@1.0.1/mops.toml": "2c7ba8ee473caf7113b8681c3a761f147e4dd381e441dd039bda89270b5aa3fc",
+      "caffeineai-stripe@1.0.1/rules/mixin-stripe-included.toml": "f0f22cf3309f23ed12d82f19542886ad5a66810a7f9c33ebb1f5c816d3fdde88",
+      "caffeineai-stripe@1.0.1/rules/no-redeclare-create-checkout-session.toml": "12b94640fa9e907031ab2b2b8c468dec933a221ffe55114a761554af8a3cf045",
+      "caffeineai-stripe@1.0.1/rules/no-redeclare-get-stripe-session-status.toml": "cffc76b50e3bfc8d0bf06c6b0328e0376466044400b3fa04c54d78ee2849bdd3",
+      "caffeineai-stripe@1.0.1/rules/no-redeclare-is-stripe-configured.toml": "f0ebfde93bd5eb529e32b99b1a8c614b4610a8b4223550eabca4fac62086a709",
+      "caffeineai-stripe@1.0.1/rules/no-redeclare-set-stripe-configuration.toml": "6510bab65f45d299c9c03401e5f6ada2460c4d477639f2e75b5ab139043532ff",
+      "caffeineai-stripe@1.0.1/rules/no-redeclare-transform.toml": "ad10874fbd1f80ef60d5f1aa49c8342150f9d21db8a1297c382c1c3ed7f03435",
+      "caffeineai-stripe@1.0.1/src/MixinStripe.mo": "e5bf0f03df661e2ed3d8b3ef9b57ebf2c1ccfd7783da02fb1eba751afff7b742",
+      "caffeineai-stripe@1.0.1/src/stripe.mo": "2eea54aa33978dfe70478f985c4abcd13d10f3584b0eec64a17790bdbfc0e325"
     },
     "core@2.6.2": {
       "core@2.6.2/LICENSE": "840e3d57a38a8061f55d04470fbd58b9345326fa04ea10ee42add5c6e3b2aa08",

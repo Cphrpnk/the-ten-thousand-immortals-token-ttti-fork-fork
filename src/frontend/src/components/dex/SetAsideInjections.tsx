@@ -17,6 +17,8 @@ import {
 } from "../../lib/token";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { DexAccordion } from "./DexAccordion";
+import { DexFiat } from "./DexFiat";
 import { formatDexDate, formatTttiAmount } from "./dexFormat";
 import { formatUsdE8 } from "./liquidityFormat";
 
@@ -63,14 +65,8 @@ export function SetAsideInjections({
   const pageCount = total === 0n ? 1n : (total + PAGE_SIZE - 1n) / PAGE_SIZE;
 
   return (
-    <section
-      className="mx-auto flex w-full max-w-3xl flex-col gap-6"
-      data-ocid="pools.set_aside.section"
-    >
-      <div className="flex flex-col gap-3">
-        <h2 className="font-display text-2xl tracking-wide">
-          {m.setAsideTitle}
-        </h2>
+    <>
+      <DexAccordion label={m.setAsideTitle} ocid="pools.set_aside">
         <div className="flex flex-col gap-1 text-xs text-muted-foreground">
           <p>{m.setAsideScope}</p>
           <p>{m.setAsideThreshold(formatNumber(SET_ASIDE_THRESHOLD_USD))}</p>
@@ -139,7 +135,8 @@ export function SetAsideInjections({
                       </td>
                       <td className="py-1.5 pe-3">{pairOf(s.targetPoolId)}</td>
                       <td className="py-1.5 pe-3 text-end">
-                        {formatPayAmount(s.totalInjected, s.token, lang)}
+                        {formatPayAmount(s.totalInjected, s.token, lang)}{" "}
+                        <DexFiat token={s.token} amount={s.totalInjected} />
                       </td>
                       <td className="py-1.5 text-end">
                         {s.lastInjectionAt === undefined
@@ -153,12 +150,13 @@ export function SetAsideInjections({
             </table>
           </div>
         )}
-      </div>
+      </DexAccordion>
 
-      <div className="flex flex-col gap-3" data-ocid="pools.injections.panel">
-        <h3 className="font-display text-xl tracking-wide">
-          {m.injectionsTitle}
-        </h3>
+      <DexAccordion
+        label={m.injectionsTitle}
+        count={injections.data ? formatNumber(total) : undefined}
+        ocid="pools.injections"
+      >
         {injections.isPending ? (
           <Skeleton
             className="h-24 rounded-lg"
@@ -212,13 +210,16 @@ export function SetAsideInjections({
                       <td className="py-1.5 pe-3">{pairOf(inj.poolId)}</td>
                       <td className="py-1.5 pe-3">{venueLabel(m, inj)}</td>
                       <td className="py-1.5 pe-3 text-end">
-                        {formatPayAmount(inj.amountIn, inj.token, lang)}
+                        {formatPayAmount(inj.amountIn, inj.token, lang)}{" "}
+                        <DexFiat token={inj.token} amount={inj.amountIn} />
                       </td>
                       <td className="py-1.5 pe-3 text-end">
-                        {formatPayAmount(inj.swapAmountIn, inj.token, lang)}
+                        {formatPayAmount(inj.swapAmountIn, inj.token, lang)}{" "}
+                        <DexFiat token={inj.token} amount={inj.swapAmountIn} />
                       </td>
                       <td className="py-1.5 pe-3 text-end">
-                        {`${formatTttiAmount(inj.tttiReceived)} ${TTTI_SYMBOL}`}
+                        {`${formatTttiAmount(inj.tttiReceived)} ${TTTI_SYMBOL}`}{" "}
+                        <DexFiat token="ttti" amount={inj.tttiReceived} />
                       </td>
                       <td className="py-1.5 break-words">
                         {injectionStatusLabel(m, inj.status)}
@@ -257,7 +258,7 @@ export function SetAsideInjections({
             )}
           </div>
         )}
-      </div>
-    </section>
+      </DexAccordion>
+    </>
   );
 }

@@ -1,28 +1,26 @@
 import { useDict } from "../../i18n/core/dict";
-import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
+import { BUY_LIQUIDITY_TEXT } from "../../i18n/pages/buy";
+import type { MintInputMode } from "./liquidityMint";
 
-/** "pay": amount of the pay token; "ttti": number of TTTI-T to receive. */
-export type OrderMode = "pay" | "ttti";
+/** "ttti": quantity of TTTI-T to mint; "usd": dollars to pay. */
+export type OrderMode = MintInputMode;
 
 interface OrderModeToggleProps {
   mode: OrderMode;
   onChange: (mode: OrderMode) => void;
-  /** Symbol of the selected pay token, e.g. "ckBTC". */
-  tokenSymbol: string;
   disabled?: boolean;
 }
 
-/** Two-option radio selector between pay-token and TTTI-T amount orders. */
+/** Two-option radio selector between TTTI-T and dollar amount entry. */
 export function OrderModeToggle({
   mode,
   onChange,
-  tokenSymbol,
   disabled = false,
 }: OrderModeToggleProps) {
-  const t = useDict(BUY_PANELS_TEXT);
+  const t = useDict(BUY_LIQUIDITY_TEXT);
   const options: { value: OrderMode; label: string }[] = [
-    { value: "pay", label: t.orderAmountIn(tokenSymbol) },
-    { value: "ttti", label: t.orderAmountTtti },
+    { value: "ttti", label: t.modeTtti },
+    { value: "usd", label: t.modeUsd },
   ];
   return (
     <fieldset
@@ -30,7 +28,7 @@ export function OrderModeToggle({
       disabled={disabled}
       data-ocid="exchange.order_mode.toggle"
     >
-      <legend className="sr-only">{t.orderLegend}</legend>
+      <legend className="sr-only">{t.modeLegend}</legend>
       {options.map((option) => (
         <label key={option.value} className="relative block min-w-0">
           <input

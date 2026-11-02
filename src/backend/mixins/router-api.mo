@@ -7,6 +7,7 @@ import RetryLib "../lib/retry";
 import RouterLib "../lib/router";
 import DexTypes "../types/dex";
 import Types "../types/router";
+import PageTypes "../types/page";
 
 // DEX lot 5: ICPSwap router public API.
 mixin (
@@ -15,10 +16,11 @@ mixin (
   oracle : OracleLib.OracleStore,
   tokenRates : OracleLib.TokenRateStore,
 ) {
-  // Same USD rates as mixins/dex-api.mo (fixed TTTI-T value, oracle rates).
+  // Same USD rates as mixins/dex-api.mo (oracle hourly rates; TTTI-T has no
+  // USD rate, it is never valued at a fixed price).
   func routerUsdRateOf(token : DexTypes.PoolToken) : ?Nat {
     switch (DexLib.poolDexToken(token)) {
-      case (?#tttiT) ?DexLib.TTTI_T_USD_E8;
+      case (?#tttiT) null;
       case (?t) {
         switch (RetryLib.dexPayToken(t)) {
           case (?pay) OracleLib.usableRate(OracleLib.storeFor(oracle, tokenRates, pay), Time.now());
@@ -46,15 +48,19 @@ mixin (
     await RouterLib.routedSwap(router, routerUsdRateOf, caller, args);
   };
 
-  // Caller's own routed swaps, newest first.
-  public query ({ caller }) func getMyRoutedSwaps() : async [Types.RoutedSwap] {
-    RouterLib.listByOwner(router, caller);
+  // PTM-9e: caller's own routed swaps, newest first, one page. `cursor` = swap
+  // id: the page holds the swaps with a smaller id (null = newest). `limit` 0 =
+  // default page size; capped at PageTypes.MAX_PAGE_SIZE. `nextCursor` is null
+  // on the last page.
+  public query ({ caller }) func getMyRoutedSwaps(cursor : ?Nat, limit : Nat) : async PageTypes.Page<Types.RoutedSwap> {
+    RouterLib.listByOwner(router, caller, cursor, limit);
   };
 
-  // Admin only: every ICPSwap routed swap with its status, newest first.
-  public query ({ caller }) func adminListRoutedSwaps() : async { #ok : [Types.RoutedSwap]; #err : Types.RouterAdminError } {
+  // PTM-9e: admin only: ICPSwap routed swaps with their status, newest first,
+  // one page (same cursor rules as getMyRoutedSwaps).
+  public query ({ caller }) func adminListRoutedSwaps(cursor : ?Nat, limit : Nat) : async { #ok : PageTypes.Page<Types.RoutedSwap>; #err : Types.RouterAdminError } {
     if (not AccessControl.isAdmin(accessControlState, caller)) return #err(#notAuthorized);
-    #ok(RouterLib.listIcpswapSwaps(router));
+    #ok(RouterLib.listIcpswapSwaps(router, cursor, limit));
   };
 
   // Admin only: total 0.1 % collected per native pool (LP share paid, LP

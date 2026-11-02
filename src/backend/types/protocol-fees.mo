@@ -4,10 +4,12 @@ import Common "common";
 import Dex "dex";
 import Retry "retry";
 
-// DEX lot 4: split of the 20 % pool protocol share (cycles, locked-LP bonus
-// DL, recycling as protocol liquidity locked forever), batched fee conversion
-// to ICP (DC) and the claimable locked-LP bonus. The protocol never places
-// price-based orders.
+// DEX lot 4: protocol fee types (DC batches, locked-LP bonus DL, protocol
+// liquidity locked forever). PTM-4: the protocol share is 30 % of the native
+// swap fee and of the 0.1 % routed via ICPSwap; two thirds go to the creator
+// (types/creator-fees.mo) and one third to permanent liquidity, injected into
+// the least liquid TTTI-T pool as contract-locked shares (journal below). The
+// protocol never places price-based orders and never creates TTTI-T.
 module {
   public type Account = Common.Account;
   public type Timestamp = Int;
@@ -32,6 +34,56 @@ module {
     at : Timestamp;
     reserve0 : Nat;
     reserve1 : Nat;
+  };
+
+  // PTM-5: one sample of the consolidated TTTI-T price (USD x 1e8), taken by
+  // the same 5-minute timer as PriceSample. Separate from PriceSample (60 min
+  // reserve window used by referenceOut): kept 24 h.
+  public type ConsolidatedSample = {
+    at : Timestamp;
+    priceUsdE8 : Nat;
+  };
+
+  // Stable consolidated price samples (new stable field `consolidatedPrices`),
+  // oldest first.
+  public type ConsolidatedPriceStore = {
+    samples : List.List<ConsolidatedSample>;
+  };
+
+  public let CONSOLIDATED_HOUR_NS : Int = 3_600_000_000_000;
+  public let CONSOLIDATED_RETENTION_NS : Int = 86_400_000_000_000;
+
+  // PTM-10a: one pools-to-capitalisation ratio sample, taken by the same
+  // 5-minute timer as the consolidated price, kept 24 h. `ratio` is fixed
+  // point: DexLib.RATIO_SCALE (10^12) = 100 %.
+  public type PoolCapRatioSample = {
+    at : Timestamp;
+    ratio : Nat;
+  };
+
+  // Stable ratio samples (new stable field `poolCapRatioSamples`), oldest first.
+  public type PoolCapRatioStore = {
+    samples : List.List<PoolCapRatioSample>;
+  };
+
+  // PTM-10a: public pools / capitalisation indicators. Amounts in USD x 1e8,
+  // ratios with `ratioScale` (10^12 = 100 %), `lockedShare` with
+  // `lockedShareScale` (10^6 = 100 %). Not used by the mint yet.
+  public type PoolCapRatioView = {
+    computedAt : Timestamp;
+    poolsValueUsdE8 : ?Nat; // null when a needed oracle rate is absent or expired
+    poolCount : Nat; // native TTTI-T pools counted (not removed, counterpart reserve > 0)
+    circulatingTttiT : Nat; // base units: total minted minus the auction account
+    consolidatedPriceUsdE8 : ?Nat; // hourly average, null until 30 minutes of samples
+    capitalisationUsdE8 : ?Nat;
+    currentRatio : ?Nat;
+    averageRatio24h : ?Nat;
+    samples : Nat; // ratio samples in the last 24 h
+    retainedRatio : ?Nat; // lower of the current ratio and the 24 h average
+    targetRatio : Nat; // 50 %
+    lockedShare : Nat; // m, rounded upward
+    ratioScale : Nat;
+    lockedShareScale : Nat;
   };
 
   public type DcTrigger = { #daily; #threshold };
@@ -190,5 +242,76 @@ module {
   public type ClaimBonusResult = {
     #ok : BonusClaimView;
     #err : ClaimBonusError;
+  };
+
+  // --- PTM-4: permanent liquidity journal and set-aside -----------------------
+
+  public type DexToken = Dex.DexToken;
+
+  // #accrued = one third of a protocol share set aside; #rebalanced = one swap
+  // leg toward the TTTI-T pair; #injected = contract-locked shares added;
+  // #waiting = nothing done yet (reason given); #failed = a leg failed.
+  public type PermanentKind = { #accrued; #rebalanced; #injected; #waiting; #failed };
+
+  public type PermanentRoute = { #native : PoolId; #icpswap : Principal };
+
+  // One journal entry (stable, public, never rewritten). Amounts are base
+  // units. #accrued: token / amount set aside, poolId = pool where the fee
+  // arose (null for the router share). #rebalanced: token / amount sold for
+  // otherToken / otherAmount on `route`. #injected: token / amount and
+  // otherToken / otherAmount added to poolId for `shares` locked shares.
+  public type PermanentLogEntry = {
+    id : Nat;
+    at : Timestamp;
+    kind : PermanentKind;
+    token : DexToken;
+    amount : Nat;
+    otherToken : ?DexToken;
+    otherAmount : Nat;
+    route : ?PermanentRoute;
+    poolId : ?PoolId;
+    shares : Nat;
+    reason : ?Text;
+  };
+
+  // Stable permanent liquidity state (new stable field `permanentLiquidity`).
+  public type PermanentLiquidityStore = {
+    setAside : Map.Map<Text, Nat>; // one third of the protocol share per token symbol, waiting
+    log : List.List<PermanentLogEntry>; // oldest first
+    var nextLogId : Nat;
+    lastWaiting : Map.Map<Text, Text>; // last waiting / failed text per key (no repeated entries)
+  };
+
+  public type PermanentLogPage = {
+    total : Nat;
+    entries : [PermanentLogEntry]; // newest first
+  };
+
+  public type PermanentPoolSummary = {
+    poolId : PoolId;
+    token0Symbol : Text;
+    token1Symbol : Text;
+    lockedShares : Nat; // contract-locked shares, nobody can withdraw them
+    totalShares : Nat;
+    amount0 : Nat; // current share of reserve0
+    amount1 : Nat;
+    valueUsdE8 : ?Nat; // null without a usable rate
+  };
+
+  public type PermanentSetAsideView = {
+    token : DexToken;
+    symbol : Text;
+    amount : Nat;
+    valueIcpE8s : ?Nat; // at the hourly average, null when unknown
+  };
+
+  public type PermanentSummary = {
+    pools : [PermanentPoolSummary];
+    totalLockedShares : Nat;
+    setAside : [PermanentSetAsideView];
+    setAsideValueIcpE8s : Nat;
+    thresholdIcpE8s : Nat;
+    maxDeviationBps : Nat;
+    targetPoolId : ?PoolId; // least liquid open TTTI-T pool, the next injection
   };
 };

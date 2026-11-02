@@ -21,6 +21,7 @@ import {
   formatPayAmount,
   payTokenSymbol,
 } from "../../lib/token";
+import { FiatAmount } from "../FiatAmount";
 import { Alert, AlertDescription } from "../ui/alert";
 import {
   AlertDialog,
@@ -48,6 +49,25 @@ import {
 } from "./AdminUi";
 import { formatTimestamp } from "./ConversionsCard";
 import { PRIMARY_GOLD } from "./styles";
+
+/** Pay-token amount (English format) followed by its discreet USD equivalent. */
+function PayWithFiat({
+  amount,
+  token,
+  ocid,
+}: { amount: bigint; token: PayToken; ocid: string }) {
+  return (
+    <>
+      {formatPayAmount(amount, token, "en")}
+      <FiatAmount
+        token={token}
+        amount={amount}
+        className="ml-1.5"
+        ocid={ocid}
+      />
+    </>
+  );
+}
 
 const BLOCK_LABEL =
   "text-xs font-semibold uppercase tracking-widest text-muted-foreground";
@@ -367,11 +387,23 @@ function SettlementBlock({ token }: { token: PayToken }) {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <AdminStat
               label="Owner share"
-              value={formatPayAmount(view.ownerAmount, token, "en")}
+              value={
+                <PayWithFiat
+                  amount={view.ownerAmount}
+                  token={token}
+                  ocid="admin.treasury.owner_share_fiat"
+                />
+              }
             />
             <AdminStat
               label="Fees to fee account"
-              value={formatPayAmount(view.feeAmount, token, "en")}
+              value={
+                <PayWithFiat
+                  amount={view.feeAmount}
+                  token={token}
+                  ocid="admin.treasury.fee_share_fiat"
+                />
+              }
             />
             <AdminStat
               label="Started"
@@ -457,7 +489,11 @@ function SettlementBlock({ token }: { token: PayToken }) {
                       </p>
                     </div>
                     <p className="font-mono tabular-nums">
-                      {formatPayAmount(leg.amount, token, "en")}
+                      <PayWithFiat
+                        amount={leg.amount}
+                        token={token}
+                        ocid="admin.treasury.leg_fiat"
+                      />
                     </p>
                     <div>
                       {leg.block !== undefined ? (
@@ -561,27 +597,57 @@ function FeeAccountBlock({ token }: { token: PayToken }) {
               <AdminStat
                 label="Ledger balance"
                 value={
-                  row.balance === undefined
-                    ? "Unavailable"
-                    : formatPayAmount(row.balance, token, "en")
+                  row.balance === undefined ? (
+                    "Unavailable"
+                  ) : (
+                    <PayWithFiat
+                      amount={row.balance}
+                      token={token}
+                      ocid="admin.mint_fee_account_balance_fiat"
+                    />
+                  )
                 }
                 ocid="admin.mint_fee_account_balance"
               />
               <AdminStat
                 label="Received"
-                value={formatPayAmount(row.received, token, "en")}
+                value={
+                  <PayWithFiat
+                    amount={row.received}
+                    token={token}
+                    ocid="admin.mint_fee_account.received_fiat"
+                  />
+                }
               />
               <AdminStat
                 label="Moved in once"
-                value={formatPayAmount(row.injected, token, "en")}
+                value={
+                  <PayWithFiat
+                    amount={row.injected}
+                    token={token}
+                    ocid="admin.mint_fee_account.injected_fiat"
+                  />
+                }
               />
               <AdminStat
                 label="Set aside"
-                value={formatPayAmount(row.setAside, token, "en")}
+                value={
+                  <PayWithFiat
+                    amount={row.setAside}
+                    token={token}
+                    ocid="admin.mint_fee_account.set_aside_fiat"
+                  />
+                }
               />
               <AdminStat
                 label="Redistributed to LPs"
-                value={formatPayAmount(row.redistributedToLps, token, "en")}
+                value={
+                  <PayWithFiat
+                    amount={row.redistributedToLps}
+                    token={token}
+                    ocid="admin.mint_fee_account.redistributed_fiat"
+                  />
+                }
               />
             </div>
           ) : (

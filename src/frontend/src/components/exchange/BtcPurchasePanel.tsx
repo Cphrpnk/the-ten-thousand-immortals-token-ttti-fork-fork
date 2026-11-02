@@ -6,7 +6,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { BtcDepositErrorCode } from "../../backend";
+import { BtcDepositErrorCode, PayToken } from "../../backend";
 import {
   isSignerKind,
   useConnectedWallet,
@@ -40,6 +40,7 @@ import {
   formatTtti,
 } from "../../lib/token";
 import { cn } from "../../lib/utils";
+import { FiatAmount } from "../FiatAmount";
 import { BtcDepositAddressCard } from "../btc/BtcDepositAddressCard";
 import { BtcDepositProgress } from "../btc/BtcDepositProgress";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
@@ -336,6 +337,12 @@ export function BtcPurchasePanel({
           <CheckCircle2 className="h-4 w-4 text-primary" />
           <AlertTitle className="font-display text-base tabular-nums">
             {t.delivered(formatTtti(tttiDelivered))}
+            <FiatAmount
+              token="ttti"
+              amount={tttiDelivered}
+              className="ml-1.5"
+              ocid="btc.purchase.delivered_fiat"
+            />
           </AlertTitle>
           <AlertDescription className="text-xs tabular-nums">
             {t.deliveredDetail(fee)}
@@ -351,6 +358,12 @@ export function BtcPurchasePanel({
           <Undo2 className="h-4 w-4 text-warning" />
           <AlertTitle className="tabular-nums">
             {t.refunded(formatSats(refundedSats, "ckBTC"))}
+            <FiatAmount
+              token={PayToken.ckbtc}
+              amount={refundedSats}
+              className="ml-1.5"
+              ocid="btc.purchase.refunded_fiat"
+            />
           </AlertTitle>
           <AlertDescription>{t.refundedDetail}</AlertDescription>
         </Alert>

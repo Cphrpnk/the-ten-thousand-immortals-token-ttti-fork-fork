@@ -1,14 +1,10 @@
-import type { Account, PayToken } from "../../backend";
-import { useMyConversions } from "../../hooks/useQueries";
+import type { Account } from "../../backend";
 import { useDict } from "../../i18n/core";
-import { BUYBACK_TEXT } from "../../i18n/pages/buyback";
 import { SWAP_TEXT } from "../../i18n/pages/swap";
 import { WALLET_EXPLORER_TEXT, WALLET_TEXT } from "../../i18n/pages/wallet";
 import { payTokenSymbol } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
 import { ExplorerLink } from "../ExplorerLink";
-import { BuybackExplanation } from "../buyback/BuybackExplanation";
-import { BuybackFlow } from "../buyback/BuybackFlow";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +26,6 @@ export type WalletDialogState =
   | { kind: "send"; tokenId?: string }
   | { kind: "receive"; tokenId?: string }
   | { kind: "history"; tokenId: string }
-  | { kind: "buyback"; purchaseId?: bigint; massToken?: PayToken }
   | { kind: "swap"; from?: string; to?: string }
   | null;
 
@@ -41,8 +36,6 @@ interface WalletDialogsProps {
   account: Account | undefined;
   /** Purchase history is read for the Internet Identity caller only. */
   hasIi: boolean;
-  /** Opens the buyback flow, on the mass of a purchase's token when given. */
-  onBuyback: (purchaseId?: bigint) => void;
 }
 
 export function WalletDialogs({
@@ -51,21 +44,10 @@ export function WalletDialogs({
   tokens,
   account,
   hasIi,
-  onBuyback,
 }: WalletDialogsProps) {
   const t = useDict(WALLET_TEXT);
-  const tb = useDict(BUYBACK_TEXT);
   const ts = useDict(SWAP_TEXT);
-  const { data: conversions } = useMyConversions();
   const open = state !== null;
-  // The flow opens on the mass of the given token, or of the purchase's token.
-  const massToken =
-    state?.kind === "buyback"
-      ? (state.massToken ??
-        (state.purchaseId === undefined
-          ? undefined
-          : conversions?.find((c) => c.id === state.purchaseId)?.payToken))
-      : undefined;
   const historyToken =
     state?.kind === "history"
       ? tokens.find((tk) => tk.canisterId.toText() === state.tokenId)
@@ -73,11 +55,9 @@ export function WalletDialogs({
   // A new key per opening resets the form to the chosen token.
   const key = !state
     ? "closed"
-    : state.kind === "buyback"
-      ? `buyback-${massToken ?? "all"}`
-      : state.kind === "swap"
-        ? `swap-${state.from ?? ""}-${state.to ?? ""}`
-        : `${state.kind}-${state.tokenId ?? "all"}`;
+    : state.kind === "swap"
+      ? `swap-${state.from ?? ""}-${state.to ?? ""}`
+      : `${state.kind}-${state.tokenId ?? "all"}`;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -127,7 +107,6 @@ export function WalletDialogs({
               token={historyToken}
               account={account}
               hasIi={hasIi}
-              onBuyback={onBuyback}
             />
           </>
         )}
@@ -135,7 +114,7 @@ export function WalletDialogs({
           <>
             <DialogHeader>
               <DialogTitle className="font-display">{t.swap}</DialogTitle>
-              <DialogDescription>{ts.description}</DialogDescription>
+              <DialogDescription>{ts.unifiedDescription}</DialogDescription>
             </DialogHeader>
             <SwapPanel
               key={key}
@@ -144,23 +123,6 @@ export function WalletDialogs({
               initialFrom={state.from}
               initialTo={state.to}
             />
-          </>
-        )}
-        {state?.kind === "buyback" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="font-display">
-                {tb.walletEntry}
-              </DialogTitle>
-              <DialogDescription>{tb.walletEntryHint}</DialogDescription>
-            </DialogHeader>
-            <div
-              className="flex flex-col gap-4"
-              data-ocid="wallet.buyback.panel"
-            >
-              <BuybackExplanation />
-              <BuybackFlow key={key} initialMassToken={massToken} />
-            </div>
           </>
         )}
       </DialogContent>
@@ -172,12 +134,10 @@ function TokenHistory({
   token,
   account,
   hasIi,
-  onBuyback,
 }: {
   token: TokenDescriptor;
   account: Account | undefined;
   hasIi: boolean;
-  onBuyback: (purchaseId?: bigint) => void;
 }) {
   const t = useDict(WALLET_TEXT);
   const tx = useDict(WALLET_EXPLORER_TEXT);
@@ -188,7 +148,7 @@ function TokenHistory({
       <div className="flex flex-col gap-4">
         <TttiMovements account={account} />
         {hasIi ? (
-          <PurchaseHistorySection onBuyback={onBuyback} />
+          <PurchaseHistorySection />
         ) : (
           <p className="text-sm text-muted-foreground">{t.purchasesNeedIi}</p>
         )}
@@ -212,7 +172,6 @@ function TokenHistory({
         <PurchaseHistorySection
           payToken={payToken}
           title={t.purchasesPaidWith(payTokenSymbol(payToken))}
-          onBuyback={onBuyback}
         />
       ) : (
         <p className="text-sm text-muted-foreground">{t.purchasesNeedIi}</p>

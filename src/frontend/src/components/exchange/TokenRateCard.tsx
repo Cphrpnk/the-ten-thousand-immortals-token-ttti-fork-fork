@@ -1,18 +1,11 @@
-import { Check, Copy, TrendingUp } from "lucide-react";
-import { useEffect, useState } from "react";
+import { TrendingUp } from "lucide-react";
 import type { PayToken, PriceSource } from "../../backend";
 import { formatRateUsd, priceSourceLabel } from "../../hooks/useQueries";
 import { type Lang, toIntlLocale } from "../../i18n/core";
 import { useDict, useLanguage } from "../../i18n/core/dict";
 import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
-import {
-  formatTtti,
-  minimumUsdLabel,
-  payTokenSymbol,
-  truncateAccountText,
-  useCyclesFeeText,
-} from "../../lib/token";
-import { Button } from "../ui/button";
+import { formatTtti, payTokenSymbol } from "../../lib/token";
+import { FiatAmount } from "../FiatAmount";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Separator } from "../ui/separator";
 import { Skeleton } from "../ui/skeleton";
@@ -36,7 +29,8 @@ interface TokenRateCardProps {
   /** TTTI-T bought with one whole token, null without a rate. */
   oneTokenBuys: bigint | null;
   feeLabel: string;
-  treasuryAccountText: string;
+  /** Smallest mint, e.g. "0.0001 TTTI-T". */
+  minimumText: string;
   className: string;
 }
 
@@ -63,30 +57,12 @@ export function TokenRateCard({
   isLoading,
   oneTokenBuys,
   feeLabel,
-  treasuryAccountText,
+  minimumText,
   className,
 }: TokenRateCardProps) {
   const t = useDict(BUY_PANELS_TEXT);
   const { lang } = useLanguage();
-  const cyclesFeeText = useCyclesFeeText();
   const symbol = payTokenSymbol(token);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  const handleCopy = async () => {
-    if (!treasuryAccountText) return;
-    try {
-      await navigator.clipboard.writeText(treasuryAccountText);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  };
 
   return (
     <Card className={className} data-ocid="exchange.price_card">
@@ -129,7 +105,8 @@ export function TokenRateCard({
             <dd className="font-mono tabular-nums">
               {oneTokenBuys !== null
                 ? `${formatTtti(oneTokenBuys)} TTTI-T`
-                : "—"}
+                : "—"}{" "}
+              <FiatAmount token="ttti" amount={oneTokenBuys} />
             </dd>
           </div>
           <Separator className="bg-primary/20" />
@@ -157,49 +134,7 @@ export function TokenRateCard({
           <div className="flex justify-between gap-3">
             <dt className="text-muted-foreground">{t.minimum}</dt>
             <dd className="font-mono tabular-nums" data-ocid="exchange.minimum">
-              {t.inToken(minimumUsdLabel(token), symbol)}
-            </dd>
-          </div>
-          <div>
-            <dt className="sr-only">{t.feeRule}</dt>
-            <dd
-              className="text-xs leading-relaxed text-muted-foreground"
-              data-ocid="exchange.cycles_fee_note"
-            >
-              {cyclesFeeText}
-            </dd>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <dt className="shrink-0 text-muted-foreground">{t.treasury}</dt>
-            <dd className="flex min-w-0 items-center justify-end gap-1">
-              <span
-                className="min-w-0 truncate font-mono text-xs"
-                title={treasuryAccountText || undefined}
-                data-ocid="exchange.treasury_account"
-              >
-                {treasuryAccountText
-                  ? truncateAccountText(treasuryAccountText)
-                  : t.notConfigured}
-              </span>
-              {treasuryAccountText && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 rounded-md text-muted-foreground transition-smooth hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => void handleCopy()}
-                  aria-label={
-                    copied ? t.treasuryCopied(symbol) : t.treasuryCopy(symbol)
-                  }
-                  data-ocid="exchange.treasury_account_copy_button"
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5 text-primary" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              )}
+              {minimumText}
             </dd>
           </div>
         </dl>

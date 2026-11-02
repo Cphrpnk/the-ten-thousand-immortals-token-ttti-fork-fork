@@ -7,27 +7,27 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { formatDexDate } from "./dexFormat";
-import { DAY_NS, durationText, parseDaysNs } from "./liquidityFormat";
+import { DAY_NS, lockBoundText, parseDaysNs } from "./liquidityFormat";
 
 type PresetKey =
-  | "lockPreset1d"
-  | "lockPreset7d"
-  | "lockPreset30d"
-  | "lockPreset90d"
-  | "lockPreset1y"
+  | "lockPreset3m"
+  | "lockPreset2y"
+  | "lockPreset3y"
+  | "lockPreset4y"
   | "lockPreset5y";
 
-const PRESETS: ReadonlyArray<{ key: PresetKey; days: bigint | null }> = [
-  { key: "lockPreset1d", days: 1n },
-  { key: "lockPreset7d", days: 7n },
-  { key: "lockPreset30d", days: 30n },
-  { key: "lockPreset90d", days: 90n },
-  { key: "lockPreset1y", days: 365n },
-  // 5 years = the contract maximum.
-  { key: "lockPreset5y", days: null },
-];
+// The 3-month preset is the configured minimum and the 5-year preset the
+// configured maximum (days: null); the others are whole 365-day years.
+const PRESETS: ReadonlyArray<{ key: PresetKey; days: bigint | "min" | "max" }> =
+  [
+    { key: "lockPreset3m", days: "min" },
+    { key: "lockPreset2y", days: 730n },
+    { key: "lockPreset3y", days: 1095n },
+    { key: "lockPreset4y", days: 1460n },
+    { key: "lockPreset5y", days: "max" },
+  ];
 
-/** Lock duration: presets from 24 h to 5 years, or a custom number of days. */
+/** Optional lock: none by default (0), presets up to 5 years, or a custom number of days. */
 export function LockDurationPicker({
   minNs,
   maxNs,
@@ -41,11 +41,11 @@ export function LockDurationPicker({
 }) {
   const t = useDict(DEX_TEXT);
   const { lang } = useLanguage();
-  const [choice, setChoice] = useState<PresetKey | "custom">("lockPreset30d");
+  const [choice, setChoice] = useState<PresetKey | "none" | "custom">("none");
   const [daysText, setDaysText] = useState("");
-  const [lockNs, setLockNs] = useState<bigint | null>(30n * DAY_NS);
+  const [lockNs, setLockNs] = useState<bigint | null>(0n);
 
-  const select = (next: PresetKey | "custom", ns: bigint | null) => {
+  const select = (next: PresetKey | "none" | "custom", ns: bigint | null) => {
     setChoice(next);
     setLockNs(ns);
     onChange(ns);
@@ -59,13 +59,30 @@ export function LockDurationPicker({
     onChange(valid);
   };
 
+  const presetNs = (days: bigint | "min" | "max"): bigint => {
+    if (days === "min") return minNs;
+    if (days === "max") return maxNs;
+    const ns = days * DAY_NS;
+    return ns < minNs ? minNs : ns > maxNs ? maxNs : ns;
+  };
+
   const customInvalid =
     choice === "custom" && daysText.trim() !== "" && lockNs === null;
 
   return (
     <fieldset className="flex flex-col gap-2" disabled={disabled}>
-      <legend className="mb-2 text-sm font-medium">{t.lockLabel}</legend>
+      <legend className="mb-2 text-sm font-medium">{t.lockPickerLabel}</legend>
       <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={choice === "none" ? "default" : "outline"}
+          aria-pressed={choice === "none"}
+          onClick={() => select("none", 0n)}
+          data-ocid="pools.add.lock_none.toggle"
+        >
+          {t.lockNone}
+        </Button>
         {PRESETS.map(({ key, days }) => (
           <Button
             key={key}
@@ -73,7 +90,7 @@ export function LockDurationPicker({
             size="sm"
             variant={choice === key ? "default" : "outline"}
             aria-pressed={choice === key}
-            onClick={() => select(key, days === null ? maxNs : days * DAY_NS)}
+            onClick={() => select(key, presetNs(days))}
             data-ocid={`pools.add.lock_${key.slice(10).toLowerCase()}.toggle`}
           >
             {t[key]}
@@ -111,19 +128,31 @@ export function LockDurationPicker({
               className="text-xs text-destructive"
               data-ocid="pools.add.lock_days.field_error"
             >
-              {t.lockInvalid(durationText(t, minNs), durationText(t, maxNs))}
+              {t.lockInvalid(lockBoundText(t, minNs), lockBoundText(t, maxNs))}
             </p>
           )}
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        {t.lockHint(durationText(t, minNs), durationText(t, maxNs))}
+        {t.lockHint(lockBoundText(t, minNs), lockBoundText(t, maxNs))}
       </p>
-      {lockNs !== null && (
-        <p className="text-xs tabular-nums">
+      {lockNs === 0n && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-ocid="pools.add.lock_none.hint"
+        >
+          {t.lockNoneHint}
+        </p>
+      )}
+      {lockNs !== null && lockNs > 0n && (
+        <p
+          className="text-xs tabular-nums"
+          data-ocid="pools.add.lock_unlock.preview"
+        >
           {t.unlockOn(formatDexDate(nowNs() + lockNs, lang))}
         </p>
       )}
+      <p className="text-xs text-muted-foreground">{t.lockEnforced}</p>
     </fieldset>
   );
 }

@@ -1,6 +1,7 @@
 import { CheckCircle2, PauseCircle, Target } from "lucide-react";
 import type { SaleStatus } from "../../backend";
 import { useDict } from "../../i18n/core/dict";
+import { AUCTION_TEXT } from "../../i18n/pages/auction";
 import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
 import {
   TTTI_SYMBOL,
@@ -10,6 +11,7 @@ import {
   tttiToUsdE8,
 } from "../../lib/token";
 import { cn } from "../../lib/utils";
+import { FiatAmount } from "../FiatAmount";
 import { Badge } from "../ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
@@ -25,6 +27,7 @@ const CARD_CLASS =
 
 export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
   const t = useDict(BUY_PANELS_TEXT);
+  const auction = useDict(AUCTION_TEXT);
   if (isLoading || !status) {
     return (
       <Card className={CARD_CLASS} data-ocid="presale.loading_state">
@@ -46,6 +49,8 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
     reserved,
     complete,
     salesPaused,
+    mintEnded,
+    remainderE8s,
   } = status;
   const percent =
     maxSupply > 0n ? Number((totalSupply * 10_000n) / maxSupply) / 100 : 0;
@@ -68,7 +73,15 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
             <Target className="h-4 w-4 text-primary" />
             {t.totalSupply}
           </CardTitle>
-          {complete ? (
+          {mintEnded ? (
+            <Badge
+              variant="outline"
+              className="rounded-full border-gold bg-primary/10 text-primary"
+              data-ocid="presale.mint_ended_badge"
+            >
+              {auction.mintEndedBadge}
+            </Badge>
+          ) : complete ? (
             <Badge
               className="rounded-full border-gold-strong bg-gradient-primary text-primary-foreground"
               data-ocid="presale.complete_badge"
@@ -99,7 +112,22 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {complete && (
+        {mintEnded && (
+          <div
+            className="flex items-start gap-3 rounded-lg border border-gold bg-primary/10 p-4"
+            aria-live="polite"
+            data-ocid="presale.mint_ended_state"
+          >
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <p className="font-semibold">{auction.mintEndedTitle}</p>
+              <p className="text-sm text-muted-foreground">
+                {auction.mintEndedBody(formatTtti(remainderE8s))}
+              </p>
+            </div>
+          </div>
+        )}
+        {!mintEnded && complete && (
           <div
             className="flex items-start gap-3 rounded-lg border border-gold-strong bg-primary/10 p-4"
             aria-live="polite"
@@ -116,7 +144,7 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
             </div>
           </div>
         )}
-        {!complete && salesPaused && (
+        {!complete && !mintEnded && salesPaused && (
           <div
             className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4"
             aria-live="polite"
@@ -136,7 +164,8 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
               {t.totalSupplyPercent(percentLabel)}
             </span>
             <span className="font-mono tabular-nums">
-              {formatTtti(totalSupply)} / {formatTtti(maxSupply)} {TTTI_SYMBOL}
+              {formatTtti(totalSupply)} / {formatTtti(maxSupply)} {TTTI_SYMBOL}{" "}
+              <FiatAmount token="ttti" amount={totalSupply} />
             </span>
           </div>
           <Progress

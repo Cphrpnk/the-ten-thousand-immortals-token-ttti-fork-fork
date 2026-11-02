@@ -2,29 +2,35 @@ import { Link, useLocation } from "@tanstack/react-router";
 import {
   AlertCircle,
   ArrowRight,
-  CheckCircle2,
   ChevronDown,
   Clock,
   Loader2,
   RefreshCw,
-  Undo2,
 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { PayToken, PriceSource, type PurchaseResult } from "../backend";
-import { ExplorerLink } from "../components/ExplorerLink";
+import { type MintArgs, PayToken, PriceSource } from "../backend";
+import { FiatAmount } from "../components/FiatAmount";
 import { FlatTokenIcon } from "../components/FlatTokenIcon";
-import { BuybackExplanation } from "../components/buyback/BuybackExplanation";
-import { BuybackFlow } from "../components/buyback/BuybackFlow";
+import {
+  SlippageField,
+  defaultSlippageText,
+} from "../components/dex/SlippageField";
+import { DEFAULT_SLIPPAGE_BPS } from "../components/dex/liquidityFormat";
 import { BtcPurchasePanel } from "../components/exchange/BtcPurchasePanel";
 import { DeliveryAddressCard } from "../components/exchange/DeliveryAddressCard";
 import { GetIcpFirstPanel } from "../components/exchange/GetIcpFirstPanel";
 import { MigrationNotice } from "../components/exchange/MigrationNotice";
+import {
+  MintOutcomeAlerts,
+  type MintOutcomeSource,
+} from "../components/exchange/MintOutcomeAlerts";
 import { MintPaymentBreakdown } from "../components/exchange/MintPaymentBreakdown";
 import {
   type OrderMode,
   OrderModeToggle,
 } from "../components/exchange/OrderModeToggle";
 import { PayTokenSelector } from "../components/exchange/PayTokenSelector";
+import { PoolCapRatio } from "../components/exchange/PoolCapRatio";
 import { PresaleProgress } from "../components/exchange/PresaleProgress";
 import {
   type TokenRate,
@@ -33,10 +39,17 @@ import {
 import { WalletPercentBar } from "../components/exchange/WalletPercentBar";
 import { ZeroBalanceTransferOffer } from "../components/exchange/ZeroBalanceTransferOffer";
 import {
-  type Outcome,
-  outcomeFromResult,
-  safePurchaseMessage,
-} from "../components/exchange/purchaseOutcome";
+  MINT_MIN_TTTI,
+  MINT_QUOTE_DEBOUNCE_MS,
+  describeMintError,
+  formatMintTtti,
+  maxPayWithTolerance,
+  mintDeadline,
+  mintInputKey,
+  parseMintInput,
+  tttiFromUsdPayment,
+  usdFromTokenAmount,
+} from "../components/exchange/liquidityMint";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -59,21 +72,20 @@ import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useWalletAcceptPurchaseAcknowledgements,
   useWalletApprove,
-  useWalletPurchase,
+  useWalletMintLiquidity,
   useWalletPurchaseAcknowledgement,
 } from "../hooks/usePlugPurchase";
 import {
   findPayTokenStatus,
   formatTokenRateLine,
   isDepositInProgress,
-  payTokenTreasuryAccount,
   useAcceptPurchaseAcknowledgements,
-  useConvertDepositWith,
   useGetDeliveryAddress,
   useGetMyPurchaseAcknowledgement,
   useGetSaleStatus,
+  useLiquidityMintQuote,
+  useMintLiquidity,
   useMyBtcDeposits,
-  usePublicTreasuryInfo,
   useRefreshOnDepositProgress,
   useWalletBtcDeposits,
 } from "../hooks/useQueries";
@@ -82,15 +94,13 @@ import { SITE_TEXT } from "../i18n/common/site";
 import { useDict, useLanguage } from "../i18n/core/dict";
 import {
   BUY_BTC_TEXT,
-  BUY_EXPLORER_TEXT,
+  BUY_LIQUIDITY_TEXT,
   BUY_PAGE_TEXT,
 } from "../i18n/pages/buy";
-import { BUYBACK_TEXT } from "../i18n/pages/buyback";
+import { PLAIN_RULES_TEXT } from "../i18n/pages/dex";
 import { requiredTokenBalance } from "../lib/icpLedger";
-import { mintBlockTarget, paymentBlockTarget } from "../lib/purchaseHistory";
 import {
   BTC_PAY_OPTION,
-  MIN_PURCHASE,
   PAY_TOKENS,
   type SetupPayChoice,
   TTTI_DECIMALS,
@@ -98,17 +108,8 @@ import {
   encodeAccountText,
   feeLabelFor,
   formatPayAmount,
-  formatTtti,
-  formatUsdE8,
-  minimumUsdLabel,
-  parseTtti,
-  parseUnits,
-  payForTtti,
   tokenForWalletPercent,
-  tttiFromPay,
-  tttiToUsdE8,
   unitsInputValue,
-  usePriceText,
 } from "../lib/token";
 import { cn } from "../lib/utils";
 
@@ -142,22 +143,16 @@ const ACKNOWLEDGEMENTS = [
 type AcknowledgementId = (typeof ACKNOWLEDGEMENTS)[number]["id"];
 
 type ActiveWallet = ConnectedWalletKind | "internetIdentity";
-/** `useMax` is the input text that fills the remaining allocation. */
-type Validation = { title: string; message: string; useMax?: string };
-/** What the last attempt produced; turned into text in the active language. */
-type OutcomeSource =
-  | { kind: "result"; result: PurchaseResult; token: PayToken }
-  | { kind: "approval"; token: PayToken; message: string }
-  | { kind: "thrown"; message: string | null };
+/** A refused input shown as an alert, in the active language. */
+type Validation = { title: string; message: string };
 
 export function ExchangePage() {
   const t = useDict(BUY_PAGE_TEXT);
-  const tx = useDict(BUY_EXPLORER_TEXT);
+  const tl = useDict(BUY_LIQUIDITY_TEXT);
+  const plain = useDict(PLAIN_RULES_TEXT);
   const tb = useDict(BUY_BTC_TEXT);
-  const tbb = useDict(BUYBACK_TEXT);
   const { lang } = useLanguage();
   const site = useDict(SITE_TEXT);
-  const priceStatement = usePriceText();
   const { identity } = useInternetIdentity();
   const connected = useConnectedWallet();
   const externalPrincipal = connected.principal;
@@ -186,7 +181,6 @@ export function ExchangePage() {
 
   const statusQuery = useGetSaleStatus();
   const status = statusQuery.data;
-  const { data: publicTreasury } = usePublicTreasuryInfo();
   const balanceQuery = usePayTokenBalance(
     token,
     activePrincipal ? { owner: activePrincipal } : undefined,
@@ -195,8 +189,8 @@ export function ExchangePage() {
   const iiAddress = useGetDeliveryAddress();
   const approve = usePayTokenApprove();
   const walletApprove = useWalletApprove();
-  const convert = useConvertDepositWith();
-  const walletBuy = useWalletPurchase();
+  const mintLiquidity = useMintLiquidity();
+  const walletMintLiquidity = useWalletMintLiquidity();
   // Acknowledgements are read and recorded by the same principal that buys.
   const iiAckQuery = useGetMyPurchaseAcknowledgement(
     wallet === "internetIdentity",
@@ -212,13 +206,17 @@ export function ExchangePage() {
   >({});
   const [amount, setAmount] = useState("");
   const [tttiAmount, setTttiAmount] = useState("");
-  const [mode, setMode] = useState<OrderMode>("pay");
-  // A chosen wallet percentage drives the pay amount from the live balance.
+  const [mode, setMode] = useState<OrderMode>("ttti");
+  const [slippageText, setSlippageText] = useState(defaultSlippageText);
+  const [slippageBps, setSlippageBps] = useState<bigint | null>(
+    DEFAULT_SLIPPAGE_BPS,
+  );
+  // A chosen wallet percentage drives the TTTI-T amount from the live balance.
   const [percent, setPercent] = useState<number | null>(null);
   const [step, setStep] = useState<
     "idle" | "accepting" | "approving" | "buying"
   >("idle");
-  const [outcomeSource, setOutcome] = useState<OutcomeSource | null>(null);
+  const [outcomeSource, setOutcome] = useState<MintOutcomeSource | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [mintInfoOpen, setMintInfoOpen] = useState(false);
   const busy = step !== "idle";
@@ -309,92 +307,72 @@ export function ExchangePage() {
   const rateLine = priceAvailable ? formatTokenRateLine(token, rate) : "";
   const feeBps = tokenStatus?.feeBps ?? descriptor.feeBps;
   const feeLabel = feeLabelFor(feeBps);
-  const treasuryAccount = payTokenTreasuryAccount(publicTreasury, token);
-  const treasuryAccountText = treasuryAccount
-    ? encodeAccountText(treasuryAccount)
-    : "";
 
-  const quote = (pay: bigint) => tttiFromPay(pay, decimals, price, feeBps);
-  const payFor = (tttiBase: bigint, roundUp: boolean) => {
-    const cost = payForTtti(tttiBase, decimals, price, feeBps);
-    if (roundUp || cost === 0n) return cost;
-    // payForTtti rounds up; step back one unit when that overshoots.
-    return quote(cost) > tttiBase ? cost - 1n : cost;
-  };
-  const minPurchase = status?.minPurchase ?? MIN_PURCHASE;
-  const remaining = status?.available ?? 0n;
-  const closed = !!status?.complete || !!status?.salesPaused;
+  const closed = !!status?.salesPaused;
   const balance = balanceQuery.data;
 
-  const percentAmount =
-    mode === "pay" && percent !== null && balance !== undefined
-      ? tokenForWalletPercent(balance, token, percent)
+  // A wallet percentage turns the spendable token amount into TTTI-T.
+  const percentTtti =
+    percent !== null && balance !== undefined && priceAvailable
+      ? tttiFromUsdPayment(
+          usdFromTokenAmount(
+            tokenForWalletPercent(balance, token, percent),
+            decimals,
+            price,
+          ),
+        )
       : null;
-  const payText =
-    percentAmount !== null ? unitsInputValue(percentAmount, decimals) : amount;
-  const inputText = mode === "pay" ? payText : tttiAmount;
-  const inputUnits =
-    (mode === "pay" ? parseUnits(payText, decimals) : parseTtti(tttiAmount)) ??
-    0n;
-  const inputValid = inputUnits > 0n;
-  // TTTI-T orders send the amount needed (rounded up) for exactly that amount.
-  const payAmount: bigint | null =
-    mode === "pay"
-      ? inputUnits
-      : inputValid && priceAvailable
-        ? payFor(inputUnits, true)
+  const typedText =
+    mode === "usd"
+      ? amount
+      : percentTtti !== null
+        ? unitsInputValue(percentTtti, TTTI_DECIMALS)
+        : tttiAmount;
+  const mintInput = parseMintInput(mode, typedText);
+  const inputKey = mintInputKey(token, mintInput);
+
+  // The preview is requested once typing pauses; both modes share one quote.
+  const [settledKey, setSettledKey] = useState(inputKey);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setSettledKey(inputKey),
+      MINT_QUOTE_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [inputKey]);
+  const settled = settledKey === inputKey;
+  const quoteQuery = useLiquidityMintQuote(
+    token,
+    mintInput.kind === "ready" && settled ? mintInput.amount : null,
+  );
+  const quoteData =
+    settled && mintInput.kind === "ready" ? quoteQuery.data : undefined;
+  const previewQuote = quoteData?.__kind__ === "ok" ? quoteData.ok : null;
+  const previewError =
+    quoteData?.__kind__ === "err"
+      ? describeMintError(quoteData.err, token, "preview", lang)
+      : mintInput.kind === "ready" && settled && quoteQuery.isError
+        ? { title: tl.previewFailedTitle, message: t.purchaseNotSubmitted }
         : null;
-  const orderPay = payAmount ?? 0n;
-  const hasAmount = orderPay > 0n;
-  const tttiOut =
-    mode === "ttti"
-      ? inputUnits
-      : hasAmount && priceAvailable
-        ? quote(orderPay)
-        : 0n;
+  const previewLoading =
+    mintInput.kind === "ready" &&
+    (!settled || quoteQuery.isFetching) &&
+    previewQuote === null;
+  const orderPay = previewQuote?.payAmount ?? 0n;
+  const hasAmount = previewQuote !== null;
   const required = hasAmount ? requiredTokenBalance(token, orderPay) : 0n;
-  const maxPay = priceAvailable ? payFor(remaining, false) : 0n;
 
   let validation: Validation | null = null;
   let insufficient = false;
-  if (inputText.trim() !== "" && !inputValid && percentAmount !== 0n) {
+  if (typedText.trim() !== "" && mintInput.kind === "invalid") {
     validation = {
       title: t.invalidAmountTitle,
-      message:
-        mode === "pay"
-          ? t.invalidAmountMessage(symbol, decimals)
-          : t.invalidAmountMessage(DISPLAY_SYMBOL, TTTI_DECIMALS),
+      message: mode === "usd" ? tl.invalidUsd : tl.invalidTtti,
     };
-  } else if (
-    percentAmount === 0n ||
-    (hasAmount && priceAvailable && tttiOut < minPurchase)
-  ) {
+  } else if (typedText.trim() !== "" && mintInput.kind === "belowMinimum") {
     validation = {
       title: t.belowMinimumTitle,
-      message: t.belowMinimumMessage(
-        formatTtti(minPurchase),
-        DISPLAY_SYMBOL,
-        minimumUsdLabel(token),
-        symbol,
-        priceAvailable
-          ? formatPayAmount(payFor(minPurchase, true), token)
-          : null,
-      ),
-    };
-  } else if (hasAmount && priceAvailable && tttiOut > remaining) {
-    validation = {
-      title: t.aboveRemainingTitle,
-      message: t.aboveRemainingMessage(
-        formatTtti(remaining),
-        DISPLAY_SYMBOL,
-        formatPayAmount(maxPay, token),
-      ),
-      useMax:
-        remaining >= minPurchase
-          ? mode === "pay"
-            ? unitsInputValue(maxPay, decimals)
-            : unitsInputValue(remaining, TTTI_DECIMALS)
-          : undefined,
+      message: tl.errBelowMinimum(formatMintTtti(MINT_MIN_TTTI)),
     };
   } else if (hasAmount && balance !== undefined && balance < required) {
     insufficient = true;
@@ -419,8 +397,8 @@ export function ExchangePage() {
     !!wallet &&
     !closed &&
     selectedAvailable &&
-    priceAvailable &&
-    hasAmount &&
+    previewQuote !== null &&
+    slippageBps !== null &&
     !validation &&
     !busy;
   // The acknowledgement status is read for the active wallet's principal.
@@ -483,45 +461,36 @@ export function ExchangePage() {
     }
   });
 
-  /** Switch mode, carrying the computed equivalent into the other field. */
+  /** Switch mode, carrying the previewed equivalent into the other field. */
   const handleModeChange = (next: OrderMode) => {
     if (next === mode) return;
-    if (next === "ttti") {
-      if (payAmount !== null && payAmount > 0n && priceAvailable) {
-        setTttiAmount(
-          tttiOut > 0n ? unitsInputValue(tttiOut, TTTI_DECIMALS) : "",
-        );
+    if (previewQuote) {
+      if (next === "usd") {
+        setAmount(unitsInputValue(previewQuote.payUsdE8, 8));
+      } else {
+        setTttiAmount(unitsInputValue(previewQuote.tttiAmount, TTTI_DECIMALS));
       }
-      setAmount(payText);
-      setPercent(null);
-    } else if (payAmount !== null && payAmount > 0n) {
-      setAmount(unitsInputValue(payAmount, decimals));
     }
+    setPercent(null);
     setMode(next);
     resetAttempt();
   };
 
   const handlePercent = (value: number) => {
     setPercent(value);
-    setMode("pay");
+    setMode("ttti");
     resetAttempt();
   };
 
-  const handleBuy = async (event: FormEvent) => {
+  const handleMint = async (event: FormEvent) => {
     event.preventDefault();
-    if (!wallet || !canSubmit || payAmount === null || payAmount <= 0n) return;
-    const purchaseToken = token;
-    const purchaseAmount = payAmount;
-    // TTTI-T mode: the backend delivers exactly this amount; pay mode sends null.
-    const tttiTarget: bigint | null = mode === "ttti" ? inputUnits : null;
-    const setDraft = mode === "pay" ? setAmount : setTttiAmount;
-    const captured = mode === "pay" ? payText : tttiAmount;
-    const restore = () => setDraft((cur) => (cur === "" ? captured : cur));
+    if (!wallet || !canSubmit || !previewQuote || slippageBps === null) return;
+    const mintToken = token;
+    const frozen = previewQuote;
+    const tolerance = slippageBps;
     // OISY/NFID: open the wallet window now, from the click, for the calls below.
     const releaseSession = isExternal ? connected.beginSession() : () => {};
     setOutcome(null);
-    setPercent(null);
-    setDraft("");
     try {
       if (needsAck) {
         setStep("accepting");
@@ -530,48 +499,51 @@ export function ExchangePage() {
       setStep("approving");
       const approval = isExternal
         ? await walletApprove.mutateAsync({
-            token: purchaseToken,
-            amount: purchaseAmount,
+            token: mintToken,
+            amount: frozen.payAmount,
             balance,
           })
         : await approve.mutateAsync({
-            token: purchaseToken,
-            amount: purchaseAmount,
+            token: mintToken,
+            amount: frozen.payAmount,
             balance,
             wallet: "internetIdentity",
           });
       if (!approval.ok) {
         setOutcome({
           kind: "approval",
-          token: purchaseToken,
+          token: mintToken,
           message: approval.message,
         });
-        restore();
         return;
       }
       setStep("buying");
+      const args: MintArgs = {
+        token: mintToken,
+        quantity: {
+          __kind__: "baseUnits",
+          baseUnits: frozen.tttiAmount,
+        },
+        maxPayAmount: maxPayWithTolerance(frozen.payAmount, tolerance),
+        slippageBps: tolerance,
+        deadline: mintDeadline(),
+      };
       const result = isExternal
-        ? await walletBuy.mutateAsync({
-            token: purchaseToken,
-            payAmount: purchaseAmount,
-            tttiTarget,
-          })
-        : await convert.mutateAsync({
-            token: purchaseToken,
-            recipient: null,
-            payAmount: purchaseAmount,
-            tttiTarget,
-          });
-      setOutcome({ kind: "result", result, token: purchaseToken });
-      if (outcomeFromResult(result, purchaseToken).kind !== "success") {
-        restore();
+        ? await walletMintLiquidity.mutateAsync(args)
+        : await mintLiquidity.mutateAsync(args);
+      if (result.__kind__ === "ok") {
+        setOutcome({ kind: "minted", result: result.ok, token: mintToken });
+        setAmount("");
+        setTttiAmount("");
+        setPercent(null);
+      } else {
+        setOutcome({ kind: "refused", error: result.err, token: mintToken });
       }
     } catch (error) {
       setOutcome({
         kind: "thrown",
         message: error instanceof Error && error.message ? error.message : null,
       });
-      restore();
     } finally {
       releaseSession();
       setStep("idle");
@@ -586,118 +558,13 @@ export function ExchangePage() {
         ? t.approving(symbol)
         : step === "buying"
           ? t.buying
-          : status?.complete
-            ? t.saleComplete
-            : status?.salesPaused
-              ? t.salesPaused
-              : !selectedAvailable
-                ? t.tokenUnavailable(symbol)
-                : t.buyWith(symbol);
+          : status?.salesPaused
+            ? t.salesPaused
+            : !selectedAvailable
+              ? t.tokenUnavailable(symbol)
+              : t.buyWith(symbol);
 
-  // Resolved on every render so a language switch updates the alert.
-  const outcome: Outcome | null = !outcomeSource
-    ? null
-    : outcomeSource.kind === "result"
-      ? outcomeFromResult(outcomeSource.result, outcomeSource.token, lang)
-      : outcomeSource.kind === "approval"
-        ? {
-            kind: "error",
-            title: t.approvalFailed(PAY_TOKENS[outcomeSource.token].symbol),
-            message: outcomeSource.message,
-          }
-        : {
-            kind: "error",
-            title: t.purchaseNotCompleted,
-            message:
-              outcomeSource.message !== null
-                ? safePurchaseMessage(outcomeSource.message, lang)
-                : t.purchaseNotSubmitted,
-          };
-  const successPayment =
-    outcome?.kind === "success" ? paymentBlockTarget(outcome.conversion) : null;
-  const successMint =
-    outcome?.kind === "success" ? mintBlockTarget(outcome.conversion) : null;
-
-  const outcomeAlerts = (
-    <>
-      {outcome?.kind === "error" && (
-        <Alert
-          variant={outcome.refunded ? "default" : "destructive"}
-          className={outcome.refunded ? "border-warning/50 bg-warning/10" : ""}
-          data-ocid="exchange.error_state"
-        >
-          {outcome.refunded ? (
-            <Undo2 className="h-4 w-4 text-warning" />
-          ) : (
-            <AlertCircle className="h-4 w-4" />
-          )}
-          <AlertTitle>{outcome.title}</AlertTitle>
-          {outcome.message.trim() && (
-            <AlertDescription>{outcome.message}</AlertDescription>
-          )}
-        </Alert>
-      )}
-      {outcome?.kind === "success" && (
-        <Alert
-          className="border-gold-strong bg-primary/10 shadow-gold"
-          data-ocid="exchange.success_state"
-        >
-          <CheckCircle2 className="h-4 w-4 text-primary" />
-          <AlertTitle className="font-display text-base tabular-nums">
-            {t.received(
-              formatTtti(outcome.conversion.tttiAmount),
-              DISPLAY_SYMBOL,
-            )}
-          </AlertTitle>
-          <AlertDescription className="text-xs tabular-nums">
-            {formatPayAmount(
-              outcome.conversion.payAmount > 0n
-                ? outcome.conversion.payAmount
-                : outcome.conversion.icpAmount,
-              outcome.conversion.payToken,
-            )}{" "}
-            · #{outcome.conversion.id.toString()}
-          </AlertDescription>
-          {(successPayment || successMint) && (
-            <dl
-              className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs"
-              data-ocid="exchange.success.blocks.panel"
-            >
-              {successPayment &&
-                outcome.conversion.paymentBlock !== undefined && (
-                  <>
-                    <dt className="text-muted-foreground">{tx.paymentBlock}</dt>
-                    <dd className="min-w-0">
-                      <ExplorerLink
-                        target={successPayment}
-                        label={tx.viewOnIcpDashboard}
-                        data-ocid="exchange.success.payment_block.link"
-                      >
-                        {outcome.conversion.paymentBlock.toString()}
-                      </ExplorerLink>
-                    </dd>
-                  </>
-                )}
-              {successMint && outcome.conversion.mintBlock !== undefined && (
-                <>
-                  <dt className="text-muted-foreground">{tx.tttiMintBlock}</dt>
-                  <dd className="min-w-0">
-                    <ExplorerLink
-                      target={successMint}
-                      label={tx.viewBlockInHistory}
-                      data-ocid="exchange.success.mint_block.link"
-                    >
-                      {outcome.conversion.mintBlock.toString()}
-                    </ExplorerLink>
-                  </dd>
-                </>
-              )}
-            </dl>
-          )}
-        </Alert>
-      )}
-    </>
-  );
+  const outcomeAlerts = <MintOutcomeAlerts source={outcomeSource} />;
 
   const unitSuffix = (text: string) => (
     <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-mono text-sm font-semibold text-muted-foreground">
@@ -884,9 +751,18 @@ export function ExchangePage() {
                     aria-hidden="true"
                   />
                 )}
-                {balance !== undefined
-                  ? formatPayAmount(balance, token)
-                  : t.unavailable}
+                {balance !== undefined ? (
+                  <>
+                    {formatPayAmount(balance, token)}
+                    <FiatAmount
+                      token={token}
+                      amount={balance}
+                      ocid="exchange.balance.fiat"
+                    />
+                  </>
+                ) : (
+                  t.unavailable
+                )}
               </span>
             )}
           </div>
@@ -927,170 +803,113 @@ export function ExchangePage() {
                 {outcomeAlerts}
               </>
             ) : (
-              <form onSubmit={handleBuy} className="space-y-4" noValidate>
+              <form onSubmit={handleMint} className="space-y-4" noValidate>
                 <OrderModeToggle
                   mode={mode}
                   onChange={handleModeChange}
-                  tokenSymbol={symbol}
                   disabled={closed || busy}
                 />
-                {mode === "pay" ? (
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="pay-amount"
-                      className="text-muted-foreground"
-                    >
-                      {t.youPayIn(symbol)}
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="pay-amount"
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={payText}
-                        onChange={(e) => {
-                          setPercent(null);
-                          setAmount(e.target.value);
-                          resetAttempt();
-                        }}
-                        disabled={closed || busy}
-                        autoComplete="off"
-                        className={AMOUNT_INPUT}
-                        aria-invalid={!!validation}
-                        aria-describedby="pay-amount-preview"
-                        data-ocid="exchange.amount_input"
-                      />
-                      {unitSuffix(symbol)}
-                    </div>
-                    <div
-                      id="pay-amount-preview"
-                      className="flex items-baseline justify-between gap-3 px-1 pt-1"
-                      aria-live="polite"
-                      data-ocid="exchange.preview_panel"
-                    >
-                      <span className="text-sm text-muted-foreground">
-                        {t.youReceive}
-                      </span>
-                      <span className="min-w-0 text-right">
-                        <span
-                          className="inline-flex items-center gap-2 font-mono text-lg font-semibold tabular-nums text-primary"
-                          data-ocid="exchange.ttti_output"
-                        >
-                          <FlatTokenIcon className="h-5 w-5 shrink-0" alt="" />
-                          <span className="break-all">
-                            {priceAvailable ? formatTtti(tttiOut) : "—"} TTTI-T
-                          </span>
-                        </span>
-                        <span className="block text-xs tabular-nums text-muted-foreground">
-                          ≈ {formatUsdE8(tttiToUsdE8(tttiOut), 2)}
-                          {hasAmount &&
-                            t.withFees(formatPayAmount(required, token))}
-                        </span>
-                      </span>
-                    </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="mint-amount"
+                    className="text-muted-foreground"
+                  >
+                    {mode === "usd" ? tl.usdLabel : tl.tttiLabel}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="mint-amount"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder={mode === "usd" ? "0.00" : "0.0001"}
+                      value={typedText}
+                      onChange={(e) => {
+                        setPercent(null);
+                        if (mode === "usd") setAmount(e.target.value);
+                        else setTttiAmount(e.target.value);
+                        resetAttempt();
+                      }}
+                      disabled={closed || busy}
+                      autoComplete="off"
+                      className={cn(AMOUNT_INPUT, "pr-24")}
+                      aria-invalid={!!validation}
+                      aria-describedby="mint-amount-hint"
+                      data-ocid={
+                        mode === "usd"
+                          ? "exchange.amount_input"
+                          : "exchange.ttti_amount_input"
+                      }
+                    />
+                    {unitSuffix(mode === "usd" ? "USD" : DISPLAY_SYMBOL)}
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="ttti-amount"
-                      className="text-muted-foreground"
-                    >
-                      {t.youReceive}
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="ttti-amount"
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.0001"
-                        value={tttiAmount}
-                        onChange={(e) => {
-                          setTttiAmount(e.target.value);
-                          resetAttempt();
-                        }}
-                        disabled={closed || busy}
-                        autoComplete="off"
-                        className={cn(AMOUNT_INPUT, "pr-24")}
-                        aria-invalid={!!validation}
-                        aria-describedby="ttti-amount-preview"
-                        data-ocid="exchange.ttti_amount_input"
-                      />
-                      {unitSuffix(DISPLAY_SYMBOL)}
-                    </div>
-                    <div
-                      id="ttti-amount-preview"
-                      className="flex items-baseline justify-between gap-3 px-1 pt-1"
-                      aria-live="polite"
-                      data-ocid="exchange.required_icp.panel"
-                    >
-                      <span className="text-sm text-muted-foreground">
-                        {t.youPayIn(symbol)}
-                      </span>
-                      <span className="min-w-0 text-right">
-                        <span
-                          className="block break-all font-mono text-lg font-semibold tabular-nums text-primary"
-                          data-ocid="exchange.required_icp_output"
-                        >
-                          {hasAmount
-                            ? formatPayAmount(orderPay, token)
-                            : `— ${symbol}`}
-                        </span>
-                        <span
-                          className="block text-xs tabular-nums text-muted-foreground"
-                          data-ocid="exchange.total_debit"
-                        >
-                          {t.totalDebited}{" "}
-                          {hasAmount
-                            ? formatPayAmount(required, token)
-                            : `— ${symbol}`}
-                          {hasAmount &&
-                            ` · ≈ ${formatUsdE8(tttiToUsdE8(tttiOut), 2)}`}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  <p
+                    id="mint-amount-hint"
+                    className="px-1 text-xs text-muted-foreground"
+                  >
+                    {mode === "usd" ? tl.usdHint : tl.tttiHint}
+                  </p>
+                </div>
 
                 <MintPaymentBreakdown
                   token={token}
-                  payAmount={hasAmount ? orderPay : 0n}
+                  quote={previewQuote}
+                  loading={previewLoading}
+                  error={previewError}
                 />
 
                 <WalletPercentBar
                   token={token}
                   balance={balance}
                   walletConnected={!!wallet}
-                  percent={mode === "pay" ? percent : null}
+                  percent={percent}
                   currentAmount={orderPay}
                   disabled={closed || busy}
-                  quote={(pay) => (priceAvailable ? quote(pay) : null)}
+                  quote={(pay) =>
+                    priceAvailable
+                      ? tttiFromUsdPayment(
+                          usdFromTokenAmount(pay, decimals, price),
+                        )
+                      : null
+                  }
                   onSelect={handlePercent}
                 />
 
-                {!statusQuery.isLoading &&
-                  selectedAvailable &&
-                  !priceAvailable && (
-                    <Alert data-ocid="exchange.price_unavailable_state">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertTitle>{t.noRateTitle(symbol)}</AlertTitle>
-                      <AlertDescription className="space-y-2">
-                        <p>{t.noRateBody(symbol)}</p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className={cn("mt-1", OUTLINE_BUTTON)}
-                          onClick={() => void statusQuery.refetch()}
-                          disabled={statusQuery.isFetching}
-                          data-ocid="exchange.retry_button"
-                        >
-                          <RefreshCw className="h-3.5 w-3.5" />
-                          {t.retry}
-                        </Button>
-                      </AlertDescription>
-                    </Alert>
-                  )}
+                <SlippageField
+                  value={slippageText}
+                  onChange={(text, bps) => {
+                    setSlippageText(text);
+                    setSlippageBps(bps);
+                    resetAttempt();
+                  }}
+                  disabled={closed || busy}
+                  ocidPrefix="exchange.slippage"
+                />
+                {previewQuote && slippageBps !== null && (
+                  <p
+                    className="px-1 text-xs tabular-nums text-muted-foreground"
+                    data-ocid="exchange.max_pay"
+                  >
+                    {tl.maxPayLabel}:{" "}
+                    <span className="font-mono text-foreground">
+                      {formatPayAmount(
+                        maxPayWithTolerance(
+                          previewQuote.payAmount,
+                          slippageBps,
+                        ),
+                        token,
+                      )}
+                    </span>{" "}
+                    <FiatAmount
+                      token={token}
+                      amount={maxPayWithTolerance(
+                        previewQuote.payAmount,
+                        slippageBps,
+                      )}
+                      ocid="exchange.max_pay.fiat"
+                    />
+                    . {tl.expiryNote}
+                  </p>
+                )}
 
                 {validation && !showIcpPanel && (
                   <Alert
@@ -1101,29 +920,6 @@ export function ExchangePage() {
                     <AlertTitle>{validation.title}</AlertTitle>
                     <AlertDescription className="space-y-2">
                       <p>{validation.message}</p>
-                      {validation.useMax !== undefined && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className={OUTLINE_BUTTON}
-                          onClick={() => {
-                            const max = validation?.useMax;
-                            if (max !== undefined) {
-                              if (mode === "pay") {
-                                setPercent(null);
-                                setAmount(max);
-                              } else {
-                                setTttiAmount(max);
-                              }
-                              resetAttempt();
-                            }
-                          }}
-                          data-ocid="exchange.use_max_button"
-                        >
-                          {t.useMaximum}
-                        </Button>
-                      )}
                     </AlertDescription>
                   </Alert>
                 )}
@@ -1185,7 +981,7 @@ export function ExchangePage() {
           className="max-w-3xl text-sm text-muted-foreground"
           data-ocid="exchange.price_statement"
         >
-          {priceStatement}
+          {tl.priceStatement}
         </p>
         <p className="text-xs text-muted-foreground">{t.noExtraTaken}</p>
         <p
@@ -1230,6 +1026,15 @@ export function ExchangePage() {
               >
                 <p>{t.mintInfoBody1}</p>
                 <p>{t.mintInfoBody2}</p>
+                <p>{plain.chance}</p>
+                <p>
+                  <span className="font-medium">{plain.zapTitle}. </span>
+                  {plain.zap}
+                </p>
+                <p>
+                  <span className="font-medium">{plain.guaranteeTitle}. </span>
+                  {plain.guarantee}
+                </p>
               </div>
             )}
           </div>
@@ -1240,20 +1045,6 @@ export function ExchangePage() {
               walletPrincipal={externalPrincipal}
             />
           )}
-          <Card className={CARD_CLASS} data-ocid="exchange.buyback_section">
-            <CardHeader className="space-y-2 pb-4">
-              <CardTitle className="font-display text-xl">
-                {tbb.sectionTitle}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {tbb.sectionIntro}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <BuybackExplanation />
-              <BuybackFlow />
-            </CardContent>
-          </Card>
         </div>
 
         <aside className="flex min-w-0 flex-col gap-6 lg:col-span-2">
@@ -1265,12 +1056,21 @@ export function ExchangePage() {
             priceAvailable={priceAvailable}
             isLoading={statusQuery.isLoading}
             oneTokenBuys={
-              priceAvailable ? quote(10n ** BigInt(decimals)) : null
+              priceAvailable
+                ? tttiFromUsdPayment(
+                    usdFromTokenAmount(
+                      10n ** BigInt(decimals),
+                      decimals,
+                      price,
+                    ),
+                  )
+                : null
             }
             feeLabel={feeLabel}
-            treasuryAccountText={treasuryAccountText}
+            minimumText={formatMintTtti(MINT_MIN_TTTI)}
             className={CARD_CLASS}
           />
+          <PoolCapRatio className={CARD_CLASS} />
         </aside>
       </div>
     </div>

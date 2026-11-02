@@ -1,6 +1,7 @@
 import { Battery, Copy, Lock } from "lucide-react";
 import { toast } from "sonner";
 import type { TopUpStatus } from "../../backend";
+import { PayToken } from "../../backend";
 import { useCyclesStatus } from "../../hooks/useQueries";
 import { icpDashboardTxUrl } from "../../lib/explorer";
 import {
@@ -10,6 +11,7 @@ import {
   formatIcpE8s,
 } from "../../lib/token";
 import { ExplorerLink } from "../ExplorerLink";
+import { FiatAmount } from "../FiatAmount";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import {
@@ -146,10 +148,22 @@ export function CyclesReserveCard() {
                 data-ocid="admin.reserve_balance"
               >
                 {formatIcpE8s(status.reserveBalanceE8s)}
+                <FiatAmount
+                  token={PayToken.icp}
+                  amount={status.reserveBalanceE8s}
+                  className="ml-1.5"
+                  ocid="admin.reserve_balance_fiat"
+                />
               </dd>
               <dt className="text-muted-foreground">Floor</dt>
               <dd className="text-right font-mono tabular-nums">
                 {formatIcpE8s(floor)}
+                <FiatAmount
+                  token={PayToken.icp}
+                  amount={floor}
+                  className="ml-1.5"
+                  ocid="admin.reserve_floor_fiat"
+                />
               </dd>
               <dt className="text-muted-foreground">Cycles balance</dt>
               <dd
@@ -175,7 +189,14 @@ export function CyclesReserveCard() {
                 <>
                   <p className="font-mono tabular-nums">
                     {formatTimestamp(status.lastTopUp.timestamp)} ·{" "}
-                    {formatIcpE8s(status.lastTopUp.icpE8s)} · block{" "}
+                    {formatIcpE8s(status.lastTopUp.icpE8s)}
+                    <FiatAmount
+                      token={PayToken.icp}
+                      amount={status.lastTopUp.icpE8s}
+                      className="mx-1.5"
+                      ocid="admin.last_topup_fiat"
+                    />
+                    · block{" "}
                     <IcpBlockLink
                       blockIndex={status.lastTopUp.blockIndex}
                       ocid="admin.last_topup_block_link"
@@ -222,7 +243,15 @@ export function CyclesReserveCard() {
                         <span className="text-muted-foreground">
                           {formatTimestamp(w.timestamp)}
                         </span>
-                        <span>{formatIcpE8s(w.amountE8s)}</span>
+                        <span>
+                          {formatIcpE8s(w.amountE8s)}
+                          <FiatAmount
+                            token={PayToken.icp}
+                            amount={w.amountE8s}
+                            className="ml-1.5"
+                            ocid={`admin.reserve_withdrawals.fiat.${i + 1}`}
+                          />
+                        </span>
                         <span className="text-muted-foreground">
                           block{" "}
                           <IcpBlockLink

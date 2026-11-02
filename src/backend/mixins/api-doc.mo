@@ -84,6 +84,8 @@ mixin () {
     "  `status`, `ledger_id`),\n" #
     "  `getFeeCollector`, `getBurnAccount`, `getLegacyBlockInfo`, `get_fee`,\n" #
     "  `get_fee_bounds`, `get_max_supply`, `getSaleStatus`, `getTechnicalDetails`,\n" #
+    "  `getPublicBoard`, `getCreatorHoldings`, `topUpCycles`,\n" #
+    "  `listPermanentLiquidityLog`, `getPermanentLiquiditySummary`,\n" #
     "  `getIcpPrice`, `getTokenPrices`, `getBtcUsdRate`, `getPublicTreasuryInfo`,\n" #
     "  `getCanisterPrincipal`,\n" #
     "  `getCyclesStatus`, `getBtcDepositInfo`, `getBtcWalletAddressFor`,\n" #
@@ -104,13 +106,18 @@ mixin () {
     "  `getLastWeeklyAllocation`, `listWeeklyAllocations`, `listDcBatches`,\n" #
     "  `getReceivingWallets`, `getSettlementStatus`, `getMintFeeAccount`,\n" #
     "  `listAdminHistory`, `listTransfersToReview`,\n" #
-    "  `listTransfersToReviewFiltered`, and the history reads\n" #
+    "  `listTransfersToReviewFiltered`, `listCyclesFeeSettlements`,\n" #
+    "  `listCyclesFeeSplits`, `listCyclesFeeSettlementsToReview`,\n" #
+    "  `listCreatorPayoutsToReview`, and the history reads\n" #
     "  `listTreasuryWithdrawals`, `listOwnerSends`, `getOwnerAccumulated`,\n" #
     "  `getTreasurySweepStatus`.\n" #
     "- Public (lot 4): `getProtocolLiquidity`. Caller-scoped (lot 4):\n" #
     "  `getMyLpBonus`, `claimLpBonus`.\n" #
     "- Admin-only writes: `setSalesPaused`, `refreshIcpPrice`,\n" #
-    "  `refreshTokenPrice`, `set_fee` (test version only), `setReceivingWallet`.\n" #
+    "  `refreshTokenPrice`, `setReceivingWallet`, `payCreatorFees`,\n" #
+    "  `markCreatorPayoutArrived`, `markCreatorPayoutNotArrived`,\n" #
+    "  `markCyclesFeeSettlementArrived`, `markCyclesFeeSettlementNotArrived`.\n" #
+    "  `set_fee` no longer exists: the transfer fee is fixed.\n" #
     "  `withdrawTreasury` and `getTreasuryBalances` no longer exist.\n" #
     "  `setTreasuryConfig`, `setPayTokenAccount` and `withdrawReserveExcess`\n" #
     "  were removed in DEX lot 4 and no longer exist. There is no admin mint,\n" #
@@ -269,18 +276,128 @@ mixin () {
     "## Supply and fee\n\n" #
     "- There is no mint endpoint and no burn endpoint. `get_max_supply()` and\n" #
     "  `icrc1:max_supply` are 100_000_000 (1 TTTI-T).\n" #
-    "  `mintableRemaining = max(0, maxSupply - icrc1_total_supply)`. Every purchase\n" #
+    "  `mintableRemaining = max(0, maxSupply - icrc1_total_supply)`. The TTTI-T\n" #
+    "  available at the mint is `mintableRemaining - reserved` only: transfer\n" #
+    "  fees never count in it and the mint only mints new tokens, up to the cap.\n" #
+    "  The mint is over when what remains to mint is below the minimum of one\n" #
+    "  mint; that remainder joins the first auction lot and is minted only at\n" #
+    "  settlement, for the winner, pooled with the winner's mass. Every purchase\n" #
     "  mint is refused if `totalSupply + minted` would exceed the max supply.\n" #
     "  Tokens cannot be burned, so once 1 TTTI-T has been minted\n" #
     "  `mintableRemaining` is 0 and stays 0.\n" #
-    "- Transfer fees stay in the fee collector and are sold again against ICP:\n" #
-    "  each delivery mints first (up to `mintableRemaining`), then takes the rest\n" #
-    "  from the fee collector.\n" #
-    "- `set_fee(newFee) : { #ok; #err : Text }` (admin, TTTI-T test version only;\n" #
-    "  trap `Unauthorized: only admins can set the fee`). Range:\n" #
-    "  `get_fee_bounds() = { min; max }`, otherwise `#err`. `get_fee()`,\n" #
-    "  `get_max_supply()`.\n\n" #
+    "- The TTTI-T transfer fee is fixed at 0.000001 TTTI-T (100 base units) per\n" #
+    "  transfer and cannot be changed: there is no `set_fee` endpoint. It is paid\n" #
+    "  into the fee collector account, which belongs to the creator: the\n" #
+    "  collected fees are really paid to the creator (moved to the TTTI-T DEX\n" #
+    "  custody and credited with source `transferFee`, see\n" #
+    "  Creator fees and the public board). `get_fee()` returns 100 and\n" #
+    "  `get_fee_bounds()` returns `{ min = 100; max = 100 }`; a transfer with\n" #
+    "  another fee fails with `BadFee { expected_fee = 100 }`. Public queries,\n" #
+    "  no authentication. `get_max_supply()` is unchanged.\n\n" #
 
+    "## Creator fees, permanent liquidity, cycles fees and the public board (PTM-4)\n\n" #
+    "The creator is never named in the API: it is only called the creator.\n" #
+    "All amounts are base units of the token (ICP e8s, TTTI-T e8s, ckBTC sats,\n" #
+    "ckUSDC / ckUSDT 6 decimals); timestamps are nanoseconds (Candid `int`).\n\n" #
+    "### Where the fees go\n\n" #
+    "- Protocol share (30 % of the native swap fee and 30 % of the 0.1 % routed\n" #
+    "  through ICPSwap): two thirds are credited to the creator holdings, one\n" #
+    "  third goes to permanent liquidity.\n" #
+    "- 1 % mint fee and 1 % buyback fee: the part received in ICP first fills the\n" #
+    "  cycles reserve, until it holds one year of measured consumption (the\n" #
+    "  2 ICP floor while no consumption is measured or the top-up rate is\n" #
+    "  unknown); the rest is credited to the creator. Fees in another token go to the creator\n" #
+    "  entirely. The split is recorded with each fee entry; entries from before\n" #
+    "  PTM-4 keep their previous meaning. The mint and the buyback themselves are\n" #
+    "  unchanged.\n" #
+    "- TTTI-T transfer fee: fixed 100 base units (0.000001 TTTI-T) per transfer,\n" #
+    "  held in the fee collector account for the creator.\n\n" #
+    "### Cycles reserve fee routing\n\n" #
+    "- `topUpCycles() : TopUpResult` (public update, any caller, anonymous\n" #
+    "  included): runs the same top-up pass as the 6-hour timer, with the same\n" #
+    "  lock and the same 20 T threshold. When no top-up is needed (cycles balance\n" #
+    "  at or above the threshold and no top-up transfer or notify pending), the\n" #
+    "  canister's ingress check rejects the call before it runs, so the caller\n" #
+    "  gets an error and no cycles are consumed. `TopUpResult = #notNeeded\n" #
+    "  { cyclesBalance; threshold } | #busy | #ran { cyclesBalance;\n" #
+    "  reserveBalanceE8s; lastTopUp; attemptOpen }`. It only converts reserve ICP\n" #
+    "  to cycles for this canister;\n" #
+    "  nothing leaves it. Retry safe: a repeat while a pass runs returns\n" #
+    "  `#busy`, and an open top-up attempt is resumed, not duplicated. The\n" #
+    "  reserve balance floor (2 ICP) still applies.\n" #
+    "- The ICP cycles share of the 1 % fees stays in the contract's ICP DEX\n" #
+    "  balance until a settlement (memo `TTTI-CY-<n>`, every 10 minutes, at\n" #
+    "  least the minimum amount) sends it to the reserve account. The identical\n" #
+    "  request is resent for 23 h, then it needs admin review.\n" #
+    "- Admin only (trap `Unauthorized: ...` otherwise):\n" #
+    "  `listCyclesFeeSettlements(offset, limit) : [CyclesFeeSettlement]` (newest\n" #
+    "  first; `{ n; grossE8s; netE8s; createdAt; attempt; status }`),\n" #
+    "  `listCyclesFeeSplits(source : #mint | #buyback, offset, limit) :\n" #
+    "  [{ id; source; split : { cyclesE8s; creator } }]`,\n" #
+    "  `listCyclesFeeSettlementsToReview() : [CyclesFeeSettlement]`,\n" #
+    "  `markCyclesFeeSettlementArrived(n, block) : { #ok; #err : Text }` and\n" #
+    "  `markCyclesFeeSettlementNotArrived(n) : { #ok; #err : Text }`. `#err`\n" #
+    "  when the settlement is unknown or not waiting for review. Check the ICP\n" #
+    "  ledger for the `TTTI-CY-<n>` memo before marking: a wrong \"Not arrived\"\n" #
+    "  sends the amount again. Marking the same settlement twice returns `#err`.\n\n" #
+    "### Creator fees\n\n" #
+    "- `getCreatorHoldings() : CreatorHoldingsView` (public query): `{ tokens :\n" #
+    "  [{ token; symbol; held; paidOut; inFlight; swapFeeShare; routerShare;\n" #
+    "  mintFee; buybackFee; transferFee; lastCreditAt : ?Int }];\n" #
+    "  transferFeeCollectorE8s; payouts : [CreatorPayoutView] }` (one row per DEX\n" #
+    "  token; latest 20 payouts, newest first). `held` = credited - paidOut -\n" #
+    "  inFlight. `transferFeeCollectorE8s` is the read-only TTTI-T balance of the\n" #
+    "  fee collector account (the transfer fees received and not yet moved); it\n" #
+    "  is not part of the `transferFee` credit and is never counted twice. The\n" #
+    "  `transferFee` column is the sum of the real credits with source\n" #
+    "  `transferFee`, made when the collector balance is moved to the creator.\n" #
+    "- `payCreatorFees(token : DexToken) : PayoutResult` (admin, update; trap\n" #
+    "  `Unauthorized: only admins can manage the creator fees`): sends the whole\n" #
+    "  held amount of the token, minus the ledger fee, to the receiving wallet\n" #
+    "  configured for the token (TTTI-T goes to the ICP wallet). Memo\n" #
+    "  `TTTI-CF-<n>`; the request is recorded before the first await. `#ok\n" #
+    "  CreatorPayoutView | #err (#paused | #noWallet | #nothingToPay |\n" #
+    "  #belowFee { held; fee } | #payoutInProgress)`. Retry safety: one open\n" #
+    "  payout per token; an unknown outcome is resent identically for 23 h\n" #
+    "  (a ledger duplicate counts as arrived), then needs review. Never pays\n" #
+    "  twice.\n" #
+    "- `listCreatorPayoutsToReview() : [CreatorPayoutView]` (admin query),\n" #
+    "  `markCreatorPayoutArrived(n, block)` and `markCreatorPayoutNotArrived(n)`\n" #
+    "  (admin updates, `{ #ok; #err : Text }`). Verify the ledger memo\n" #
+    "  `TTTI-CF-<n>` first; \"Not arrived\" makes the amount held again.\n\n" #
+    "### Permanent liquidity\n\n" #
+    "- The one third of each protocol share is set aside per token. A 10-minute\n" #
+    "  pass rebalances it on the best route (native pool or ICPSwap, at most\n" #
+    "  2 % below the average of the last hour) once the set-aside is worth at\n" #
+    "  least 1 ICP, then injects it into the least liquid TTTI-T pool as shares\n" #
+    "  locked by the contract. They are never withdrawable. Every operation is\n" #
+    "  written to a public journal. The DEX pause stops the pass.\n" #
+    "- `listPermanentLiquidityLog(offset, limit) : { total; entries }` (public\n" #
+    "  query, newest first, limit capped at 100). Entry: `{ id; at; kind\n" #
+    "  (#accrued | #rebalanced | #injected | #waiting | #failed); token; amount;\n" #
+    "  otherToken : ?DexToken; otherAmount; route : ?(#native poolId |\n" #
+    "  #icpswap principal); poolId : ?Nat; shares; reason : ?Text }`. A waiting\n" #
+    "  or failed reason is logged once, not repeated.\n" #
+    "- `getPermanentLiquiditySummary() : PermanentSummary` (public query):\n" #
+    "  `{ pools : [{ poolId; token0Symbol; token1Symbol; lockedShares;\n" #
+    "  totalShares; amount0; amount1; valueUsdE8 : ?Nat }]; totalLockedShares;\n" #
+    "  setAside : [{ token; symbol; amount; valueIcpE8s : ?Nat }];\n" #
+    "  setAsideValueIcpE8s; thresholdIcpE8s; maxDeviationBps; targetPoolId :\n" #
+    "  ?Nat }`.\n\n" #
+    "### Public board\n\n" #
+    "- `getPublicBoard() : PublicBoard` (public query, anonymous allowed, no\n" #
+    "  state of its own): `{ cycles : { cyclesBalance; reserveBalanceE8s;\n" #
+    "  pendingFeeShareE8s; coverage : ?ReserveCoverage }; permanentLiquidity :\n" #
+    "  { summary : PermanentSummary; journalEntries; latestEntries (newest\n" #
+    "  first, at most 10) }; creator : { tokens : [CreatorTokenView];\n" #
+    "  transferFeeCollectorE8s } }`. `coverage` is null while no consumption can\n" #
+    "  be measured; otherwise `monthsCoveredX100` is the reserve in months of\n" #
+    "  consumption times 100, `yearTargetCycles` / `yearTargetE8s` the one-year\n" #
+    "  target and `fillBps` the fill in basis points (10_000 = 100 %). Polling:\n" #
+    "  values change at most every 10 minutes; once a minute is plenty.\n" #
+    "- OQL tables (PTM-4): `creatorFeeTotal`, `permanentLiquidityLog` and\n" #
+    "  `permanentSetAside` (public); `creatorPayout`, `cyclesFeeSettlement` and\n" #
+    "  `cyclesFeeSplit` (admin only).\n\n" #
     "## USD rates (ICP, BTC, USDC, USDT)\n\n" #
     "The USD rate of each pay token (pairs ICP-USD, BTC-USD, USDC-USD, USDT-USD)\n" #
     "is set once an hour from Coinbase, or from CoinGecko if Coinbase is\n" #
@@ -340,7 +457,7 @@ mixin () {
     "- `getSaleStatus() : SaleStatus` returns `{ maxSupply; totalSupply;\n" #
     "  mintableRemaining (max(0, maxSupply - totalSupply)); feeAccountBalance;\n" #
     "  sold; reserved; available\n" #
-    "  (mintableRemaining + feeAccountBalance - reserved); complete; minPurchase\n" #
+    "  (mintableRemaining - reserved); complete; minPurchase\n" #
     "  (10_000); tokenPriceUsd (10_000); cyclesFeeBps (100);\n" #
     "  buyerPriceUsd (10_100); salesPaused; priceUsdE8 (the stored\n" #
     "  ICP rate, exactly the one an ICP purchase applies); priceSource;\n" #
@@ -366,10 +483,10 @@ mixin () {
     "  that payment beyond the cost of what is delivered is never taken.\n" #
     "- `setSalesPaused(Bool)` (admin; trap `Unauthorized: only admins can manage\n" #
     "  the TTTI-T sale`). Idempotent.\n" #
-    "- Pause scope: while sales are paused, purchases, buyback requests\n" #
-    "  (`requestBuyback`), buyback retries (`retryBuybackPayout`) and\n" #
-    "  cancellations (`cancelBuyback`) are refused with `#salesPaused`; the\n" #
-    "  automatic buyback payout retries, the FW/SH/RF transfer retries and all\n" #
+    "- Pause scope: while sales are paused, purchases, mints, guarantee\n" #
+    "  redemptions (`redeemGuarantee`) and excess withdrawals\n" #
+    "  (`withdrawGuaranteeExcess`) are refused with `#salesPaused`; the\n" #
+    "  automatic redemption payout retries, the FW/SH/RF transfer retries and all\n" #
     "  BTC refunds (BR) are not sent. Recorded attempts are kept and sent after\n" #
     "  the pause. The cycles top-up continues during the pause.\n" #
     "- The price and the 1% fee (every pay token) are code constants; nobody\n" #
@@ -395,6 +512,199 @@ mixin () {
     "  conversion, and the BTC purchase deposit gates (`getBtcPurchaseAddress`,\n" #
     "  `checkBtcPurchaseDeposit` without a stored tracking).\n\n" #
 
+    "## Pools, yield and rules in plain words (lot PTM-7)\n\n" #
+    "Rules only; no text describes an expected price or effect.\n\n" #
+    "- The protocol never places a price-linked order. Permanent liquidity is\n" #
+    "  depth management: a mechanical, public rebalancing of the protocol share,\n" #
+    "  never conditioned on price (journal: `listLiquidityInjections`).\n" #
+    "- No reward is created. Everything paid out was first paid by someone\n" #
+    "  (minters, traders, transfers), and anyone can verify it on the ledgers and\n" #
+    "  in the public records.\n" #
+    "- TTTI-T generates nothing by itself; swap fees pay the liquidity provided,\n" #
+    "  and only the fees actually paid over the past 30 days are shown, as a\n" #
+    "  recorded fact. No projection is computed.\n" #
+    "- No text here promises or aims at a price rise (protocol statement, as\n" #
+    "  returned by the DEX: \"The protocol never places a price-linked order.\n" #
+    "  Permanent liquidity is depth management: a mechanical, public rebalancing\n" #
+    "  of the protocol share, never conditioned on price. No reward is created:\n" #
+    "  everything paid out was first paid by someone (minters, traders,\n" #
+    "  transfers), and anyone can verify it. TTTI-T generates nothing by itself;\n" #
+    "  swap fees pay the liquidity provided, and only the fees actually paid\n" #
+    "  over the past 30 days are shown. No text here promises or aims at a price\n" #
+    "  rise.\")\n" #
+    "- Wallet total: valued at the consolidated price (the hourly average of the\n" #
+    "  5-minute samples), not at a fixed 10_000 USD; the recoverable guarantee is\n" #
+    "  shown separately and is not added into the total.\n" #
+    "- Impermanent loss: a liquidity position holds a share of the pool, not a\n" #
+    "  fixed amount of each token. When the pool price moves, the position can\n" #
+    "  be worth less than the same tokens held outside the pool, whatever the\n" #
+    "  fees collected.\n" #
+    "- Exposure: through its pools (TTTI-T/ICP, TTTI-T/ckBTC, TTTI-T/ckUSDC,\n" #
+    "  TTTI-T/ckUSDT) the TTTI-T side of a position is exposed to the value of\n" #
+    "  BTC and ICP.\n" #
+    "- Mint zap: an automatic swap in the target pool, made with the minter's\n" #
+    "  own money at the moment of the mint, at the pool's market price and fee,\n" #
+    "  so that the rest can be deposited at the pool ratio.\n" #
+    "- Personal guarantee: each minter can recover their own stake by returning\n" #
+    "  TTTI-T under the redemption rules; there is no common reserve and no\n" #
+    "  promise of value.\n" #
+    "- Chance: at the mint every minter has an equal chance (same price, no bid,\n" #
+    "  no priority). At auctions the highest bids win, in price order, until the\n" #
+    "  lot is sold.\n" #
+    "- Lock (relay): optional, 3 months to 5 years of remaining time. A third of the weight of\n" #
+    "  each new commitment relieves the other locked positions of the pool\n" #
+    "  (relief of a third party); an owner can extend. A relieved or expired\n" #
+    "  position is unlocked without eviction: it stays in the pool as free\n" #
+    "  liquidity.\n" #
+    "- LP fees: half stays in the reserves pro rata to shares; half is set aside\n" #
+    "  and shared among locked positions by capital x sqrt(remaining time / 5\n" #
+    "  years), only fees actually paid.\n" #
+    "- Auctions: sealed bids; each bidder pays their own bid; the reserve is the\n" #
+    "  highest of 10_000 USD, the 24 h average of the consolidated price and the\n" #
+    "  current consolidated price; nothing is reissued below 10_000 USD.\n" #
+    "- The creator's holdings are declared and public (`getCreatorHoldings`);\n" #
+    "  the creator is not named.\n\n" #
+
+    "## Liquidity mint (lot PTM-1) — replaces the purchase for every new mint\n" #
+    "\n" #
+    "`convertDeposit` and `convertDepositWith` no longer sell anything: they return\n" #
+    "`#Err` with code `#replacedByLiquidityMint` before any lock or external call\n" #
+    "(nothing is taken). TTTI-T already sold, balances and\n" #
+    "blocks are untouched. New TTTI-T are minted only through `mintLiquidity` (and\n" #
+    "the BTC deposit path below). Total supply grows by exactly q per mint; nothing\n" #
+    "is burned; nothing is minted outside the mint.\n" #
+    "\n" #
+    "Units: TTTI-T amounts are Nat in 8-decimal base units (1 TTTI-T = 100_000_000).\n" #
+    "USD amounts are Nat in USD e8 (1 USD = 100_000_000). Token amounts are Nat in\n" #
+    "the paid token's own base units. Timestamps are Int nanoseconds.\n" #
+    "\n" #
+    "Rules for q TTTI-T: price 10 000 USD per TTTI-T for everyone; pay token ICP,\n" #
+    "ckBTC, ckUSDC or ckUSDT at the stored hourly rate; payAmount = 20 000 USD x q /\n" #
+    "0.99 in the paid token (rounded up, so the minter never gets more than paid\n" #
+    "for). Split: position = 10 000 USD x q of the token (rounded down) + the q\n" #
+    "TTTI-T, deposited in the pool TTTI-T/<paid token> in the minter's name;\n" #
+    "guarantee = 10 000 USD x q kept in the paid token; creator set-aside = 1 % of\n" #
+    "payAmount (rounded down), taken after the cycles reserve share. The creator\n" #
+    "receives only that 1 % of the amount paid; the rest forms the minter's position\n" #
+    "and guarantee. Rounding dust stays on the pool side of the deposit.\n" #
+    "Minimum 1 USD = 0.0001 TTTI-T (10_000 base units); granularity 1 base unit; more than 8\n" #
+    "decimals is refused (`#tooManyDecimals`), never rounded; total cap 1 TTTI-T\n" #
+    "counting TTTI-T already sold and TTTI-T that will be returned to the contract\n" #
+    "(`#aboveCap`).\n" #
+    "\n" #
+    "Zap: the side of the pair (q TTTI-T, 10 000 USD x q of the token) that does not\n" #
+    "fit the pool ratio is swapped in that same pool at the market price (the pool's\n" #
+    "swap rules and fee), then the rest is deposited at the pool ratio, all in one\n" #
+    "operation with the minter's money. The first deposit of an empty pool is a 1:1\n" #
+    "mint at 10 000 USD per TTTI-T; there is no first-deposit minimum (any mint\n" #
+    "at or above the mint minimum succeeds and gives the minter non-zero shares;\n" #
+    "`#firstDepositBelowMinimum` stays in the type for compatibility but is never\n" #
+    "returned). If the pool\n" #
+    "cannot be balanced by a swap, the pool being closed to swaps (below the\n" #
+    "10 USD threshold), the mint is never refused for that reason: no zap swap is made, the\n" #
+    "deposit is made at the pool ratio and the unmatched side stays on the\n" #
+    "minter's DEX balance. The 10 USD swap-opening threshold applies to swaps\n" #
+    "only. The minimum mint is 1 USD (0.0001 TTTI-T). Other pool errors are\n" #
+    "`#poolUnavailable { message }`.\n" #
+    "\n" #
+    "- `quoteLiquidityMint(args : { token; amount : #ttti(#baseUnits n | #decimal\n" #
+    "  \"0.0001\") | #usd e8 })` (query, anonymous allowed) returns `#ok(quote)` with\n" #
+    "  payAmount, payUsdE8, positionTokenAmount, positionTttiAmount, guaranteeAmount,\n" #
+    "  creatorAmount, dustAmount, ledgerFee, poolId, firstDeposit, priceBefore,\n" #
+    "  priceAfter (pool price before the zap and after zap + deposit; detail of the\n" #
+    "  target pool only), consolidatedPriceBefore and consolidatedPriceAfter\n" #
+    "  (`#available(usdE8)` | `#unavailable(#noOpenPool | #noValidRate)`: the\n" #
+    "  consolidated TTTI-T price in USD x 1e8 over all open native TTTI-T pools,\n" #
+    "  depth-weighted, at the current oracle rates, before the operation and with\n" #
+    "  the target pool at its reserves after zap + deposit; never a trap, an\n" #
+    "  unusable price is `#unavailable`), zap, shares,\n" #
+    "  rateUsdE8, rateValidUntil. A query cannot read ledgers: wallet balance and\n" #
+    "  allowance errors come only from `mintLiquidity`. `#usd e8` gives q =\n" #
+    "  floor(e8 x 99 / 2_000_000) base units (rounded down).\n" #
+    "- `mintLiquidity(args : { token; quantity : #baseUnits | #decimal; maxPayAmount;\n" #
+    "  slippageBps : ?Nat (default 50); deadline : Int ns; recipient : ?Principal })`\n" #
+    "  (signed-in, acknowledgements accepted). The caller first calls icrc2_approve\n" #
+    "  on the paid token's ledger for payAmount + ledger fee with this canister as\n" #
+    "  spender. Everything is checked before any funds are taken: rate present and\n" #
+    "  valid, minimum, decimals, cap, sales and DEX not paused, acknowledgement,\n" #
+    "  maxPayAmount, slippage, deadline and the target pool. Then the payment is\n" #
+    "  collected by ICRC-2 transfer_from (memo `TTTI-DD-<n>`, created_at_time) into\n" #
+    "  the caller's internal DEX balance (committed, never undone by a later\n" #
+    "  failure), then the isolated mint runs (see Atomic mint below): q\n" #
+    "  TTTI-T are minted, the pool is balanced and the position is created. The\n" #
+    "  position (and the guarantee) belongs to `recipient` or the caller and is\n" #
+    "  removed at any time with `removeLiquidity(positionId)`. Returns `#ok` with\n" #
+    "  mintId, paymentBlock, poolId, positionId, shares, amounts and prices.\n" #
+    "- Errors (`#err`): anonymousCaller, purchaseInProgress (one purchase in flight\n" #
+    "  per principal, shared with the BTC finalization), acknowledgementRequired,\n" #
+    "  salesPaused, dexPaused, rateUnavailable, belowMinimum, tooManyDecimals,\n" #
+    "  invalidAmount, aboveCap, poolNotFound, poolRemoved, removalAnnounced,\n" #
+    "  minimumsNotSet, poolUnavailable, firstDepositBelowMinimum, insufficientBalance,\n" #
+    "  insufficientAllowance, maxPayExceeded, invalidSlippage, slippageExceeded,\n" #
+    "  deadlineExpired, ledgerError, depositFailedRefunded { mintId }\n" #
+    "  (the isolated mint was refused, nothing was minted and the payment went back\n" #
+    "  to the caller), depositFailedRefunding { mintId } (refused; the refund\n" #
+    "  withdrawal is not settled yet and is resent by the timer until it settles;\n" #
+    "  the mint status follows it), depositFailedRefundFailed { mintId } (refused;\n" #
+    "  the refund failed and the payment stays in the caller's internal DEX balance,\n" #
+    "  where it can be withdrawn). Never both TTTI-T and the payment.\n" #
+    "- Atomic mint (all or nothing): after the payment is credited, the whole\n" #
+    "  synchronous core (mint of TTTI-T, credit, balancing swap, liquidity deposit,\n" #
+    "  guarantee, personal mass, creator set-aside, fee split and fee credits) runs\n" #
+    "  as one isolated self-call of the canister, `liquidityMintCore`, which only the\n" #
+    "  canister itself may call (any other caller traps with \"Unauthorized: reserved\n" #
+    "  to the canister itself\"; do not call it). It re-checks everything itself\n" #
+    "  (sales and DEX not paused, deadline, the 1 TTTI-T cap, slippage on shares, the\n" #
+    "  payer's internal balance, the pool), because other messages may run between\n" #
+    "  the payment credit and the call. Every refusal inside is a trap, so the state\n" #
+    "  of that message is rolled back as a whole: nothing is minted, no pool, balance,\n" #
+    "  guarantee, mass or fee changes. The payment is then refunded from the payer's\n" #
+    "  internal balance by a DW withdrawal. The cause of the refusal (short text,\n" #
+    "  at most 300 characters, from the trap message) is kept in the mint's\n" #
+    "  `refusalCause`. The mint record has `refundWithdrawalN : ?Nat` (the DW\n" #
+    "  withdrawal of the refund) and `refusalCause : ?Text`, both null for mints\n" #
+    "  that were not refused.\n" #
+    "- Locks: one mint in flight per principal (the purchase lock and the DEX lock\n" #
+    "  keys of the payer). They are released on every exit and also release\n" #
+    "  themselves 10 minutes after they were taken if a cleanup was missed, so a\n" #
+    "  missed cleanup never blocks minting.\n" #
+    "- Retry safety: the payment and any refund use the DEX retry rules (same memo and\n" #
+    "  created_at_time resent identically for 23 h; a Duplicate counts as success), so\n" #
+    "  a transfer is never applied twice. Calling `mintLiquidity` again after\n" #
+    "  `#err` before payment is safe (nothing taken). After a timeout or reject, read\n" #
+    "  `getMyLiquidityMints` before retrying: a second call is a second mint.\n" #
+    "- `getMyLiquidityMints()` (signed-in; anonymous gets []) returns the caller's\n" #
+    "  mints (as payer or owner), newest first, each with positionId, status\n" #
+    "  (`#inProgress`, `#completed`, `#refunding` (refused, refund withdrawal in\n" #
+    "  progress), `#refunded`, `#refundFailed`), paymentBlock, refundWithdrawalN and\n" #
+    "  refusalCause. `#refunding` becomes `#refunded` when the DW withdrawal\n" #
+    "  succeeds and `#refundFailed` when it fails (or the admin review says Not\n" #
+    "  arrived); with Arrived the mint becomes `#refunded`.\n" #
+    "- `getMyGuarantees()` (signed-in) returns the caller's guarantees { mintId,\n" #
+    "  owner, token, amount, createdAt }. A guarantee is readable only by its owner\n" #
+    "  and an admin. `listGuarantees(offset, limit)` and `listCreatorSetAsides(offset,\n" #
+    "  limit)` are admin only and trap with \"Unauthorized: only admins can list these\n" #
+    "  records\" otherwise. Guarantee and creator amounts are kept in the paid token in\n" #
+    "  the contract's DEX custody (internal balance of the canister). The use rules of\n" #
+    "  the guarantee are described in the redemption section below; the creator split\n" #
+    "  (PTM-4) is not part of this API.\n" #
+    "- BTC deposit path: `checkBtcPurchaseDeposit` now continues into the same mint\n" #
+    "  with ckBTC: the largest q whose payAmount + ledger fee fits the deposited\n" #
+    "  ckBTC (minimum 0.0001 TTTI-T) is minted into a position owned by the\n" #
+    "  depositor; the rest is refunded as an excess to the caller's own account. If\n" #
+    "  the move of ckBTC into the custody has an unknown outcome it is resent\n" #
+    "  identically and, when it arrives, credited to the depositor's DEX balance.\n" #
+    "  It uses the same isolated mint and refund (BTC slippage tolerance 100 bps).\n" #
+    "  If the isolated mint is refused the ckBTC is refunded from the DEX balance:\n" #
+    "  `depositFailedRefunded` -> deposit entry stage `#refunded`; refund still in\n" #
+    "  progress -> stage `#error` (kind `#other`, never delivered, never converted\n" #
+    "  again) until the withdrawal settles, with the mint status as the outcome;\n" #
+    "  `depositFailedRefundFailed` -> stage `#error` kind `#unrecoverable`, the\n" #
+    "  ckBTC stays withdrawable in the depositor's DEX balance.\n" #
+    "- OQL tables `liquidityMint` (with status, refundWithdrawalN and refusalCause) and `guarantee` are scoped to their owner (and\n" #
+    "  admin); `creatorSetAside` is admin only.\n" #
+    "\n" #
+    "(Historical, replaced by the liquidity mint above — both calls now return `#replacedByLiquidityMint`.)\n\n" #
     "## Purchase: `convertDepositWith(token, recipient, payAmount, tttiTarget)` and\n" #
     "## `convertDeposit(recipient, icpAmount)`\n\n" #
     "`convertDepositWith(token : PayToken, recipient : ?Account, payAmount : Nat,\n" #
@@ -470,8 +780,8 @@ mixin () {
     "   `#Err` code `#deliveryFailedRefunded` (record `#refunded`) or\n" #
     "   `#deliveryFailedRefundFailed` (record `#refundFailed`, retried by the\n" #
     "   timer, or `#refundReview` for admin review), both with\n" #
-    "   `conversion = ?<record>`. BTC path (`purchaseFromDeposit`): no automatic\n" #
-    "   refund, the record is `#refundReview` with `#deliveryFailedRefundFailed`.\n" #
+    "   `conversion = ?<record>`. BTC path: no automatic refund, the record is\n" #
+    "   `#refundReview` with `#deliveryFailedRefundFailed`.\n" #
     "8. Success records a `#completed` conversion and returns `#Ok(Conversion)`.\n" #
     "   The owner share (100/101) stays in the contract and the mint fee (1/101)\n" #
     "   is routed automatically (see Mint revenue, below).\n\n" #
@@ -575,7 +885,7 @@ mixin () {
     "- Memo: ASCII text `TTTI-<prefix>-<n>` (first attempt) or\n" #
     "  `TTTI-<prefix>-<n>-<m>` (later attempts), at most 32 bytes, never a\n" #
     "  principal. `n` is one global counter shared by all prefixes. Prefixes:\n" #
-    "  PC, RF, FW, SH, BB, BR, DD, DW, DQ, DC, DL, OW, SR, MF; PC (purchase\n" #
+    "  PC, RF, FW, SH, GR, BR, DD, DW, DQ, DC, DL, OW, SR, MF; PC (purchase\n" #
     "  collect), RF (purchase refund), FW (legacy treasury forward), SH (legacy\n" #
     "  ICP reserve share), DC (history only), DL (LP bonus claim), OW (owner\n" #
     "  send), SR (one-time reserve top-up of the sweep) and MF (mint-fee claim)\n" #
@@ -734,7 +1044,16 @@ mixin () {
     "  topUpThreshold; reserveAccount; reserveBalanceE8s; reserveFloorE8s;\n" #
     "  lastTopUp : ?{ timestamp; icpE8s; blockIndex; status\n" #
     "  (#transferred | #notified { cycles } | #failed : Text); lastError };\n" #
-    "  withdrawals : [{ timestamp; amountE8s; blockIndex }] }`. `withdrawals` is\n" #
+    "  withdrawals : [{ timestamp; amountE8s; blockIndex }];\n" #
+    "  pendingFeeShareE8s : Nat; coverage : ?ReserveCoverage }`.\n" #
+    "  `pendingFeeShareE8s` = ICP e8s of the 1 % mint and buyback fees recorded\n" #
+    "  for the reserve and not yet received by the reserve account (waiting or\n" #
+    "  being sent). `coverage` = `{ dailyConsumptionCycles; monthlyConsumptionCycles;\n" #
+    "  totalCycles; monthsCoveredX100; yearTargetCycles; yearTargetE8s : ?Nat;\n" #
+    "  fillBps; rateKnown }`, or null while no consumption can be measured.\n" #
+    "  `monthsCoveredX100` is the coverage in months times 100 (1250 = 12.5\n" #
+    "  months; month = 30 days) and `fillBps` = totalCycles / one-year target\n" #
+    "  in basis points, capped at 10_000. `withdrawals` is\n" #
     "  the history of withdrawals made before DEX lot 4; no new entry is added.\n" #
     "  `reserveBalanceE8s`\n" #
     "  is a cache refreshed from the ICP ledger by the timer and after each\n" #
@@ -968,181 +1287,135 @@ mixin () {
     "  token ledger (ICP, ckBTC, ckUSDC, ckUSDT, TTTI-T) with the contact as\n" #
     "  spender. An approval lets the spender move up to the approved amount from\n" #
     "  the user's account until it expires or is replaced by an approval of 0.\n\n" #
-    "## TTTI-T buyback\n\n" #
-    "Buybacks are optional and limited. Each one depends on the funds available\n" #
-    "at that moment and on the willingness of whoever funds it. Bought-back\n" #
-    "TTTI-T go to the funder, who pays for them with their own money; they are\n" #
-    "never pre-mined or pre-allocated. For now, only the creator funds\n" #
-    "buybacks.\n\n" #
-    "The buyer sells TTTI-T back from a mass: the aggregate of the buyer's\n" #
-    "purchases in one payment token. There is one mass per (buyer, token) for\n" #
-    "ICP, ckBTC, ckUSDC and ckUSDT; there is no mass across tokens. For new\n" #
-    "buybacks the TTTI-T stay in the contract's holding (escrow) account until\n" #
-    "the payout succeeds, then go to the funder (admin) account, and the buyer\n" #
-    "receives `amountReturned`, as calculated at the request (nothing is\n" #
-    "burned, total supply is unchanged). If every payout attempt is refused by\n" #
-    "the ledger, the buyer (or an app admin) can cancel with `cancelBuyback`\n" #
-    "and get the TTTI-T back; otherwise cancelling waits until the admin has\n" #
-    "checked the payout (\"To review\"). A buyback cannot be undone once the\n" #
-    "payout has succeeded. Legacy buybacks (made before escrow) had their\n" #
-    "TTTI-T sent to the funder at the request; when their payout failed, it is\n" #
-    "retried, or the admin is contacted to have them returned\n" #
-    "(`markBuybackCancelled`). The returned mass token comes from the admin\n" #
-    "account.\n\n" #
-    "- Escrow account: `{ owner = this canister; subaccount =\n" #
-    "  \"BUYBACK-ESCROW-TTTI-T-0000000001\" (32 bytes) }` on the TTTI-T ledger,\n" #
-    "  distinct from the minting account and the fee collector. Transfers to it\n" #
-    "  are accepted; no public endpoint, transfer or withdrawal can debit it.\n" #
-    "  Only a buyback release (escrow -> funder) or cancellation (escrow ->\n" #
-    "  buyer) debits it, internally.\n" #
-    "- Mass: `#completed` conversions with `depositor` = caller, that `payToken`,\n" #
-    "  `netAmount` ?n with n > 0 and `tttiAmount` > 0. `totalNet` and `totalTtti`\n" #
-    "  are their sums; the average ratio is `totalNet` / `totalTtti`. Purchases\n" #
-    "  from before Version 26 (`netAmount` null) and TTTI-T received by transfer\n" #
-    "  are not counted. BTC-deposit purchases are recorded as ckBTC, count in\n" #
-    "  the ckBTC mass and are returned in ckBTC; converting ckBTC to BTC is done\n" #
-    "  by the user with the ckBTC minter.\n" #
-    "- Bought back: `boughtBackNet` and `boughtBackTtti` sum the caller's buyback\n" #
-    "  records in that token whose TTTI-T were pulled (`#completed`,\n" #
-    "  `#payoutFailed`, or `#inProgress` with `pullBlock`), legacy per-purchase\n" #
-    "  records included. `remainingNet` and `remainingTtti` = total - bought back\n" #
-    "  (never below 0).\n" #
-    "- Percent: 1..100 of the remainder (`#invalidPercent` otherwise).\n" #
-    "  `tttiAmount` = floor(`remainingTtti` * percent / 100);\n" #
-    "  `originalNetAmount` = floor(`remainingNet` * `tttiAmount` /\n" #
-    "  `remainingTtti`). At 100 they are exactly the whole remainder. Several\n" #
-    "  partial buybacks are possible until `remainingTtti` = 0\n" #
-    "  (`#nothingRemaining`).\n" #
-    "- Lower-of-two rule on the average, in the mass token: `baseAmount` = min(\n" #
-    "  `originalNetAmount`, quantity worth `tttiAmount` at 10,000 USD per TTTI-T\n" #
-    "  at the day's stored rate). `rule` is `#originalNet` or `#dayRate`.\n" #
-    "  Purchase fees are never refunded.\n" #
-    "- Paid only in the mass token: `receiveToken` must equal `massToken`,\n" #
-    "  otherwise `#receiveTokenMismatch`, checked before any lock, ledger call or\n" #
-    "  transfer. `tokenReturned` = the mass token and `baseAmountReturned` =\n" #
-    "  `baseAmount`.\n" #
-    "- Fees: `buybackFee` = floor(1% of `baseAmountReturned`); `thirdPartyFees` =\n" #
-    "  the mass token's ledger fee for the payout. `amountReturned` =\n" #
-    "  `baseAmountReturned` - `buybackFee` - `thirdPartyFees`; `#amountTooSmall`\n" #
-    "  when not positive or `tttiAmount` = 0. Two TTTI-T fees are paid by the\n" #
-    "  buyer through the allowance: `tttiTransferFee` (the pull) and\n" #
-    "  `tttiEscrowFee` (stored per buyback; pays the later escrow release or\n" #
-    "  cancellation). The mass token's ledger fee stays deducted from\n" #
-    "  `amountReturned`.\n" #
-    "- Rates: the stored rate of the mass token from `getTokenPrices`, usable\n" #
-    "  until validUntil + 5 min; otherwise `#rateUnavailable(token)`.\n" #
-    "  `returnedRateUsdE8` = `originalRateUsdE8`. Amounts are base units of each\n" #
-    "  token (ICP, ckBTC, TTTI-T: 8 decimals; ckUSDC, ckUSDT: 6); rates USD*10^8.\n" #
-    "- One buyback at a time per (caller, mass token): a second request while one\n" #
-    "  runs returns `#massBuybackInProgress` (`inProgress` = true in the mass).\n" #
-    "- Authentication: every buyer endpoint requires a signed (non-anonymous)\n" #
-    "  caller (`#anonymous` otherwise). Masses are always the caller's own; a\n" #
-    "  caller cannot see or buy back another user's mass. Use the principal\n" #
-    "  derived against the app's Internet Identity derivation origin (see above).\n\n" #
+    "## Personal guarantee and redemption\n\n" #
+    "Each minter has a personal mass per payment token (ICP, ckBTC, ckUSDC,\n" #
+    "ckUSDT): the TTTI-T minted by that person with that token and the guarantee\n" #
+    "that matches it. It is built by `mintLiquidity` in the same synchronous\n" #
+    "block that records the guarantee, for the owner of the position. Masses are\n" #
+    "tracked separately for each principal and token: there is no common\n" #
+    "reserve and no sharing. Each minter can recover their own stake by\n" #
+    "returning TTTI-T under the redemption rules below; the guarantee is\n" #
+    "personal, there is no common reserve and no promise of value. A mass is\n" #
+    "readable only by its owner; the only public figure is the total unclaimed\n" #
+    "mass.\n\n" #
+    "The right to redeem belongs to the person, not to specific tokens: any\n" #
+    "TTTI-T the caller holds permits redeeming, up to the remaining mass. The\n" #
+    "TTTI-T pulled equals the redeemed amount. They move to a dedicated\n" #
+    "contract-held account on the TTTI-T ledger, `{ owner = this canister;\n" #
+    "subaccount = \"RETURNED-TTTI-T-OUT-OF-CIRC-0001\" (32 bytes) }`, distinct from\n" #
+    "the minting account and the fee collector, and are not counted as available\n" #
+    "to mint. They stay out of circulation until the auctions. Nothing is burned\n" #
+    "and the total supply is unchanged.\n\n" #
+    "- Mass (`GuaranteeMassView`): `totalTtti`, `totalGuarantee`, `remainingTtti`,\n" #
+    "  `remainingGuarantee`, `excess`, `withdrawableExcess` (the excess once the\n" #
+    "  mint has ended, else 0), `guaranteeValue` (= `remainingGuarantee` +\n" #
+    "  `excess`, token base units), `rateUsdE8` and `guaranteeValueUsdE8` (null\n" #
+    "  when the stored rate is absent or expired), `mintEnded`.\n" #
+    "- Units: TTTI-T 8 decimals; token amounts in base units of each token (ICP,\n" #
+    "  ckBTC 8 decimals; ckUSDC, ckUSDT 6); rates are USD * 10^8 per whole token;\n" #
+    "  timestamps are nanoseconds (Int); ids and amounts are Nat.\n" #
+    "- During the mint (not ended): redeeming x TTTI-T returns the lower of the\n" #
+    "  guarantee deposited for x (`remainingGuarantee` * x / `remainingTtti`) and\n" #
+    "  the token quantity worth 10,000 USD * x at the current stored rate.\n" #
+    "  `rule` is `#depositedGuarantee` or `#dayRate`. The difference stays in the\n" #
+    "  person's guarantee as `excessKept` and is withdrawable by its owner with\n" #
+    "  `withdrawGuaranteeExcess` once the mint has ended. An absent or expired\n" #
+    "  rate refuses with `#rateUnavailable(token)` before any transfer or state\n" #
+    "  change.\n" #
+    "- After the mint: pro rata of the person's mass, in kind, in the token of the\n" #
+    "  guarantee, with no cap (`rule` = `#proRata`). Example: 1 TTTI-T minted with\n" #
+    "  0.001 BTC of guarantee; redeeming 0.5 TTTI-T returns 0.0005 BTC. The mint\n" #
+    "  has ended when the remaining mintable supply is 0 and nothing is available\n" #
+    "  for sale.\n" #
+    "- Fees: `redemptionFee` = floor(1% of `returnedAmount`), set aside for the\n" #
+    "  creator (recorded in the redemption fee table); `thirdPartyFee` = the\n" #
+    "  token ledger fee of the payout. `netAmount` = `returnedAmount` -\n" #
+    "  `redemptionFee` - `thirdPartyFee`; `#amountTooSmall` when not positive or\n" #
+    "  when the amount is 0. The excess withdrawal carries no redemption fee, only\n" #
+    "  the ledger fee. Two TTTI-T amounts apply to the pull: the redeemed amount\n" #
+    "  and the TTTI-T ledger fee `tttiTransferFee`.\n" #
+    "- Authentication: every mass endpoint requires a signed (non-anonymous)\n" #
+    "  caller (`#anonymous` otherwise). A caller sees and redeems only their own\n" #
+    "  masses. Use the principal derived against the app's Internet Identity\n" #
+    "  derivation origin (see above).\n\n" #
     "Endpoints:\n" #
-    "- `listMyBuybackMasses()` (query) : `#ok [BuybackMass]`, the caller's masses\n" #
-    "  with at least one counted purchase, fully bought back ones included.\n" #
-    "- `quoteBuyback(massToken, percent, receiveToken)` (query) : `#ok\n" #
-    "  BuybackQuote` or `#err BuybackError`. Read-only; no external call.\n" #
-    "  `tttiAllowanceRequired` = `tttiAmount` + 2 TTTI-T fees.\n" #
-    "- `requestBuyback(massToken, percent, receiveToken, fromSubaccount)` :\n" #
-    "  prerequisite, the buyer calls `icrc2_approve` on this canister (TTTI-T\n" #
-    "  ledger) with this canister as spender, amount >= `tttiAllowanceRequired`\n" #
-    "  and an `expires_at`. TTTI-T are pulled from and the payout sent to `{ owner\n" #
-    "  = caller; subaccount = fromSubaccount }`. Before any transfer it refuses\n" #
-    "  with the quote errors (`#anonymous`, `#invalidPercent`,\n" #
-    "  `#receiveTokenMismatch`, `#nothingRemaining`, `#massBuybackInProgress`,\n" #
-    "  `#rateUnavailable`,\n" #
-    "  `#amountTooSmall`), `#adminAccountNotSet`, `#adminAllowanceExpired`,\n" #
-    "  `#adminAllowanceInsufficient`, `#adminBalanceInsufficient` (required =\n" #
-    "  `amountReturned` + ledger fee), `#buyerAllowanceInsufficient` or\n" #
-    "  `#callFailed` (ledger unreachable, or its fee/decimals changed). Then it\n" #
-    "  pulls `tttiAmount` + `tttiEscrowFee` with `icrc2_transfer_from` to the\n" #
-    "  escrow account (`pullBlock`; failure: `#pullFailed`, nothing recorded, may\n" #
-    "  be requested again). It records a payout attempt in `payoutAttempts`\n" #
-    "  (`{ from; attempt }`: global n, attempt index m, memo `TTTI-BB-<n>-<m>`,\n" #
-    "  `created_at_time`, full request) before the first await and sends\n" #
-    "  `amountReturned` from the admin account to the buyer with\n" #
-    "  `icrc2_transfer_from` on the mass token's ledger, with exactly that memo\n" #
-    "  and `created_at_time`. Ok or `#Duplicate`: the attempt is `#succeeded`,\n" #
-    "  `payoutBlock` set, `tttiAmount` released from escrow to the funder\n" #
-    "  account (`releaseBlock`), status `#completed` (a failed release returns\n" #
-    "  `#releaseFailed(text)` and is retried by the timer). A ledger Err:\n" #
-    "  attempt `#failed(text)`; a rejected call or trap: attempt `#unknown`; both\n" #
-    "  give `#payoutFailed` and `#err #payoutFailed(text)`. The ICP cycles\n" #
-    "  reserve is never used.\n" #
-    "- Retry rule: an `#unknown` attempt is resent identically (same memo,\n" #
-    "  `created_at_time`, request) for 23 h, then needs admin review. When every\n" #
-    "  attempt got a ledger Err, a retry creates the next attempt (m + 1, new\n" #
-    "  memo and `created_at_time`, current admin account) without the admin. A\n" #
-    "  10-minute timer does the same (new attempts at most once an hour per\n" #
-    "  buyback). Every path takes the same (buyer, mass token) lock.\n" #
-    "- `retryBuybackPayout(buybackId)` : only for the caller's own records\n" #
-    "  (`#buybackNotFound`, `#notBuyer`) in `#payoutFailed` (`#notRetryable`\n" #
-    "  otherwise; `#buybackInProgress` while one runs on that mass;\n" #
-    "  `#attemptUnknown` once an unknown attempt is past 23 h). Applies the\n" #
-    "  retry rule; nothing is recomputed and TTTI-T are never pulled again.\n" #
-    "- `cancelBuyback(id)` : the buyer of that buyback or an app admin\n" #
-    "  (`#notAuthorized` otherwise, `#anonymous` for anonymous callers), same\n" #
-    "  lock (`#buybackInProgress`). Only when the status is `#payoutFailed`, the\n" #
-    "  record is not legacy and every attempt got a ledger Err: `tttiAmount` is\n" #
-    "  returned from escrow to `buyerAccount` (the pull fee is not returned),\n" #
-    "  status `#cancelled`, `cancelBlock` set. Refusals: `#attemptArrived`,\n" #
-    "  `#attemptUnknown`, `#notCancellable` (legacy, other status),\n" #
-    "  `#cancelFailed(text)` (escrow transfer refused).\n" #
-    "- `markBuybackCancelled(id, block)` : app admin only (`#notAuthorized`),\n" #
-    "  for a legacy `#payoutFailed` buyback (`#notLegacy`, `#notCancellable`)\n" #
-    "  with no arrived attempt (`#attemptArrived`): records the admin's own\n" #
-    "  TTTI-T return `block` as `cancelBlock`, status `#cancelled`. No ledger\n" #
-    "  call.\n" #
-    "- Legacy records (`legacy` = true, made before escrow; their TTTI-T went to\n" #
-    "  the admin account): old `#inProgress` with `pullBlock` and old\n" #
-    "  `#payoutFailed` without a ledger Err carry an attempt 0 without memo with\n" #
-    "  an unknown outcome (to review); those with a ledger Err can be retried.\n" #
-    "  Legacy records are never cancelled with `cancelBuyback`.\n" #
-    "- Admin \"To review\": `listTransfersToReview` includes kind `#BB` rows\n" #
-    "  (`purchaseId` = buyback id, memo, created_at_time, amount, fee, token,\n" #
-    "  destination, outcome) for unknown payout attempts past 23 h and legacy\n" #
-    "  `#payoutFailed` buybacks. `markTransferArrived(#BB, id, block)` marks the\n" #
-    "  attempt arrived and completes the buyback (escrow release when not\n" #
-    "  legacy); `markTransferNotArrived(#BB, id)` marks it failed so the next\n" #
-    "  attempt can be created or the buyback cancelled.\n" #
-    "- `listMyBuybacks()` (query) : the caller's buyback records, legacy\n" #
-    "  per-purchase records (`purchaseId` set, `percent` 100) included.\n" #
-    "- Admin only (trap `Unauthorized: admin only`): `listAllBuybackMasses()`\n" #
-    "  (query; every buyer's masses), `listAllBuybacks()`\n" #
-    "  (query), `setBuybackAdminAccount(account)` (refuses accounts owned by\n" #
-    "  this canister or anonymous), `getBuybackAdminAccount()` (query),\n" #
-    "  `getBuybackFunding()` (update; per pay token the admin account's\n" #
-    "  allowance to this canister, its `expiresAt` in nanoseconds and balance,\n" #
-    "  read from the ledgers; `error` on a failed call).\n" #
-    "- Admin funding: the admin account calls `icrc2_approve` on each pay-token\n" #
-    "  ledger with this canister as spender, a capped amount and an `expires_at`.\n" #
-    "  Allowance, expiry and balance are checked before each buyback and retry.\n\n" #
-    "Lifecycle: `#inProgress` (pull or payout running) -> `#completed`\n" #
-    "(`pullBlock`, `payoutBlock` and `releaseBlock` set) or `#payoutFailed`\n" #
-    "(`pullBlock` set, `message` explains) -> retry or `#cancelled`\n" #
-    "(`cancelBlock` set; no longer counted against the mass). `#completed` is\n" #
-    "final: a buyback cannot be undone once the payout has succeeded. Each record keeps the date (`timestamp`, ns), percent,\n" #
-    "the mass before the buyback, rates, rule, tokens, base, fees, amount\n" #
-    "returned and TTTI-T taken back. Calls are synchronous; poll\n" #
-    "`listMyBuybacks` or `listMyBuybackMasses` only after a lost reply. A\n" #
-    "`#payoutFailed` record stays counted against the mass. Retry safety:\n" #
-    "`requestBuyback` is not idempotent (each success is a new buyback; re-read\n" #
-    "before repeating). A resend uses the attempt's own memo and\n" #
-    "`created_at_time`, so a duplicate is detected (`#Duplicate`) and recorded\n" #
-    "as arrived; only a new attempt (after a known Err) is a new ledger\n" #
-    "transfer. `cancelBuyback` and `markBuybackCancelled` refuse a second call\n" #
-    "  (`#notCancellable`).\n" #
-    "- `#salesPaused`: `requestBuyback`, `retryBuybackPayout` and `cancelBuyback`\n" #
-    "  return it first while sales are paused, before any lock or ledger call;\n" #
-    "  the 10-minute automatic payout retry also waits until sales resume.\n\n" #
+    "- `getMyGuaranteeMasses()` (query) : the caller's masses, one per token.\n" #
+    "- `quoteGuaranteeRedeem(token, tttiAmount)` (query) : `#ok RedeemQuote` or\n" #
+    "  `#err GuaranteeError`. Read-only, from the stored rate; no external call.\n" #
+    "  `RedeemQuote` carries `phase`, `rule`, `depositedGuarantee`,\n" #
+    "  `dayRateQuantity` and `rateUsdE8` (null after the mint), `returnedAmount`,\n" #
+    "  `excessKept`, `redemptionFee`, `thirdPartyFee`, `netAmount`,\n" #
+    "  `tttiTransferFee` and `tttiAllowanceRequired` (= `tttiAmount` +\n" #
+    "  `tttiTransferFee`). Errors: `#anonymous`, `#massNotFound`,\n" #
+    "  `#nothingRemaining`, `#amountTooSmall`, `#amountExceedsMass`,\n" #
+    "  `#rateUnavailable`.\n" #
+    "- `redeemGuarantee(token, tttiAmount, expectedNetAmount)` : prerequisite,\n" #
+    "  the caller calls `icrc2_approve` on the TTTI-T ledger with this canister as\n" #
+    "  spender, amount >= `tttiAllowanceRequired`, with an `expires_at`. TTTI-T\n" #
+    "  are pulled from the caller's default account and the payout is sent to it.\n" #
+    "  Refused with `#slippage` when `netAmount` is lower than\n" #
+    "  `expectedNetAmount`, and with the quote errors, `#salesPaused`,\n" #
+    "  `#redemptionInProgress` (one redemption at a time per person and token),\n" #
+    "  `#tttiBalanceInsufficient`, `#allowanceInsufficient`, `#pullFailed(text)`\n" #
+    "  (nothing recorded, may be requested again) or `#callFailed(text)`. In one\n" #
+    "  synchronous step before the first await the guarantee payout is reserved,\n" #
+    "  the TTTI-T are pulled, the mass is updated and the payout is recorded\n" #
+    "  (memo `TTTI-GR-<n>`, `created_at_time`, request), so the person never\n" #
+    "  holds both the TTTI-T and the guarantee. The payout is then sent from the\n" #
+    "  contract's guarantee custody. A successful send (Ok or `#Duplicate`)\n" #
+    "  completes the redemption (`#completed`, block set). A ledger Err or an\n" #
+    "  unknown outcome leaves it `#inProgress`: a 10-minute timer resends the\n" #
+    "  same attempt identically for 23 hours, creates the next attempt (memo\n" #
+    "  `TTTI-GR-<n>-<m>`, new `created_at_time`) after a known Err, and shows\n" #
+    "  the payout under review (`#needsReview`) after 23 hours of unknown\n" #
+    "  outcome. The returned `Redemption` shows the outcome at the time of the\n" #
+    "  reply.\n" #
+    "- `withdrawGuaranteeExcess(token)` : pays the caller's `excess` in `token`\n" #
+    "  (less the ledger fee) once the mint has ended; same payout mechanism and\n" #
+    "  memo `TTTI-GR-<n>`. Errors: `#massNotFound`, `#noExcess`,\n" #
+    "  `#mintNotEnded`, `#amountTooSmall`, `#salesPaused`,\n" #
+    "  `#redemptionInProgress`, `#callFailed`. The record has `kind` =\n" #
+    "  `#excessWithdrawal` and `tttiAmount` 0.\n" #
+    "- `listMyRedemptions()` (query) : the caller's redemptions and excess\n" #
+    "  withdrawals, newest first, with status, amounts, `tttiPullBlock` and the\n" #
+    "  payout attempt (`outcome`, `sends`, `lastError`).\n" #
+    "- `getUnclaimedMassTotal()` (public query, no authentication) : the sum of\n" #
+    "  every remaining TTTI-T mass (`remainingTtti`), the number of masses and,\n" #
+    "  per token, the remaining guarantee and the excess; `mintEnded`.\n" #
+    "- `getGuaranteeAccounts() : [GuaranteeAccountView]` (public query, no\n" #
+    "  authentication): for each token `{ token; massTotal; accountBalance;\n" #
+    "  equal }`. Each token has one dedicated internal guarantee account in the\n" #
+    "  common custody, credited by the mint and the auctions and debited only by\n" #
+    "  a buyback (`redeemGuarantee`). `massTotal` is the sum of the remaining\n" #
+    "  guarantees and excesses of every mass, `accountBalance` the account\n" #
+    "  balance, and `equal` is true when both match.\n" #
+    "- Admin only (trap `Unauthorized: admin only`): `listRedemptionFees(offset,\n" #
+    "  limit)` lists the 1% fees set aside for the creator (`redemptionId`,\n" #
+    "  `token`, `amount`, `createdAt`). Their distribution is not part of this\n" #
+    "  API.\n" #
+    "- Admin \"To review\": `listTransfersToReview` includes kind `#GR` rows\n" #
+    "  (`purchaseId` = redemption id) for payouts of unknown outcome after 23\n" #
+    "  hours. `markTransferArrived(#GR, id, block)` completes the redemption;\n" #
+    "  `markTransferNotArrived(#GR, id)` puts it back in progress and the timer\n" #
+    "  opens a new attempt.\n\n" #
+    "Lifecycle: `#inProgress` -> `#completed` (payout block set) or\n" #
+    "`#needsReview` -> `#completed` / back to `#inProgress`. Calls return after\n" #
+    "the first send; poll `listMyRedemptions` after a lost reply or while a\n" #
+    "redemption is `#inProgress`. Retry safety: `redeemGuarantee` and\n" #
+    "`withdrawGuaranteeExcess` are not idempotent (each success is a new\n" #
+    "redemption; re-read before repeating). A resend uses the attempt's own memo\n" #
+    "and `created_at_time`, so a duplicate is detected by the ledger and\n" #
+    "recorded as arrived. Pause: while sales are paused, `redeemGuarantee` and\n" #
+    "`withdrawGuaranteeExcess` return `#salesPaused` before any lock or ledger\n" #
+    "call and the automatic payout retry waits; the cycles top-up continues.\n" #
+    "Gotcha: the TTTI-T allowance must cover the amount plus the TTTI-T ledger\n" #
+    "fee, and the person must hold at least that balance.\n\n" #
     "## Upgrade readiness (admin)\n\n" #
     "- `getUpgradeReadiness() : UpgradeReadiness` (admin query; others trap\n" #
     "  `Unauthorized: admin only`): `{ salesPaused; purchasesInFlightCount;\n" #
     "  purchasesInFlight : [Principal]; btcLockHeld (the BTC finalization uses\n" #
-    "  the same purchase lock, true when it is not empty); buybacksInFlightCount;\n" #
-    "  buybacksInFlight : [Text] (buyback lock keys); reserveLockBusy;\n" #
+    "  the same purchase lock, true when it is not empty); redemptionsInFlightCount;\n" #
+    "  redemptionsInFlight : [Text] (guarantee redemption lock keys); reserveLockBusy;\n" #
     "  pendingTopUp : ?TopUpAttempt (stored cycles top-up attempt);\n" #
     "  openTraceCount; openTraces : [PurchaseTrace]; reserved (current\n" #
     "  sale.reserved, TTTI-T base units); lastReconciliation;\n" #
@@ -1177,22 +1450,18 @@ mixin () {
     "  all deposit entries), createdAt, lastCheckedAt, errorKind, errorMessage).\n" #
     "  `addressBookContact` (primary key `id`; columns id, owner, nickname,\n" #
     "  principal, memoBytes, createdAt, updatedAt).\n" #
-    "  `buyback` (primary key `id`; one row per mass buyback, legacy per-purchase\n" #
-    "  rows included; columns id, purchaseId (null except legacy rows), buyer,\n" #
-    "  timestamp, originalToken (the mass token), tokenReturned, percent,\n" #
-    "  massTotalNet, massTotalTtti, massRemainingNet, massRemainingTtti (mass\n" #
-    "  before this buyback), originalRateUsdE8, returnedRateUsdE8, rule,\n" #
-    "  originalNetAmount (pro-rata net), baseAmount, baseAmountReturned,\n" #
-    "  buybackFee, thirdPartyFees, tttiTransferFee, tttiEscrowFee,\n" #
-    "  amountReturned, tttiAmount, pullBlock, payoutBlock, payoutAttemptCount,\n" #
-    "  releaseBlock, cancelBlock, legacy, status (inProgress, completed,\n" #
-    "  payoutFailed, cancelled), message). Non-legacy rows: TTTI-T stay in the\n" #
-    "  holding (escrow) account until the payout succeeds (`releaseBlock` =\n" #
-    "  release to the funder) or return to the buyer (`cancelBlock`); legacy\n" #
-    "  rows sent TTTI-T to the funder at the request. Buybacks are optional,\n" #
-    "  limited and paid by the funder with their own money. Read by\n" #
-    "  controllers, app admins\n" #
-    "  and the signed-in buyer of each row.\n" #
+    "  `guaranteeMass` (primary key `key` = \"GM/<owner>/<token>\"; columns key,\n" #
+    "  owner, token, totalTtti, totalGuarantee, remainingTtti,\n" #
+    "  remainingGuarantee, excess), `redemption` (primary\n" #
+    "  key `id`; columns id, owner, kind (redeem, excessWithdrawal), token,\n" #
+    "  phase, rule, tttiAmount, tttiPullBlock, depositedGuarantee, rateUsdE8,\n" #
+    "  returnedAmount, excessKept, redemptionFee, thirdPartyFee, netAmount,\n" #
+    "  createdAt, status (inProgress, needsReview, completed, failed)) and\n" #
+    "  `redemptionFee` (primary key `redemptionId`; columns redemptionId, token,\n" #
+    "  amount, createdAt).\n" #
+    "  `guaranteeMass` and `redemption` are read by controllers, app admins and\n" #
+    "  the signed-in owner of each row; `redemptionFee` by controllers and app\n" #
+    "  admins only.\n" #
     "  `reservedReconciliation` (primary key `reconciledAt`; columns\n" #
     "  reconciledAt, previousReserved, by) and `cyclesTopUpAttempt` (primary key\n" #
     "  `createdAtTime`; at most one row, the stored top-up attempt; columns\n" #
@@ -1215,7 +1484,8 @@ mixin () {
     "  sends, lastError, outcome, status, block) and `lpBonusBalance` (key\n" #
     "  `owner`; claimableE8s, claimedE8s). Public: `protocolLiquidity` (key\n" #
     "  `poolId`; shares, fromFees0/1, fromTreasury0/1, lastAddedAt) and\n" #
-    "  `poolPriceSample` (key `<poolId>/<at>`; poolId, at, reserve0, reserve1).\n" #
+    "  `poolPriceSample` (key `<poolId>/<at>`; poolId, at, reserve0, reserve1)\n" #
+    "  and `consolidatedPriceSample` (key `at`; at, priceUsdE8).\n" #
     "  Mint revenue routing tables, controllers and app admins only:\n" #
     "  `receivingWallet` (key `token`; token, owner, accountText, setAt, setBy),\n" #
     "  `walletChange` (key `id`; token, oldAccountText (null = first\n" #
@@ -1250,8 +1520,8 @@ mixin () {
     "TTTI-T ledger; `#external(p)` = ledger canister p.\n\n" #
     "Authentication and authorization: queries are open to everyone,\n" #
     "anonymous included. `requestPair` needs a signed-in caller; anonymous\n" #
-    "callers get `#anonymous`. `approvePair`, `refusePair`, `removePair` and\n" #
-    "`setUtilityPairMinimums` are admin-only and return `#notAuthorized` to\n" #
+    "callers get `#anonymous`. `approvePair`, `refusePair`, `removePair`,\n" #
+    "`cancelPairRemoval` and `setUtilityPairMinimums` are admin-only and return `#notAuthorized` to\n" #
     "any other caller, with nothing changed. The caller principal is the one\n" #
     "derived against the app's Internet Identity derivation origin (see\n" #
     "above); a principal derived elsewhere is a different requester.\n\n" #
@@ -1259,18 +1529,36 @@ mixin () {
     "- `listDexPools() : [PoolView]`, `getDexPool(poolId) : ?PoolView`. A\n" #
     "  `PoolView` carries tokens (ledgerId, symbol, decimals, isTttiT), feeTier,\n" #
     "  feeBps, kind (`#tttiPair` / `#utilityPair`), status\n" #
-    "  (`#filling` / `#active` / `#removed`, effective status: a `#filling`\n" #
-    "  pool is reported `#active` once its reserves reach 100 USD), subaccount and\n" #
+    "  (`#filling` / `#active` / `#removed`; a stored lifecycle label only: swap\n" #
+    "  opening is decided by `swapState`, never by this label), subaccount and\n" #
     "  subaccountText, poolAccount, minimumLocked (per token, null = not set),\n" #
-    "  firstDepositMinimum (10 x minimumLocked), minimumsSet,\n" #
+    "  firstDepositMinimum (no longer enforced: 0 once the minimum is set, null\n" #
+    "  otherwise; kept for compatibility), minimumsSet,\n" #
     "  lockedSharesStatement (\"The minimum locked shares √(A×B) belong to\n" #
     "  the contract forever.\"), newPairBadgeUntil / newPairBadgeActive (30\n" #
     "  days after approval), approvalStatement (\"Approval of a pair is not a\n" #
     "  recommendation.\", only on pools created from a request), requestId,\n" #
-    "  removedAt and the flags acceptsSwaps (status `#active`), acceptsDeposits\n" #
-    "  (not removed and minimums set) and acceptsWithdrawals (always true).\n" #
-    "  `launchMinimumTotalUsdE8` (10_000_000_000 = 100 USD, computed, same\n" #
-    "  on every pool) is the launch depth rule below.\n" #
+    "  removedAt and the flags acceptsSwaps (= swapState.open), acceptsDeposits\n" #
+    "  (false when the pool is removed, when minimums are not set, or while a\n" #
+    "  pair removal is announced or executing; `addLiquidity` then refuses with\n" #
+    "  `#removalAnnounced`) and acceptsWithdrawals (stays true: voluntary\n" #
+    "  withdrawals remain allowed, subject to position locks `unlockAt`).\n" #
+    "  DEX-2 fields, all public and computed\n" #
+    "  at read time: `depth { usdE8 : ?Nat; basis : #twiceNonTttiSide |\n" #
+    "  #sumOfSides; missingRate { token0; token1 } }`, `swapThresholdUsdE8`\n" #
+    "  (1_000_000_000 = 10 USD, swaps only), `thresholdBasis`\n" #
+    "  (`#tttiSideAtPoolPrice` for TTTI-T pairs, `#sumOfSides` for utility\n" #
+    "  pairs), `thresholdMeasuredUsdE8 : ?Nat` (the current value compared with\n" #
+    "  the threshold; null when a rate is missing or expired),\n" #
+    "  `swapState { open; reason }` with reason\n" #
+    "  `#open`, `#belowThreshold { depthUsdE8; thresholdUsdE8 }` (depthUsdE8 =\n" #
+    "  the threshold measure, not the displayed depth),\n" #
+    "  `#rateUnavailable`, `#removalAnnounced { effectiveAt }`,\n" #
+    "  `#removalExecuting` or `#removed`, and `removal` (`#none`, `#announced`,\n" #
+    "  `#cancelled`, `#executing`, `#completed`, each with reason, announcedAt\n" #
+    "  and effectiveAt, plus cancelledAt / startedAt / completedAt). The old\n" #
+    "  `launchMinimumTotalUsdE8` field is kept for compatibility and is always 0:\n" #
+    "  there is no USD threshold at the first deposit.\n" #
     "- The 7 starting pools (ids 1-7, fee tier `#bps30`, status\n" #
     "  `#filling`): TTTI-T/ICP, TTTI-T/ckBTC, TTTI-T/ckUSDC,\n" #
     "  TTTI-T/ckUSDT (TTTI-T pairs, TTTI-T side minimum 10_000) and ckBTC/ICP,\n" #
@@ -1279,12 +1567,18 @@ mixin () {
     "- `getDexConfig() : DexConfig`: requestDeposit (50_000), depositAccount,\n" #
     "  maxPendingPerUser (2), refusalCooldownNs (7 days), messageMaxChars and\n" #
     "  reasonMaxChars (280), newPairBadgeNs (30 days), tttiMinimumLocked\n" #
-    "  (10_000), firstDepositMultiplier (10), feeTiers and the three statements,\n" #
-    "  plus the launch depth fields: launchMinimumTotalUsdE8 (10_000_000_000 =\n" #
-    "  100 USD), usdRateScale (100_000_000: USD values are USD x 1e8, like the\n" #
-    "  stored usdE8 rates), tttiTUsdE8 (1_000_000_000_000 = 10,000 USD per\n" #
-    "  TTTI-T), rateValidForNs (1 hour), rateGraceNs (5 minutes) and\n" #
-    "  launchDepthStatement. All are computed constants, not stored state.\n" #
+    "  (10_000), firstDepositMultiplier (0: no longer enforced, kept for\n" #
+    "  compatibility), feeTiers and the three statements,\n" #
+    "  plus: usdRateScale (100_000_000: USD values are USD x 1e8, like the\n" #
+    "  stored usdE8 rates), rateValidForNs (1 hour), rateGraceNs (5 minutes),\n" #
+    "  minLockNs (3 months = 7_862_400_000_000_000 ns; 0 = no lock is also\n" #
+    "  accepted), maxLockNs (5 years = 157_766_400_000_000_000 ns),\n" #
+    "  relayDivisor (3), lockedFeeSharePercent (50),\n" #
+    "  swapThresholdUsdE8 (1_000_000_000), defaultSlippageBps (50),\n" #
+    "  referenceToleranceBps (200), removalNoticeNs (5 days) and\n" #
+    "  launchDepthStatement. launchMinimumTotalUsdE8 and tttiTUsdE8 are\n" #
+    "  deprecated and always 0 (TTTI-T has no fixed USD value). All are\n" #
+    "  computed constants, not stored state.\n" #
     "- `listPairRequests() : [PairRequestView]` (all requests, ascending id)\n" #
     "  and `getMyPairRequests()` (the caller's). Each view shows the token\n" #
     "  metadata read from its ledger, the counter token, fee tier, message,\n" #
@@ -1337,30 +1631,182 @@ mixin () {
     "  requester's cooldown starts. Errors: `#notAuthorized`,\n" #
     "  `#requestNotFound`, `#notPending`, `#reasonRequired`,\n" #
     "  `#reasonTooLong { max }`.\n" #
-    "- `removePair(poolId) : Result<PoolView, RemovePairError>` (admin):\n" #
-    "  status `#removed`; acceptsSwaps and acceptsDeposits become false,\n" #
-    "  acceptsWithdrawals stays true. Errors: `#notAuthorized`,\n" #
-    "  `#poolNotFound`, `#alreadyRemoved`.\n" #
+    "- `removePair(poolId, reason : Text) : Result<PoolView, RemovePairError>`\n" #
+    "  (admin). It no longer removes a pair at once: it publicly announces the\n" #
+    "  removal with the admin's reason (trimmed, 1 to 280 characters) and an\n" #
+    "  effective date `announcedAt + 5 days`. From the announcement swaps and\n" #
+    "  liquidity adds are suspended in that pool; voluntary `removeLiquidity`\n" #
+    "  stays allowed subject to each position's lock. Errors: `#notAuthorized`,\n" #
+    "  `#poolNotFound`, `#alreadyRemoved`, `#alreadyAnnounced { effectiveAt }`,\n" #
+    "  `#reasonEmpty`, `#reasonTooLong { maximumChars }`. Retry safety: a repeat\n" #
+    "  returns `#alreadyAnnounced`; the date and reason do not change.\n" #
+    "- `cancelPairRemoval(poolId) : Result<PoolView, CancelRemovalError>` (admin).\n" #
+    "  Cancels an announced removal before its effective date; the pool resumes\n" #
+    "  normally and the cancellation stays visible in `removal` (`#cancelled`).\n" #
+    "  Errors: `#notAuthorized`, `#poolNotFound`, `#noAnnouncement`,\n" #
+    "  `#alreadyCancelled`, `#alreadyExecuting`, `#alreadyCompleted`. Retry\n" #
+    "  safety: a repeat returns `#alreadyCancelled`.\n" #
+    "- Effective date: at `effectiveAt` the 10-minute retry timer liquidates every\n" #
+    "  remaining position of the pool, locked or not (shares burned, reserves\n" #
+    "  debited, the owner credited once), and sends both tokens to each owner's\n" #
+    "  wallet (the owner principal's default account on each ledger) as\n" #
+    "  liquidation payouts (LQ, memo `TTTI-LQ-<n>`, `created_at_time` set, retry\n" #
+    "  rules of lib/retry.mo: Ok or `#Duplicate` = sent; a known Err opens a new\n" #
+    "  attempt; an unknown outcome is resent identically for 23 h). A payout\n" #
+    "  that still fails goes to the admin \"To review\" list as kind `LQ` with\n" #
+    "  `conversionId` = the pool id and `depositIndex` = the position id (the\n" #
+    "  review record has no pool or position field). When no position remains\n" #
+    "  the pool becomes `#removed` (`removedAt` set, `removal` = `#completed`).\n" #
+    "  At finishRemoval of a TTTI-T pair, the reserves of the contract-held\n" #
+    "  shares (permanent liquidity) are reinjected with injectPermanent into the\n" #
+    "  least liquid TTTI-T pool, right after the removal finishes (the router run\n" #
+    "  is the retry path), with a line in the public permanent liquidity log\n" #
+    "  (`listPermanentLiquidityLog`). They never go to a wallet and never stay\n" #
+    "  locked in the removed pool.\n" #
+    "  Nothing runs while the DEX is paused; the work resumes afterwards and\n" #
+    "  after an upgrade. No admin function shortens or cancels a lock.\n" #
+    "- `getReferencePrice(poolId) : ?ReferencePrice` (public query): see the\n" #
+    "  reference price rule below. `refreshReferenceSources() : Nat` (admin\n" #
+    "  update; others trap `Unauthorized: only an admin can refresh the\n" #
+    "  reference sources`): reads the ICPSwap TTTI-T pairs now and returns how\n" #
+    "  many were readable. The same read runs from a timer at least hourly. It\n" #
+    "  only reads; it places no order and creates no TTTI-T.\n" #
+    "- Consolidated TTTI-T price and pool spread (PTM-5). Public queries, no\n" #
+    "  sign-in; the identity is only read by `getMyPoolSpreadAlerts`. All\n" #
+    "  amounts are USD x 1e8 (`priceUsdE8`: USD per one whole TTTI-T) and all\n" #
+    "  spreads are signed basis points (10_000 = 100 %); timestamps are\n" #
+    "  nanoseconds (Int). Nothing is stored by these calls and they are safe to\n" #
+    "  repeat or poll (the price changes with the reserves and the hourly\n" #
+    "  rates; polling about once a minute is enough).\n" #
+    "  `getConsolidatedTttiPrice() : ConsolidatedPrice { computedAt; price :\n" #
+    "  #available(Nat) | #unavailable(#noOpenPool | #noValidRate);\n" #
+    "  hourlyAverageUsdE8 : ?Nat; hourlySamples; dailyAverageUsdE8 : ?Nat;\n" #
+    "  dailySamples; sources }`. The price is the average of the USD prices of\n" #
+    "  all open native TTTI-T pools (ICP, ckBTC, ckUSDC, ckUSDT), weighted by\n" #
+    "  their depth. A pool USD price comes from its reserves (counter-token\n" #
+    "  reserve x current oracle rate / TTTI-T reserve); depth is 2 x the USD\n" #
+    "  value of the counter side. An empty pool, a pool not open for swaps\n" #
+    "  (below the 10 USD swap-opening threshold, removal announced or executing) and a pool whose\n" #
+    "  rate is absent or expired are left out. `sources` lists the pools used\n" #
+    "  (poolId, counterSymbol, priceUsdE8, depthUsdE8, weightBps summing to\n" #
+    "  10_000). With no usable pool the price is `#unavailable` (`#noOpenPool`\n" #
+    "  or `#noValidRate`) and no price is invented. The averages are the mean\n" #
+    "  of the 5-minute consolidated samples of the last hour and of the last\n" #
+    "  24 h, with their sample counts; null while no sample is in the window\n" #
+    "  (no sample is taken while the price is unavailable; samples older than\n" #
+    "  24 h are dropped). Every reader of a TTTI-T price in the protocol (the\n" #
+    "  rebalance swap guard of the permanent liquidity, the valuation of TTTI-T\n" #
+    "  in ICP) uses the consolidated hourly average; without it they wait. The\n" #
+    "  guard accepts the consolidated hourly average only when the samples of\n" #
+    "  the last hour reach back at least 30 minutes (oldest sample at least 30\n" #
+    "  minutes old), the same rule as the pool average used by `referenceOut`;\n" #
+    "  before that it treats the price as absent and waits. The\n" #
+    "  `hourlyAverageUsdE8` field of `getConsolidatedTttiPrice` is shown as soon\n" #
+    "  as one sample is in the hour, without that coverage requirement.\n" #
+    "  `getPoolSpreads() : PoolSpreadReport { computedAt;\n" #
+    "  consolidatedPriceUsdE8 : ?Nat; thresholdBps = 200; pools }`: for each\n" #
+    "  native TTTI-T pool (removed pools excluded) `PoolSpread { poolId;\n" #
+    "  counterSymbol; status : #ok | #empty | #notOpen | #noRate |\n" #
+    "  #noConsolidatedPrice; priceUsdE8 : ?Nat; spreadBps : ?Int;\n" #
+    "  exceedsThreshold }`. spreadBps = (pool price - consolidated price) x\n" #
+    "  10_000 / consolidated price, rounded toward zero; negative = the pool is\n" #
+    "  cheaper. It is null unless status is `#ok`. exceedsThreshold is true\n" #
+    "  when |spreadBps| is strictly above 200. `PoolView.spread : ?PoolSpread`\n" #
+    "  (in `listDexPools`, `getDexPool` and every returned PoolView) carries the\n" #
+    "  same value; it is null for utility pairs and removed pools.\n" #
+    "  `getMyPoolSpreadAlerts() : [PoolSpreadAlert { poolId; counterSymbol;\n" #
+    "  positionIds; spreadBps; poolPriceUsdE8; consolidatedPriceUsdE8;\n" #
+    "  thresholdBps; computedAt }]`: the native TTTI-T pools where the caller\n" #
+    "  holds a liquidity position and whose spread exceeds 200 bps now. The\n" #
+    "  caller is the signed-in principal (derived from the Internet Identity\n" #
+    "  delegation); an anonymous caller gets an empty array. The alert is\n" #
+    "  computed on each call and stored nowhere, so it disappears once the\n" #
+    "  spread is back to 200 bps or less. No call here can trap on its own.\n" #
+    "- `getPoolCapRatio() : PoolCapRatioView` (query, no sign-in; computed on\n" #
+    "  each call, the call stores nothing; the mint does not use it yet).\n" #
+    "  `PoolCapRatioView { computedAt : Int (ns); poolsValueUsdE8 : ?Nat;\n" #
+    "  poolCount : Nat; circulatingTttiT : Nat; consolidatedPriceUsdE8 : ?Nat;\n" #
+    "  capitalisationUsdE8 : ?Nat; currentRatio : ?Nat; averageRatio24h : ?Nat;\n" #
+    "  samples : Nat; retainedRatio : ?Nat; targetRatio : Nat; lockedShare :\n" #
+    "  Nat; ratioScale : Nat; lockedShareScale : Nat }`. Units: amounts in USD\n" #
+    "  x 1e8; `circulatingTttiT` in base units (8 decimals); ratios are fixed\n" #
+    "  point with `ratioScale` = 10^12 (10^12 = 100 %; `targetRatio` =\n" #
+    "  500_000_000_000 = 50 %); `lockedShare` (m) has `lockedShareScale` =\n" #
+    "  10^6 (10^6 = 100 %, so 500_000 = 50 %). Pools value: for each native\n" #
+    "  TTTI-T pool that is not removed and holds a counterpart reserve (ICP,\n" #
+    "  ckBTC, ckUSDC or ckUSDT), 2 x the counterpart reserve at the oracle\n" #
+    "  rate of that token, summed; every share counts (free, locked and\n" #
+    "  permanent liquidity are all in the reserves). `poolsValueUsdE8` is null\n" #
+    "  when a needed rate is absent or expired (no fallback rate); `poolCount`\n" #
+    "  counts the pools used. Capitalisation: circulating TTTI-T (total\n" #
+    "  supply minus the TTTI-T the contract keeps for auctions) x the\n" #
+    "  consolidated instantaneous price (`consolidatedPriceUsdE8`), measured at\n" #
+    "  the same moment as the pools value; null only while no open TTTI-T pool\n" #
+    "  gives a price (no 30-minute warm-up).\n" #
+    "  `currentRatio` = pools value / capitalisation (exact integer arithmetic,\n" #
+    "  rounded down), null when either is unavailable or the capitalisation is\n" #
+    "  zero. Sampling: the 5-minute price sampling timer (`recordPriceSamples`)\n" #
+    "  appends one ratio sample when the ratio is available and drops samples\n" #
+    "  older than 24 h; `averageRatio24h` is their mean (null without sample)\n" #
+    "  and `samples` their number. `retainedRatio` is the lower of\n" #
+    "  `currentRatio` and `averageRatio24h` (the current ratio alone without\n" #
+    "  sample; null without a current ratio). Locked share m = 50 % x (50 % -\n" #
+    "  retainedRatio) / 50 %, clamped between 0 and 50 % and rounded upward at\n" #
+    "  1e-6: 50 %, 30 %, 10 % and 0 % at a ratio of 0 %, 20 %, 40 % and 50 %\n" #
+    "  or more. m is 50 % without circulating TTTI-T, without any pool, and\n" #
+    "  when the pools value, the capitalisation or the retained ratio is\n" #
+    "  unavailable. The samples are also queryable as the public OQL entity\n" #
+    "  `poolCapRatioSample` (key, at, ratio).\n" #
     "- `setUtilityPairMinimums(poolId, { token0; token1 }) : Result<PoolView,\n" #
     "  SetMinimumsError>` (admin, utility pairs before any liquidity: refused\n" #
     "  with `#liquidityAlreadyAdded` once totalShares > 0 or the pool is open). Errors:\n" #
     "  `#notAuthorized`, `#poolNotFound`, `#notUtilityPair`, `#poolRemoved`,\n" #
     "  `#liquidityAlreadyAdded`, `#invalidMinimums` (a zero minimum).\n\n" #
-    "Launch depth rule: the first deposit that launches a pool must total at\n" #
-    "least 100 USD, both sides combined (`launchMinimumTotalUsdE8`). Rate\n" #
-    "basis: TTTI-T at a fixed 10,000 USD per token; ICP, ckBTC, ckUSDC and\n" #
-    "ckUSDT at the hourly stored rate, used only within its validity (1 hour\n" #
-    "after the fetch plus 5 minutes of grace). A side's USD value is amount x\n" #
-    "usdE8 / 10^decimals, rounded down. The rule adds to the minimum locked\n" #
-    "liquidity (TTTI-T side 10_000; utility pairs: per-token minimums set by\n" #
-    "the admin) and to the first deposit >= 10 x that minimum; the most\n" #
-    "demanding rule applies.\n\n" #
-    "Filling rule (lot 3): the 100 USD figure is now the opening threshold of\n" #
-    "a `#filling` pool, reached by one or several liquidity adds (see the DEX\n" #
-    "liquidity section below). The minimum locked liquidity and the 10x first\n" #
-    "deposit minimum still apply to the first add.\n\n" #
-    "Gotchas: a removed pool still reports acceptsWithdrawals = true; approval\n" #
-    "is not a recommendation; the copied-symbol flag does not block a request;\n" #
+    "Reference price and first deposit (DEX-2). There is no minimum and no USD\n" #
+    "threshold on pool creation, first deposit, adding or removing liquidity,\n" #
+    "buying or the mint (the 10 USD threshold applies to swaps only); every\n" #
+    "deposit grows the pool capitalisation. The first deposit receives\n" #
+    "sqrt(A x B) shares, of which the minimum locked shares stay with the\n" #
+    "contract, never more than half of them. The first deposit into an empty pool\n" #
+    "must have its ratio (amount1 per amount0) within 2 % (200 bps) of the\n" #
+    "pool's reference ratio, otherwise `addLiquidity` returns\n" #
+    "`#referenceOutOfBand { deviationBps; toleranceBps; expected }` and nothing\n" #
+    "changes.\n" #
+    "- TTTI-T pairs: the reference TTTI-T price is the average, weighted by\n" #
+    "  depth, of the TTTI-T prices of the ICPSwap TTTI-T pairs last read (at most\n" #
+    "  6 hours old) plus the already open native TTTI-T pools other than this one,\n" #
+    "  each converted to USD at the hourly rate. `getReferencePrice(poolId)`\n" #
+    "  shows publicly `tttiPriceUsdE8`, the expected ratio, `toleranceBps` and\n" #
+    "  every source (kind `#icpswap` or `#native`, label, tttiPriceUsdE8,\n" #
+    "  depthUsdE8 = 2 x the USD value of the non-TTTI-T side, weightBps summing\n" #
+    "  to 10_000, readAt). With no readable source the first deposit is refused\n" #
+    "  with `#referenceUnavailable(#noReadableSource)`.\n" #
+    "- Utility pairs: the reference ratio is the ratio of the two hourly rates\n" #
+    "  (no sources).\n" #
+    "- An absent or expired hourly rate refuses the first deposit with\n" #
+    "  `#referenceUnavailable(#rateUnavailable { token0; token1 })`. Hourly rates\n" #
+    "  are valid 1 hour after the fetch plus 5 minutes of grace.\n\n" #
+    "Depth and swap opening (DEX-2). Depth is measured at the pool's own price\n" #
+    "from the current reserves: TTTI-T pairs = 2 x the USD value of the\n" #
+    "non-TTTI-T side (TTTI-T is never counted at a fixed USD value); utility\n" #
+    "pairs = the sum of both sides at the hourly rates. A side's USD value is\n" #
+    "amount x usdE8 / 10^decimals, rounded down. This displayed depth is\n" #
+    "unchanged. The 10 USD swap-opening threshold (`swapThresholdUsdE8`) uses\n" #
+    "its own measure (`thresholdBasis`, `thresholdMeasuredUsdE8`): TTTI-T pairs =\n" #
+    "10 USD of TTTI-T, i.e. the TTTI-T side valued at the pool price, which\n" #
+    "equals the counterpart reserve at the oracle rate (half the displayed\n" #
+    "depth); utility pairs = 10 USD of total depth (sum of both sides). A swap is\n" #
+    "accepted only when that measure is at least 10 USD, the rate is\n" #
+    "valid and the pool is neither removed nor in removal. The check runs at\n" #
+    "every call: a pool below the threshold is refused with a clear message and\n" #
+    "reopens as soon as the threshold is reached, and an active pool whose measure\n" #
+    "falls back below it is closed again. A missing or expired rate refuses the\n" #
+    "swap (`#rateUnavailable`). Adding liquidity is suspended while a pair\n" #
+    "removal is announced or executing; voluntary withdrawals stay allowed,\n" #
+    "subject to position locks.\n\n" #
+    "Gotchas: a removed pool still reports acceptsWithdrawals = true, but each\n" #
+    "position's unlockAt still applies (a pair removal pays the owners itself);\n" #
+    "approval is not a recommendation; the copied-symbol flag does not block a request;\n" #
     "the protocol places no price-linked order and creates no TTTI-T; the mint\n" #
     "fee (1/101) is used to buy TTTI-T without any price condition, to feed pool\n" #
     "liquidity (see Mint revenue).\n" #
@@ -1397,7 +1843,20 @@ mixin () {
     "- `getDexTransfers(owner) : [DexTransferView]`: deposits and withdrawals,\n" #
     "  newest first, with n, direction, amount, ledgerAmount, fee, from, to,\n" #
     "  memoText, createdAtTimeNs, attempt, sends, status (`#inProgress`,\n" #
-    "  `#needsReview`, `#completed(block)`, `#failed(text)`) and lastError.\n\n" #
+    "  `#needsReview`, `#completed(block)`, `#failed(text)`) and lastError.\n" #
+    "  Not paged: kept for the existing frontend; prefer the paged query below.\n" #
+    "- `getDexTransfersPage(owner, cursor : ?Nat, limit : Nat) :\n" #
+    "  Page<DexTransferView>` (PTM-9f query, open to everyone, anonymous\n" #
+    "  included): the same deposits and withdrawals as `getDexTransfers`\n" #
+    "  (auction bid deposits left out), newest first, `{ items; nextCursor : ?Nat }`.\n" #
+    "  The cursor is the transfer number `n`, global and unique across deposits\n" #
+    "  and withdrawals: `cursor = null` returns the newest `limit` transfers,\n" #
+    "  `cursor = ?c` those with `n` strictly below `c`. `limit` 0 means 50 and any\n" #
+    "  `limit` above 100 is cut to 100. `nextCursor` is the `n` of the last returned\n" #
+    "  transfer while older ones remain and null on the last page: pass it back\n" #
+    "  unchanged. Each transfer appears exactly once across the pages, also when\n" #
+    "  new ones are created between two calls. A query: no state change, safe to\n" #
+    "  repeat.\n\n" #
     "Updates (signed-in caller; anonymous gets `#anonymous`):\n" #
     "- `depositToDex({ token; amount }) : Result<DexTransferView,\n" #
     "  DexDepositError>` (DD). First `icrc2_approve` this canister on the\n" #
@@ -1438,7 +1897,7 @@ mixin () {
     "DW finalizes the debit, DQ marks the request refunded.\n" #
     "`markTransferNotArrived`: DD becomes `#failed` with no credit, DW gives\n" #
     "the balance back, DQ opens a new attempt sent by the timer.\n\n" #
-    "Polling: poll `getDexTransfers` and `getDexBalances` every 10-30 s while\n" #
+    "Polling: poll `getDexTransfersPage` (first page) and `getDexBalances` every 10-30 s while\n" #
     "a row is `#inProgress`; it changes at most every 10 minutes after an\n" #
     "unknown outcome. Retry safety: a new `depositToDex` or `withdrawFromDex`\n" #
     "call is a new transfer with a new memo; do not repeat a call whose row is\n" #
@@ -1448,12 +1907,12 @@ mixin () {
     "block, status) are public.\n\n" #
     "Refused pair-request deposits (protocol liquidity): the 50_000 base units\n" #
     "kept in `DEX-REQUEST-DEPOSIT-TTTI-T-00001` for a refused request are fed\n" #
-    "to the protocol liquidity by the 10-minute fee-recycling pass. The deposit\n" #
+    "to the protocol liquidity by the 10-minute refused-deposit pass. The deposit\n" #
     "minus one TTTI-T fee is moved (memo `TTTI-RD-<pair request number>`) to the\n" #
     "subaccount of the least liquid open TTTI-T pair (same rule as the router\n" #
     "redirect) and added to that pool's protocol fee, which becomes\n" #
-    "contract-held permanent locked liquidity exactly like the native 30 %\n" #
-    "share; no swap or price-linked order is placed, so no slippage applies.\n" #
+    "contract-held permanent locked liquidity; no swap or price-linked order\n" #
+    "is placed, so no slippage applies.\n" #
     "The fee goes to the fee collector as for any transfer; no TTTI-T is created\n" #
     "and total supply and existing balances are unchanged. While no TTTI-T pair\n" #
     "is open the deposit waits. Pending requests and approved requests (deposit\n" #
@@ -1468,24 +1927,25 @@ mixin () {
     "Timestamps (`createdAt`, `unlockAt`, `deadline`, `newUnlockAt`) are Int\n" #
     "nanoseconds since the epoch; durations (`lockDurationNs`) are Nat ns.\n" #
     "Fees, price impact and slippage are basis points (1 bps = 0.01 %).\n\n" #
-    "Pool lifecycle: an approved pool starts `#filling`. Several users may add\n" #
-    "liquidity; swaps stay closed until the total USD value of both reserves\n" #
-    "reaches 100 USD (`gauge.targetUsdE8` = 10_000_000_000). USD value: TTTI-T\n" #
-    "at a fixed 10,000 USD; ICP, ckBTC, ckUSDC, ckUSDT at the stored hourly rate,\n" #
-    "valid 1 h after its fetch plus 5 min grace. The check runs on every add and\n" #
-    "on every pool read (effective status); an add that reaches the target\n" #
-    "stores `#active`, and an open pool stays open. A newly stored ICP hourly\n" #
-    "rate or ck-token 5-minute rate also persists `#active` at once for every\n" #
-    "`#filling` pool that now reaches the target (and a 1-minute sweep covers a\n" #
-    "rate stored by an admin refresh), without waiting for an add or a swap;\n" #
-    "swaps and quotes already treat such a pool as open. A missing or expired rate\n" #
-    "means no opening: the gauge reports `valueAvailable = false`,\n" #
-    "`currentUsdE8 = null`, `remainingUsdE8 = null` and `missingRate { token0;\n" #
-    "token1 }`. `PoolView` adds reserve0, reserve1, totalShares, lockedShares,\n" #
-    "protocolFee0, protocolFee1 and `gauge { currentUsdE8; targetUsdE8;\n" #
-    "remainingUsdE8; valueAvailable; missingRate }`. `#removed`: no adds or\n" #
-    "swaps; LP withdrawals always allowed, even when locked. No instantaneous\n" #
-    "pool price is used as an oracle; the protocol places no price-based order.\n\n" #
+    "Pool lifecycle: an approved pool starts `#filling` and stays open to\n" #
+    "liquidity adds. Swap opening is dynamic and depends only on the threshold\n" #
+    "measure (see Depth and swap opening above): measure >= 10 USD, a valid rate and no\n" #
+    "removal. The `gauge` (currentUsdE8 = threshold measure, targetUsdE8 = 1_000_000_000,\n" #
+    "remainingUsdE8, valueAvailable, missingRate { token0; token1 }) is kept for\n" #
+    "display. TTTI-T is never counted at a fixed USD value. `PoolView` adds\n" #
+    "reserve0, reserve1, totalShares, lockedShares, protocolFee0, protocolFee1,\n" #
+    "`gauge`, `depth`, `guaranteedDepth { lockedPositionShares;\n" #
+    "permanentShares; amount0; amount1; depth }` (locked positions, unlockAt >\n" #
+    "now, plus the contract-held permanent shares, with the same depth rule; the pool\n" #
+    "returned by a swap reads no position: its locked-position shares come from\n" #
+    "a per-pool figure refreshed when a position changes and by the daily\n" #
+    "pass),\n" #
+    "`lockedFeesPaid0` / `lockedFeesPaid1` (cumulative set-aside fees credited to\n" #
+    "locked positions), `swapThresholdUsdE8`, `swapState` and `removal`.\n" #
+    "`#removed` (after the effective date of an announced removal): no adds or\n" #
+    "swaps; the positions have been paid out. No instantaneous pool price is\n" #
+    "used as an oracle; the protocol places no price-based order and creates no\n" #
+    "TTTI-T.\n\n" #
     "Authentication: queries are open to everyone (anonymous included);\n" #
     "updates need a signed-in caller (anonymous gets `#anonymous`). The owner\n" #
     "of a position or balance is the caller principal derived against the\n" #
@@ -1494,59 +1954,151 @@ mixin () {
     "DEX balances (lot 2); no ledger transfer happens in these calls.\n\n" #
     "Rounding always favors the pool: counter amounts and fees round up;\n" #
     "minted shares, withdrawals and amountOut round down.\n\n" #
-    "- `quoteAddLiquidity({ poolId; side; amount; counterAmount }) :\n" #
+    "- `quoteAddLiquidity({ poolId; side; amount; counterAmount; slippageBps }) :\n" #
     "  Result<AddLiquidityQuote, AddLiquidityError>` (query, no change):\n" #
-    "  isFirstDeposit, amount0, amount1, shares, lockedShares,\n" #
-    "  totalSharesAfter, gaugeAfter, opensPool. Same computation as\n" #
-    "  `addLiquidity`.\n" #
-    "- `addLiquidity({ poolId; side; amount; counterAmount; lockDurationNs }) :\n" #
-    "  Result<AddLiquidityResult, AddLiquidityError>`. Debits the caller's\n" #
-    "  `available` balances of both tokens on a `#filling` or `#active` pool.\n" #
-    "  First add (totalShares = 0): `counterAmount` is required and fixes the\n" #
-    "  ratio; each side must be >= 10 x its minimum locked liquidity; it mints\n" #
-    "  floor(sqrt(amount0 x amount1)) shares, of which lockedShares (the shares\n" #
-    "  holding the minimum locked amounts, rounded up, at least 1) belong to\n" #
-    "  the contract forever and are never withdrawable; the depositor receives\n" #
-    "  the rest. Later adds: the contract computes the counter amount from the\n" #
-    "  reserves, ceil(amount x reserveOther / reserveSide); a given\n" #
-    "  `counterAmount` that differs returns `#ratioMismatch {\n" #
-    "  requiredCounterAmount }`; shares = min(amount0 x total / reserve0,\n" #
-    "  amount1 x total / reserve1), rounded down. Each add creates its own\n" #
-    "  position locked for lockDurationNs (24 h minimum, 5 years =\n" #
-    "  157_766_400_000_000_000 ns maximum); unlockAt = now + lockDurationNs.\n" #
-    "  isCreator = the caller had the admin role at add time (same rules).\n" #
-    "  Errors: `#anonymous`, `#poolNotFound`, `#poolRemoved`, `#minimumsNotSet`,\n" #
-    "  `#unsupportedToken`, `#zeroAmount`, `#counterAmountRequired`,\n" #
-    "  `#insufficientBalance { token; available; required }`, `#belowMinimum\n" #
-    "  { token0Minimum; token1Minimum }`, `#ratioMismatch {\n" #
-    "  requiredCounterAmount }`, `#lockTooShort { minimumNs }`, `#lockTooLong\n" #
-    "  { maximumNs }`, `#zeroShares`, `#operationInProgress`. Retry safety: not\n" #
-    "  idempotent; each success is a new position. Errors change nothing.\n" #
+    "  isFirstDeposit, amount0, amount1, shares, lockedShares, totalSharesAfter,\n" #
+    "  gaugeAfter, opensPool, counterSide, counterAmount (the computed amount of\n" #
+    "  the other side), slippageBps, depthAfterUsdE8 and referenceCheck (first\n" #
+    "  deposit only). Same computation as `addLiquidity`.\n" #
+    "- `addLiquidity({ poolId; side; amount; counterAmount; slippageBps;\n" #
+    "  lockDurationNs }) : Result<AddLiquidityResult, AddLiquidityError>`.\n" #
+    "  `side` and `amount` fix one side; the other side is computed at execution\n" #
+    "  at the pool ratio (ceil(amount x reserveOther / reserveSide)), after the\n" #
+    "  funds have arrived: any shortfall of either pool token is first pulled\n" #
+    "  from the caller's wallet into the internal balance by ICRC-2\n" #
+    "  transfer_from (the caller must have approved this canister), then the\n" #
+    "  pool ratio is read again. `counterAmount` is the amount the caller\n" #
+    "  expects (the quote); the add is refused with `#slippageExceeded {\n" #
+    "  expectedCounterAmount; actualCounterAmount; toleranceBps }` when the\n" #
+    "  computed amount is outside the tolerance `slippageBps` (null = 50 =\n" #
+    "  0.5 %, at most 10_000, else `#invalidSlippage { maximumBps }`). On\n" #
+    "  refusal nothing is added and the funds stay in the internal balance,\n" #
+    "  where they remain available; likewise any surplus of either side stays\n" #
+    "  there (`surplus0`, `surplus1` in the result). First add (totalShares =\n" #
+    "  0): `counterAmount` is required and fixes the ratio, which must be\n" #
+    "  within 2 % of the reference ratio; there is no minimum amount; it mints\n" #
+    "  floor(sqrt(amount0 x amount1)) shares, of\n" #
+    "  which lockedShares (the shares holding the minimum locked amounts,\n" #
+    "  rounded up, capped at half of the shares created, at least 1 when 2 or\n" #
+    "  more shares are created) belong to the contract forever and are never\n" #
+    "  withdrawable; the depositor receives the rest, never zero. Later adds: shares =\n" #
+    "  min(amount0 x total / reserve0, amount1 x total / reserve1), rounded\n" #
+    "  down. Each add creates its own position with an optional lock:\n" #
+    "  `lockDurationNs` null or 0 = no lock (free position, withdrawable at any\n" #
+    "  time); otherwise at least 3 months (MIN_LOCK_NS = 7_862_400_000_000_000 ns) and at\n" #
+    "  most 5 years (157_766_400_000_000_000 ns), else `#lockTooShort {\n" #
+    "  minimumNs }` or `#lockTooLong { maximumNs }` before any funds move.\n" #
+    "  unlockAt = lockStartedAt + lockDurationNs - relayReceivedNs, with\n" #
+    "  lockStartedAt = now. Only the position owner (the caller) commits\n" #
+    "  capital with a lock; no admin function opens, extends or shortens a lock\n" #
+    "  (the only exception is the pair removal, announced 5 days ahead). The\n" #
+    "  result carries `relay { weight; relayWeight; shortenedWeight;\n" #
+    "  positionsShortened; positionsFreed }` and the updated `pool`. Relay: a\n" #
+    "  lock adds the weight shares x lockDurationNs; one third of it\n" #
+    "  (relayWeight) shortens the other locked positions of the same pool in\n" #
+    "  proportion to shares x time already served (now - lockStartedAt); each\n" #
+    "  reduction = allotted weight / shares, capped at the remaining time, and\n" #
+    "  is added to relayReceivedNs. Nobody is lengthened; older and heavier\n" #
+    "  positions are relieved most. A relieved or expired position is not\n" #
+    "  expelled: it stays in the pool as free liquidity (its shares count pro\n" #
+    "  rata like any free share) until its owner withdraws it. Positions made\n" #
+    "  by `mintLiquidity` are free.\n" #
+    "  isCreator = the caller had the admin role at add time. Suspended from\n" #
+    "  the announcement of a pair removal (`#removalAnnounced { effectiveAt }`).\n" #
+    "  Errors: `#anonymous`, `#poolNotFound`, `#poolRemoved`,\n" #
+    "  `#removalAnnounced`, `#minimumsNotSet`, `#unsupportedToken`,\n" #
+    "  `#zeroAmount`, `#counterAmountRequired`, `#insufficientBalance { token;\n" #
+    "  available; required }`, `#belowMinimum` (kept in the type, never returned),\n" #
+    "  `#slippageExceeded`, `#invalidSlippage`, `#referenceOutOfBand`,\n" #
+    "  `#referenceUnavailable`, `#lockTooShort { minimumNs }`, `#lockTooLong {\n" #
+    "  maximumNs }`, `#zeroShares`,\n" #
+    "  `#operationInProgress`. Retry safety: not idempotent; each success is a\n" #
+    "  new position. Errors change no pool state; funds already pulled stay in\n" #
+    "  the internal balance and are not pulled twice.\n" #
     "- `removeLiquidity(positionId) : Result<RemoveLiquidityResult,\n" #
-    "  RemoveLiquidityError>`. Owner only, at or after unlockAt (any time on a\n" #
-    "  removed pair). Burns the position's shares and credits shares x reserve\n" #
-    "  / totalShares of each token (rounded down) to the owner's `available`\n" #
-    "  balances; the position is deleted. Errors: `#anonymous`,\n" #
-    "  `#positionNotFound`, `#notPositionOwner`, `#poolNotFound`,\n" #
-    "  `#positionLocked { unlockAt }`, `#operationInProgress`. Retry safety: a\n" #
-    "  repeat after success returns `#positionNotFound`; never paid twice.\n" #
-    "- `extendLock(positionId, newUnlockAt : Int) : Result<PositionView,\n" #
-    "  ExtendLockError>`. Owner only; newUnlockAt >= current unlockAt and <=\n" #
-    "  the position creation date + 5 years (1826 days, never counted from now);\n" #
-    "  never shortens; existing locks are not modified. Errors: `#anonymous`, `#positionNotFound`,\n" #
-    "  `#notPositionOwner`, `#cannotShortenLock { unlockAt }`, `#lockTooLong {\n" #
-    "  maximumUnlockAt }`, `#operationInProgress`. Retry safety: idempotent for\n" #
-    "  the same newUnlockAt.\n" #
+    "  RemoveLiquidityError>`. Owner only, at or after unlockAt, in every pool\n" #
+    "  state (an announced removal and a removed pool included): the lock of a\n" #
+    "  position always applies and no function shortens or cancels it. A\n" #
+    "  position without a lock is withdrawable at any time. Burns the\n" #
+    "  position's shares and credits shares x reserve / totalShares of each\n" #
+    "  token (rounded down) to the owner's `available` balances; the position\n" #
+    "  is deleted. Errors: `#anonymous`, `#positionNotFound`,\n" #
+    "  `#notPositionOwner`, `#poolNotFound`, `#positionLocked { unlockAt }`,\n" #
+    "  `#operationInProgress`. Retry safety: a repeat after success returns\n" #
+    "  `#positionNotFound`; never paid twice.\n" #
+    "- `extendLock(positionId, newUnlockAt : Int) : Result<ExtendLockResult,\n" #
+    "  ExtendLockError>` with `ExtendLockResult { position : PositionView;\n" #
+    "  relay : RelayOutcome; pool : PoolView }`. Owner only. In every case the\n" #
+    "  remaining time after the extension (newUnlockAt - now) must be between\n" #
+    "  3 months and 5 years, as for a new commitment (the only rule is the remaining time); this also applies to a\n" #
+    "  short lock that is extended. A locked position (unlockAt > now) also\n" #
+    "  needs newUnlockAt >= unlockAt; there is no cap of lockStartedAt + 5 years; it never\n" #
+    "  shortens and only the duration added counts. A free or expired position\n" #
+    "  is committed anew from now: lockStartedAt = now and\n" #
+    "  relayReceivedNs = 0. The added duration times shares is the new weight\n" #
+    "  and relieves the other locked positions of the pool as in `addLiquidity`\n" #
+    "  (relay is all zero when nothing is added). No automatic extension\n" #
+    "  exists. Errors: `#anonymous`, `#positionNotFound`, `#notPositionOwner`,\n" #
+    "  `#cannotShortenLock { unlockAt }`, `#lockTooLong { maximumUnlockAt }`,\n" #
+    "  `#lockTooShort { minimumNs }`, `#poolNotFound`, `#poolRemoved`,\n" #
+    "  `#removalAnnounced { effectiveAt }`, `#operationInProgress`. Retry\n" #
+    "  safety: a repeat with the same newUnlockAt on a locked position changes\n" #
+    "  nothing (zero added weight, no relay); on a free position the first call\n" #
+    "  locks it, so a repeat is the locked case.\n" #
     "- Positions are public: `getDexPosition(positionId) : ?PositionView`,\n" #
     "  `listPoolPositions(poolId)`, `listDexPositionsOf(owner)`. A PositionView\n" #
     "  has id, poolId, owner (principal), shares, amount0, amount1 (pro rata,\n" #
     "  rounded down), token symbols, createdAt, lockDurationNs, unlockAt,\n" #
-    "  isCreator, unlocked (now >= unlockAt) and withdrawable (unlocked or the\n" #
-    "  pair is removed). The contract-owned lockedShares have no position.\n" #
+    "  isCreator, unlocked (now >= unlockAt), withdrawable (= unlocked,\n" #
+    "  whatever the pool state), lockStartedAt, remainingNs (0 when unlocked),\n" #
+    "  locked (= not unlocked), relayReceivedNs (cumulative time removed by\n" #
+    "  the relay) and feesCollected0 / feesCollected1 (set-aside LP fees\n" #
+    "  credited to the position, per pool token). The contract-owned\n" #
+    "  lockedShares have no position.\n" #
     "  A position is public and linked to the identifier on TTTI: principal,\n" #
     "  shares, amounts, lock and unlock date. Only observed yield is mentioned:\n" #
     "  the fees actually earned by a position, stated as a recorded fact (the\n" #
-    "  70 % LP part of each swap fee stays in the pool, see swap fees below).\n" #
+    "  LP part of each swap fee is shared as described in the swap fees below).\n" #
+    "- Daily sharing of the LP fee pots. Queries (no caller needed except the\n" #
+    "  last one):\n" #
+    "  `getDexPendingPots() : [PendingPotView]` and `getDexPendingPot(poolId) :\n" #
+    "  ?PendingPotView` (null when the pool does not exist): poolId, pending0 and\n" #
+    "  pending1 (the pot of the next sharing, in the pool's two tokens, base\n" #
+    "  units), dayStart, nextSharingAt (ns since epoch) and sharingRunning (true\n" #
+    "  while the sharing of the previous pot has slices left).\n" #
+    "  `getDexEstimatedShare(positionId) : ?EstimatedShareView` (null when the\n" #
+    "  position does not exist) and `getMyDexEstimatedShares() :\n" #
+    "  [EstimatedShareView]` (the caller's positions; empty for an anonymous\n" #
+    "  caller): positionId, poolId, owner, weight, lockedNs (ns locked so far in\n" #
+    "  the current day), dayFractionBps (lockedNs as basis points of one day),\n" #
+    "  estimated0 and estimated1 (the share the position would receive if the\n" #
+    "  pending pot were shared now; 0 for a free position) and nextSharingAt.\n" #
+    "  Rule: once a day the day roll freezes the pending pot of every pool and\n" #
+    "  starts its sharing, then each pool is shared in slices of at most 5 000\n" #
+    "  positions per message (a first pass sums the products, a second pass\n" #
+    "  credits them). The weight of a position is capital (its shares) x\n" #
+    "  sqrt(remaining time / 5 years), taken at the start of the day or at the\n" #
+    "  start of the lock when the lock begins during the day; a position's\n" #
+    "  product is weight x the fraction of the day it was locked, and its share\n" #
+    "  is floor(frozen pot x its product / sum of the products of the pool),\n" #
+    "  credited to the owner's internal DEX balance in the pool's two tokens and\n" #
+    "  added to feesCollected0/1 and to the pool lockedFeesPaid0/1. The total paid\n" #
+    "  does not depend on the slice size. A position removed during the day keeps\n" #
+    "  its product, and its share is paid to its owner at the next sharing. The\n" #
+    "  rounding remainder goes to the pool reserves; when no position was locked\n" #
+    "  during the day the whole pot goes to the pool reserves. The pot amounts\n" #
+    "  are outside the pool reserves and are counted as owed by the reserve\n" #
+    "  checks and the custody sweep. The day roll and the slices are run by a\n" #
+    "  canister timer (checked hourly and one minute after every install and\n" #
+    "  upgrade; the roll itself happens once a day, at the first check after\n" #
+    "  nextSharingAt, which is anchored to the previous boundary). `startDexDayRoll() : DayRollReport`\n" #
+    "  (rolled, dayStart, nextSharingAt, poolsStarted) and `runDexPotSlice(poolId)\n" #
+    "  : PotSliceReport` (poolId, phase, processed, more, paid0, paid1) are\n" #
+    "  callable from outside by an admin only; the first does nothing before\n" #
+    "  nextSharingAt, the second does nothing when no sharing runs for the pool,\n" #
+    "  so a repeated call has no extra effect. The OQL entities `dexPoolPot` and\n" #
+    "  `dexPositionLock` are public; `dexUnpaidShare` (owner and pool) is\n" #
+    "  readable only by its owner.\n" #
     "- `quoteSwap(poolId, tokenIn, amountIn, slippageBps) : Result<SwapQuote,\n" #
     "  SwapError>` (query): tokenOut, amountOut, fee, lpFee, protocolFee,\n" #
     "  feeBps, priceImpactBps (versus the reserve ratio, rounded up),\n" #
@@ -1557,15 +2109,26 @@ mixin () {
     "  balance, constant product v2: fee = ceil(amountIn x feeBps / 10_000),\n" #
     "  amountOut = floor(reserveOut x net / (reserveIn + net)) with net =\n" #
     "  amountIn - fee. Fee: 30 bps on the 7 starting pairs; added pairs use their\n" #
-    "  tier (5, 30 or 100 bps). Of each fee, 70 % (lpFee) stays in the pool\n" #
-    "  reserves for LPs; 30 % (protocolFee = floor(fee x 30 / 100)) is added to\n" #
+    "  tier (5, 30 or 100 bps). Of each fee, 70 % (lpFee) is for LPs: half\n" #
+    "  (rounded up) stays in the pool reserves, pro rata to shares, free or\n" #
+    "  locked alike; the other half (floor(lpFee x 50 / 100)) is added to the\n" #
+    "  pending pot of the pool (see Daily sharing of the LP fee pots below).\n" #
+    "  A swap no longer reads or changes any position: it only changes the pool\n" #
+    "  reserves, the protocol fee and the pending pot. Only fees actually paid\n" #
+    "  are shared. The same split applies to\n" #
+    "  the LP share of routed (0.1 %) fees, whose unlocked half is credited pro\n" #
+    "  rata to shares. 30 % (protocolFee = floor(fee x 30 / 100)) is added to\n" #
     "  protocolFee0 / protocolFee1, kept outside the reserves and not used in\n" #
     "  pricing until it is added as permanent liquidity (see Mint revenue). Refused with no state change when\n" #
     "  amountOut < minAmountOut (`#slippageExceeded { amountOut; minAmountOut\n" #
     "  }`), when now > deadline (`#deadlineExceeded { deadline; now }`) or when\n" #
     "  deadline > now + 5 minutes (`#deadlineTooFar { maximum }`). Other errors:\n" #
-    "  `#anonymous`, `#poolNotFound`, `#poolFilling { gauge }`, `#poolRemoved`,\n" #
-    "  `#poolNotOpen`, `#unsupportedToken`, `#tokenNotInPool`, `#zeroAmount`,\n" #
+    "  `#anonymous`, `#poolNotFound`, `#depthBelowThreshold { depthUsdE8;\n" #
+    "  thresholdUsdE8 }` (threshold measure under 10 USD: the swap reopens as soon as the\n" #
+    "  threshold is reached), `#rateUnavailable` (a needed hourly rate is absent\n" #
+    "  or expired), `#removalInProgress { effectiveAt }` (pair removal announced\n" #
+    "  or running), `#poolRemoved`, `#unsupportedToken`, `#tokenNotInPool`,\n" #
+    "  `#zeroAmount`,\n" #
     "  `#invalidSlippage { maximumBps }` (quote), `#insufficientBalance {\n" #
     "  available }`, `#insufficientLiquidity`, `#operationInProgress`. Retry\n" #
     "  safety: not idempotent; each success is a new swap, but the deadline\n" #
@@ -1575,7 +2138,9 @@ mixin () {
     "`getDexPool` / `quoteSwap` before each swap; reserves change with every\n" #
     "swap and add. OQL table `dexPool` adds reserve and share columns; table\n" #
     "`dexPosition` (primary key `id`; poolId, owner, shares, createdAt,\n" #
-    "lockDurationNs, unlockAt, isCreator) is public.\n\n" #
+    "lockDurationNs, unlockAt, isCreator, lockStartedAt, relayReceivedNs,\n" #
+    "feesCollected0, feesCollected1) is public; `dexPool` also has\n" #
+    "lockedFeesPaid0 and lockedFeesPaid1.\n\n" #
 
     "## Mint revenue: owner share, mint fee and liquidity injections\n\n" #
     "Price: a mint collects 101 for 100. Of the collected cost (pay-token base\n" #
@@ -1671,12 +2236,12 @@ mixin () {
     "- `listAdminHistory(filter, token : ?HistoryToken, offset, limit) :\n" #
     "  Result<HistoryPage, HistoryError>` (admin query; `#err(#notAdmin)`\n" #
     "  otherwise). `filter`: `#all | #mintDeposit | #revenueSent | #refund |\n" #
-    "  #buyback | #swap | #liquidity | #destination`; `token`: `#icp | #ckbtc |\n" #
+    "  #redemption | #swap | #liquidity | #destination`; `token`: `#icp | #ckbtc |\n" #
     "  #ckusdc | #ckusdt | #tttiT` or null for every token. Rows are newest\n" #
     "  first; `limit` 0 means 25 and is capped at 100; page with `offset`.\n" #
     "  Page: `{ items; total (rows matching the filter); offset; limit }`. Row:\n" #
     "  `{ id (\"<prefix>-<id>\", unique across kinds; prefixes CV, RF, BD, BR,\n" #
-    "  OW, BB, RS, LP, IN, RD, ST, WC, DH); kind; token; amount (base units);\n" #
+    "  OW, GR, RS, LP, IN, RD, ST, WC, DH); kind; token; amount (base units);\n" #
     "  counterparty : ?Text; status; memo; block; timestamp (ns); detail }`.\n" #
     "  Swap rows are routed swaps only (native pool swaps have no per-swap\n" #
     "  record); liquidity removals have no stored record. Built from stored\n" #
@@ -1725,10 +2290,13 @@ mixin () {
     "  | #failed(text)); error; startedAt; updatedAt }`. An injection\n" #
     "  interrupted by an upgrade becomes `#needsReview` with its amounts kept.\n\n" #
     "### Native swap fees\n\n" #
-    "- 70 % of each native swap fee stays in the reserves for LPs; 30 % is\n" #
-    "  added to the same pool as permanent locked liquidity by the 10-minute\n" #
-    "  pass, at the pool ratio (the part beyond the ratio waits). Nothing goes\n" #
-    "  to cycles. `getProtocolLiquidity()` (public) shows it.\n\n" #
+    "- 70 % of each native swap fee stays in the reserves for LPs; 30 % is the\n" #
+    "  protocol share, split two thirds to the creator (credited to the creator\n" #
+    "  holdings, see Creator fees) and one third to permanent liquidity (set\n" #
+    "  aside per token and injected into the least liquid TTTI-T pool as\n" #
+    "  contract-locked shares, see Permanent liquidity). Nothing is recycled\n" #
+    "  into the same pool and nothing goes to cycles.\n" #
+    "  `getProtocolLiquidity()` (public) shows the protocol-owned shares.\n\n" #
     "### Admin data, polling and gotchas\n\n" #
     "- `getUpgradeReadiness` adds `ownerSendsInFlight : [Nat]` (pending OW ids,\n" #
     "  every source), `revenueSendsInFlight : [Nat]` (pending OW ids with\n" #
@@ -1745,7 +2313,8 @@ mixin () {
     "  10-30 s at most; they change at most every 10 minutes after a mint.\n" #
     "- Timers re-armed on every install and upgrade: retries (FW / SH / RF / OW\n" #
     "  / SR / ST) every 10 minutes, the settlement pass every 10 minutes, DL /\n" #
-    "  MF retries, fee recycling and injections every 10 minutes, price\n" #
+    "  MF retries, refused-deposit feed, pool fee splits and injections every 10\n" #
+    "  minutes, price\n" #
     "  samples every 5 minutes.\n" #
     "- A wrong \"Not arrived\" on OW, ST or MF sends again: check the ledger for\n" #
     "  the memo first.\n" #
@@ -1775,7 +2344,8 @@ mixin () {
     "  reserveBalanceE8s, reserveCyclesEstimate : ?Nat, totalCycles,\n" #
     "  avg7dCyclesPerDay : ?Nat, avg30dCyclesPerDay : ?Nat, autonomyDays : ?Nat,\n" #
     "  targetDays (90), sampleCount, oldestSampleAt : ?Int.\n" #
-    "- Cycles share (part of the 20 % pool protocol share, basis points):\n" #
+    "- Cycles share (history; swap fees no longer feed the cycles reserve; basis\n" #
+    "  points of the former pool protocol share):\n" #
     "  between 500 (5 %) and 4000 (40 %); 4000 below 45 days of autonomy, 500\n" #
     "  above 180 days, linear in between. Adjusted at most once a day, by at\n" #
     "  most 1000 bps (10 percentage points) per adjustment; starts at 4000.\n" #
@@ -1785,8 +2355,9 @@ mixin () {
     "  nextAdjustAfter, autonomyDays. `getCyclesShareHistory() : [ShareChange]`\n" #
     "  (admin, same trap; newest first): `{ at; oldShareBps; newShareBps;\n" #
     "  autonomyDays }`.\n\n" #
-    "### Split of the 20 % protocol share of each swap fee (history)\n\n" #
-    "Swaps keep 20 % of each fee in pool.protocolFee0/1 (lot 3). Every hour the\n" #
+    "### Split of the protocol share of each swap fee (history)\n\n" #
+    "Until PTM-4, swaps kept the protocol share of each fee in\n" #
+    "pool.protocolFee0/1 (lot 3). Every hour the\n" #
     "DC check moves them into per-pool buckets, in this order: 1) recycling\n" #
     "= ceil(amount x 10 %) (fixed, in favour of the pool); 2) cycles =\n" #
     "min(rest, floor(amount x cyclesShareBps / 10_000)); 3) bonus = the rest,\n" #
@@ -1897,7 +2468,7 @@ mixin () {
     "  fees, `minimumReceived = amountOut x (10_000 - slippageBps) / 10_000`, the\n" #
     "  other route in `alternative` for information, `reason` and `maxDeadline`\n" #
     "  (now + 5 min, ns). On equal amounts the native route wins.\n" #
-    "- A native pool that is empty, filling (under 100 USD) or too shallow\n" #
+    "- A native pool that is empty, below the 10 USD swap-opening threshold or too shallow\n" #
     "  (`reason = #nativeUnavailable`) goes through ICPSwap. With no ICPSwap pool or\n" #
     "  quote only an open native pool is offered (`#icpswapUnavailable`). With\n" #
     "  neither: `#noRouteAvailable`. Not a registry pair: `#pairNotFound`; a pair\n" #
@@ -1930,17 +2501,22 @@ mixin () {
     "  whole input back.\n" #
     "- The 0.1 % of a completed ICPSwap route goes to the pair's native pool: 70 %\n" #
     "  credited to its LPs' internal balances pro rata on their position shares,\n" #
-    "  30 % (plus rounding dust) to the pool's protocol fee, recycled into\n" #
-    "  permanent locked liquidity like native swap fees. With no LP in the native\n" #
+    "  30 % (plus rounding dust) is the protocol share, split like the native\n" #
+    "  swap fee protocol share: two thirds to the creator holdings, one third to\n" #
+    "  permanent liquidity (set aside, rebalanced on the best route, then\n" #
+    "  injected). With no LP in the native\n" #
     "  pool, the 70 % goes to the LPs of the least liquid TTTI-T pool (pro rata\n" #
     "  on their shares, recorded per pool in OQL table `routerRedirect`); if that\n" #
     "  pool has no LP either, the 70 % is set aside per pool and paid to the LPs\n" #
     "  once the first LP arrives (checked on every routed swap and every 10\n" #
     "  minutes).\n" #
-    "- `getMyRoutedSwaps()` lists the caller's own routed swaps (both routes),\n" #
-    "  newest first. Admin only (`#err(#notAuthorized)` otherwise):\n" #
-    "  `adminListRoutedSwaps()` (ICPSwap routed swaps with stage and status) and\n" #
-    "  `adminGetRouterFees()` (0.1 % totals per native pool and the set-aside).\n" #
+    "- `getMyRoutedSwaps(cursor : ?Nat, limit : Nat) : Page<RoutedSwap>` lists the\n" #
+    "  caller's own routed swaps (both routes), newest first, one page (see\n" #
+    "  \"Pagination, batches and the in-flight index\"). Admin only\n" #
+    "  (`#err(#notAuthorized)` otherwise): `adminListRoutedSwaps(cursor : ?Nat,\n" #
+    "  limit : Nat) : Result<Page<RoutedSwap>, RouterAdminError>` (ICPSwap routed\n" #
+    "  swaps with stage and status, newest first) and `adminGetRouterFees()`\n" #
+    "  (0.1 % totals per native pool and the set-aside).\n" #
     "- Retry safety: `routedSwap` is not idempotent; each call is a new order. After\n" #
     "  an error or a timeout, read `getMyRoutedSwaps()` before calling again. The\n" #
     "  protocol never places an order by itself and never creates TTTI-T.\n\n" #
@@ -1984,7 +2560,7 @@ mixin () {
     "  internalTotal; ledgerTotal; at }`. While paused, `swap`, `routedSwap`,\n" #
     "  `depositToDex`, `addLiquidity`, `requestPair` and `approvePair` trap\n" #
     "  (reject) with `The DEX is paused after a reserve mismatch...`, and the\n" #
-    "  automatic fee recycling, refused-deposit feed, liquidity injection and\n" #
+    "  refused-deposit feed, pool fee splits, liquidity injection and\n" #
     "  set-aside payout skip. `withdrawFromDex`, `removeLiquidity`, `extendLock`,\n" #
     "  refusals, quotes and the DD/DW/DQ transfer retries stay available.\n" #
     "- `getUpgradeReadiness` adds `dexPaused`, `dexPauseReason`,\n" #
@@ -1992,7 +2568,21 @@ mixin () {
     "  check), `unresolvedShortfallCount`, `dexOperationsInFlight : [Text]`\n" #
     "  (held DD/DW/DQ and IR lock keys) and `dexReady`, false while the DEX is\n" #
     "  paused, a shortfall is unresolved or DEX operations are in flight.\n" #
-    "- OQL (admin only): `dexReserveResult`, `dexReserveMismatch`, `dexPause`.\n\n" #
+    "- Per-account check (DEX-1): the same check also compares each account with its own obligations only: `#dexHoldings` (custody plus the legacy DEX accounts per token, against the DEX total owed), `#requestDeposits` (pair-request deposits, TTTI-T), `#mintFee` (MINT_FEE account per paid token) and `#protocolFees` (PROTOCOL_FEES, ICP). `AccountResult = { kind; accountLabel; token; ledgerBalance; owed; difference; status; checkedAt }` with `difference = ledgerBalance - owed` (Int). The status fields are additive: `ReserveCheckView.accounts`, `DexReserveStatus.accounts` and `accountHistory` (confirmed account mismatches, oldest first), and `DexPauseView.account`. A confirmed shortfall (second fresh read) on any account pauses the DEX and names that account (`account : ?{ kind; accountLabel; token }`); `resumeDex` fails with `#checkFailed(\"Shortfall remains on <label> <token>: ledger ..., owed ...\")` until it is gone. Surplus is reported only. `claimLpBonus` pays from PROTOCOL_FEES and `claimMintFee` from MINT_FEE, both unchanged.\n" #
+    "- OQL (admin only): `dexReserveResult`, `dexReserveMismatch`, `dexPause`, `dexReserveAccount`.\n\n" #
+
+    "## DEX custody account and sweep (DEX-1)\n" #
+    "\n" #
+    "- Custody account: each DEX token (TTTI-T, ICP, ckBTC, ckUSDC, ckUSDT) has one\n" #
+    "  DEX custody account on its own ledger, owned by this canister. `getDexCustodyAccounts() : [{ token; account }]` (public query) returns the five accounts. Deposits, swap and addLiquidity inputs, withdrawals and ICPSwap router outputs all use it; the internal balances, positions and blocks are unchanged by this. `getDexDepositAccount(owner)` still returns the legacy per-user deposit account, not the custody account.\n" #
+    "- Automatic deposit: `depositToDex`, and the shortfall of the input token in `swap` and of either pool token in `addLiquidity`, are pulled from the caller's default account into custody by ICRC-2 `transfer_from` (memo DD). The caller must first call `icrc2_approve` on that token's ledger to this canister for at least the amount plus the ledger fee. The internal balance is credited only after the ledger confirms the transfer.\n" #
+    "- Without enough allowance or balance: `depositToDex` returns `#err(#insufficientAllowance({ allowance; required }))` or `#err(#insufficientFunds({ balance }))`; `swap` and `addLiquidity` return `#err(#insufficientBalance(...))`, where `available` is the internal balance plus what the allowance or balance would still allow (token and required in addLiquidity). Nothing is credited on a refusal. `withdrawFromDex` (memo DW) and router outputs are paid from the custody account.\n" #
+    "- Retry safety: pulls carry `created_at_time` and are retried as recorded, so a duplicate answer from the ledger is not a second transfer. After an error or timeout read `getDexTransfers(owner)` before calling again; `#transferInProgress` / `#operationInProgress` mean a call for the same owner and token is running.\n" #
+    "- Sweep: funds that arrived earlier on the legacy accounts (user deposit subaccounts, DEX-POOL-id subaccounts) are moved to custody by an admin sweep. It reads the real ledger balance and transfers balance minus the ledger fee with the memo `TTTI-SW-<n>`, recorded with `created_at_time` before the first ledger call. A balance not above the fee is skipped and noted. Running again moves nothing once the balances are swept, and moves new inflows (for example refused deposits fed to a pool subaccount). The sweep never changes internal balances, positions, ledger blocks or `sale.reserved`, and is not blocked by the DEX pause.\n" #
+    "- Admin endpoints (a non-admin caller traps with `Unauthorized: only admins can use the DEX sweep`, except where a typed error is shown): `runDexSweep() : Result<[TokenState], { #notAdmin; #alreadyRunning }>` (one run at a time; resends unsettled sweep transfers as recorded first, sweeps, then compares custody with the total owed); `resendDexSweepTransfers() : Result<[TokenState], { #notAdmin }>` (also run by a timer every 10 minutes, re-armed on every install and upgrade); `getDexSweepState() : [TokenState]` (query: per token legacy accounts found, amounts swept, pending and unknown-outcome transfers, notes, comparison); `getDexCustodyComparison() : [{ token; comparison : ?Comparison }]` (query; null before the first comparison); `listDexSweepTransfers(cursor : ?Nat, limit : Nat) : Page<SweepTransferView>` (query, newest first, one page; the cursor is the transfer number `n`); `getDexSweepProgress() : SweepProgress` (query: whether a run is active, run id, current token and account position, batches taken, batch size, last batch time and per-token progress: accounts listed, read, with balance, skipped, unreadable, in flight, excluded as zero, done). Amounts are base units; timestamps are nanoseconds since the epoch.\n" #
+    "- Comparison: custody ledger balance versus the total owed (user balances, pool reserves, protocol fees, router set-aside). A surplus is credited to no one, has no automatic action and is listed in To review as a `CS` row (purchaseId = token index, amount = surplus). A shortfall is reported in the comparison only.\n" #
+    "- Review: a sweep transfer with unknown outcome after 23 hours is listed in To review as an `SW` row. `markTransferArrived(SW, n, block)` closes it as completed; `markTransferNotArrived(SW, n)` closes it as failed, the legacy account keeps its balance and a later `runDexSweep` moves it with a new transfer. Check the custody ledger for the `TTTI-SW-<n>` memo first. `CS` rows accept neither action (`#err(#notApplicable)`).\n" #
+    "- OQL (admin only): `dexSweepTransfer` (primary key `n`), `dexSweepReport` (primary key `token`), `dexReserveAccount` (primary key `key` = kind/token).\n\n" #
 
     "## DEX indicators (lot 7)\n\n" #
     "- Purpose: facts about the DEX pools, computed once per hour from the stored\n" #
@@ -2011,7 +2601,8 @@ mixin () {
     "  its date are stored and cleared by the next success.\n" #
     "- Units: percentages are basis points (10_000 = 100 %); token amounts are\n" #
     "  base units of the token concerned; `...UsdE8` values are USD with 8\n" #
-    "  decimals. TTTI-T is valued at its fixed 10,000 USD; other tokens at the\n" #
+    "  decimals. TTTI-T has no USD value (no fixed price; pool values are 2 x the\n" #
+    "  non-TTTI-T side) and other tokens use the\n" #
     "  hourly stored rate within its validity (1 hour plus 5 minutes). A USD value\n" #
     "  is null when a needed rate is absent or expired; the other figures still\n" #
     "  compute.\n" #
@@ -2040,16 +2631,254 @@ mixin () {
     "    buckets. Only native pool swaps are recorded, from the moment recording\n" #
     "    started (`fees.cumulativeSince`).\n" #
     "  - `fees`: fees collected per token over the last 7 days and cumulative\n" #
-    "    since recording, with the 70 % LP part and the 30 % permanent-liquidity\n" #
-    "    part computed on the collected amount (permanent part rounded down), and\n" #
+    "    since recording, with the 70 % LP part and the 30 % protocol part\n" #
+    "    (two thirds creator, one third permanent liquidity) computed on the\n" #
+    "    collected amount (rounded down), and\n" #
     "    `observed`: the fees of the period over the pool value in basis points,\n" #
-    "    a plain figure for `periodDays` (7), not annualised, null without USD\n" #
-    "    values.\n" #
+    "    a plain figure for `periodDays` (7), null without USD values.\n" #
     "- Reading the indicators moves no balance and changes no pool or position.\n" #
     "- OQL (public): `dexIndicator`, one flat row per pool of the stored snapshot.\n" #
     "- OQL (public): `dexSwapActivity`, hourly swap-activity buckets per pool\n" #
     "  (`poolId`, `hour`, `swapCount`, `volume0`, `volume1`, `fee0`, `fee1`),\n" #
     "  kept for 7 days.\n\n" #
+
+    "## Sealed-bid auction: offers and closing (lots PTM-6a and PTM-6b)\n\n" #
+    "- Scope: offers (PTM-6a) and closing (PTM-6b). The withdrawal of the\n" #
+    "  withdrawable balance, the settlement of the served deposits and the\n" #
+    "  re-issuing of the returned TTTI-T are not part of this version: no\n" #
+    "  endpoint pays out a balance, and no amount recorded at closing is sent\n" #
+    "  anywhere. Nothing is burned or sent; total supply and the cap are\n" #
+    "  unchanged, and no ledger balance or block is rewritten.\n" #
+    "- Lot: all TTTI-T held on the returned account that is not committed to an\n" #
+    "  earlier lot. An auction opens as soon as that amount is non-empty and no\n" #
+    "  auction is open, and lasts 24 hours (`closesAt = openedAt + 24 h`). The\n" #
+    "  lot size is fixed when the auction opens; TTTI-T returned while an auction\n" #
+    "  is open forms the next lot. Opening comes from a canister timer (every\n" #
+    "  minute, re-armed on every install and upgrade), from `openAuction` and\n" #
+    "  lazily from `placeAuctionBid`. Opening is not done while the DEX is paused.\n" #
+    "- First lot and end of mint (PTM-9b): the part of the mint left below the\n" #
+    "  minimum of one mint joins the first auction lot (`remainderE8s`); it is\n" #
+    "  minted only at settlement, for the winner, pooled with the winner's mass.\n" #
+    "- Lot below the minimum of one bid (0.001 TTTI-T): it is sold as a block\n" #
+    "  (`blockSale` true). Each bid is a price per TTTI-T for the whole lot; the\n" #
+    "  quantity must equal the lot, else error `#wholeLotRequired { lotSizeE8s }`.\n" #
+    "  The best bid wins the whole lot, same reserve, pooled like the others.\n" #
+    "- Units: quantities in TTTI-T e8s (1 TTTI-T = 100_000_000); `priceB` in the\n" #
+    "  smallest unit of the chosen token per whole TTTI-T; deposits in the\n" #
+    "  token's smallest unit; the reserve fields in USD x 10^8 per whole TTTI-T;\n" #
+    "  timestamps in nanoseconds since the epoch. Tokens: `#icp`, `#ckbtc`,\n" #
+    "  `#ckusdc`, `#ckusdt`.\n" #
+    "- `getAuctionView() : AuctionView` (query, public): `open`, `auctionId`,\n" #
+    "  `lotSizeE8s`, `openedAt`, `closesAt`, `pendingLotE8s` (next lot),\n" #
+    "  `reservePriceUsdE8` (the effective reserve, see below), `reserveFloorUsdE8`\n" #
+    "  (10_000 USD x 10^8), `consolidatedPriceUsdE8` (`?Nat`, current consolidated\n" #
+    "  price), `dailyAverageUsdE8` (`?Nat`, 24 h average of the consolidated\n" #
+    "  price), `reserveBinding` (`#floor`, `#consolidated` or `#dailyAverage`:\n" #
+    "  which of the three is the reserve now), `reservePrices` (per token, the\n" #
+    "  effective reserve in the token at its current rate, `null` when that\n" #
+    "  token's rate is absent or expired), `minQuantityE8s` (100_000),\n" #
+    "  `maxBidsPerPerson` (10) and `guaranteeRecoverable` (true). It carries no\n" #
+    "  bid, no number of bids, no deposit total and no participation.\n" #
+    "- Reserve price: the highest of three values, computed on every read and\n" #
+    "  stored nowhere: 10_000 USD per TTTI-T; the 24 h average of the\n" #
+    "  consolidated TTTI-T price (`dailyAverageUsdE8` of\n" #
+    "  `getConsolidatedTttiPrice`); and the current consolidated price. A\n" #
+    "  component that is unavailable (no open pool, no valid rate, no samples) is\n" #
+    "  ignored, so the reserve never falls below 10_000 USD. On a tie the order is\n" #
+    "  floor, then current consolidated price, then 24 h average. When the market\n" #
+    "  is under 10_000 USD the reserve stays at 10_000 USD: no offer below it\n" #
+    "  passes and nothing is reissued below 10_000 USD (the lot stays in the\n" #
+    "  contract). The per-token equivalent is\n" #
+    "  `ceil(reserveUsdE8 x 10^decimals / rate)` at the stored hourly rate of\n" #
+    "  each token; a token without a valid rate has `price = null`, never an\n" #
+    "  invented value. At the closing the reserve is the value\n" #
+    "  computed at the closing time, not the value shown while bidding. The\n" #
+    "  reserve does not change the bid rules or the deposit.\n" #
+    "- `getMyAuctionBids() : [Bid]` (query, signed-in callers; empty for an\n" #
+    "  anonymous caller): only the caller's own bids.\n" #
+    "- Deposit formula: `required = ceil(2 x priceB x quantityE8s x 100 /\n" #
+    "  (99 x 10^8))`, i.e. 2 x B x quantity / 0.99 in the chosen token, in\n" #
+    "  integers. `quoteAuctionDeposit(token, priceB, quantityE8s) :\n" #
+    "  Result<Nat, BidError>` (query, public) and `placeAuctionBid` use the same\n" #
+    "  function.\n" #
+    "- `placeAuctionBid(token, quantityE8s, priceB, depositAmount) :\n" #
+    "  Result<Bid, BidError>` (signed-in callers only). Checked before any ledger\n" #
+    "  call, so a refused bid takes no funds: anonymous, paused, no open auction\n" #
+    "  or past `closesAt`, quantity under 0.001 TTTI-T, zero or oversized price\n" #
+    "  or quantity, an 11th bid by the same principal in the auction,\n" #
+    "  `depositAmount` below the required deposit, a bid price under 10_000 USD\n" #
+    "  per whole TTTI-T at the current rate of the bid token (also refused when\n" #
+    "  that token has no usable rate), a deposit below the ledger fee of the bid\n" #
+    "  token. The caller must first approve\n" #
+    "  the canister on the token ledger (ICRC-2) for `depositAmount` plus the\n" #
+    "  ledger fee. The full `depositAmount` is then pulled with\n" #
+    "  `icrc2_transfer_from` into the token's auction custody account, memo\n" #
+    "  `TTTI-AB-<n>`. A deposit above the required amount hides the budget; the\n" #
+    "  excess is credited to the withdrawable balance at the closing. Bids are firm:\n" #
+    "  there is no withdrawal or change.\n" #
+    "- `BidError`: `#anonymous`, `#paused`, `#noOpenAuction`,\n" #
+    "  `#quantityBelowMinimum{minimum}`, `#invalidPrice`, `#tooManyBids{maximum}`,\n" #
+    "  `#depositBelowRequired{required; deposited}`,\n" #
+    "  `#allowanceInsufficient{allowance; required}`,\n" #
+    "  `#insufficientFunds{balance; required}`, `#bidInProgress` (one bid at a\n" #
+    "  time per caller), `#ledgerError(text)`, `#wholeLotRequired{lotSizeE8s}`,\n" #
+    "  `#priceBelowMinimum{minimumUsdE8; bidUsdE8}` (minimumUsdE8 = 10_000 USD x\n" #
+    "  10^8 per whole TTTI-T; bidUsdE8 is the converted bid price, null when the\n" #
+    "  token has no usable rate) and `#depositBelowLedgerFee{fee; deposited}`.\n" #
+    "  Both new refusals are decided before any ledger call: no funds are taken.\n" #
+    "- Dust: a withdrawable auction balance not above the ledger fee of its\n" #
+    "  token is dust. It stays in the balance (nothing is rewritten), is skipped\n" #
+    "  by the return sweep (no lock, no move) and is added to the next return of\n" #
+    "  the same person and token. The OQL entity `auctionDust` (owner, token,\n" #
+    "  amount) mirrors it for reading, is owner-only and is not counted on top\n" #
+    "  of the balance. Moves are indexed by bidder, finished moves leave the\n" #
+    "  active list, and a fully settled auction is skipped by the settlement run.\n" #
+    "- Retry safety: a known ledger error records nothing. An unknown outcome\n" #
+    "  (`#ledgerError` saying the reply is unknown) keeps the deposit recorded;\n" #
+    "  the same transfer is resent (same memo and created_at_time, so the ledger\n" #
+    "  deduplicates it), and after 23 hours it appears in To review. The bid is\n" #
+    "  recorded as soon as the deposit is confirmed; do not place it again. A\n" #
+    "  repeated `placeAuctionBid` creates a new bid and a new deposit.\n" #
+    "- `openAuction() : Result<Auction, OpenAuctionError>` (any caller):\n" #
+    "  `#paused`, `#alreadyOpen`, `#emptyLot`.\n" #
+    "- Privacy: bids of an open auction stay hidden until the closing. No\n" #
+    "  endpoint lists, counts or reads other people's open bids. The OQL entity\n" #
+    "  `auctionBid` (open bids) is owner-only: a\n" #
+    "  signed-in user reads only their own rows; it is not readable through the\n" #
+    "  controller's public query path. A deposit in flight is not listed in the\n" #
+    "  DEX history or the DEX transfer entity; an unresolved one appears only in\n" #
+    "  To review (admin), under the existing DD kind.\n" #
+    "- Reserve check: the hourly DEX reserve check compares each auction custody\n" #
+    "  account (`auctionDeposits`, one per paid token) with the deposits of the\n" #
+    "  open bids, the deposits in flight, and after closing every withdrawable and\n" #
+    "  pending-settlement balance of that token, separately from the other\n" #
+    "  accounts.\n" #
+    "- Closing: the canister timer (every minute, not while the DEX is paused)\n" #
+    "  closes the current auction once `closesAt` has passed, under a lock so it\n" #
+    "  runs once. It needs a valid (unexpired) oracle rate for every payment\n" #
+    "  token used by an offer. Without one, `getAuctionView().closingPending` is\n" #
+    "  true and nothing is closed, served or returned; the next tick tries\n" #
+    "  again, and no rate is invented. With the rates available, closing runs in\n" #
+    "  one step without an `await`, and no ledger balance or block is rewritten.\n" #
+    "- Reserve at closing: the highest of 10_000 USD, the 24 h average of the\n" #
+    "  consolidated TTTI-T price and the consolidated price at closing, in USD x\n" #
+    "  10^8 per whole TTTI-T. A market under 10_000 USD gives a reserve of\n" #
+    "  10_000 USD, and an offer priced at 10_000 USD or more passes. The three\n" #
+    "  compared values (`reserve.floorUsdE8`, `consolidatedUsdE8`,\n" #
+    "  `dailyAverageUsdE8`), the applied `reserve.reserveUsdE8` and the rate of\n" #
+    "  each payment token (`rates`, `usdE8` null when unusable) are stored in the\n" #
+    "  `ClosedAuction`.\n" #
+    "- Ordering: each offer price is converted to USD at the closing rate of its\n" #
+    "  token; an offer under the reserve (or of a token without a rate) is\n" #
+    "  `#discardedBelowReserve`. The others are ordered by price in USD\n" #
+    "  (descending), then by volume (quantity x price in USD, descending), then\n" #
+    "  by age (`createdAt` ascending, then bid id), and served in that order\n" #
+    "  until the lot is exhausted. The last served offer may be served in part\n" #
+    "  (`#partiallyServed`). If the remaining quantity of the lot is under\n" #
+    "  100_000 e8s it is not served. An offer not reached is `#notServed`.\n" #
+    "- Own-price payment: each served offer pays its own price\n" #
+    "  (`pricePaidB = priceB`); there is no uniform price.\n" #
+    "- Deposits at closing: `servedDeposit` is the required deposit for the\n" #
+    "  served quantity at the offer's own price (same formula as the bid\n" #
+    "  deposit); it is added to the bidder's `pendingSettlement` in that token.\n" #
+    "  The rest of the deposit (`returned = deposited - servedDeposit`, the whole\n" #
+    "  deposit for `#notServed` and `#discardedBelowReserve` offers) is credited\n" #
+    "  to the bidder's `withdrawable` balance in that token. `pendingSettlement`\n" #
+    "  is only recorded and shown; it is not withdrawable (see Settlement of the\n" #
+    "  winners). A deposit confirmed after its auction closed is credited whole to\n" #
+    "  `withdrawable`. Everything in `withdrawable` is moved on the ledger from the\n" #
+    "  auction custody to the DEX custody and credited to the bidder's DEX internal\n" #
+    "  balance (net of the ledger fee of that internal move, which is deducted from\n" #
+    "  the credited amount only); `withdrawable` then drops by the gross amount.\n" #
+    "- Carry-over: the unsold quantity (lot size minus served quantity) is\n" #
+    "  released from the committed returned TTTI-T and joins the next lot; served\n" #
+    "  quantities stay committed. With no valid offer the status is `#unsold` and\n" #
+    "  the whole lot stays in the contract for the next lot. `status`:\n" #
+    "  `#fullySold`, `#partiallySold` or `#unsold`. After closing there is no\n" #
+    "  current auction until the next one opens (same timer tick, when a\n" #
+    "  non-empty lot exists).\n" #
+    "- `getClosedAuctions() : [ClosedAuction]` (query, public): every closed\n" #
+    "  auction, newest first, with `id`, `openedAt`, `closesAt`, `closedAt`,\n" #
+    "  `lotSizeE8s`, `reserve`, `rates`, `bidCount`, `servedE8s`,\n" #
+    "  `carriedOverE8s` and `status`. No bids.\n" #
+    "- `getAuctionResult(auctionId) : ?AuctionResult` (query, public): the\n" #
+    "  closed auction and ALL its bids with `bidder`, `quantityE8s`, `priceB`,\n" #
+    "  `token`, `outcome` (`#served`, `#partiallyServed`, `#notServed`,\n" #
+    "  `#discardedBelowReserve`), `servedE8s`, `pricePaidB`, `servedDeposit` and\n" #
+    "  `returned`, plus `settlement` (status `#notRequired`, `#pending`, `#settled`\n" #
+    "  or `#failed`, `settledE8s`, `takenAmount`, `creatorShare`, `positionAmount`,\n" #
+    "  `guaranteeAmount`, `surplusReturned`, `carriedE8s`, `positionId`,\n" #
+    "  `failureReason`, `attemptedAt`, `settledAt`). The auction carries a\n" #
+    "  `settlement` summary (`pendingCount`, `settledCount`, `failedCount`,\n" #
+    "  `settledE8s`, `failedCarriedE8s`). `getClosedAuctions` also carries it. null\n" #
+    "  for an unknown auction and while the auction is open.\n" #
+    "- `getMyWithdrawable() : [MyBalance]` (query, signed-in callers; empty for\n" #
+    "  an anonymous caller): the caller's non-zero balances, one entry per\n" #
+    "  deposit token, with `withdrawable` and `pendingSettlement`.\n" #
+    "- OQL (public): `closedAuction`, `closedBid` and `bidSettlement` (the\n" #
+    "  published results and settlements).\n" #
+    "  OQL (owner-only): `bidderBalance` and `auctionMove` (deposit moves to the\n" #
+    "  DEX custody: gross, credited, status), a signed-in user reads only their own.\n" #
+    "- Retry safety: the queries are read-only; closing is run by the timer, not\n" #
+    "  by a call, and runs once per auction.\n\n" #
+
+    "## Settlement of the winners (lot PTM-6c)\n\n" #
+    "- Trigger: automatic after closing (the same 1-minute timer resends moves in\n" #
+    "  progress, settles every closed auction with a pending winner and moves the\n" #
+    "  returns) and on demand with\n" #
+    "  `settleAuctionWinners(auctionId) : Result<SettleReport, SettleError>` (any\n" #
+    "  caller, signed in or not). One run per auction at a time (`#inProgress`);\n" #
+    "  `#paused` while the DEX is paused; `#unknownAuction`; `#nothingToSettle`\n" #
+    "  when no served bid is pending. `SettleReport`: `auctionId`, `attempted`,\n" #
+    "  `settled`, `failed`, `remaining` (still pending, e.g. a move waiting for\n" #
+    "  the ledger), `settledE8s`, `carriedE8s`.\n" #
+    "- Order: winners are settled ONE AT A TIME in ranking order (price in USD at\n" #
+    "  the closing rate descending, volume descending, age ascending, id).\n" #
+    "- Custody: deposits sit on the auction custody account, DEX balances on the\n" #
+    "  DEX custody account. Step 1 moves the served deposit of the winner with a\n" #
+    "  recorded ledger transfer (memo `TTTI-SW-<n>`, created_at_time fixed before\n" #
+    "  the first await, resent as recorded until Ok or Duplicate, listed as to\n" #
+    "  review after 23 h) and then credits the winner's DEX balance, net of the\n" #
+    "  ledger fee of the move (see Fee of the internal move). Step 2 is an isolated, all-or-nothing self-call\n" #
+    "  (`auctionSettleCore`, reserved to the canister) that debits the winner's DEX\n" #
+    "  balance.\n" #
+    "- Amounts for q served at price B in the paid token: `takenAmount` =\n" #
+    "  2 x B x q / 0.99 (rounded up, in favor of the pools); 1 % of it is\n" #
+    "  `creatorShare`; of the rest 2 x B x q, B x q (`positionAmount`) forms the\n" #
+    "  winner's liquidity position with the q TTTI-T in the TTTI-T/paid-token pool\n" #
+    "  (zap as at the mint; the position belongs to the winner) and B x q\n" #
+    "  (`guaranteeAmount`) becomes the winner's personal guarantee of B per TTTI-T\n" #
+    "  in the paid token. The q TTTI-T come from the returned TTTI-T held by the\n" #
+    "  contract (plus, for the first lot, the end-of-mint remainder minted now\n" #
+    "  for the winner and pooled with the winner's mass); nothing is burned.\n" #
+    "  The guarantee is credited to the token's dedicated guarantee account.\n" #
+    "  `surplusReturned` is the credited\n" #
+    "  deposit left in the winner's DEX balance after the amount charged.\n" #
+    "- Fee of the internal move: the ledger fee of the move from the auction\n" #
+    "  custody to the DEX custody never reduces what a winner pays. A winner whose\n" #
+    "  deposit equals `takenAmount` (the exact deposit, no excess) settles. The\n" #
+    "  fee is borne by the creator share: the 1 % of `takenAmount` is credited to\n" #
+    "  the creator net of the fee (never below zero), so `creatorShare` is the 1 %\n" #
+    "  less the fee borne and the winner's DEX balance is charged `takenAmount`\n" #
+    "  less the fee borne. If the 1 % is smaller than the fee, the shortfall is\n" #
+    "  covered by the winner's own bid excess (moved together with the deposit).\n" #
+    "  `positionAmount` (B x q) and `guaranteeAmount` (B per TTTI-T) are exact in\n" #
+    "  every case, and the custody balances still match (the fee leaves the\n" #
+    "  ledger once, taken from the creator share or from the excess).\n" #
+    "- Failure: if neither the creator share nor the bid excess covers the fee\n" #
+    "  (the credited deposit is lower than `takenAmount` less the fee borne by the\n" #
+    "  creator share) or the isolated call is refused\n" #
+    "  (pool, slippage, rate, balances), nothing is created and no TTTI-T moves:\n" #
+    "  the status is `#failed`, `failureReason` is set, the whole credited deposit\n" #
+    "  stays in the winner's DEX balance (withdrawable) and `carriedE8s` joins the\n" #
+    "  next lot (`failedCarriedE8s` of the auction). The other winners are not\n" #
+    "  touched. A `#failed` or `#settled` bid is final.\n" #
+    "- Recovery: unserved deposits, surplus and failed settlements all end in the\n" #
+    "  same DEX internal balance, withdrawn with the existing `withdrawFromDex`\n" #
+    "  (Recover button). `getMyWithdrawable` lists what has not yet been moved.\n" #
+    "- Secondary market: pools, ICPSwap and transfers do not require pooling.\n" #
+    "- Retry safety: calling `settleAuctionWinners` again is safe; final bids are\n" #
+    "  skipped and a recorded move is resent with its original memo and time.\n\n" #
 
     "## Polling guidance\n\n" #
     "- Purchases, transfers and approvals are synchronous: the reply is final.\n" #
@@ -2101,6 +2930,109 @@ mixin () {
     "  ledger's fee, in the paid token; the 1/101 fee account balance is never\n" #
     "  withdrawable and is not part of any admin balance.\n" #
     "- `listAdminHistory` returns `#err(#notAdmin)` instead of trapping; its\n" #
-    "  `limit` 0 means 25, not an empty page.\n";
+    "  `limit` 0 means 25, not an empty page.\n\n" #
+
+    "## Pagination, batches and the in-flight index (PTM-9e)\n\n" #
+    "- Paginated lists: `getMyRoutedSwaps(cursor : ?Nat, limit : Nat)`,\n" #
+    "  `adminListRoutedSwaps(cursor : ?Nat, limit : Nat)` and\n" #
+    "  `listDexSweepTransfers(cursor : ?Nat, limit : Nat)` return\n" #
+    "  `{ items : [T]; nextCursor : ?Nat }`. Newest first. `cursor = null` returns the\n" #
+    "  newest items; `cursor = ?c` returns the items whose id (swap id, or sweep\n" #
+    "  transfer number `n`) is strictly below `c`. `limit` 0 means the default of 50;\n" #
+    "  any `limit` above 100 is cut to the maximum of 100. `nextCursor` is the id of\n" #
+    "  the last returned item while older items may remain and null on the last page:\n" #
+    "  pass it back unchanged as the next `cursor`. All three are queries (no state\n" #
+    "  change, safe to repeat); a page read while new items arrive never repeats or\n" #
+    "  skips an older item. Callers: `getMyRoutedSwaps` needs a signed-in caller\n" #
+    "  (anonymous gets an empty page); `adminListRoutedSwaps` returns\n" #
+    "  `#err(#notAuthorized)` to a non-admin; `listDexSweepTransfers` traps with\n" #
+    "  `Unauthorized: only admins can use the DEX sweep` for a non-admin.\n" #
+    "- Owner index: each routed swap id is also recorded under its owner when the swap\n" #
+    "  is created, so `getMyRoutedSwaps` reads only the caller's own swap ids and never\n" #
+    "  scans the whole registry. The index is bookkeeping only; no swap, balance or\n" #
+    "  block is altered by it. It is queryable as OQL table `routerOwnerSwap`\n" #
+    "  (a user sees only their own rows, the controller sees all).\n" #
+    "- Reserve check in batches: a run reads at most 25 ledger balances per batch and\n" #
+    "  keeps a persisted cursor (`progress`: run id, target and account position,\n" #
+    "  accounts to compare, compared, excluded as zero, unreadable, batch size, last\n" #
+    "  batch time). `runDexReserveCheck` (admin) reads the next batch and resumes the\n" #
+    "  cursor; the timer continues the run every 60 seconds until it finishes, and the\n" #
+    "  hourly timer starts a new run. Each account is compared with a snapshot of its\n" #
+    "  obligations taken when its balance is read, so DEX activity during a long run\n" #
+    "  does not invalidate the comparison. Deposit accounts already swept to zero are\n" #
+    "  excluded and counted in `excludedZero`; an account that is used again is\n" #
+    "  included again (see PTM-9f below). `getDexReserveStatus` (admin query,\n" #
+    "  `#err(#unauthorized)` otherwise) returns `progress`, `alert` and\n" #
+    "  `excludedReread`.\n" #
+    "- Zero-compared alert: a run that finishes with zero accounts compared while\n" #
+    "  there were accounts to compare raises `alert : ?{ id; at; runId;\n" #
+    "  accountsToCompare; accountsCompared; message }` (never a silent success). The\n" #
+    "  alert stays until a later run compares at least one account; the short history\n" #
+    "  is in OQL table `dexReserveAlert`. An alert does not pause the DEX by itself.\n" #
+    "- Sweep in batches: `runDexSweep` (admin) takes the SWEEP lock for one batch\n" #
+    "  only and reads at most the batch size of ledger balances from the persisted\n" #
+    "  cursor (`getDexSweepProgress`); call it again, or let the timer continue (every\n" #
+    "  10 minutes, up to 4 batches per tick), until `active` is false. Accounts already\n" #
+    "  swept to zero are excluded (`excludedZero`). The lock is released between\n" #
+    "  batches, and a lock older than 20 minutes is taken over, so it never stays\n" #
+    "  held for hours. A second concurrent call returns `#err(#alreadyRunning)`.\n" #
+    "  Running again moves nothing more once balances are swept: it is safe to repeat.\n" #
+    "- In-flight index: the unfinished DD/DW deposit and withdrawal transfers, sweep\n" #
+    "  transfers and routed swaps (status in progress or needs review) are kept in a\n" #
+    "  separate index, filled once from the existing records after the upgrade and\n" #
+    "  updated as records are created and finish. Resending pending transfers and the\n" #
+    "  per-token busy and unsettled-sweep checks read only this index, never the whole\n" #
+    "  history. Transfer numbers are assigned in increasing order, so a newer record\n" #
+    "  is always found. The index is queryable as OQL table `inflightEntry` (admin).\n" #
+    "  `paySetAside` (router, every 10 minutes) visits only the positions of the pool\n" #
+    "  concerned and removes zero entries.\n" #
+    "- Units: amounts are base units of the token; timestamps are nanoseconds since the\n" #
+    "  epoch (Int); ids and counters are Nat.\n\n" #
+
+    "## Paged DEX history, reserve progress and excluded accounts (PTM-9f)\n\n" #
+    "- `getDexTransfersPage(owner, cursor, limit)`: see the DEX queries above. Open to\n" #
+    "  every caller, any principal can be read; no identity is derived from the caller.\n" #
+    "- Reserve check progress: `getDexReserveStatus().progress` has `phase`\n" #
+    "  (`#idle` before the first run, `#inProgress` while the cursor has not\n" #
+    "  finished, `#finished` after a complete run), `batch` (the batch being read, or\n" #
+    "  the last one read between two timer ticks, at least 1 while in progress),\n" #
+    "  `totalBatches` (an estimate while in progress, exact once finished) and\n" #
+    "  `alertDecided`. Read it as in progress (batch x of y). Poll at most once a\n" #
+    "  minute: the continuation timer runs every 60 seconds. `batch` and\n" #
+    "  `totalBatches` are also OQL columns of table `dexReserveRun`.\n" #
+    "- The zero-compared alert is decided only when the complete run has ended: no\n" #
+    "  alert is raised or evaluated after the first batch or during the run, and\n" #
+    "  `alertDecided` is true only after the run has finished. During a run a visible\n" #
+    "  `alert` is the one of an earlier run; a finished run that compared at least one\n" #
+    "  account clears it. The status is a query and safe to repeat; a failed or\n" #
+    "  interrupted batch resumes from the stored cursor at the next tick.\n" #
+    "- No 30-day exclusion any more. An account swept to zero stays excluded from the\n" #
+    "  reserve check and the sweep until it is re-included, in two ways: (1) at once,\n" #
+    "  when the DEX records a new deposit (`depositToDex`), pair request\n" #
+    "  (`requestPair`), swap (`swap`, `routedSwap`, including routed swaps) or\n" #
+    "  withdrawal (`withdrawFromDex`) for that owner and token, so the account is read\n" #
+    "  again at the next reserve check and sweep; (2) by the daily re-read below. The\n" #
+    "  re-inclusion only removes the exclusion mark: no balance, block or\n" #
+    "  `sale.reserved` is changed.\n" #
+    "- Daily re-read of the excluded accounts: a timer (every 10 minutes, re-armed on\n" #
+    "  every install and upgrade) starts a pass when 24 hours have passed since the\n" #
+    "  last complete pass (or there has been none), then reads the ledger balance of\n" #
+    "  the excluded accounts in batches of the batch size from a persisted cursor. A\n" #
+    "  non-zero balance removes the exclusion at once (counted in `reincluded`); a\n" #
+    "  zero balance keeps it; a failed read keeps it and is counted in `unreadable`.\n" #
+    "  The SWEEP lock is taken for one batch only and released between batches (a\n" #
+    "  lock older than 20 minutes is taken over), so a pass never holds it for hours.\n" #
+    "  The pass only reads ledgers and moves nothing, so like the reserve check and the\n" #
+    "  sweep it also runs while the DEX is paused. Its state is\n" #
+    "  `getDexReserveStatus().excludedReread` (admin): `active`, `runId`, `startedAt`,\n" #
+    "  `excludedCount`, `read`, `reincluded`, `unreadable`, `batchSize`,\n" #
+    "  `lastBatchAt`, `lastFinishedAt` and `nextRunAt` (lastFinishedAt + 24 h; null\n" #
+    "  before the first pass), also OQL table `dexExcludedReread` (admin). The\n" #
+    "  excluded accounts are OQL table `dexZeroedAccount` (admin). Running a pass\n" #
+    "  twice is harmless.\n" #
+    "- Errors and gotchas: a non-admin call to an admin endpoint above returns the\n" #
+    "  typed error or traps as described for that endpoint; `getDexTransfersPage` never\n" #
+    "  fails (an unknown owner or cursor 0 gives an empty page). Timestamps are\n" #
+    "  nanoseconds (Int); counters and transfer numbers are Nat.\n";
   };
 };

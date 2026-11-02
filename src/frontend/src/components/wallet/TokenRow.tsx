@@ -6,12 +6,10 @@ import {
   History,
   RefreshCw,
   Send,
-  Undo2,
 } from "lucide-react";
 import type { Account } from "../../backend";
 import { useWalletBalance } from "../../hooks/useWallet";
 import { useDict, useLanguage } from "../../i18n/core";
-import { BUYBACK_TEXT } from "../../i18n/pages/buyback";
 import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import { formatUnits } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
@@ -19,6 +17,7 @@ import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
 import { isTttiToken } from "./TokenBalanceCard";
+import { TokenFiat } from "./TokenFiat";
 import { TokenLogo } from "./TokenLogo";
 import {
   NO_VALUE,
@@ -40,8 +39,6 @@ interface TokenRowProps {
   onSend: () => void;
   onReceive: () => void;
   onHistory: () => void;
-  /** Buyback action; shown on the TTTI-T card only. */
-  onBuyback?: () => void;
   /** Buy via Onramper; given for the ICP, ckBTC, ckUSDC and ckUSDT cards. */
   onBuy?: () => void;
 }
@@ -56,11 +53,9 @@ export function TokenRow({
   onSend,
   onReceive,
   onHistory,
-  onBuyback,
   onBuy,
 }: TokenRowProps) {
   const t = useDict(WALLET_TEXT);
-  const tb = useDict(BUYBACK_TEXT);
   const { lang } = useLanguage();
   const id = token.canisterId.toText();
   const actionsId = `token-actions-${index}`;
@@ -72,10 +67,6 @@ export function TokenRow({
   // query keeps retrying in the background.
   const unavailable =
     !!account && (isError || (data === undefined && failureCount > 0));
-  const value =
-    data !== undefined && rateUsdE8 !== null
-      ? usdValueE8(data, token.decimals, rateUsdE8)
-      : null;
 
   return (
     <li
@@ -108,7 +99,7 @@ export function TokenRow({
                   ? NO_VALUE
                   : formatUnitPrice(rateUsdE8, lang)}
                 {isTttiToken(token) && rateUsdE8 !== null && (
-                  <span className="ml-1">({t.calculationValue})</span>
+                  <span className="ml-1">({t.priceHourlyAverage})</span>
                 )}
               </span>
             </span>
@@ -151,9 +142,25 @@ export function TokenRow({
                 >
                   {formatUnits(data, token.decimals, 2, lang)}
                 </span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {value === null ? NO_VALUE : formatUsdValue(value, lang)}
-                </span>
+                {isTttiToken(token) ? (
+                  <span
+                    className="whitespace-nowrap text-xs font-normal tabular-nums text-muted-foreground"
+                    data-ocid={`wallet.fiat.${index}`}
+                  >
+                    {rateUsdE8 === null
+                      ? NO_VALUE
+                      : formatUsdValue(
+                          usdValueE8(data, token.decimals, rateUsdE8),
+                          lang,
+                        )}
+                  </span>
+                ) : (
+                  <TokenFiat
+                    token={token}
+                    amount={data}
+                    ocid={`wallet.fiat.${index}`}
+                  />
+                )}
               </>
             )}
           </span>
@@ -225,20 +232,6 @@ export function TokenRow({
             >
               <CreditCard className="h-4 w-4" />
               {t.buy}
-            </Button>
-          )}
-          {onBuyback && isTttiToken(token) && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={ACTION_BUTTON}
-              onClick={onBuyback}
-              title={tb.walletEntryHint}
-              data-ocid={`wallet.row_buyback_button.${index}`}
-            >
-              <Undo2 className="h-4 w-4" />
-              {tb.walletEntry}
             </Button>
           )}
           {isTttiToken(token) && (

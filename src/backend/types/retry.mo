@@ -14,7 +14,7 @@ module {
 
   public type DexToken = Dex.DexToken;
 
-  // Memo prefixes: PC, RF, FW (treasury forward), SH (reserve share), BB, BR,
+  // Memo prefixes: PC, RF, FW (treasury forward), SH (reserve share), GR (guarantee redemption payout), BR,
   // DD (DEX deposit), DW (DEX withdrawal), DQ (pair request deposit refund),
   // DEX lot 4: DC (converted protocol fees to the cycles reserve) and DL
   // (locked-LP bonus claim).
@@ -22,7 +22,10 @@ module {
   // of the cycles reserve from MINT-TREASURY-ICP), MF (mint-fee LP claim).
   // DEX lot 5: IR (ICPSwap route transfer of a routed swap).
   // Mint revenue routing: ST (settlement / mint-fee move into the fee account).
-  public type TransferPrefix = { #PC; #RF; #FW; #SH; #BB; #BR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST };
+  // DEX-1: SW (sweep of a legacy deposit or pool subaccount into the token custody account).
+  // PTM-4: CF (creator fee payout to the receiving wallet) and CY (cycles share
+  // of the 1 % mint and buyback fees moved from the ICP custody to the cycles reserve).
+  public type TransferPrefix = { #PC; #RF; #FW; #SH; #GR; #BR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST; #SW; #LQ; #CF; #CY; #AB };
 
   // Transfer types handled by the admin review ("To review"): forwards (FW),
   // reserve shares (SH), purchase refunds (RF, keyed by purchase id),
@@ -30,7 +33,7 @@ module {
   // refunds (BR, keyed by the BR attempt number n), BTC cost sends to the
   // treasury (BC, keyed by the trace number n of the TTTI-PC-<n> memo) and
   // BTC costs of a delivery-and-refund failure to refund by hand (BM, keyed
-  // by the conversion id) and buyback payouts (BB, keyed by the buyback id).
+  // by the conversion id) and guarantee redemption payouts (GR, keyed by the redemption id n).
   // DEX lot 2: DEX deposits (DD, keyed by n), DEX withdrawals (DW, keyed by
   // n) and pair request deposit refunds (DQ, keyed by the request id).
   // DEX lot 4: DC sends and DL claims, both keyed by n.
@@ -38,7 +41,10 @@ module {
   // one-time sweep) and MF (keyed by claim n).
   // DEX lot 5: IR (keyed by routed swap id).
   // Mint revenue routing: ST (fee-account move, keyed by n).
-  public type TransferKind = { #FW; #SH; #RF; #PC; #BR; #BC; #BM; #BB; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST };
+  // DEX-1: SW (sweep transfer, keyed by n) and CS (custody surplus of a
+  // token, keyed by the DEX token index; informational, no action).
+  // DEX-2: LQ (liquidation payout of a removed pair position, keyed by n).
+  public type TransferKind = { #FW; #SH; #RF; #PC; #BR; #BC; #BM; #GR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST; #SW; #LQ; #CS };
 
   // Why a BTC (ckBTC) refund is sent from the buyer's deposit subaccount:
   // #excess       = R1, the excess above the delivered cost;
@@ -182,6 +188,25 @@ module {
     deposits : Map.Map<Nat, DexTransfer>; // DD, keyed by n
     withdrawals : Map.Map<Nat, DexTransfer>; // DW, keyed by n
     pairRefunds : Map.Map<Nat, DexTransferAttempt>; // DQ, keyed by request id
+    liquidations : Map.Map<Nat, LiquidationPayout>; // LQ, keyed by n (DEX-2)
+  };
+
+  // DEX-2, LQ: payout of one token of a liquidated position to the owner's
+  // wallet after a pair removal. The internal balance was credited by the
+  // liquidation; `amount` is reserved (available -> reserved) when the payout
+  // is opened and sent from the token's custody account to the owner's default
+  // account (amount - fee). Memo "TTTI-LQ-<n>" (renewals "-<m>"), at most 32
+  // bytes, no principal. created_at_time is recorded before the first await,
+  // the identical request is resent for 23 h, then #needsReview.
+  public type LiquidationPayout = {
+    n : Nat;
+    poolId : Nat;
+    positionId : Nat;
+    owner : Principal;
+    token : DexToken;
+    amount : Nat;
+    attempt : DexTransferAttempt;
+    status : Dex.DexTransferStatus;
   };
 
   // The ICRC-1 transfer method every pay-token ledger provides.

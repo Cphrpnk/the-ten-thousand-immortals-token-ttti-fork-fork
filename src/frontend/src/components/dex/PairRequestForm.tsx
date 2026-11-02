@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Textarea } from "../ui/textarea";
+import { DexFiat, useDexFiatText } from "./DexFiat";
 import {
   FEE_TIER_ORDER,
   approvalErrorText,
@@ -68,6 +69,7 @@ function isCounterKey(value: string): value is CounterKey {
 export function PairRequestForm({ config }: { config: DexConfig }) {
   const t = useDict(DEX_TEXT);
   const { lang } = useLanguage();
+  const fiatText = useDexFiatText();
   const feeQuery = useIcrc1Fee();
   const request = useRequestPair();
 
@@ -87,7 +89,9 @@ export function PairRequestForm({ config }: { config: DexConfig }) {
   const tooLong = message.length > maxChars;
   const fee = feeQuery.data;
   const approvalAmount =
-    fee !== undefined ? formatTttiAmount(config.requestDeposit + fee) : null;
+    fee !== undefined
+      ? `${formatTttiAmount(config.requestDeposit + fee)} ${fiatText("ttti", config.requestDeposit + fee)}`
+      : null;
   const canSubmit =
     !!ledgerId && counter !== "" && !tooLong && confirmed && !request.isPending;
 
@@ -226,7 +230,8 @@ export function PairRequestForm({ config }: { config: DexConfig }) {
 
       <div className="flex flex-col gap-3 border-t border-border pt-4 text-sm">
         <p className="font-mono tabular-nums" data-ocid="pair_request.deposit">
-          {t.deposit(formatTttiAmount(config.requestDeposit))}
+          {t.deposit(formatTttiAmount(config.requestDeposit))}{" "}
+          <DexFiat token="ttti" amount={config.requestDeposit} />
         </p>
         <p className="text-xs text-muted-foreground">{t.depositRule}</p>
         {approvalAmount && (

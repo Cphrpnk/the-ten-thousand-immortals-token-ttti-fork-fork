@@ -1,11 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ReservePhase } from "../backend";
 import type {
+  AccountMismatch,
+  AccountResult,
   DexPauseView,
   DexReserveError,
   DexReserveStatus,
+  ExcludedRereadProgress,
   Mismatch,
   PublicDexPause,
+  ReserveAlert,
   ReserveCheck,
+  ReserveCheckView,
+  ReserveProgress,
   TokenReserveResult,
 } from "../backend";
 import { useActor } from "./useActor";
@@ -13,12 +20,18 @@ import { useIsCallerAdmin } from "./useQueries";
 import { UPGRADE_READINESS_KEY } from "./useUpgradeReadiness";
 
 export type {
+  AccountMismatch,
+  AccountResult,
   DexPauseView,
   DexReserveError,
   DexReserveStatus,
+  ExcludedRereadProgress,
   Mismatch,
   PublicDexPause,
+  ReserveAlert,
   ReserveCheck,
+  ReserveCheckView,
+  ReserveProgress,
   TokenReserveResult,
 };
 
@@ -27,6 +40,9 @@ export const DEX_RESERVE_KEYS = {
   status: ["dexReserveStatus"],
   publicPause: ["dexPauseStatus"],
 } as const;
+
+/** Refresh interval of the reserve status while a check is running. */
+const RESERVE_PROGRESS_REFRESH_MS = 10_000;
 
 /** English text of every DexReserveError variant. */
 export const DEX_RESERVE_ERROR_TEXT = {
@@ -49,7 +65,11 @@ export function dexReserveErrorMessage(error: DexReserveError): string {
   }
 }
 
-/** Admin: last reserve check, unresolved shortfalls, pause and mismatch history. */
+/**
+ * Admin: last reserve check, unresolved shortfalls, pause and mismatch history,
+ * the batch progress, and the visible `alert` (shown when a check compared no
+ * account or fewer than expected) exactly as returned by the backend.
+ */
 export function useDexReserveStatus() {
   const { actor, isFetching } = useActor();
   const { data: isAdmin } = useIsCallerAdmin();
@@ -64,6 +84,14 @@ export function useDexReserveStatus() {
       return result.ok;
     },
     enabled: !!actor && !isFetching && isAdmin === true,
+    refetchInterval: (query) => {
+      const status = query.state.data;
+      return status?.checkInProgress ||
+        status?.progress.phase === ReservePhase.inProgress ||
+        status?.excludedReread.active
+        ? RESERVE_PROGRESS_REFRESH_MS
+        : false;
+    },
   });
 }
 
@@ -96,7 +124,7 @@ function useInvalidateReserve() {
 export function useRunDexReserveCheck() {
   const { actor } = useActor();
   const invalidate = useInvalidateReserve();
-  return useMutation<ReserveCheck, Error>({
+  return useMutation<ReserveCheckView, Error>({
     mutationFn: async () => {
       if (!actor) throw new Error("Backend is not ready");
       const result = await actor.runDexReserveCheck();

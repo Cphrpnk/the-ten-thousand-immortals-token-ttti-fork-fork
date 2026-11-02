@@ -6,7 +6,7 @@ import Nat64 "mo:core/Nat64";
 import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 import Types "../types/admin-history";
-import BuybackTypes "../types/buyback";
+import GuaranteeTypes "../types/guarantee";
 import RetryTypes "../types/retry";
 import OwnerTypes "../types/owner-revenue";
 import BtcTypes "../types/btc-deposit";
@@ -22,7 +22,7 @@ module {
   public type HistoryContext = {
     transfers : RetryLib.TransferContext; // conversions, refunds, owner sends, wallet changes
     btcDeposits : BtcDepositLib.BtcDepositStore;
-    buybacks : BuybackTypes.BuybackStore;
+    redemptions : GuaranteeTypes.RedemptionStore;
     dex : RetryLib.DexContext; // native swaps and liquidity adds/removes
     fees : ProtocolFeesLib.ProtocolFeeContext; // liquidity injections
     router : RouterLib.RouterContext; // routed swaps
@@ -118,12 +118,12 @@ module {
     };
   };
 
-  func buybackStatusText(s : BuybackTypes.BuybackStatus) : Text {
-    switch (s) {
+  func redemptionStatusText(s : GuaranteeTypes.Redemption) : Text {
+    switch (s.status) {
       case (#inProgress) { "in progress" };
-      case (#completed) { "completed" };
-      case (#payoutFailed) { "payout failed" };
-      case (#cancelled) { "cancelled" };
+      case (#needsReview) { "to review" };
+      case (#completed(_)) { "completed" };
+      case (#failed(_)) { "failed" };
     };
   };
 
@@ -286,23 +286,30 @@ module {
     };
   };
 
-  func addBuybacks(ctx : HistoryContext, out : List.List<Entry>) {
-    for (b in ctx.buybacks.records.values()) {
-      let lastMemo = if (b.payoutAttempts.size() == 0) null else memoOf(b.payoutAttempts[b.payoutAttempts.size() - 1].attempt.memo);
+  func addRedemptions(ctx : HistoryContext, out : List.List<Entry>) {
+    for (r in ctx.redemptions.redemptions.values()) {
+      let block : ?Nat = switch (r.status) {
+        case (#completed(b)) { ?b };
+        case (_) { null };
+      };
+      let what = switch (r.kind) {
+        case (#redeem) { "Guarantee redemption: " # r.tttiAmount.toText() # " TTTI-T base units returned" };
+        case (#excessWithdrawal) { "Guarantee excess withdrawal" };
+      };
       out.add({
         row = row(
-          "BB-" # b.id.toText(),
-          #buyback,
-          ?b.tokenReturned,
-          ?b.amountReturned,
-          ?b.buyer.toText(),
-          buybackStatusText(b.status),
-          lastMemo,
-          b.payoutBlock,
-          b.timestamp,
-          "Buyback " # b.percent.toText() # "% of the " # tokenText(b.originalToken) # " mass: " # b.tttiAmount.toText() # " TTTI-T base units taken back",
+          "GR-" # r.id.toText(),
+          #redemption,
+          ?r.token,
+          ?r.netAmount,
+          ?r.owner.toText(),
+          redemptionStatusText(r),
+          memoOf(r.payout.memo),
+          block,
+          r.createdAt,
+          what,
         );
-        tokens = [b.tokenReturned, b.originalToken, #tttiT];
+        tokens = [r.token, #tttiT];
       });
     };
   };
@@ -500,7 +507,7 @@ module {
       addBtcDeposits(ctx, all);
     };
     if (kindMatches(filter, #revenueSent)) addOwnerSends(ctx, all);
-    if (kindMatches(filter, #buyback)) addBuybacks(ctx, all);
+    if (kindMatches(filter, #redemption)) addRedemptions(ctx, all);
     if (kindMatches(filter, #swap)) addSwaps(ctx, all);
     if (kindMatches(filter, #liquidity)) addLiquidity(ctx, all);
     if (kindMatches(filter, #destination)) addDestinations(ctx, all);

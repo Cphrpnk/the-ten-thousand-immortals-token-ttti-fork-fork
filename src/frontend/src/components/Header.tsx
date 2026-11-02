@@ -3,11 +3,13 @@ import { Link } from "@tanstack/react-router";
 import {
   BookOpen,
   Droplets,
+  Gavel,
   History,
   Home,
   LogIn,
   LogOut,
   Menu,
+  Scale,
   ShieldCheck,
   Wallet,
   WalletCards,
@@ -71,6 +73,18 @@ const BASE_NAV: Array<NavItem> = [
     labelKey: "navPools",
     icon: Droplets,
     ocid: "header.pools_link",
+  },
+  {
+    to: "/guarantee",
+    labelKey: "navGuarantee",
+    icon: Scale,
+    ocid: "header.guarantee_link",
+  },
+  {
+    to: "/auction",
+    labelKey: "navAuction",
+    icon: Gavel,
+    ocid: "header.auction_link",
   },
   {
     to: "/history",

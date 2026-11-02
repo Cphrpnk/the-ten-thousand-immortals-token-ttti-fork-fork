@@ -21,6 +21,8 @@ export const SWAP_TEXT = defineDict({
       `ICPSwap has no direct pool for ${a} and ${b}. This pair cannot be swapped here.`,
     quoteLoading: "Reading the ICPSwap quote…",
     quoteError: "The ICPSwap pool did not return a quote.",
+    livePriceUnavailable:
+      "The live ICPSwap price is unavailable, so the swap was not started. Try again in a moment.",
     quoteExpired: "The quote has expired. Refresh it before swapping.",
     refreshQuote: "Refresh quote",
     estimated: "Estimated received",
@@ -93,6 +95,34 @@ export const SWAP_TEXT = defineDict({
     addedTokens: "Added tokens",
     removeToken: (symbol: string) => `Remove ${symbol}`,
     closeAddToken: "Close",
+    unifiedDescription:
+      "Swap ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT and the ICPSwap-listed tokens you add, through the native pools or ICPSwap, from your own wallet.",
+    routesTitle: "Routes",
+    routeBestPrice: "Best price",
+    routeSelected: "Selected",
+    routeEnterAmount: "Enter an amount to see this route's quote.",
+    routeQuoteLoading: "Reading the quote…",
+    routeNativeNoPool: (a: string, b: string) =>
+      `No native pool exists for ${a} and ${b}.`,
+    routeIcpswapNoPool: (a: string, b: string) =>
+      `ICPSwap has no direct pool for ${a} and ${b}.`,
+    routeNativeAccount:
+      "The native pool route is available only for the account signed in on this site.",
+    routeNativeError: "The native pool did not return a quote.",
+    routeOnlyIcpswap: "Only ICPSwap is offered for this pair.",
+    routeOnlyNative: "Only the native pool is offered for this pair.",
+    bestPriceNote:
+      "Best price: the route returning the most tokens, fees included. The route you select is the one executed.",
+    routeUsed: "Route used",
+    amountGiven: "Amount given",
+    confirmNativeApproval: (amount: string, symbol: string) =>
+      `An ICRC-2 approval allowing the DEX to take up to ${amount} ${symbol} (swap amount plus one ledger fee) from your account.`,
+    confirmNativeSteps: (symbolIn: string, symbolOut: string) =>
+      `The DEX then takes the ${symbolIn} (deposit), swaps them in the native pool and sends the ${symbolOut} to your wallet (withdrawal).`,
+    warningNative:
+      "Swaps are final and ledger fees are not refunded. If the withdrawal fails, the swapped amount stays in your DEX balance.",
+    nativeWithdrawFailed: (amount: string, symbol: string, detail: string) =>
+      `The swap completed, but the withdrawal of ${amount} ${symbol} to your wallet failed: ${detail}. The amount stays in your DEX balance.`,
   },
   fr: {
     description:
@@ -109,6 +139,8 @@ export const SWAP_TEXT = defineDict({
       `ICPSwap n'a pas de pool direct pour ${a} et ${b}. Cette paire ne peut pas être échangée ici.`,
     quoteLoading: "Lecture du devis ICPSwap…",
     quoteError: "Le pool ICPSwap n'a pas renvoyé de devis.",
+    livePriceUnavailable:
+      "Le prix ICPSwap en temps réel est indisponible : l'échange n'a pas été lancé. Réessayez dans un instant.",
     quoteExpired: "Le devis a expiré. Actualisez-le avant d'échanger.",
     refreshQuote: "Actualiser le devis",
     estimated: "Montant estimé reçu",
@@ -181,6 +213,34 @@ export const SWAP_TEXT = defineDict({
     addedTokens: "Jetons ajoutés",
     removeToken: (symbol: string) => `Retirer ${symbol}`,
     closeAddToken: "Fermer",
+    unifiedDescription:
+      "Échangez ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT et les jetons listés sur ICPSwap que vous ajoutez, via les pools natifs ou ICPSwap, depuis votre propre wallet.",
+    routesTitle: "Routes",
+    routeBestPrice: "Meilleur prix",
+    routeSelected: "Sélectionnée",
+    routeEnterAmount: "Saisissez un montant pour voir le devis de cette route.",
+    routeQuoteLoading: "Lecture du devis…",
+    routeNativeNoPool: (a: string, b: string) =>
+      `Aucun pool natif n'existe pour ${a} et ${b}.`,
+    routeIcpswapNoPool: (a: string, b: string) =>
+      `ICPSwap n'a pas de pool direct pour ${a} et ${b}.`,
+    routeNativeAccount:
+      "La route par le pool natif n'est disponible que pour le compte connecté sur ce site.",
+    routeNativeError: "Le pool natif n'a pas renvoyé de devis.",
+    routeOnlyIcpswap: "Seul ICPSwap est proposé pour cette paire.",
+    routeOnlyNative: "Seul le pool natif est proposé pour cette paire.",
+    bestPriceNote:
+      "Meilleur prix : la route qui rend le plus de jetons, frais compris. C'est la route que vous sélectionnez qui est exécutée.",
+    routeUsed: "Route utilisée",
+    amountGiven: "Montant donné",
+    confirmNativeApproval: (amount: string, symbol: string) =>
+      `Une approbation ICRC-2 autorisant le DEX à prélever jusqu'à ${amount} ${symbol} (montant de l'échange plus un frais du ledger) sur votre compte.`,
+    confirmNativeSteps: (symbolIn: string, symbolOut: string) =>
+      `Le DEX prélève ensuite les ${symbolIn} (dépôt), les échange dans le pool natif et envoie les ${symbolOut} vers votre wallet (retrait).`,
+    warningNative:
+      "Les échanges sont définitifs et les frais du ledger ne sont pas remboursés. Si le retrait échoue, le montant échangé reste dans votre solde DEX.",
+    nativeWithdrawFailed: (amount: string, symbol: string, detail: string) =>
+      `L'échange est terminé, mais le retrait de ${amount} ${symbol} vers votre wallet a échoué : ${detail}. Le montant reste dans votre solde DEX.`,
   },
   es: {
     description:
@@ -197,6 +257,8 @@ export const SWAP_TEXT = defineDict({
       `ICPSwap no tiene un pool directo para ${a} y ${b}. Este par no se puede intercambiar aquí.`,
     quoteLoading: "Leyendo la cotización de ICPSwap…",
     quoteError: "El pool de ICPSwap no devolvió una cotización.",
+    livePriceUnavailable:
+      "El precio de ICPSwap en tiempo real no está disponible, por lo que no se inició el intercambio. Inténtalo de nuevo en un momento.",
     quoteExpired:
       "La cotización ha caducado. Actualícela antes de intercambiar.",
     refreshQuote: "Actualizar cotización",
@@ -272,6 +334,35 @@ export const SWAP_TEXT = defineDict({
     addedTokens: "Tokens añadidos",
     removeToken: (symbol: string) => `Quitar ${symbol}`,
     closeAddToken: "Cerrar",
+    unifiedDescription:
+      "Intercambie ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT y los tokens listados en ICPSwap que añada, a través de los pools nativos o de ICPSwap, desde su propio wallet.",
+    routesTitle: "Rutas",
+    routeBestPrice: "Mejor precio",
+    routeSelected: "Seleccionada",
+    routeEnterAmount:
+      "Introduzca un importe para ver la cotización de esta ruta.",
+    routeQuoteLoading: "Leyendo la cotización…",
+    routeNativeNoPool: (a: string, b: string) =>
+      `No existe ningún pool nativo para ${a} y ${b}.`,
+    routeIcpswapNoPool: (a: string, b: string) =>
+      `ICPSwap no tiene un pool directo para ${a} y ${b}.`,
+    routeNativeAccount:
+      "La ruta por el pool nativo solo está disponible para la cuenta conectada en este sitio.",
+    routeNativeError: "El pool nativo no devolvió una cotización.",
+    routeOnlyIcpswap: "Solo se ofrece ICPSwap para este par.",
+    routeOnlyNative: "Solo se ofrece el pool nativo para este par.",
+    bestPriceNote:
+      "Mejor precio: la ruta que devuelve más tokens, comisiones incluidas. Se ejecuta la ruta que usted selecciona.",
+    routeUsed: "Ruta utilizada",
+    amountGiven: "Importe entregado",
+    confirmNativeApproval: (amount: string, symbol: string) =>
+      `Una aprobación ICRC-2 que permite al DEX tomar hasta ${amount} ${symbol} (importe del intercambio más una comisión del ledger) de su cuenta.`,
+    confirmNativeSteps: (symbolIn: string, symbolOut: string) =>
+      `El DEX toma después los ${symbolIn} (depósito), los intercambia en el pool nativo y envía los ${symbolOut} a su wallet (retiro).`,
+    warningNative:
+      "Los intercambios son definitivos y las comisiones del ledger no se reembolsan. Si el retiro falla, el importe intercambiado permanece en su saldo del DEX.",
+    nativeWithdrawFailed: (amount: string, symbol: string, detail: string) =>
+      `El intercambio se completó, pero falló el retiro de ${amount} ${symbol} a su wallet: ${detail}. El importe permanece en su saldo del DEX.`,
   },
   "zh-Hans": {
     description:
@@ -288,6 +379,8 @@ export const SWAP_TEXT = defineDict({
       `ICPSwap 没有 ${a} 与 ${b} 的直接资金池。此交易对无法在此兑换。`,
     quoteLoading: "正在读取 ICPSwap 报价…",
     quoteError: "ICPSwap 资金池未返回报价。",
+    livePriceUnavailable:
+      "无法获取 ICPSwap 实时价格，因此未发起兑换。请稍后重试。",
     quoteExpired: "报价已过期。兑换前请刷新。",
     refreshQuote: "刷新报价",
     estimated: "预计收到",
@@ -354,6 +447,32 @@ export const SWAP_TEXT = defineDict({
     addedTokens: "已添加的代币",
     removeToken: (symbol: string) => `移除 ${symbol}`,
     closeAddToken: "关闭",
+    unifiedDescription:
+      "通过原生池或 ICPSwap，从您自己的钱包兑换 ICP、TTTI-T、ckBTC、ckUSDC、ckUSDT 以及您添加的 ICPSwap 上架代币。",
+    routesTitle: "路线",
+    routeBestPrice: "最优价格",
+    routeSelected: "已选择",
+    routeEnterAmount: "输入金额以查看此路线的报价。",
+    routeQuoteLoading: "正在读取报价…",
+    routeNativeNoPool: (a: string, b: string) => `${a} 与 ${b} 没有原生池。`,
+    routeIcpswapNoPool: (a: string, b: string) =>
+      `ICPSwap 没有 ${a} 与 ${b} 的直接池。`,
+    routeNativeAccount: "原生池路线仅适用于在本站登录的账户。",
+    routeNativeError: "原生池未返回报价。",
+    routeOnlyIcpswap: "此交易对仅提供 ICPSwap。",
+    routeOnlyNative: "此交易对仅提供原生池。",
+    bestPriceNote:
+      "最优价格：含费用后返还代币最多的路线。执行的是您选择的路线。",
+    routeUsed: "所用路线",
+    amountGiven: "支付金额",
+    confirmNativeApproval: (amount: string, symbol: string) =>
+      `一项 ICRC-2 授权，允许 DEX 从您的账户中最多划走 ${amount} ${symbol}（兑换金额加一笔账本费用）。`,
+    confirmNativeSteps: (symbolIn: string, symbolOut: string) =>
+      `随后 DEX 划走 ${symbolIn}（存入），在原生池中兑换，并将 ${symbolOut} 发送到您的钱包（提取）。`,
+    warningNative:
+      "兑换不可撤销，账本费用不予退还。若提取失败，已兑换的金额将保留在您的 DEX 余额中。",
+    nativeWithdrawFailed: (amount: string, symbol: string, detail: string) =>
+      `兑换已完成，但将 ${amount} ${symbol} 提取到您的钱包失败：${detail}。该金额保留在您的 DEX 余额中。`,
   },
   "pt-BR": {
     description:
@@ -370,6 +489,8 @@ export const SWAP_TEXT = defineDict({
       `A ICPSwap não tem pool direto para ${a} e ${b}. Este par não pode ser trocado aqui.`,
     quoteLoading: "Lendo a cotação da ICPSwap…",
     quoteError: "O pool da ICPSwap não retornou uma cotação.",
+    livePriceUnavailable:
+      "O preço da ICPSwap em tempo real está indisponível, portanto a troca não foi iniciada. Tente novamente em instantes.",
     quoteExpired: "A cotação expirou. Atualize-a antes de trocar.",
     refreshQuote: "Atualizar cotação",
     estimated: "Valor estimado recebido",
@@ -443,6 +564,34 @@ export const SWAP_TEXT = defineDict({
     addedTokens: "Tokens adicionados",
     removeToken: (symbol: string) => `Remover ${symbol}`,
     closeAddToken: "Fechar",
+    unifiedDescription:
+      "Troque ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT e os tokens listados na ICPSwap que você adicionar, pelos pools nativos ou pela ICPSwap, a partir da sua própria carteira.",
+    routesTitle: "Rotas",
+    routeBestPrice: "Melhor preço",
+    routeSelected: "Selecionada",
+    routeEnterAmount: "Informe um valor para ver a cotação desta rota.",
+    routeQuoteLoading: "Lendo a cotação…",
+    routeNativeNoPool: (a: string, b: string) =>
+      `Não existe pool nativo para ${a} e ${b}.`,
+    routeIcpswapNoPool: (a: string, b: string) =>
+      `A ICPSwap não tem pool direto para ${a} e ${b}.`,
+    routeNativeAccount:
+      "A rota pelo pool nativo só está disponível para a conta conectada neste site.",
+    routeNativeError: "O pool nativo não retornou uma cotação.",
+    routeOnlyIcpswap: "Apenas a ICPSwap é oferecida para este par.",
+    routeOnlyNative: "Apenas o pool nativo é oferecido para este par.",
+    bestPriceNote:
+      "Melhor preço: a rota que devolve mais tokens, taxas incluídas. A rota que você seleciona é a executada.",
+    routeUsed: "Rota utilizada",
+    amountGiven: "Valor entregue",
+    confirmNativeApproval: (amount: string, symbol: string) =>
+      `Uma aprovação ICRC-2 que permite à DEX retirar até ${amount} ${symbol} (valor da troca mais uma taxa do ledger) da sua conta.`,
+    confirmNativeSteps: (symbolIn: string, symbolOut: string) =>
+      `A DEX então retira os ${symbolIn} (depósito), troca no pool nativo e envia os ${symbolOut} para a sua carteira (saque).`,
+    warningNative:
+      "As trocas são definitivas e as taxas do ledger não são reembolsadas. Se o saque falhar, o valor trocado permanece no seu saldo da DEX.",
+    nativeWithdrawFailed: (amount: string, symbol: string, detail: string) =>
+      `A troca foi concluída, mas o saque de ${amount} ${symbol} para a sua carteira falhou: ${detail}. O valor permanece no seu saldo da DEX.`,
   },
   ko: {
     description:
@@ -459,6 +608,8 @@ export const SWAP_TEXT = defineDict({
       `ICPSwap에 ${a}와 ${b}의 직접 풀이 없습니다. 이 쌍은 여기에서 스왑할 수 없습니다.`,
     quoteLoading: "ICPSwap 견적을 읽는 중…",
     quoteError: "ICPSwap 풀이 견적을 반환하지 않았습니다.",
+    livePriceUnavailable:
+      "ICPSwap 실시간 가격을 사용할 수 없어 스왑을 시작하지 않았습니다. 잠시 후 다시 시도하세요.",
     quoteExpired: "견적이 만료되었습니다. 스왑 전에 새로 고치세요.",
     refreshQuote: "견적 새로 고침",
     estimated: "예상 수령액",
@@ -530,6 +681,34 @@ export const SWAP_TEXT = defineDict({
     addedTokens: "추가한 토큰",
     removeToken: (symbol: string) => `${symbol} 제거`,
     closeAddToken: "닫기",
+    unifiedDescription:
+      "본인 지갑에서 네이티브 풀 또는 ICPSwap을 통해 ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT 및 추가한 ICPSwap 상장 토큰을 스왑합니다.",
+    routesTitle: "경로",
+    routeBestPrice: "최적 가격",
+    routeSelected: "선택됨",
+    routeEnterAmount: "금액을 입력하면 이 경로의 견적이 표시됩니다.",
+    routeQuoteLoading: "견적을 읽는 중…",
+    routeNativeNoPool: (a: string, b: string) =>
+      `${a}와(과) ${b}에 대한 네이티브 풀이 없습니다.`,
+    routeIcpswapNoPool: (a: string, b: string) =>
+      `ICPSwap에는 ${a}와(과) ${b}의 직접 풀이 없습니다.`,
+    routeNativeAccount:
+      "네이티브 풀 경로는 이 사이트에 로그인한 계정에서만 사용할 수 있습니다.",
+    routeNativeError: "네이티브 풀이 견적을 반환하지 않았습니다.",
+    routeOnlyIcpswap: "이 쌍에는 ICPSwap만 제공됩니다.",
+    routeOnlyNative: "이 쌍에는 네이티브 풀만 제공됩니다.",
+    bestPriceNote:
+      "최적 가격: 수수료 포함 가장 많은 토큰을 돌려주는 경로입니다. 선택하신 경로가 실행됩니다.",
+    routeUsed: "사용 경로",
+    amountGiven: "보내는 금액",
+    confirmNativeApproval: (amount: string, symbol: string) =>
+      `DEX가 계정에서 최대 ${amount} ${symbol}(스왑 금액 + 원장 수수료 1회)을 가져갈 수 있도록 허용하는 ICRC-2 승인입니다.`,
+    confirmNativeSteps: (symbolIn: string, symbolOut: string) =>
+      `이후 DEX가 ${symbolIn}을(를) 가져오고(입금), 네이티브 풀에서 스왑한 뒤 ${symbolOut}을(를) 지갑으로 보냅니다(출금).`,
+    warningNative:
+      "스왑은 최종적이며 원장 수수료는 환불되지 않습니다. 출금이 실패하면 스왑된 금액은 DEX 잔액에 남습니다.",
+    nativeWithdrawFailed: (amount: string, symbol: string, detail: string) =>
+      `스왑은 완료되었지만 ${amount} ${symbol}을(를) 지갑으로 출금하지 못했습니다: ${detail}. 해당 금액은 DEX 잔액에 남습니다.`,
   },
   "pa-Guru": {
     description:
@@ -546,6 +725,8 @@ export const SWAP_TEXT = defineDict({
       `ICPSwap ਕੋਲ ${a} ਅਤੇ ${b} ਲਈ ਕੋਈ ਸਿੱਧਾ ਪੂਲ ਨਹੀਂ ਹੈ। ਇਹ ਜੋੜਾ ਇੱਥੇ ਸਵੈਪ ਨਹੀਂ ਹੋ ਸਕਦਾ।`,
     quoteLoading: "ICPSwap ਕੋਟ ਪੜ੍ਹਿਆ ਜਾ ਰਿਹਾ ਹੈ…",
     quoteError: "ICPSwap ਪੂਲ ਨੇ ਕੋਈ ਕੋਟ ਨਹੀਂ ਦਿੱਤਾ।",
+    livePriceUnavailable:
+      "ICPSwap ਦੀ ਲਾਈਵ ਕੀਮਤ ਉਪਲਬਧ ਨਹੀਂ ਹੈ, ਇਸ ਲਈ ਸਵੈਪ ਸ਼ੁਰੂ ਨਹੀਂ ਕੀਤਾ ਗਿਆ। ਕੁਝ ਸਮੇਂ ਬਾਅਦ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
     quoteExpired: "ਕੋਟ ਦੀ ਮਿਆਦ ਖਤਮ ਹੋ ਗਈ ਹੈ। ਸਵੈਪ ਤੋਂ ਪਹਿਲਾਂ ਇਸਨੂੰ ਤਾਜ਼ਾ ਕਰੋ।",
     refreshQuote: "ਕੋਟ ਤਾਜ਼ਾ ਕਰੋ",
     estimated: "ਅਨੁਮਾਨਿਤ ਪ੍ਰਾਪਤ ਰਕਮ",
@@ -617,6 +798,34 @@ export const SWAP_TEXT = defineDict({
     addedTokens: "ਜੋੜੇ ਟੋਕਨ",
     removeToken: (symbol: string) => `${symbol} ਹਟਾਓ`,
     closeAddToken: "ਬੰਦ ਕਰੋ",
+    unifiedDescription:
+      "ਆਪਣੇ ਵਾਲਿਟ ਤੋਂ ਨੇਟਿਵ ਪੂਲਾਂ ਜਾਂ ICPSwap ਰਾਹੀਂ ICP, TTTI-T, ckBTC, ckUSDC, ckUSDT ਅਤੇ ਤੁਹਾਡੇ ਵੱਲੋਂ ਜੋੜੇ ICPSwap-ਸੂਚੀਬੱਧ ਟੋਕਨ ਸਵੈਪ ਕਰੋ।",
+    routesTitle: "ਰੂਟ",
+    routeBestPrice: "ਸਭ ਤੋਂ ਵਧੀਆ ਕੀਮਤ",
+    routeSelected: "ਚੁਣਿਆ ਗਿਆ",
+    routeEnterAmount: "ਇਸ ਰੂਟ ਦਾ ਕੋਟ ਵੇਖਣ ਲਈ ਰਕਮ ਦਾਖਲ ਕਰੋ।",
+    routeQuoteLoading: "ਕੋਟ ਪੜ੍ਹਿਆ ਜਾ ਰਿਹਾ ਹੈ…",
+    routeNativeNoPool: (a: string, b: string) =>
+      `${a} ਅਤੇ ${b} ਲਈ ਕੋਈ ਨੇਟਿਵ ਪੂਲ ਮੌਜੂਦ ਨਹੀਂ ਹੈ।`,
+    routeIcpswapNoPool: (a: string, b: string) =>
+      `ICPSwap ਕੋਲ ${a} ਅਤੇ ${b} ਲਈ ਕੋਈ ਸਿੱਧਾ ਪੂਲ ਨਹੀਂ ਹੈ।`,
+    routeNativeAccount:
+      "ਨੇਟਿਵ ਪੂਲ ਰੂਟ ਸਿਰਫ਼ ਇਸ ਸਾਈਟ 'ਤੇ ਸਾਈਨ ਇਨ ਕੀਤੇ ਖਾਤੇ ਲਈ ਉਪਲਬਧ ਹੈ।",
+    routeNativeError: "ਨੇਟਿਵ ਪੂਲ ਨੇ ਕੋਈ ਕੋਟ ਨਹੀਂ ਦਿੱਤਾ।",
+    routeOnlyIcpswap: "ਇਸ ਜੋੜੇ ਲਈ ਸਿਰਫ਼ ICPSwap ਪੇਸ਼ ਕੀਤਾ ਜਾਂਦਾ ਹੈ।",
+    routeOnlyNative: "ਇਸ ਜੋੜੇ ਲਈ ਸਿਰਫ਼ ਨੇਟਿਵ ਪੂਲ ਪੇਸ਼ ਕੀਤਾ ਜਾਂਦਾ ਹੈ।",
+    bestPriceNote:
+      "ਸਭ ਤੋਂ ਵਧੀਆ ਕੀਮਤ: ਫੀਸਾਂ ਸਮੇਤ ਸਭ ਤੋਂ ਵੱਧ ਟੋਕਨ ਦੇਣ ਵਾਲਾ ਰੂਟ। ਜੋ ਰੂਟ ਤੁਸੀਂ ਚੁਣਦੇ ਹੋ, ਉਹੀ ਚਲਾਇਆ ਜਾਂਦਾ ਹੈ।",
+    routeUsed: "ਵਰਤਿਆ ਗਿਆ ਰੂਟ",
+    amountGiven: "ਦਿੱਤੀ ਜਾਣ ਵਾਲੀ ਰਕਮ",
+    confirmNativeApproval: (amount: string, symbol: string) =>
+      `ਇੱਕ ICRC-2 ਮਨਜ਼ੂਰੀ ਜੋ DEX ਨੂੰ ਤੁਹਾਡੇ ਖਾਤੇ ਤੋਂ ${amount} ${symbol} ਤੱਕ (ਸਵੈਪ ਰਕਮ ਅਤੇ ਇੱਕ ਲੈਜਰ ਫੀਸ) ਲੈਣ ਦੀ ਆਗਿਆ ਦਿੰਦੀ ਹੈ।`,
+    confirmNativeSteps: (symbolIn: string, symbolOut: string) =>
+      `ਫਿਰ DEX ${symbolIn} ਲੈਂਦਾ ਹੈ (ਜਮ੍ਹਾਂ), ਉਹਨਾਂ ਨੂੰ ਨੇਟਿਵ ਪੂਲ ਵਿੱਚ ਸਵੈਪ ਕਰਦਾ ਹੈ ਅਤੇ ${symbolOut} ਤੁਹਾਡੇ ਵਾਲਿਟ ਵਿੱਚ ਭੇਜਦਾ ਹੈ (ਕਢਵਾਉਣਾ)।`,
+    warningNative:
+      "ਸਵੈਪ ਅੰਤਿਮ ਹਨ ਅਤੇ ਲੈਜਰ ਫੀਸਾਂ ਵਾਪਸ ਨਹੀਂ ਹੁੰਦੀਆਂ। ਜੇ ਕਢਵਾਉਣਾ ਅਸਫਲ ਹੁੰਦਾ ਹੈ, ਤਾਂ ਸਵੈਪ ਕੀਤੀ ਰਕਮ ਤੁਹਾਡੇ DEX ਬਕਾਏ ਵਿੱਚ ਰਹਿੰਦੀ ਹੈ।",
+    nativeWithdrawFailed: (amount: string, symbol: string, detail: string) =>
+      `ਸਵੈਪ ਪੂਰਾ ਹੋ ਗਿਆ, ਪਰ ${amount} ${symbol} ਨੂੰ ਤੁਹਾਡੇ ਵਾਲਿਟ ਵਿੱਚ ਕਢਵਾਉਣਾ ਅਸਫਲ ਰਿਹਾ: ${detail}। ਰਕਮ ਤੁਹਾਡੇ DEX ਬਕਾਏ ਵਿੱਚ ਰਹਿੰਦੀ ਹੈ।`,
   },
 });
 

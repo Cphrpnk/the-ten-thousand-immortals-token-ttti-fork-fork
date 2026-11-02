@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   ComputationResult,
   DexIndicatorsSnapshot,
+  FeeSharing,
+  FeeTotals,
   IndicatorsStatus,
   PoolIndicators,
   TokenProof,
@@ -13,6 +15,8 @@ import { useIsCallerAdmin } from "./useQueries";
 export type {
   ComputationResult,
   DexIndicatorsSnapshot,
+  FeeSharing,
+  FeeTotals,
   IndicatorsStatus,
   PoolIndicators,
   TokenProof,

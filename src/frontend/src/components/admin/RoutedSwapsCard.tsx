@@ -2,6 +2,9 @@ import { Route as RouteIcon } from "lucide-react";
 import { RoutedSwapStage } from "../../backend";
 import type { RoutedSwap, RoutedSwapStatus } from "../../hooks/useRouter";
 import { useAdminRoutedSwaps } from "../../hooks/useRouter";
+import { ADMIN_PAGED_LIST_TEXT } from "../../i18n/pages/pagedList";
+import { FiatAmount } from "../FiatAmount";
+import { fiatTokenOfDex } from "../dex/DexFiat";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -16,7 +19,7 @@ import { Skeleton } from "../ui/skeleton";
 import { AdminAccordion, formatTokenAmount } from "./AdminUi";
 import { formatTimestamp } from "./ConversionsCard";
 import { RouterFeesTable } from "./RouterFeesTable";
-import { GOLD_CARD } from "./styles";
+import { GOLD_CARD, SECONDARY_GOLD } from "./styles";
 
 const STAGE_LABELS: Record<RoutedSwapStage, string> = {
   [RoutedSwapStage.recorded]: "Recorded",
@@ -83,13 +86,25 @@ function SwapRow({ swap, index }: { swap: RoutedSwap; index: number }) {
           <dt className="inline text-muted-foreground">In: </dt>
           <dd className="inline font-mono">
             {formatTokenAmount(swap.amountIn, swap.tokenIn)}
+            <FiatAmount
+              token={fiatTokenOfDex(swap.tokenIn)}
+              amount={swap.amountIn}
+              className="ml-1.5"
+              ocid={`admin.routed_swaps.item.${index}.in_fiat`}
+            />
           </dd>
         </div>
         <div>
           <dt className="inline text-muted-foreground">Out: </dt>
           <dd className="inline font-mono">
-            {formatTokenAmount(swap.amountOut, swap.tokenOut)} (minimum{" "}
-            {formatTokenAmount(swap.minAmountOut, swap.tokenOut)})
+            {formatTokenAmount(swap.amountOut, swap.tokenOut)}
+            <FiatAmount
+              token={fiatTokenOfDex(swap.tokenOut)}
+              amount={swap.amountOut}
+              className="ml-1.5"
+              ocid={`admin.routed_swaps.item.${index}.out_fiat`}
+            />{" "}
+            (minimum {formatTokenAmount(swap.minAmountOut, swap.tokenOut)})
           </dd>
         </div>
         {fees && (
@@ -98,6 +113,12 @@ function SwapRow({ swap, index }: { swap: RoutedSwap; index: number }) {
               <dt className="inline text-muted-foreground">ICPSwap fee: </dt>
               <dd className="inline font-mono">
                 {formatTokenAmount(fees.icpswapFee, swap.tokenIn)}
+                <FiatAmount
+                  token={fiatTokenOfDex(swap.tokenIn)}
+                  amount={fees.icpswapFee}
+                  className="ml-1.5"
+                  ocid={`admin.routed_swaps.item.${index}.icpswap_fee_fiat`}
+                />
               </dd>
             </div>
             <div>
@@ -105,8 +126,14 @@ function SwapRow({ swap, index }: { swap: RoutedSwap; index: number }) {
                 Protocol fee (LP 70 % / permanent 30 %):{" "}
               </dt>
               <dd className="inline font-mono">
-                {formatTokenAmount(fees.protocolFee, swap.tokenIn)} (
-                {formatTokenAmount(fees.protocolLpShare, swap.tokenIn)} /{" "}
+                {formatTokenAmount(fees.protocolFee, swap.tokenIn)}
+                <FiatAmount
+                  token={fiatTokenOfDex(swap.tokenIn)}
+                  amount={fees.protocolFee}
+                  className="ml-1.5"
+                  ocid={`admin.routed_swaps.item.${index}.protocol_fee_fiat`}
+                />{" "}
+                ({formatTokenAmount(fees.protocolLpShare, swap.tokenIn)} /{" "}
                 {formatTokenAmount(fees.protocolPermanentShare, swap.tokenIn)})
               </dd>
             </div>
@@ -143,10 +170,11 @@ function SwapRow({ swap, index }: { swap: RoutedSwap; index: number }) {
 
 /** Routed swaps that went through ICPSwap, and the 0.1 % per native pool. */
 export function RoutedSwapsCard() {
-  const { data, isLoading, isError, refetch } = useAdminRoutedSwaps();
-  const swaps = (data ?? [])
+  const routed = useAdminRoutedSwaps();
+  const swaps = [...routed.items]
     .filter((s) => s.route.__kind__ === "icpswap")
     .sort((a, b) => (a.id < b.id ? 1 : -1));
+  const showList = swaps.length > 0 || routed.hasMore;
 
   return (
     <Card className={GOLD_CARD} data-ocid="admin.routed_swaps_card">
@@ -164,35 +192,37 @@ export function RoutedSwapsCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {isLoading ? (
+        {routed.isLoading ? (
           <Skeleton
             className="h-32 w-full"
             data-ocid="admin.routed_swaps_loading_state"
           />
-        ) : isError ? (
+        ) : routed.isError ? (
           <Alert
             variant="destructive"
             data-ocid="admin.routed_swaps_error_state"
           >
             <AlertDescription className="flex flex-wrap items-center gap-3">
-              The routed swaps could not be loaded.
+              {ADMIN_PAGED_LIST_TEXT.loadError}
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => void refetch()}
+                onClick={routed.retry}
                 data-ocid="admin.routed_swaps_retry_button"
               >
-                Retry
+                {ADMIN_PAGED_LIST_TEXT.retry}
               </Button>
             </AlertDescription>
           </Alert>
-        ) : swaps.length === 0 ? (
+        ) : !showList ? (
           <p
             className="text-sm text-muted-foreground"
             data-ocid="admin.routed_swaps.empty_state"
           >
-            No swap was routed through ICPSwap
+            {routed.isEmpty
+              ? "No swap was routed through ICPSwap"
+              : ADMIN_PAGED_LIST_TEXT.empty}
           </p>
         ) : (
           <AdminAccordion
@@ -200,11 +230,65 @@ export function RoutedSwapsCard() {
             count={swaps.length}
             ocid="admin.routed_swaps_accordion"
           >
-            <ul data-ocid="admin.routed_swaps_list">
-              {swaps.map((swap, i) => (
-                <SwapRow key={swap.id.toString()} swap={swap} index={i + 1} />
-              ))}
-            </ul>
+            {swaps.length > 0 ? (
+              <ul data-ocid="admin.routed_swaps_list">
+                {swaps.map((swap, i) => (
+                  <SwapRow key={swap.id.toString()} swap={swap} index={i + 1} />
+                ))}
+              </ul>
+            ) : (
+              <p
+                className="text-sm text-muted-foreground"
+                data-ocid="admin.routed_swaps.page_empty_state"
+              >
+                No routed swap on the pages loaded so far.
+              </p>
+            )}
+            {routed.isLoadMoreError && (
+              <Alert
+                variant="destructive"
+                className="mt-3"
+                data-ocid="admin.routed_swaps_load_more_error_state"
+              >
+                <AlertDescription className="flex flex-wrap items-center gap-3">
+                  {ADMIN_PAGED_LIST_TEXT.loadMoreError}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={routed.retry}
+                    data-ocid="admin.routed_swaps_load_more_retry_button"
+                  >
+                    {ADMIN_PAGED_LIST_TEXT.retry}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {routed.hasMore && !routed.isLoadMoreError && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={SECONDARY_GOLD}
+                  disabled={routed.isLoadingMore}
+                  onClick={routed.loadMore}
+                  data-ocid="admin.routed_swaps_load_more_button"
+                >
+                  {routed.isLoadingMore
+                    ? ADMIN_PAGED_LIST_TEXT.loadingMore
+                    : ADMIN_PAGED_LIST_TEXT.loadMore}
+                </Button>
+              )}
+              {routed.isEnd && (
+                <span
+                  className="text-xs text-muted-foreground"
+                  data-ocid="admin.routed_swaps_end_state"
+                >
+                  {ADMIN_PAGED_LIST_TEXT.noMoreResults}
+                </span>
+              )}
+            </div>
           </AdminAccordion>
         )}
         <AdminAccordion

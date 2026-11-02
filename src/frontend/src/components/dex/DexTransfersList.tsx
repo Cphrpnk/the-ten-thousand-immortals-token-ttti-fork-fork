@@ -5,18 +5,21 @@ import {
   type DexTransferView,
   useDexTransfers,
 } from "../../hooks/useDex";
+import type { PagedList } from "../../hooks/usePagedList";
 import { useDict, useLanguage } from "../../i18n/core";
 import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
+import { PAGED_LIST_TEXT } from "../../i18n/pages/pagedList";
 import { cn } from "../../lib/utils";
+import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { DexFiat, fiatTokenOfDex } from "./DexFiat";
 import {
   formatDexDate,
   formatDexUnits,
   transferStatusLabel,
 } from "./dexFormat";
 
-const RECENT_LIMIT = 25;
 const SKELETONS = Array.from({ length: 3 }, (_, i) => `transfer-skeleton-${i}`);
 
 const STATUS_STYLES: Record<DexTransferView["status"]["__kind__"], string> = {
@@ -26,7 +29,56 @@ const STATUS_STYLES: Record<DexTransferView["status"]["__kind__"], string> = {
   needsReview: "border-destructive/50 text-destructive",
 };
 
-/** Recent DD deposits and DW withdrawals of `owner`. */
+/** Load-more control, end marker and next-page error of a cursor-paged DEX list. */
+export function DexLoadMore<T>({
+  list,
+  ocid,
+}: { list: PagedList<T>; ocid: string }) {
+  const p = useDict(PAGED_LIST_TEXT);
+  return (
+    <div className="flex flex-col items-start gap-2">
+      {list.isLoadMoreError && (
+        <div
+          className="callout-danger flex flex-wrap items-center gap-3 px-3 py-2 text-sm"
+          data-ocid={`${ocid}.load_more_error_state`}
+        >
+          <span>{p.loadMoreError}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={list.retry}
+            data-ocid={`${ocid}.load_more_retry_button`}
+          >
+            {p.retry}
+          </Button>
+        </div>
+      )}
+      {list.hasMore && !list.isLoadMoreError && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={list.isLoadingMore}
+          onClick={list.loadMore}
+          data-ocid={`${ocid}.load_more_button`}
+        >
+          {list.isLoadingMore ? p.loadingMore : p.loadMore}
+        </Button>
+      )}
+      {list.isEnd && (
+        <span
+          className="text-xs text-muted-foreground"
+          data-ocid={`${ocid}.end_state`}
+        >
+          {p.noMoreResults}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** DD deposits and DW withdrawals of `owner`, newest first, loaded page by page. */
 export function DexTransfersList({
   owner,
   tokens,
@@ -35,17 +87,13 @@ export function DexTransfersList({
   tokens: Array<DexTokenInfo>;
 }) {
   const t = useDict(DEX_TEXT);
+  const p = useDict(PAGED_LIST_TEXT);
   const { lang } = useLanguage();
   const transfers = useDexTransfers(owner);
-  const recent = [...(transfers.data ?? [])]
-    .sort((a, b) =>
-      a.createdAtTimeNs === b.createdAtTimeNs
-        ? 0
-        : a.createdAtTimeNs > b.createdAtTimeNs
-          ? -1
-          : 1,
-    )
-    .slice(0, RECENT_LIMIT);
+  const recent = transfers.items;
+  const pending =
+    transfers.isLoading ||
+    (!transfers.isError && !transfers.isEmpty && recent.length === 0);
 
   return (
     <div
@@ -53,7 +101,7 @@ export function DexTransfersList({
       data-ocid="pools.balances.transfers.section"
     >
       <h3 className="font-display text-lg tracking-wide">{t.transfersTitle}</h3>
-      {transfers.isPending ? (
+      {pending ? (
         <div
           className="flex flex-col gap-2"
           data-ocid="pools.balances.transfers.loading_state"
@@ -63,12 +111,21 @@ export function DexTransfersList({
           ))}
         </div>
       ) : transfers.isError ? (
-        <p
-          className="callout-danger px-3 py-2 text-sm"
+        <div
+          className="callout-danger flex flex-wrap items-center gap-3 px-3 py-2 text-sm"
           data-ocid="pools.balances.transfers.error_state"
         >
-          {t.balancesLoadError}
-        </p>
+          <span>{t.balancesLoadError}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={transfers.retry}
+            data-ocid="pools.balances.transfers.retry_button"
+          >
+            {p.retry}
+          </Button>
+        </div>
       ) : recent.length === 0 ? (
         <p
           className="border-t border-border pt-3 text-sm text-muted-foreground"
@@ -102,6 +159,10 @@ export function DexTransfersList({
                   <span className="font-mono tabular-nums break-all">
                     {amount}
                   </span>
+                  <DexFiat
+                    token={fiatTokenOfDex(tr.token)}
+                    amount={tr.amount}
+                  />
                 </div>
                 <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
                   <span className="break-all">
@@ -134,6 +195,9 @@ export function DexTransfersList({
             );
           })}
         </ul>
+      )}
+      {!pending && !transfers.isError && (
+        <DexLoadMore list={transfers} ocid="pools.balances.transfers" />
       )}
     </div>
   );

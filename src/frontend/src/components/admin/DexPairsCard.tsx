@@ -12,20 +12,25 @@ import {
 import { useState } from "react";
 import {
   type ApprovePairError,
+  CancelRemovalError,
   type PairRequestView,
   PoolKind,
   PoolStatus,
   type PoolTokenView,
   type PoolView,
   type RefusePairError,
-  RemovePairError,
+  type RemovalView,
+  type RemovePairError,
   SetMinimumsError,
+  ThresholdBasis,
   type TokenMinimums,
 } from "../../backend";
 import {
   useApprovePair,
+  useCancelPairRemoval,
   useDexPools,
   usePairRequests,
+  useRefreshReferenceSources,
   useRefusePair,
   useRemovePair,
   useSetUtilityPairMinimums,
@@ -120,11 +125,58 @@ function refuseErrorText(e: RefusePairError): string {
   }
 }
 
-const REMOVE_ERROR_TEXT: Record<RemovePairError, string> = {
-  [RemovePairError.notAuthorized]: "Only an admin can remove pairs.",
-  [RemovePairError.alreadyRemoved]: "This pair is already removed.",
-  [RemovePairError.poolNotFound]: "This pool no longer exists.",
+const REMOVE_REASON_MAX = 280;
+
+function removeErrorText(e: RemovePairError): string {
+  switch (e.__kind__) {
+    case "notAuthorized":
+      return "Only an admin can remove pairs.";
+    case "alreadyRemoved":
+      return "This pair is already removed.";
+    case "poolNotFound":
+      return "This pool no longer exists.";
+    case "alreadyAnnounced":
+      return `A removal is already announced (effective ${formatTimestamp(e.alreadyAnnounced.effectiveAt)}).`;
+    case "reasonEmpty":
+      return "A public reason is required.";
+    case "reasonTooLong":
+      return `The reason is too long (max ${e.reasonTooLong.maximumChars.toString()} characters).`;
+  }
+}
+
+const CANCEL_REMOVAL_ERROR_TEXT: Record<CancelRemovalError, string> = {
+  [CancelRemovalError.notAuthorized]: "Only an admin can cancel a removal.",
+  [CancelRemovalError.poolNotFound]: "This pool no longer exists.",
+  [CancelRemovalError.noAnnouncement]: "No removal is announced for this pool.",
+  [CancelRemovalError.alreadyCancelled]: "This removal is already cancelled.",
+  [CancelRemovalError.alreadyExecuting]:
+    "The removal is already executing and can no longer be cancelled.",
+  [CancelRemovalError.alreadyCompleted]: "The removal is already completed.",
 };
+
+/** One line describing the removal state of a pool, or null when none. */
+function removalSummary(removal: RemovalView): string | null {
+  switch (removal.__kind__) {
+    case "none":
+      return null;
+    case "announced": {
+      const r = removal.announced;
+      return `Removal announced ${formatTimestamp(r.announcedAt)}, effective ${formatTimestamp(r.effectiveAt)}. Reason: ${r.reason}`;
+    }
+    case "cancelled": {
+      const r = removal.cancelled;
+      return `Removal announced ${formatTimestamp(r.announcedAt)} and cancelled ${formatTimestamp(r.cancelledAt)}. Reason: ${r.reason}`;
+    }
+    case "executing": {
+      const r = removal.executing;
+      return `Removal executing since ${formatTimestamp(r.startedAt)} (effective ${formatTimestamp(r.effectiveAt)}). Remaining positions are being paid out. Reason: ${r.reason}`;
+    }
+    case "completed": {
+      const r = removal.completed;
+      return `Removal completed ${formatTimestamp(r.completedAt)} (effective ${formatTimestamp(r.effectiveAt)}). Reason: ${r.reason}`;
+    }
+  }
+}
 
 const MINIMUMS_ERROR_TEXT: Record<SetMinimumsError, string> = {
   [SetMinimumsError.notAuthorized]: "Only an admin can set minimums.",
@@ -167,9 +219,10 @@ function MinimumsFields({
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        Minimum locked liquidity per token, about 1 USD each. A pool stays in
-        filling until its liquidity reaches 100 USD in total, both sides
-        combined; swaps open from 100 USD.
+        Minimum locked liquidity per token, about 1 USD each. Swaps open when
+        the pool reaches 10 USD of depth (sum of both sides); this threshold
+        applies only to swaps, never to creating the pool, depositing or adding
+        liquidity. The first deposit of an empty pool has no minimum.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {fields.map(({ token, text, set, n }) => {
@@ -215,19 +268,23 @@ function amountText(value: bigint, token: PoolTokenView): string {
 const usd = (e8: bigint) =>
   (Number(e8) / 1e8).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
-/** Filling gauge in English: "37 / 100 USD — 63 USD remaining to open the pool". */
+/** Filling gauge in English: "7 / 10 USD of TTTI-T in the pool — 3 USD remaining until swaps open". */
 function gaugeText(pool: PoolView): string {
   const g = pool.gauge;
+  const measure =
+    pool.thresholdBasis === ThresholdBasis.tttiSideAtPoolPrice
+      ? "USD of TTTI-T in the pool"
+      : "USD of depth";
   if (!g.valueAvailable || g.currentUsdE8 === undefined) {
     const missing = [
       g.missingRate.token0 ? pool.token0.symbol : null,
       g.missingRate.token1 ? pool.token1.symbol : null,
     ].filter((s): s is string => s !== null);
-    return `Value momentarily unavailable${missing.length ? ` (no valid rate: ${missing.join(", ")})` : ""} · target ${usd(g.targetUsdE8)} USD`;
+    return `Value momentarily unavailable${missing.length ? ` (no valid rate: ${missing.join(", ")})` : ""} · target ${usd(g.targetUsdE8)} ${measure}`;
   }
-  const base = `${usd(g.currentUsdE8)} / ${usd(g.targetUsdE8)} USD`;
+  const base = `${usd(g.currentUsdE8)} / ${usd(g.targetUsdE8)} ${measure}`;
   if (pool.status === PoolStatus.filling && g.remainingUsdE8 !== undefined) {
-    return `${base} — ${usd(g.remainingUsdE8)} USD remaining to open the pool`;
+    return `${base} — ${usd(g.remainingUsdE8)} USD remaining until swaps open (swap threshold only)`;
   }
   return base;
 }
@@ -501,30 +558,63 @@ function PoolItem({
 }: { pool: PoolView; index: number; notify: Notify }) {
   const ocid = `admin.dex_pairs.pool.${index}`;
   const remove = useRemovePair();
+  const cancelRemoval = useCancelPairRemoval();
   const setMinimums = useSetUtilityPairMinimums();
   const draft = useMinimumsDraft(pool.token0, pool.token1);
   const pair = `${pool.token0.symbol}/${pool.token1.symbol}`;
   const removed = pool.status === PoolStatus.removed;
+  const [reason, setReason] = useState("");
+  const reasonValid =
+    reason.trim().length > 0 && reason.trim().length <= REMOVE_REASON_MAX;
+  const removalText = removalSummary(pool.removal);
+  const canAnnounce =
+    !removed &&
+    (pool.removal.__kind__ === "none" || pool.removal.__kind__ === "cancelled");
   const needsMinimums =
     pool.kind === PoolKind.utilityPair && !removed && !pool.minimumsSet;
 
   const onRemove = () => {
     notify(null);
-    remove.mutate(pool.id, {
+    remove.mutate(
+      { poolId: pool.id, reason: reason.trim() },
+      {
+        onSuccess: (r) => {
+          if (r.__kind__ === "ok") setReason("");
+          notify(
+            r.__kind__ === "ok"
+              ? {
+                  ok: true,
+                  text: `${pair} removal announced. Swaps and additions are suspended; withdrawals stay open subject to locks.`,
+                }
+              : {
+                  ok: false,
+                  text: `Removal failed. ${removeErrorText(r.err)}`,
+                },
+          );
+        },
+        onError: (e) =>
+          notify({ ok: false, text: `Removal failed. ${e.message}` }),
+      },
+    );
+  };
+
+  const onCancelRemoval = () => {
+    notify(null);
+    cancelRemoval.mutate(pool.id, {
       onSuccess: (r) =>
         notify(
           r.__kind__ === "ok"
             ? {
                 ok: true,
-                text: `${pair} removed. New swaps and deposits are blocked; LP withdrawals stay open.`,
+                text: `${pair} removal announcement cancelled. Swaps and additions can resume.`,
               }
             : {
                 ok: false,
-                text: `Removal failed. ${REMOVE_ERROR_TEXT[r.err]}`,
+                text: `Cancellation failed. ${CANCEL_REMOVAL_ERROR_TEXT[r.err]}`,
               },
         ),
       onError: (e) =>
-        notify({ ok: false, text: `Removal failed. ${e.message}` }),
+        notify({ ok: false, text: `Cancellation failed. ${e.message}` }),
     });
   };
 
@@ -628,48 +718,155 @@ function PoolItem({
           </Button>
         </div>
       )}
-      {!removed && (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={SECONDARY_GOLD}
-              disabled={remove.isPending}
-              data-ocid={`${ocid}.remove_button`}
-            >
-              {remove.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
-              ) : (
-                <Ban className="mr-2 h-4 w-4" />
-              )}
-              Remove
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent data-ocid={`${ocid}.remove_dialog`}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Remove {pair}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                New swaps and deposits will be blocked. LP withdrawals stay
-                open. This cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel data-ocid={`${ocid}.remove_cancel_button`}>
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={onRemove}
-                data-ocid={`${ocid}.remove_confirm_button`}
-              >
-                Remove pair
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+      {removalText && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-ocid={`${ocid}.removal_state`}
+        >
+          {removalText}
+        </p>
       )}
+      <div className="flex flex-wrap gap-3">
+        {pool.removal.__kind__ === "announced" && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={SECONDARY_GOLD}
+            disabled={cancelRemoval.isPending}
+            onClick={onCancelRemoval}
+            data-ocid={`${ocid}.cancel_removal_button`}
+          >
+            {cancelRemoval.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <X className="mr-2 h-4 w-4" />
+            )}
+            Cancel announcement
+          </Button>
+        )}
+        {canAnnounce && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={SECONDARY_GOLD}
+                disabled={remove.isPending}
+                data-ocid={`${ocid}.remove_button`}
+              >
+                {remove.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
+                ) : (
+                  <Ban className="mr-2 h-4 w-4" />
+                )}
+                Announce removal
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent data-ocid={`${ocid}.remove_dialog`}>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Announce the removal of {pair}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  The removal takes effect 5 days after the announcement. From
+                  the announcement, swaps and additions are suspended.
+                  Withdrawals stay open, subject to position locks. At the
+                  effective date, all remaining positions are paid to their
+                  owners' wallets. The reason is public.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor={`${ocid}-remove-reason`}>
+                  Public reason (1 to {REMOVE_REASON_MAX} characters)
+                </Label>
+                <Textarea
+                  id={`${ocid}-remove-reason`}
+                  value={reason}
+                  maxLength={REMOVE_REASON_MAX}
+                  onChange={(e) => setReason(e.target.value)}
+                  data-ocid={`${ocid}.remove_reason_input`}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {reason.trim().length} / {REMOVE_REASON_MAX}
+                </p>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel data-ocid={`${ocid}.remove_cancel_button`}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={onRemove}
+                  disabled={!reasonValid}
+                  data-ocid={`${ocid}.remove_confirm_button`}
+                >
+                  Announce removal
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </div>
     </li>
+  );
+}
+
+/** Refreshes the reference price sources used for first deposits. */
+function ReferenceSourcesControl({ notify }: { notify: Notify }) {
+  const refresh = useRefreshReferenceSources();
+  const [count, setCount] = useState<bigint | null>(null);
+
+  const onRefresh = () => {
+    notify(null);
+    refresh.mutate(undefined, {
+      onSuccess: (n) => {
+        setCount(n);
+        notify({
+          ok: true,
+          text: `Reference price sources refreshed: ${n.toString()} readable ICPSwap ${n === 1n ? "pair" : "pairs"}.`,
+        });
+      },
+      onError: (e) =>
+        notify({ ok: false, text: `Refresh failed. ${e.message}` }),
+    });
+  };
+
+  return (
+    <section
+      className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6"
+      data-ocid="admin.dex_pairs.reference_sources_section"
+    >
+      <div className="max-w-xl space-y-1">
+        <h3 className="font-display text-base">Reference price sources</h3>
+        <p className="text-xs text-muted-foreground">
+          First deposits into an empty pool are checked against these prices.
+          Refresh them to read the ICPSwap pairs again.
+          {count !== null && (
+            <span data-ocid="admin.dex_pairs.reference_sources_count">
+              {" "}
+              Readable sources: {count.toString()}.
+            </span>
+          )}
+        </p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className={SECONDARY_GOLD}
+        disabled={refresh.isPending}
+        onClick={onRefresh}
+        data-ocid="admin.dex_pairs.refresh_sources_button"
+      >
+        {refresh.isPending ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
+        ) : (
+          <RefreshCw className="mr-2 h-4 w-4" />
+        )}
+        Refresh reference sources
+      </Button>
+    </section>
   );
 }
 
@@ -824,6 +1021,8 @@ export function DexPairsCard() {
             </AdminAccordion>
           )}
         </section>
+
+        <ReferenceSourcesControl notify={setFeedback} />
       </CardContent>
     </Card>
   );

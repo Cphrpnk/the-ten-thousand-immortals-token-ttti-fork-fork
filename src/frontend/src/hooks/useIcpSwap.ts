@@ -1,13 +1,18 @@
 import { loadConfig } from "@caffeineai/core-infrastructure";
 import type { Principal } from "@icp-sdk/core/principal";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import {
   QUOTE_TTL_MS,
   type SwapPoolInfo,
+  type TttiPriceReading,
+  isPriceFresh,
+  loadCachedTttiPrice,
+  readIcpswapTttiUsdE8,
   readSwapQuote,
   readUnusedBalance,
   resolveSwapPool,
+  storeTttiPrice,
 } from "../lib/icpswap";
 import {
   type ListedToken,
@@ -16,6 +21,8 @@ import {
   subscribeAddedSwapTokens,
 } from "../lib/swapTokens";
 import type { TokenDescriptor } from "../lib/tokenRegistry";
+import { useGetIcpPrice } from "./useQueries";
+import { usableBtcUsdE8, useBtcUsdRate } from "./useWallet";
 
 const noTokens: Array<TokenDescriptor> = [];
 
@@ -90,5 +97,67 @@ export function useIcpSwapTokenList(enabled: boolean) {
     enabled,
     staleTime: 60 * 60 * 1000,
     retry: 1,
+  });
+}
+
+const TTTI_PRICE_KEY = ["icpswapTttiPrice"] as const;
+
+/** Ledger and USD rates needed to turn an ICPSwap TTTI-T pair into a USD price. */
+function usePriceInputs() {
+  const { data: ledger } = useTttiLedgerId();
+  const { data: icpPrice } = useGetIcpPrice();
+  const { data: btcRate } = useBtcUsdRate();
+  const icpUsdE8 =
+    icpPrice?.usable && icpPrice.usdE8 > 0n ? icpPrice.usdE8 : null;
+  const btcUsdE8 = usableBtcUsdE8(btcRate, Date.now());
+  return { ledger, icpUsdE8, btcUsdE8 };
+}
+
+/**
+ * Read the price from ICPSwap and store it. A failed read keeps the last
+ * stored price (if any) so the wallet is not left without a value.
+ */
+async function readAndStore(
+  ledger: string,
+  icpUsdE8: bigint | null,
+  btcUsdE8: bigint | null,
+): Promise<TttiPriceReading | null> {
+  const usdE8 = await readIcpswapTttiUsdE8(ledger, icpUsdE8, btcUsdE8);
+  if (usdE8 === null) return loadCachedTttiPrice();
+  const reading = { usdE8, readAt: Date.now() };
+  storeTttiPrice(reading);
+  return reading;
+}
+
+/**
+ * TTTI-T price used to value the wallet: the browser cache while it is under
+ * 24 hours old (no ICPSwap call), otherwise a fresh ICPSwap read.
+ */
+export function useIcpswapTttiPrice() {
+  const { ledger, icpUsdE8, btcUsdE8 } = usePriceInputs();
+  const hasRate = icpUsdE8 !== null || btcUsdE8 !== null;
+  return useQuery<TttiPriceReading | null>({
+    queryKey: TTTI_PRICE_KEY,
+    queryFn: () => {
+      const cached = loadCachedTttiPrice();
+      if (isPriceFresh(cached) || !ledger) return cached;
+      return readAndStore(ledger, icpUsdE8, btcUsdE8);
+    },
+    enabled: !!ledger && (hasRate || isPriceFresh(loadCachedTttiPrice())),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/** Re-read the price from ICPSwap right now, whatever the age of the cache. */
+export function useRefreshIcpswapTttiPrice() {
+  const queryClient = useQueryClient();
+  const { ledger, icpUsdE8, btcUsdE8 } = usePriceInputs();
+  return useMutation<TttiPriceReading | null>({
+    mutationFn: () => {
+      if (!ledger) throw new Error("No TTTI-T ledger");
+      return readAndStore(ledger, icpUsdE8, btcUsdE8);
+    },
+    onSuccess: (reading) => queryClient.setQueryData(TTTI_PRICE_KEY, reading),
   });
 }

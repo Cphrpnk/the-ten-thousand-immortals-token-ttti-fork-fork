@@ -6,8 +6,14 @@ import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { DexTokenAmount, useDexFiatText, useDexUnitsText } from "./DexFiat";
 import { DexPausedHint, useDexPaused } from "./DexPausedNotice";
 import { DexPairLogos } from "./DexTokenLogo";
+import {
+  PendingPotValue,
+  guaranteedDepthText,
+  guaranteedReservesText,
+} from "./PoolRow";
 import { ProtocolLiquidityInfo } from "./ProtocolLiquidityInfo";
 import {
   feeTierLabel,
@@ -15,7 +21,7 @@ import {
   formatTttiAmount,
   poolStatusLabel,
 } from "./dexFormat";
-import { gaugeText } from "./liquidityFormat";
+import { formatUsdE8, gaugeText } from "./liquidityFormat";
 
 export type PoolAction = "add" | "swap" | "positions";
 
@@ -52,6 +58,8 @@ export function PoolCard({
   tradeNote?: string;
 }) {
   const t = useDict(DEX_TEXT);
+  const unitsText = useDexUnitsText();
+  const fiatText = useDexFiatText();
   const paused = useDexPaused();
   const isTtti = pool.kind === PoolKind.tttiPair;
   const removed = pool.status === PoolStatus.removed;
@@ -112,10 +120,30 @@ export function PoolCard({
         <div className="flex flex-col gap-1">
           <dt className="text-muted-foreground">{t.reserves}</dt>
           <dd className="flex flex-col gap-0.5 tabular-nums">
-            <span>{formatTokenAmount(pool.reserve0, pool.token0)}</span>
-            <span>{formatTokenAmount(pool.reserve1, pool.token1)}</span>
+            <span>
+              <DexTokenAmount amount={pool.reserve0} token={pool.token0} />
+            </span>
+            <span>
+              <DexTokenAmount amount={pool.reserve1} token={pool.token1} />
+            </span>
           </dd>
         </div>
+        <div className="flex flex-col gap-1">
+          <dt className="text-muted-foreground">{t.guaranteedDepthLabel}</dt>
+          <dd
+            className="flex flex-col gap-0.5 tabular-nums"
+            data-ocid={`pools.guaranteed_depth.${index}`}
+          >
+            <span>{guaranteedDepthText(t, pool)}</span>
+            <span>{guaranteedReservesText(t, pool, unitsText)}</span>
+            <span className="text-xs text-muted-foreground">
+              {t.guaranteedDepthHint}
+            </span>
+          </dd>
+        </div>
+        <Row label={t.pendingPotLabel}>
+          <PendingPotValue pool={pool} ocid={`pools.pending_pot.${index}`} />
+        </Row>
         <Row label={t.totalShares}>{formatNumber(pool.totalShares)}</Row>
         <Row label={t.feeTier}>{feeTierLabel(t, pool.feeTier)}</Row>
         <Row label={t.poolSubaccount}>
@@ -128,7 +156,9 @@ export function PoolCard({
           <dd className="tabular-nums">
             {isTtti ? (
               tttiMin !== undefined &&
-              t.minimumTttiSide(formatTttiAmount(tttiMin))
+              t.minimumTttiSide(
+                `${formatTttiAmount(tttiMin)} ${fiatText("ttti", tttiMin)}`,
+              )
             ) : (
               <div className="flex flex-col gap-1">
                 <span className="text-xs text-muted-foreground">
@@ -141,9 +171,11 @@ export function PoolCard({
                   >
                     <span>{token.symbol}</span>
                     <span>
-                      {min !== undefined
-                        ? formatTokenAmount(min, token)
-                        : t.minimumNotSet}
+                      {min !== undefined ? (
+                        <DexTokenAmount amount={min} token={token} />
+                      ) : (
+                        t.minimumNotSet
+                      )}
                     </span>
                   </span>
                 ))}
@@ -154,23 +186,9 @@ export function PoolCard({
       </dl>
 
       <ul className="flex flex-col gap-1 border-t border-border pt-3 text-xs text-muted-foreground">
-        {config && (
-          <li>
-            {t.firstDepositRule(formatNumber(config.firstDepositMultiplier))}
-          </li>
-        )}
-        {config && config.usdRateScale > 0n && (
-          <li>
-            {t.launchDepthRule(
-              formatNumber(
-                Number(
-                  pool.launchMinimumTotalUsdE8 ||
-                    config.launchMinimumTotalUsdE8,
-                ) / Number(config.usdRateScale),
-                { maximumFractionDigits: 2 },
-              ),
-            )}
-          </li>
+        <li>{t.firstDepositRule}</li>
+        {pool.swapThresholdUsdE8 > 0n && (
+          <li>{t.launchDepthRule(formatUsdE8(pool.swapThresholdUsdE8))}</li>
         )}
         <li>{t.lockedSharesRule}</li>
         {pool.newPairBadgeActive && <li>{t.approvalNotRecommendation}</li>}

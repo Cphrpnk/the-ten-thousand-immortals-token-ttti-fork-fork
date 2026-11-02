@@ -1,4 +1,5 @@
 import type { Principal } from "@icp-sdk/core/principal";
+import { ThresholdBasis } from "../../backend";
 import type {
   AddLiquidityError,
   DexToken,
@@ -6,7 +7,10 @@ import type {
   ExtendLockError,
   PoolTokenView,
   PoolView,
+  PositionView,
   ProtocolLiquidityView,
+  ReferenceUnavailable,
+  RelayOutcome,
   RemoveLiquidityError,
   SwapError,
   UsdGauge,
@@ -27,7 +31,7 @@ export function formatUsdE8(value: bigint): string {
   return formatNumber(Number(value) / USD_E8, { maximumFractionDigits: 2 });
 }
 
-/** "37 / 100 USD — 63 USD remaining…", or the unavailable text. */
+/** "7 / 10 USD — 3 USD remaining…", or the unavailable text. */
 export function gaugeText(t: DexText, gauge: UsdGauge): string {
   if (!gauge.valueAvailable || gauge.currentUsdE8 === undefined) {
     return t.gaugeUnavailable;
@@ -38,6 +42,22 @@ export function gaugeText(t: DexText, gauge: UsdGauge): string {
   return remaining > 0n
     ? t.gaugeFilling(current, target, formatUsdE8(remaining))
     : t.gaugeOpen(current, target);
+}
+
+/** Swap threshold in the pool's own measure: "10 USD of TTTI-T in the pool" or "10 USD of depth". */
+export function thresholdText(t: DexText, pool: PoolView): string {
+  const usd = formatUsdE8(pool.swapThresholdUsdE8);
+  return pool.thresholdBasis === ThresholdBasis.tttiSideAtPoolPrice
+    ? t.thresholdValueTtti(usd)
+    : t.thresholdValueDepth(usd);
+}
+
+/** Threshold measure over threshold, as a 0 to 100 gauge fill. */
+export function thresholdPct(pool: PoolView): number {
+  const measured = pool.thresholdMeasuredUsdE8 ?? pool.gauge.currentUsdE8;
+  if (measured === undefined || pool.swapThresholdUsdE8 === 0n) return 0;
+  const pct = Number((measured * 10_000n) / pool.swapThresholdUsdE8) / 100;
+  return Math.max(0, Math.min(100, pct));
 }
 
 /** Basis points as a localized percentage, e.g. 30 → "0.3 %". */
@@ -65,6 +85,94 @@ export function durationText(t: DexText, ns: bigint): string {
   if (ns === DAY_NS) return t.durationOneDay;
   const days = Number(ns) / Number(DAY_NS);
   return t.durationDays(formatNumber(days, { maximumFractionDigits: 2 }));
+}
+
+/** Fallback minimum lock: 3 months (91 days); config.minLockNs is preferred. */
+export const MIN_LOCK_NS = 91n * DAY_NS;
+const YEAR_DAYS = 365n;
+const MONTH_DAYS = 30n;
+
+/**
+ * Years, months and days of a duration (365-day years, 30-day months), e.g.
+ * "1 year 6 months 3 days". Zero or negative values read as "0 days".
+ */
+export function formatRemainingTime(t: DexText, ns: bigint): string {
+  let days = ns > 0n ? ns / DAY_NS : 0n;
+  const years = days / YEAR_DAYS;
+  days -= years * YEAR_DAYS;
+  const months = days / MONTH_DAYS;
+  days -= months * MONTH_DAYS;
+  const parts: string[] = [];
+  if (years > 0n) {
+    parts.push(
+      years === 1n ? t.durationOneYear : t.durationYears(formatNumber(years)),
+    );
+  }
+  if (months > 0n) {
+    parts.push(
+      months === 1n
+        ? t.durationOneMonth
+        : t.durationMonths(formatNumber(months)),
+    );
+  }
+  if (days > 0n || parts.length === 0) {
+    parts.push(
+      days === 1n ? t.durationOneDay : t.durationDays(formatNumber(days)),
+    );
+  }
+  return parts.join(" ");
+}
+
+/** Lock bound in an error: "3 months" for the minimum, otherwise the duration. */
+export function lockBoundText(t: DexText, ns: bigint): string {
+  if (ns >= MIN_LOCK_NS - DAY_NS && ns <= MIN_LOCK_NS + DAY_NS) {
+    return t.lockPreset3m;
+  }
+  if (ns === FIVE_YEARS_NS) return t.lockPreset5y;
+  return durationText(t, ns);
+}
+
+/** Relay received by a position, or the "None" text when it received none. */
+export function relayReceivedText(t: DexText, ns: bigint): string {
+  return ns > 0n ? formatRemainingTime(t, ns) : t.relayReceivedNone;
+}
+
+/** Status of a position: locked, free after a relay or its term, or free without a lock. */
+export function positionStatusText(
+  t: DexText,
+  position: Pick<PositionView, "locked" | "lockDurationNs">,
+): string {
+  if (position.locked) return t.positionStatusLocked;
+  return position.lockDurationNs > 0n
+    ? t.positionFreeAfter
+    : t.positionStatusFreeNoLock;
+}
+
+/** Summary line of a relay outcome, or the "no position shortened" text. */
+export function relayOutcomeText(t: DexText, relay: RelayOutcome): string {
+  if (relay.positionsShortened === 0n && relay.positionsFreed === 0n) {
+    return t.relayResultNone;
+  }
+  return t.relayResult(
+    formatNumber(relay.positionsShortened),
+    formatNumber(relay.positionsFreed),
+  );
+}
+
+/** Why the first-deposit reference price cannot be read. */
+export function referenceUnavailableText(
+  t: DexText,
+  unavailable: ReferenceUnavailable,
+  pool: PoolView,
+): string {
+  if (unavailable.__kind__ === "noReadableSource") {
+    return t.referenceUnavailableNoSource;
+  }
+  const missing = [
+    unavailable.rateUnavailable.token0 ? pool.token0.symbol : null,
+    unavailable.rateUnavailable.token1 ? pool.token1.symbol : null,
+  ].filter((s): s is string => s !== null);
+  return t.referenceUnavailableRate(missing.join(", "));
 }
 
 export function shortPrincipal(principal: Principal): string {
@@ -96,6 +204,7 @@ export function addLiquidityErrorText(
   pool: PoolView,
   counter: PoolTokenView,
   tokens: ReadonlyArray<DexTokenInfo>,
+  lang: Lang,
 ): string {
   switch (error.__kind__) {
     case "anonymous":
@@ -136,14 +245,61 @@ export function addLiquidityErrorText(
         formatDexUnits(error.ratioMismatch.requiredCounterAmount, counter),
       );
     case "lockTooShort":
-      return t.errLockTooShort(durationText(t, error.lockTooShort.minimumNs));
+      return t.errLockTooShort(lockBoundText(t, error.lockTooShort.minimumNs));
     case "lockTooLong":
-      return t.errLockTooLong(durationText(t, error.lockTooLong.maximumNs));
+      return t.errLockTooLong(lockBoundText(t, error.lockTooLong.maximumNs));
     case "zeroShares":
       return t.errZeroShares;
     case "operationInProgress":
       return t.errOperationInProgress;
+    case "invalidSlippage":
+      return t.errAddInvalidSlippage(
+        formatNumber(Number(error.invalidSlippage.maximumBps) / 100, {
+          maximumFractionDigits: 2,
+        }),
+      );
+    case "slippageExceeded": {
+      const e = error.slippageExceeded;
+      return t.errAddSlippageExceeded(
+        percentText(e.toleranceBps),
+        formatDexUnits(e.expectedCounterAmount, counter),
+        formatDexUnits(e.actualCounterAmount, counter),
+      );
+    }
+    case "referenceOutOfBand": {
+      const e = error.referenceOutOfBand;
+      return t.errAddReferenceOutOfBand(
+        ratioText(e.expected, pool),
+        percentText(e.deviationBps),
+        percentText(e.toleranceBps),
+      );
+    }
+    case "referenceUnavailable":
+      return t.errAddReferenceUnavailable;
+    case "removalAnnounced":
+      return t.errAddRemovalAnnounced(
+        formatDexDate(error.removalAnnounced.effectiveAt, lang),
+      );
   }
+}
+
+/** Basis points as a bare localized percentage, e.g. 200 → "2". */
+export function percentText(bps: bigint): string {
+  return formatNumber(Number(bps) / 100, { maximumFractionDigits: 2 });
+}
+
+/** Expected raw ratio amount1 / amount0 as "1 SYM0 = X SYM1" in display units. */
+export function ratioText(
+  ratio: { numerator: bigint; denominator: bigint },
+  pool: PoolView,
+): string {
+  if (ratio.denominator === 0n) return "—";
+  const value =
+    (Number(ratio.numerator) / Number(ratio.denominator)) *
+    10 ** (pool.token0.decimals - pool.token1.decimals);
+  return `1 ${pool.token0.symbol} = ${formatNumber(value, {
+    maximumFractionDigits: 6,
+  })} ${pool.token1.symbol}`;
 }
 
 export function removeLiquidityErrorText(
@@ -188,6 +344,16 @@ export function extendLockErrorText(
     case "lockTooLong":
       return t.errUnlockTooLate(
         formatDexDate(error.lockTooLong.maximumUnlockAt, lang),
+      );
+    case "lockTooShort":
+      return t.errLockTooShort(lockBoundText(t, error.lockTooShort.minimumNs));
+    case "poolNotFound":
+      return t.errPoolNotFound;
+    case "poolRemoved":
+      return t.errPoolRemoved;
+    case "removalAnnounced":
+      return t.errExtendRemovalAnnounced(
+        formatDexDate(error.removalAnnounced.effectiveAt, lang),
       );
     case "operationInProgress":
       return t.errOperationInProgress;
@@ -247,13 +413,22 @@ export function swapErrorText(
       );
     case "operationInProgress":
       return t.errOperationInProgress;
+    case "removalInProgress":
+      return t.errRemovalInProgress(
+        formatDexDate(error.removalInProgress.effectiveAt, lang),
+      );
+    case "depthBelowThreshold":
+      return t.errDepthBelowThreshold(
+        formatUsdE8(error.depthBelowThreshold.depthUsdE8),
+        formatUsdE8(error.depthBelowThreshold.thresholdUsdE8),
+      );
   }
 }
 
 // DEX lot 4: ICP bonus weight and protocol liquidity.
 
-/** Five years in nanoseconds (365-day years), the bonus weight divisor. */
-export const FIVE_YEARS_NS = 157_680_000_000_000_000n;
+/** Five years in nanoseconds, the maximum lock and the bonus weight divisor (as in the backend). */
+export const FIVE_YEARS_NS = 157_766_400_000_000_000n;
 
 /**
  * Bonus weight = value in ICP x remaining lock time / 5 years. The backend
@@ -279,11 +454,10 @@ function symbolUnits(
   tokens: ReadonlyArray<DexTokenInfo>,
   symbol: string,
   value: bigint,
+  units: (value: bigint, info: DexTokenInfo) => string,
 ): string {
   const info = tokens.find((i) => i.symbol === symbol);
-  return info
-    ? formatDexUnits(value, info)
-    : `${formatNumber(value)} ${symbol}`;
+  return info ? units(value, info) : `${formatNumber(value)} ${symbol}`;
 }
 
 /** Localized lines of one pool's protocol liquidity (held, from fees, from treasury). */
@@ -292,6 +466,7 @@ export function protocolLiquidityLines(
   view: ProtocolLiquidityView,
   tokens: ReadonlyArray<DexTokenInfo>,
   lang: Lang,
+  units: (value: bigint, info: DexTokenInfo) => string = formatDexUnits,
 ): {
   held: string;
   fromFees: string;
@@ -299,8 +474,8 @@ export function protocolLiquidityLines(
   share: string;
   lastAdded: string | null;
 } {
-  const a = (v: bigint) => symbolUnits(tokens, view.token0Symbol, v);
-  const b = (v: bigint) => symbolUnits(tokens, view.token1Symbol, v);
+  const a = (v: bigint) => symbolUnits(tokens, view.token0Symbol, v, units);
+  const b = (v: bigint) => symbolUnits(tokens, view.token1Symbol, v, units);
   return {
     held: t.protocolLiquidityHeld(a(view.amount0), b(view.amount1)),
     fromFees: t.protocolLiquidityFromFees(a(view.fromFees0), b(view.fromFees1)),

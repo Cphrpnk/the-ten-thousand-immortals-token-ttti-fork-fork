@@ -9,6 +9,7 @@ type FooterLabelKey =
   | "navWhitePaper"
   | "navGetIcp"
   | "navWallet"
+  | "navGuarantee"
   | "navHistory";
 
 const FOOTER_LINKS: Array<{
@@ -24,6 +25,11 @@ const FOOTER_LINKS: Array<{
   },
   { to: "/buy-icp", labelKey: "navGetIcp", ocid: "footer.buy_icp_link" },
   { to: "/wallet", labelKey: "navWallet", ocid: "footer.wallet_link" },
+  {
+    to: "/guarantee",
+    labelKey: "navGuarantee",
+    ocid: "footer.guarantee_link",
+  },
   { to: "/history", labelKey: "navHistory", ocid: "footer.history_link" },
 ];
 

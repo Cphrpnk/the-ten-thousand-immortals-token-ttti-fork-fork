@@ -17,11 +17,11 @@ export const BUY_PAGE_TEXT = defineDict({
     ackReadFirst:
       'I have read the "Read this first" section of the whitepaper.',
     ackNoRights:
-      "I understand that TTTI has no use, no intrinsic value and gives me no rights of any kind.",
+      "I understand that TTTI has no use and no intrinsic value. The only right I hold is the personal guarantee: I can recover my own stake by returning TTTI under the redemption rules, with no common reserve and no promise of value.",
     ackPriceZero:
-      "I understand that its price can fall to zero and that nobody is obligated to support it or buy back my TTTI-T.",
+      "I understand that its price can fall to zero and that nothing promises it any value. Only the personal guarantee applies: each minter can recover their own stake by returning TTTI-T to the contract under the redemption rules. There is no common reserve.",
     ackIcpCreator:
-      "Of the ICP, ckBTC, ckUSDC or ckUSDT I pay, 100/101 stays in the contract in the paid token, managed by the admin, and 1/101 is the mint fee, which buys TTTI-T without any price condition to feed liquidity.",
+      "Of the ICP, ckBTC, ckUSDC or ckUSDT I pay, 100/101 stays in the contract in the paid token, managed by the admin, and 1/101 is the mint fee, which feeds permanent liquidity: a mechanical, public depth management, never conditioned on price.",
     ackNoProfit:
       "I am not relying on any promise of profit, from the creator or from anyone.",
     ackAffordLoss: "I am spending only what I can afford to lose entirely.",
@@ -99,11 +99,11 @@ export const BUY_PAGE_TEXT = defineDict({
     shownAs: (symbol: string) => `Affiché comme ${symbol} dans les wallets.`,
     ackReadFirst: "J'ai lu la section « À lire en premier » du livre blanc.",
     ackNoRights:
-      "Je comprends que TTTI n'a aucun usage, aucune valeur intrinsèque et ne me confère aucun droit d'aucune sorte.",
+      "Je comprends que TTTI n'a aucun usage et aucune valeur intrinsèque. Le seul droit dont je dispose est la garantie personnelle : je peux récupérer ma propre mise en rendant des TTTI selon les règles de rachat, sans réserve commune et sans promesse de valeur.",
     ackPriceZero:
-      "Je comprends que son prix peut tomber à zéro et que personne n'est tenu de le soutenir ni de racheter mes TTTI-T.",
+      "Je comprends que son prix peut tomber à zéro et que rien ne lui promet une valeur. Seule s'applique la garantie personnelle : chaque minteur peut récupérer sa propre mise en rendant du TTTI-T au contrat selon les règles de rachat. Il n'y a pas de réserve commune.",
     ackIcpCreator:
-      "De l'ICP, du ckBTC, du ckUSDC ou du ckUSDT que je paie, 100/101 restent dans le contrat dans le jeton payé, gérés par l'administrateur, et 1/101 constitue les frais de mint, qui achètent du TTTI-T sans aucune condition de prix pour alimenter la liquidité.",
+      "De l'ICP, du ckBTC, du ckUSDC ou du ckUSDT que je paie, 100/101 restent dans le contrat dans le jeton payé, gérés par l'administrateur, et 1/101 constitue les frais de mint, qui alimentent la liquidité permanente : une gestion de la profondeur mécanique et publique, jamais conditionnée au prix.",
     ackNoProfit:
       "Je ne me fie à aucune promesse de profit, ni du créateur ni de quiconque.",
     ackAffordLoss:
@@ -175,11 +175,11 @@ export const BUY_PAGE_TEXT = defineDict({
     shownAs: (symbol: string) => `Se muestra como ${symbol} en los wallets.`,
     ackReadFirst: "He leído la sección «Lea esto primero» del libro blanco.",
     ackNoRights:
-      "Entiendo que TTTI no tiene ningún uso, ningún valor intrínseco y no me otorga ningún derecho de ningún tipo.",
+      "Entiendo que TTTI no tiene ningún uso ni valor intrínseco. El único derecho que tengo es la garantía personal: puedo recuperar mi propia aportación devolviendo TTTI según las reglas de reembolso, sin reserva común y sin promesa de valor.",
     ackPriceZero:
-      "Entiendo que su precio puede caer a cero y que nadie está obligado a respaldarlo ni a recomprar mis TTTI-T.",
+      "Entiendo que su precio puede caer a cero y que nada le promete un valor. Solo se aplica la garantía personal: cada minter puede recuperar su propia aportación devolviendo TTTI-T al contrato según las reglas de canje. No hay reserva común.",
     ackIcpCreator:
-      "Del ICP, ckBTC, ckUSDC o ckUSDT que pago, 100/101 permanecen en el contrato en el token pagado, gestionados por el administrador, y 1/101 es la comisión de mint, que compra TTTI-T sin ninguna condición de precio para alimentar la liquidez.",
+      "Del ICP, ckBTC, ckUSDC o ckUSDT que pago, 100/101 permanecen en el contrato en el token pagado, gestionados por el administrador, y 1/101 es la comisión de mint, que alimenta la liquidez permanente: una gestión de la profundidad mecánica y pública, nunca condicionada al precio.",
     ackNoProfit:
       "No me baso en ninguna promesa de beneficio, ni del creador ni de nadie.",
     ackAffordLoss: "Solo gasto lo que puedo permitirme perder por completo.",
@@ -250,11 +250,11 @@ export const BUY_PAGE_TEXT = defineDict({
     shownAs: (symbol: string) => `在钱包中显示为 ${symbol}。`,
     ackReadFirst: "我已阅读白皮书中的“请先阅读”部分。",
     ackNoRights:
-      "我理解 TTTI 没有任何用途，没有内在价值，也不赋予我任何形式的权利。",
+      "我理解 TTTI 没有任何用途，也没有内在价值。我唯一享有的权利是个人担保：我可以按照赎回规则退还 TTTI，取回我自己的投入，没有共同储备，也不承诺任何价值。",
     ackPriceZero:
-      "我理解其价格可能跌至零，且没有人有义务为其提供支撑或回购我的 TTTI-T。",
+      "我理解其价格可能跌至零，且没有任何东西承诺其价值。仅适用个人保障：每位铸造者都可以按赎回规则将 TTTI-T 退还给合约，从而收回自己的本金。不存在共同储备。",
     ackIcpCreator:
-      "我支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 中，100/101 以所支付的代币留在合约中，由管理员管理，1/101 为铸造费用，该费用在不附带任何价格条件的情况下购买 TTTI-T，用于补充流动性。",
+      "我支付的 ICP、ckBTC、ckUSDC 或 ckUSDT 中，100/101 以所支付的代币留在合约中，由管理员管理，1/101 为铸造费用，用于永久流动性：一种机械、公开的深度管理，从不以价格为条件。",
     ackNoProfit: "我不依赖任何来自创建者或任何其他人的盈利承诺。",
     ackAffordLoss: "我只花费我能够承受全部损失的金额。",
     ackLegend: "首次购买前需确认，此后每当这些条款变更时需再次确认。",
@@ -320,11 +320,11 @@ export const BUY_PAGE_TEXT = defineDict({
     shownAs: (symbol: string) => `Exibido como ${symbol} nas carteiras.`,
     ackReadFirst: "Li a seção “Leia isto primeiro” do whitepaper.",
     ackNoRights:
-      "Entendo que o TTTI não tem nenhum uso, nenhum valor intrínseco e não me confere nenhum direito de qualquer tipo.",
+      "Entendo que o TTTI não tem nenhum uso nem valor intrínseco. O único direito que tenho é a garantia pessoal: posso recuperar a minha própria participação devolvendo TTTI segundo as regras de resgate, sem reserva comum e sem promessa de valor.",
     ackPriceZero:
-      "Entendo que seu preço pode cair a zero e que ninguém é obrigado a sustentá-lo nem a recomprar meus TTTI-T.",
+      "Entendo que seu preço pode cair a zero e que nada lhe promete um valor. Aplica-se apenas a garantia pessoal: cada minter pode recuperar o próprio aporte devolvendo TTTI-T ao contrato conforme as regras de resgate. Não há reserva comum.",
     ackIcpCreator:
-      "Do ICP, ckBTC, ckUSDC ou ckUSDT que eu pago, 100/101 permanecem no contrato no token pago, gerenciados pelo administrador, e 1/101 é a taxa de mint, que compra TTTI-T sem nenhuma condição de preço para alimentar a liquidez.",
+      "Do ICP, ckBTC, ckUSDC ou ckUSDT que eu pago, 100/101 permanecem no contrato no token pago, gerenciados pelo administrador, e 1/101 é a taxa de mint, que alimenta a liquidez permanente: uma gestão de profundidade mecânica e pública, nunca condicionada ao preço.",
     ackNoProfit:
       "Não estou me baseando em nenhuma promessa de lucro, nem do criador nem de qualquer outra pessoa.",
     ackAffordLoss:
@@ -396,11 +396,11 @@ export const BUY_PAGE_TEXT = defineDict({
     shownAs: (symbol: string) => `지갑에서는 ${symbol}(으)로 표시됩니다.`,
     ackReadFirst: "백서의 ‘먼저 읽어 주세요’ 섹션을 읽었습니다.",
     ackNoRights:
-      "TTTI는 아무런 용도도, 내재 가치도 없으며 저에게 어떠한 종류의 권리도 부여하지 않는다는 것을 이해합니다.",
+      "TTTI는 아무런 용도도 내재 가치도 없다는 것을 이해합니다. 제가 가진 유일한 권리는 개인 보증입니다. 상환 규칙에 따라 TTTI를 반환하여 제 지분을 되찾을 수 있으며, 공동 준비금은 없고 가치에 대한 약속도 없습니다.",
     ackPriceZero:
-      "그 가격이 0까지 떨어질 수 있으며, 누구도 이를 지지하거나 제 TTTI-T를 되살 의무가 없다는 것을 이해합니다.",
+      "그 가격이 0까지 떨어질 수 있으며, 어떤 것도 그 가치를 약속하지 않는다는 것을 이해합니다. 개인 보장만 적용됩니다. 각 민터는 상환 규칙에 따라 TTTI-T를 컨트랙트에 반환하여 자신의 지분을 회수할 수 있습니다. 공동 준비금은 없습니다.",
     ackIcpCreator:
-      "제가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT 중 100/101은 지불한 토큰으로 컨트랙트에 남아 관리자가 관리하며, 1/101은 민트 수수료이며, 어떠한 가격 조건도 없이 TTTI-T를 구매하여 유동성을 보충합니다.",
+      "제가 지불하는 ICP, ckBTC, ckUSDC 또는 ckUSDT 중 100/101은 지불한 토큰으로 컨트랙트에 남아 관리자가 관리하며, 1/101은 민트 수수료이며, 영구 유동성에 쓰입니다. 이는 기계적이고 공개적인 깊이 관리이며 가격을 조건으로 하지 않습니다.",
     ackNoProfit:
       "저는 제작자로부터든 다른 누구로부터든 어떠한 수익 약속에도 의존하지 않습니다.",
     ackAffordLoss: "저는 전부 잃어도 감당할 수 있는 금액만 사용합니다.",
@@ -470,11 +470,11 @@ export const BUY_PAGE_TEXT = defineDict({
     shownAs: (symbol: string) => `ਵਾਲਿਟਾਂ ਵਿੱਚ ${symbol} ਵਜੋਂ ਦਿਖਾਇਆ ਜਾਂਦਾ ਹੈ।`,
     ackReadFirst: "ਮੈਂ ਵ੍ਹਾਈਟਪੇਪਰ ਦਾ “ਪਹਿਲਾਂ ਇਹ ਪੜ੍ਹੋ” ਭਾਗ ਪੜ੍ਹ ਲਿਆ ਹੈ।",
     ackNoRights:
-      "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ TTTI ਦੀ ਕੋਈ ਵਰਤੋਂ ਨਹੀਂ, ਕੋਈ ਅੰਦਰੂਨੀ ਮੁੱਲ ਨਹੀਂ ਅਤੇ ਇਹ ਮੈਨੂੰ ਕਿਸੇ ਵੀ ਕਿਸਮ ਦਾ ਕੋਈ ਅਧਿਕਾਰ ਨਹੀਂ ਦਿੰਦਾ।",
+      "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ TTTI ਦੀ ਕੋਈ ਵਰਤੋਂ ਨਹੀਂ ਅਤੇ ਕੋਈ ਅੰਦਰੂਨੀ ਮੁੱਲ ਨਹੀਂ। ਮੇਰਾ ਇੱਕੋ-ਇੱਕ ਅਧਿਕਾਰ ਨਿੱਜੀ ਗਾਰੰਟੀ ਹੈ: ਮੈਂ ਵਾਪਸੀ ਦੇ ਨਿਯਮਾਂ ਅਨੁਸਾਰ TTTI ਮੋੜ ਕੇ ਆਪਣੀ ਹੀ ਲਗਾਈ ਰਕਮ ਵਾਪਸ ਲੈ ਸਕਦਾ ਹਾਂ, ਕੋਈ ਸਾਂਝਾ ਰਿਜ਼ਰਵ ਨਹੀਂ ਹੈ ਅਤੇ ਮੁੱਲ ਦਾ ਕੋਈ ਵਾਅਦਾ ਨਹੀਂ।",
     ackPriceZero:
-      "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ ਇਸਦੀ ਕੀਮਤ ਸਿਫ਼ਰ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ ਅਤੇ ਕੋਈ ਵੀ ਇਸਨੂੰ ਸਹਾਰਾ ਦੇਣ ਜਾਂ ਮੇਰੇ TTTI-T ਵਾਪਸ ਖਰੀਦਣ ਲਈ ਪਾਬੰਦ ਨਹੀਂ ਹੈ।",
+      "ਮੈਨੂੰ ਸਮਝ ਹੈ ਕਿ ਇਸਦੀ ਕੀਮਤ ਸਿਫ਼ਰ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ ਅਤੇ ਕੋਈ ਵੀ ਚੀਜ਼ ਇਸਦੇ ਮੁੱਲ ਦਾ ਵਾਅਦਾ ਨਹੀਂ ਕਰਦੀ। ਸਿਰਫ਼ ਨਿੱਜੀ ਗਾਰੰਟੀ ਲਾਗੂ ਹੁੰਦੀ ਹੈ: ਹਰ ਮਿੰਟਰ ਰਿਡੈਂਪਸ਼ਨ ਦੇ ਨਿਯਮਾਂ ਅਨੁਸਾਰ TTTI-T ਕੰਟਰੈਕਟ ਨੂੰ ਮੋੜ ਕੇ ਆਪਣੀ ਹੀ ਰਕਮ ਵਾਪਸ ਲੈ ਸਕਦਾ ਹੈ। ਕੋਈ ਸਾਂਝਾ ਰਿਜ਼ਰਵ ਨਹੀਂ ਹੈ।",
     ackIcpCreator:
-      "ਮੇਰੇ ਵੱਲੋਂ ਭੁਗਤਾਨ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚੋਂ, 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਕੰਟਰੈਕਟ ਵਿੱਚ ਰਹਿੰਦਾ ਹੈ ਅਤੇ ਐਡਮਿਨ ਵੱਲੋਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ, ਅਤੇ 1/101 ਮਿੰਟ ਫੀਸ ਹੈ, ਜੋ ਕਿਸੇ ਵੀ ਕੀਮਤ ਸ਼ਰਤ ਤੋਂ ਬਿਨਾਂ TTTI-T ਖਰੀਦਦੀ ਹੈ ਤਾਂ ਜੋ ਲਿਕਵਿਡਿਟੀ ਨੂੰ ਭਰਿਆ ਜਾ ਸਕੇ।",
+      "ਮੇਰੇ ਵੱਲੋਂ ਭੁਗਤਾਨ ਕੀਤੇ ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚੋਂ, 100/101 ਭੁਗਤਾਨ ਕੀਤੇ ਟੋਕਨ ਵਿੱਚ ਕੰਟਰੈਕਟ ਵਿੱਚ ਰਹਿੰਦਾ ਹੈ ਅਤੇ ਐਡਮਿਨ ਵੱਲੋਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ, ਅਤੇ 1/101 ਮਿੰਟ ਫੀਸ ਹੈ, ਜੋ ਸਥਾਈ ਲਿਕਵਿਡਿਟੀ ਨੂੰ ਭਰਦੀ ਹੈ: ਡੂੰਘਾਈ ਦਾ ਮਸ਼ੀਨੀ ਅਤੇ ਜਨਤਕ ਪ੍ਰਬੰਧ, ਜੋ ਕਦੇ ਕੀਮਤ ਉੱਤੇ ਨਿਰਭਰ ਨਹੀਂ ਹੁੰਦਾ।",
     ackNoProfit: "ਮੈਂ ਨਿਰਮਾਤਾ ਜਾਂ ਕਿਸੇ ਹੋਰ ਵੱਲੋਂ ਮੁਨਾਫ਼ੇ ਦੇ ਕਿਸੇ ਵੀ ਵਾਅਦੇ 'ਤੇ ਨਿਰਭਰ ਨਹੀਂ ਹਾਂ।",
     ackAffordLoss:
       "ਮੇਰੇ ਵੱਲੋਂ ਖਰਚੀ ਜਾ ਰਹੀ ਰਕਮ ਸਿਰਫ਼ ਉਹੀ ਹੈ ਜਿਸਦਾ ਪੂਰਾ ਨੁਕਸਾਨ ਮੇਰੇ ਲਈ ਸਹਿਣਯੋਗ ਹੈ।",
@@ -2495,5 +2495,912 @@ export const BUY_TRANSFER_OFFER_TEXT = defineDict({
     copyAria: "ਵਾਲਿਟ ਪਤਾ ਕਾਪੀ ਕਰੋ",
     copied: "ਪਤਾ ਕਾਪੀ ਹੋ ਗਿਆ",
     copyFailed: "ਕਾਪੀ ਅਸਫਲ ਰਹੀ। ਪਤਾ ਚੁਣੋ ਅਤੇ ਇਸਨੂੰ ਕਾਪੀ ਕਰੋ।",
+  },
+});
+
+/** Liquidity-forming mint: components/exchange (order, preview, outcome). */
+export const BUY_LIQUIDITY_TEXT = defineDict({
+  en: {
+    priceStatement:
+      "Price: 10,000 USD per TTTI-T. For q TTTI-T, the amount payable is 20,000 USD × q ÷ 0.99, in ICP, ckBTC, ckUSDC or ckUSDT. Minimum: 0.0001 TTTI-T.",
+    modeLegend: "Amount entry",
+    modeTtti: "Amount in TTTI-T",
+    modeUsd: "Amount in dollars",
+    tttiLabel: "TTTI-T to mint",
+    tttiHint: "Minimum 0.0001 TTTI-T, up to 8 decimals.",
+    usdLabel: "Amount to pay, in dollars",
+    usdHint:
+      "Dollar value of the payment. The TTTI-T quantity is rounded down to 8 decimals.",
+    invalidTtti:
+      "Enter a TTTI-T amount with up to 8 decimals. A dot or a comma may be used.",
+    invalidUsd:
+      "Enter a dollar amount greater than 0 with up to 8 decimals. A dot or a comma may be used.",
+    previewHeading: "Preview",
+    previewIdle: "Enter an amount to see the preview.",
+    previewLoading: "Calculating the preview…",
+    rowMinted: "TTTI-T minted",
+    rowPay: "You pay",
+    splitHeading: "Split of the payment",
+    rowPosition: "Liquidity position",
+    rowGuarantee: "Personal guarantee",
+    rowFee: "Fee",
+    rowDust: "Rounding remainder",
+    poolPriceHeading: "Targeted pool price, before and after the zap",
+    priceBefore: "Before",
+    priceAfter: "After",
+    emptyPool: "Empty pool",
+    consolidatedPriceHeading: "Consolidated price (reference)",
+    consolidatedPriceNote:
+      "USD per TTTI-T, weighted by the depth of the open pools.",
+    poolPriceNote: "USD per TTTI-T in the TTTI-T pool of the paid token.",
+    gapHeading: "Gap between the pool price and the consolidated price",
+    gapUnavailable: "Gap not available",
+    firstDepositNote:
+      "Empty pool: the first deposit is made 1 to 1, at 10,000 USD per TTTI-T.",
+    zapLabel: "Balancing swap",
+    noZap: "No balancing swap is needed.",
+    maxPayLabel: "Maximum payment at this tolerance",
+    expiryNote: "The mint is refused if it is not executed within 5 minutes.",
+    previewFailedTitle: "Preview unavailable",
+    mintFailedTitle: "Mint not completed",
+    successTitle: (amount: string) => `${amount} minted`,
+    successPaid: (pay: string, id: string) => `Paid ${pay} · mint #${id}`,
+    successPosition: (id: string) => `Liquidity position #${id}`,
+    successHoldings: (token: string, ttti: string) =>
+      `The position holds ${token} and ${ttti}.`,
+    successGuarantee: (amount: string) => `Personal guarantee: ${amount}.`,
+    successLink: "View my liquidity positions",
+    errAnonymous: "Sign in or connect a wallet to mint.",
+    errRateUnavailable: (symbol: string) =>
+      `No valid ${symbol}/USD rate is available at the moment. Nothing was taken. Try again later.`,
+    errBelowMinimum: (minimum: string) => `The minimum is ${minimum}.`,
+    errTooManyDecimals: (max: string, step: string) =>
+      `A TTTI-T amount has at most ${max} decimals (smallest step ${step}).`,
+    errInvalidAmount: "Enter an amount greater than 0.",
+    errAboveCap: (cap: string, remaining: string) =>
+      `The total cap of ${cap} is reached or would be exceeded. Remaining: ${remaining}.`,
+    errInsufficientBalance: (
+      symbol: string,
+      required: string,
+      balance: string,
+    ) =>
+      `Insufficient ${symbol} balance: ${required} needed including ledger fees, ${balance} available.`,
+    errInsufficientAllowance: (
+      symbol: string,
+      required: string,
+      allowance: string,
+    ) =>
+      `The ${symbol} approval is too low: ${required} required, ${allowance} approved. Approve again and retry.`,
+    errSlippageExceeded: (percent: string) =>
+      `The pool price moved beyond the tolerance of ${percent} %. Nothing was minted. Retry or raise the tolerance.`,
+    errInvalidSlippage: (percent: string) =>
+      `The tolerance cannot exceed ${percent} %.`,
+    errMaxPayExceeded: (pay: string, max: string) =>
+      `The amount payable is now ${pay}, above the maximum of ${max} set from the preview. Refresh the preview and retry.`,
+    errDeadlineExpired:
+      "The 5-minute deadline passed before the mint was executed. Retry.",
+    errInProgress: "A mint from this account is already in progress.",
+    errAcknowledgements: "Accept the acknowledgements to mint.",
+    errSalesPaused: "Minting is paused.",
+    errDexPaused: "Pools are paused. Minting is unavailable.",
+    errPoolRemoved: (symbol: string) =>
+      `The TTTI-T/${symbol} pool has been removed.`,
+    errRemovalAnnounced: (symbol: string, date: string) =>
+      `A removal of the TTTI-T/${symbol} pool is announced for ${date}. Minting into it is suspended.`,
+    errPoolNotFound: (symbol: string) => `There is no TTTI-T/${symbol} pool.`,
+    errMinimumsNotSet: "The pool minimums are not set yet.",
+    errLedger: (symbol: string, message: string) =>
+      `${symbol} ledger error: ${message}`,
+    errDepositRefunded: (id: string) =>
+      `The deposit into the pool failed. The payment was refunded, minus ledger fees (mint #${id}).`,
+    refundingTitle: "Payment being returned",
+    errDepositRefunding: (id: string) =>
+      `The deposit into the pool failed. The payment is being returned and remains in your wallet balance in the meantime (mint #${id}).`,
+    errDepositRefundFailed: (id: string) =>
+      `The deposit into the pool failed and the refund did not complete (mint #${id}). Keep this reference.`,
+    errGeneric: "The mint was refused.",
+  },
+  fr: {
+    priceStatement:
+      "Prix : 10 000 USD par TTTI-T. Pour q TTTI-T, le montant à payer est 20 000 USD × q ÷ 0,99, en ICP, ckBTC, ckUSDC ou ckUSDT. Minimum : 0,0001 TTTI-T.",
+    modeLegend: "Saisie du montant",
+    modeTtti: "Montant en TTTI-T",
+    modeUsd: "Montant en dollars",
+    tttiLabel: "TTTI-T à frapper",
+    tttiHint: "Minimum 0,0001 TTTI-T, jusqu'à 8 décimales.",
+    usdLabel: "Montant à payer, en dollars",
+    usdHint:
+      "Valeur en dollars du paiement. La quantité de TTTI-T est arrondie à la baisse à 8 décimales.",
+    invalidTtti:
+      "Saisissez un montant en TTTI-T avec 8 décimales au plus. Le point et la virgule sont acceptés.",
+    invalidUsd:
+      "Saisissez un montant en dollars supérieur à 0 avec 8 décimales au plus. Le point et la virgule sont acceptés.",
+    previewHeading: "Aperçu",
+    previewIdle: "Saisissez un montant pour voir l'aperçu.",
+    previewLoading: "Calcul de l'aperçu…",
+    rowMinted: "TTTI-T frappés",
+    rowPay: "Vous payez",
+    splitHeading: "Répartition du paiement",
+    rowPosition: "Position de liquidité",
+    rowGuarantee: "Garantie personnelle",
+    rowFee: "Frais",
+    rowDust: "Reste d'arrondi",
+    poolPriceHeading: "Prix du pool visé, avant et après le zap",
+    priceBefore: "Avant",
+    priceAfter: "Après",
+    emptyPool: "Pool vide",
+    consolidatedPriceHeading: "Prix consolidé (référence)",
+    consolidatedPriceNote:
+      "USD par TTTI-T, pondéré par la profondeur des pools ouverts.",
+    poolPriceNote: "USD par TTTI-T dans le pool TTTI-T du jeton payé.",
+    gapHeading: "Écart entre le prix du pool et le prix consolidé",
+    gapUnavailable: "Écart non disponible",
+    firstDepositNote:
+      "Pool vide : le premier dépôt se fait 1 pour 1, à 10 000 USD par TTTI-T.",
+    zapLabel: "Échange d'équilibrage",
+    noZap: "Aucun échange d'équilibrage n'est nécessaire.",
+    maxPayLabel: "Paiement maximal à cette tolérance",
+    expiryNote:
+      "La frappe est refusée si elle n'est pas exécutée dans les 5 minutes.",
+    previewFailedTitle: "Aperçu indisponible",
+    mintFailedTitle: "Frappe non effectuée",
+    successTitle: (amount: string) => `${amount} frappés`,
+    successPaid: (pay: string, id: string) => `Payé ${pay} · frappe n° ${id}`,
+    successPosition: (id: string) => `Position de liquidité n° ${id}`,
+    successHoldings: (token: string, ttti: string) =>
+      `La position contient ${token} et ${ttti}.`,
+    successGuarantee: (amount: string) => `Garantie personnelle : ${amount}.`,
+    successLink: "Voir mes positions de liquidité",
+    errAnonymous: "Connectez-vous ou connectez un wallet pour frapper.",
+    errRateUnavailable: (symbol: string) =>
+      `Aucun taux ${symbol}/USD valide n'est disponible pour le moment. Rien n'a été prélevé. Réessayez plus tard.`,
+    errBelowMinimum: (minimum: string) => `Le minimum est de ${minimum}.`,
+    errTooManyDecimals: (max: string, step: string) =>
+      `Un montant en TTTI-T a ${max} décimales au plus (plus petit pas : ${step}).`,
+    errInvalidAmount: "Saisissez un montant supérieur à 0.",
+    errAboveCap: (cap: string, remaining: string) =>
+      `Le plafond total de ${cap} est atteint ou serait dépassé. Reste : ${remaining}.`,
+    errInsufficientBalance: (
+      symbol: string,
+      required: string,
+      balance: string,
+    ) =>
+      `Solde ${symbol} insuffisant : ${required} nécessaires frais du ledger compris, ${balance} disponibles.`,
+    errInsufficientAllowance: (
+      symbol: string,
+      required: string,
+      allowance: string,
+    ) =>
+      `L'approbation ${symbol} est trop basse : ${required} requis, ${allowance} approuvés. Approuvez à nouveau et réessayez.`,
+    errSlippageExceeded: (percent: string) =>
+      `Le prix du pool a dépassé la tolérance de ${percent} %. Rien n'a été frappé. Réessayez ou augmentez la tolérance.`,
+    errInvalidSlippage: (percent: string) =>
+      `La tolérance ne peut pas dépasser ${percent} %.`,
+    errMaxPayExceeded: (pay: string, max: string) =>
+      `Le montant à payer est maintenant de ${pay}, au-dessus du maximum de ${max} fixé d'après l'aperçu. Actualisez l'aperçu et réessayez.`,
+    errDeadlineExpired:
+      "Le délai de 5 minutes est écoulé avant l'exécution de la frappe. Réessayez.",
+    errInProgress: "Une frappe de ce compte est déjà en cours.",
+    errAcknowledgements: "Acceptez les reconnaissances pour frapper.",
+    errSalesPaused: "La frappe est en pause.",
+    errDexPaused: "Les pools sont en pause. La frappe est indisponible.",
+    errPoolRemoved: (symbol: string) =>
+      `Le pool TTTI-T/${symbol} a été retiré.`,
+    errRemovalAnnounced: (symbol: string, date: string) =>
+      `Le retrait du pool TTTI-T/${symbol} est annoncé pour le ${date}. La frappe dans ce pool est suspendue.`,
+    errPoolNotFound: (symbol: string) =>
+      `Il n'existe pas de pool TTTI-T/${symbol}.`,
+    errMinimumsNotSet: "Les minimums du pool ne sont pas encore fixés.",
+    errLedger: (symbol: string, message: string) =>
+      `Erreur du ledger ${symbol} : ${message}`,
+    errDepositRefunded: (id: string) =>
+      `Le dépôt dans le pool a échoué. Le paiement a été remboursé, frais du ledger déduits (frappe n° ${id}).`,
+    refundingTitle: "Paiement en cours de retour",
+    errDepositRefunding: (id: string) =>
+      `Le dépôt dans le pool a échoué. Le paiement est en cours de retour et reste dans le solde de votre portefeuille en attendant (frappe n° ${id}).`,
+    errDepositRefundFailed: (id: string) =>
+      `Le dépôt dans le pool a échoué et le remboursement n'est pas terminé (frappe n° ${id}). Conservez cette référence.`,
+    errGeneric: "La frappe a été refusée.",
+  },
+  es: {
+    priceStatement:
+      "Precio: 10.000 USD por TTTI-T. Para q TTTI-T, el importe a pagar es 20.000 USD × q ÷ 0,99, en ICP, ckBTC, ckUSDC o ckUSDT. Mínimo: 0,0001 TTTI-T.",
+    modeLegend: "Introducción del importe",
+    modeTtti: "Importe en TTTI-T",
+    modeUsd: "Importe en dólares",
+    tttiLabel: "TTTI-T a acuñar",
+    tttiHint: "Mínimo 0,0001 TTTI-T, hasta 8 decimales.",
+    usdLabel: "Importe a pagar, en dólares",
+    usdHint:
+      "Valor en dólares del pago. La cantidad de TTTI-T se redondea a la baja a 8 decimales.",
+    invalidTtti:
+      "Introduzca un importe en TTTI-T con 8 decimales como máximo. Se admite punto o coma.",
+    invalidUsd:
+      "Introduzca un importe en dólares mayor que 0 con 8 decimales como máximo. Se admite punto o coma.",
+    previewHeading: "Vista previa",
+    previewIdle: "Introduzca un importe para ver la vista previa.",
+    previewLoading: "Calculando la vista previa…",
+    rowMinted: "TTTI-T acuñados",
+    rowPay: "Usted paga",
+    splitHeading: "Reparto del pago",
+    rowPosition: "Posición de liquidez",
+    rowGuarantee: "Garantía personal",
+    rowFee: "Comisión",
+    rowDust: "Resto de redondeo",
+    poolPriceHeading: "Precio del pool objetivo, antes y después del zap",
+    priceBefore: "Antes",
+    priceAfter: "Después",
+    emptyPool: "Pool vacío",
+    consolidatedPriceHeading: "Precio consolidado (referencia)",
+    consolidatedPriceNote:
+      "USD por TTTI-T, ponderado por la profundidad de los pools abiertos.",
+    poolPriceNote: "USD por TTTI-T en el pool TTTI-T del token pagado.",
+    gapHeading: "Diferencia entre el precio del pool y el precio consolidado",
+    gapUnavailable: "Diferencia no disponible",
+    firstDepositNote:
+      "Pool vacío: el primer depósito se hace 1 a 1, a 10.000 USD por TTTI-T.",
+    zapLabel: "Intercambio de equilibrio",
+    noZap: "No hace falta un intercambio de equilibrio.",
+    maxPayLabel: "Pago máximo con esta tolerancia",
+    expiryNote: "La acuñación se rechaza si no se ejecuta en 5 minutos.",
+    previewFailedTitle: "Vista previa no disponible",
+    mintFailedTitle: "Acuñación no completada",
+    successTitle: (amount: string) => `${amount} acuñados`,
+    successPaid: (pay: string, id: string) =>
+      `Pagado ${pay} · acuñación n.º ${id}`,
+    successPosition: (id: string) => `Posición de liquidez n.º ${id}`,
+    successHoldings: (token: string, ttti: string) =>
+      `La posición contiene ${token} y ${ttti}.`,
+    successGuarantee: (amount: string) => `Garantía personal: ${amount}.`,
+    successLink: "Ver mis posiciones de liquidez",
+    errAnonymous: "Inicie sesión o conecte un wallet para acuñar.",
+    errRateUnavailable: (symbol: string) =>
+      `No hay una tasa ${symbol}/USD válida en este momento. No se ha cobrado nada. Inténtelo más tarde.`,
+    errBelowMinimum: (minimum: string) => `El mínimo es ${minimum}.`,
+    errTooManyDecimals: (max: string, step: string) =>
+      `Un importe en TTTI-T tiene ${max} decimales como máximo (paso mínimo ${step}).`,
+    errInvalidAmount: "Introduzca un importe mayor que 0.",
+    errAboveCap: (cap: string, remaining: string) =>
+      `Se ha alcanzado o se superaría el tope total de ${cap}. Restante: ${remaining}.`,
+    errInsufficientBalance: (
+      symbol: string,
+      required: string,
+      balance: string,
+    ) =>
+      `Saldo de ${symbol} insuficiente: se necesitan ${required} con las comisiones del ledger, hay ${balance} disponibles.`,
+    errInsufficientAllowance: (
+      symbol: string,
+      required: string,
+      allowance: string,
+    ) =>
+      `La aprobación de ${symbol} es demasiado baja: se requieren ${required}, aprobados ${allowance}. Apruebe de nuevo e inténtelo otra vez.`,
+    errSlippageExceeded: (percent: string) =>
+      `El precio del pool superó la tolerancia del ${percent} %. No se acuñó nada. Reintente o aumente la tolerancia.`,
+    errInvalidSlippage: (percent: string) =>
+      `La tolerancia no puede superar el ${percent} %.`,
+    errMaxPayExceeded: (pay: string, max: string) =>
+      `El importe a pagar es ahora ${pay}, por encima del máximo de ${max} fijado con la vista previa. Actualice la vista previa e inténtelo de nuevo.`,
+    errDeadlineExpired:
+      "Pasó el plazo de 5 minutos antes de ejecutar la acuñación. Inténtelo de nuevo.",
+    errInProgress: "Ya hay una acuñación en curso de esta cuenta.",
+    errAcknowledgements: "Acepte las declaraciones para acuñar.",
+    errSalesPaused: "La acuñación está en pausa.",
+    errDexPaused: "Los pools están en pausa. La acuñación no está disponible.",
+    errPoolRemoved: (symbol: string) =>
+      `El pool TTTI-T/${symbol} ha sido retirado.`,
+    errRemovalAnnounced: (symbol: string, date: string) =>
+      `Se ha anunciado la retirada del pool TTTI-T/${symbol} para el ${date}. La acuñación en él está suspendida.`,
+    errPoolNotFound: (symbol: string) => `No existe un pool TTTI-T/${symbol}.`,
+    errMinimumsNotSet: "Los mínimos del pool aún no están fijados.",
+    errLedger: (symbol: string, message: string) =>
+      `Error del ledger de ${symbol}: ${message}`,
+    errDepositRefunded: (id: string) =>
+      `El depósito en el pool falló. El pago se reembolsó, menos las comisiones del ledger (acuñación n.º ${id}).`,
+    refundingTitle: "Pago en proceso de devolución",
+    errDepositRefunding: (id: string) =>
+      `El depósito en el pool falló. El pago se está devolviendo y mientras tanto permanece en el saldo de su billetera (acuñación n.º ${id}).`,
+    errDepositRefundFailed: (id: string) =>
+      `El depósito en el pool falló y el reembolso no se completó (acuñación n.º ${id}). Conserve esta referencia.`,
+    errGeneric: "La acuñación fue rechazada.",
+  },
+  "zh-Hans": {
+    priceStatement:
+      "价格：每 TTTI-T 10,000 美元。对于 q 个 TTTI-T，应付金额为 20,000 美元 × q ÷ 0.99，以 ICP、ckBTC、ckUSDC 或 ckUSDT 支付。最少：0.0001 TTTI-T。",
+    modeLegend: "金额输入方式",
+    modeTtti: "以 TTTI-T 输入",
+    modeUsd: "以美元输入",
+    tttiLabel: "铸造的 TTTI-T",
+    tttiHint: "最少 0.0001 TTTI-T，最多 8 位小数。",
+    usdLabel: "支付金额（美元）",
+    usdHint: "支付的美元价值。TTTI-T 数量向下取整到 8 位小数。",
+    invalidTtti: "请输入最多 8 位小数的 TTTI-T 数量。可使用句点或逗号。",
+    invalidUsd: "请输入大于 0 且最多 8 位小数的美元金额。可使用句点或逗号。",
+    previewHeading: "预览",
+    previewIdle: "输入金额以查看预览。",
+    previewLoading: "正在计算预览…",
+    rowMinted: "铸造的 TTTI-T",
+    rowPay: "您支付",
+    splitHeading: "付款分配",
+    rowPosition: "流动性头寸",
+    rowGuarantee: "个人保证金",
+    rowFee: "费用",
+    rowDust: "舍入余额",
+    poolPriceHeading: "目标池价格，zap 前后",
+    priceBefore: "之前",
+    priceAfter: "之后",
+    emptyPool: "空池",
+    consolidatedPriceHeading: "综合价格（参考）",
+    consolidatedPriceNote: "每 TTTI-T 的美元，按已开放池的深度加权。",
+    poolPriceNote: "所付代币的 TTTI-T 池中每 TTTI-T 的美元。",
+    gapHeading: "池价格与综合价格之间的价差",
+    gapUnavailable: "价差不可用",
+    firstDepositNote:
+      "空池：首笔存入按 1 比 1 进行，价格为每 TTTI-T 10,000 美元。",
+    zapLabel: "平衡兑换",
+    noZap: "无需平衡兑换。",
+    maxPayLabel: "此容差下的最高支付额",
+    expiryNote: "若 5 分钟内未执行，铸造将被拒绝。",
+    previewFailedTitle: "预览不可用",
+    mintFailedTitle: "铸造未完成",
+    successTitle: (amount: string) => `已铸造 ${amount}`,
+    successPaid: (pay: string, id: string) => `已支付 ${pay} · 铸造 #${id}`,
+    successPosition: (id: string) => `流动性头寸 #${id}`,
+    successHoldings: (token: string, ttti: string) =>
+      `该头寸包含 ${token} 和 ${ttti}。`,
+    successGuarantee: (amount: string) => `个人保证金：${amount}。`,
+    successLink: "查看我的流动性头寸",
+    errAnonymous: "请登录或连接钱包后再铸造。",
+    errRateUnavailable: (symbol: string) =>
+      `目前没有有效的 ${symbol}/USD 汇率。未扣除任何款项。请稍后重试。`,
+    errBelowMinimum: (minimum: string) => `最低为 ${minimum}。`,
+    errTooManyDecimals: (max: string, step: string) =>
+      `TTTI-T 数量最多 ${max} 位小数（最小单位 ${step}）。`,
+    errInvalidAmount: "请输入大于 0 的金额。",
+    errAboveCap: (cap: string, remaining: string) =>
+      `已达到或将超过总上限 ${cap}。剩余：${remaining}。`,
+    errInsufficientBalance: (
+      symbol: string,
+      required: string,
+      balance: string,
+    ) => `${symbol} 余额不足：含账本手续费需要 ${required}，可用 ${balance}。`,
+    errInsufficientAllowance: (
+      symbol: string,
+      required: string,
+      allowance: string,
+    ) =>
+      `${symbol} 授权额度过低：需要 ${required}，已授权 ${allowance}。请重新授权后重试。`,
+    errSlippageExceeded: (percent: string) =>
+      `池价格变动超出 ${percent} % 的容差。未铸造任何内容。请重试或提高容差。`,
+    errInvalidSlippage: (percent: string) => `容差不能超过 ${percent} %。`,
+    errMaxPayExceeded: (pay: string, max: string) =>
+      `应付金额现为 ${pay}，高于根据预览设定的上限 ${max}。请刷新预览后重试。`,
+    errDeadlineExpired: "在铸造执行前已超过 5 分钟期限。请重试。",
+    errInProgress: "此账户已有一笔铸造正在进行。",
+    errAcknowledgements: "请先接受确认声明再铸造。",
+    errSalesPaused: "铸造已暂停。",
+    errDexPaused: "资金池已暂停，无法铸造。",
+    errPoolRemoved: (symbol: string) => `TTTI-T/${symbol} 池已被移除。`,
+    errRemovalAnnounced: (symbol: string, date: string) =>
+      `已公告 TTTI-T/${symbol} 池将于 ${date} 移除。向该池的铸造已暂停。`,
+    errPoolNotFound: (symbol: string) => `不存在 TTTI-T/${symbol} 池。`,
+    errMinimumsNotSet: "池的最低限额尚未设置。",
+    errLedger: (symbol: string, message: string) =>
+      `${symbol} 账本错误：${message}`,
+    errDepositRefunded: (id: string) =>
+      `向池存入失败。款项已退还（扣除账本手续费）（铸造 #${id}）。`,
+    refundingTitle: "款项退还中",
+    errDepositRefunding: (id: string) =>
+      `向池存入失败。款项正在退还，在此期间仍保留在您的钱包余额中（铸造 #${id}）。`,
+    errDepositRefundFailed: (id: string) =>
+      `向池存入失败，且退款未完成（铸造 #${id}）。请保留此编号。`,
+    errGeneric: "铸造被拒绝。",
+  },
+  "pt-BR": {
+    priceStatement:
+      "Preço: 10.000 USD por TTTI-T. Para q TTTI-T, o valor a pagar é 20.000 USD × q ÷ 0,99, em ICP, ckBTC, ckUSDC ou ckUSDT. Mínimo: 0,0001 TTTI-T.",
+    modeLegend: "Entrada do valor",
+    modeTtti: "Valor em TTTI-T",
+    modeUsd: "Valor em dólares",
+    tttiLabel: "TTTI-T a cunhar",
+    tttiHint: "Mínimo de 0,0001 TTTI-T, até 8 casas decimais.",
+    usdLabel: "Valor a pagar, em dólares",
+    usdHint:
+      "Valor em dólares do pagamento. A quantidade de TTTI-T é arredondada para baixo, com 8 casas decimais.",
+    invalidTtti:
+      "Informe um valor em TTTI-T com até 8 casas decimais. Ponto ou vírgula são aceitos.",
+    invalidUsd:
+      "Informe um valor em dólares maior que 0, com até 8 casas decimais. Ponto ou vírgula são aceitos.",
+    previewHeading: "Prévia",
+    previewIdle: "Informe um valor para ver a prévia.",
+    previewLoading: "Calculando a prévia…",
+    rowMinted: "TTTI-T cunhados",
+    rowPay: "Você paga",
+    splitHeading: "Divisão do pagamento",
+    rowPosition: "Posição de liquidez",
+    rowGuarantee: "Garantia pessoal",
+    rowFee: "Taxa",
+    rowDust: "Resto de arredondamento",
+    poolPriceHeading: "Preço do pool visado, antes e depois do zap",
+    priceBefore: "Antes",
+    priceAfter: "Depois",
+    emptyPool: "Pool vazio",
+    consolidatedPriceHeading: "Preço consolidado (referência)",
+    consolidatedPriceNote:
+      "USD por TTTI-T, ponderado pela profundidade dos pools abertos.",
+    poolPriceNote: "USD por TTTI-T no pool TTTI-T do token pago.",
+    gapHeading: "Diferença entre o preço do pool e o preço consolidado",
+    gapUnavailable: "Diferença indisponível",
+    firstDepositNote:
+      "Pool vazio: o primeiro depósito é feito 1 para 1, a 10.000 USD por TTTI-T.",
+    zapLabel: "Troca de equilíbrio",
+    noZap: "Não é necessária uma troca de equilíbrio.",
+    maxPayLabel: "Pagamento máximo nesta tolerância",
+    expiryNote: "A cunhagem é recusada se não for executada em 5 minutos.",
+    previewFailedTitle: "Prévia indisponível",
+    mintFailedTitle: "Cunhagem não concluída",
+    successTitle: (amount: string) => `${amount} cunhados`,
+    successPaid: (pay: string, id: string) =>
+      `Pago ${pay} · cunhagem n.º ${id}`,
+    successPosition: (id: string) => `Posição de liquidez n.º ${id}`,
+    successHoldings: (token: string, ttti: string) =>
+      `A posição contém ${token} e ${ttti}.`,
+    successGuarantee: (amount: string) => `Garantia pessoal: ${amount}.`,
+    successLink: "Ver minhas posições de liquidez",
+    errAnonymous: "Entre ou conecte uma carteira para cunhar.",
+    errRateUnavailable: (symbol: string) =>
+      `Não há uma taxa ${symbol}/USD válida no momento. Nada foi cobrado. Tente novamente mais tarde.`,
+    errBelowMinimum: (minimum: string) => `O mínimo é ${minimum}.`,
+    errTooManyDecimals: (max: string, step: string) =>
+      `Um valor em TTTI-T tem no máximo ${max} casas decimais (menor passo ${step}).`,
+    errInvalidAmount: "Informe um valor maior que 0.",
+    errAboveCap: (cap: string, remaining: string) =>
+      `O limite total de ${cap} foi atingido ou seria ultrapassado. Restante: ${remaining}.`,
+    errInsufficientBalance: (
+      symbol: string,
+      required: string,
+      balance: string,
+    ) =>
+      `Saldo de ${symbol} insuficiente: ${required} necessários com as taxas do ledger, ${balance} disponíveis.`,
+    errInsufficientAllowance: (
+      symbol: string,
+      required: string,
+      allowance: string,
+    ) =>
+      `A aprovação de ${symbol} é baixa demais: ${required} exigidos, ${allowance} aprovados. Aprove novamente e tente de novo.`,
+    errSlippageExceeded: (percent: string) =>
+      `O preço do pool passou da tolerância de ${percent} %. Nada foi cunhado. Tente de novo ou aumente a tolerância.`,
+    errInvalidSlippage: (percent: string) =>
+      `A tolerância não pode passar de ${percent} %.`,
+    errMaxPayExceeded: (pay: string, max: string) =>
+      `O valor a pagar agora é ${pay}, acima do máximo de ${max} definido pela prévia. Atualize a prévia e tente de novo.`,
+    errDeadlineExpired:
+      "O prazo de 5 minutos passou antes da execução da cunhagem. Tente de novo.",
+    errInProgress: "Já há uma cunhagem em andamento desta conta.",
+    errAcknowledgements: "Aceite as declarações para cunhar.",
+    errSalesPaused: "A cunhagem está pausada.",
+    errDexPaused: "Os pools estão pausados. A cunhagem está indisponível.",
+    errPoolRemoved: (symbol: string) => `O pool TTTI-T/${symbol} foi removido.`,
+    errRemovalAnnounced: (symbol: string, date: string) =>
+      `A remoção do pool TTTI-T/${symbol} foi anunciada para ${date}. A cunhagem nele está suspensa.`,
+    errPoolNotFound: (symbol: string) => `Não existe um pool TTTI-T/${symbol}.`,
+    errMinimumsNotSet: "Os mínimos do pool ainda não foram definidos.",
+    errLedger: (symbol: string, message: string) =>
+      `Erro do ledger de ${symbol}: ${message}`,
+    errDepositRefunded: (id: string) =>
+      `O depósito no pool falhou. O pagamento foi reembolsado, menos as taxas do ledger (cunhagem n.º ${id}).`,
+    refundingTitle: "Pagamento em devolução",
+    errDepositRefunding: (id: string) =>
+      `O depósito no pool falhou. O pagamento está sendo devolvido e, enquanto isso, permanece no saldo da sua carteira (cunhagem n.º ${id}).`,
+    errDepositRefundFailed: (id: string) =>
+      `O depósito no pool falhou e o reembolso não foi concluído (cunhagem n.º ${id}). Guarde esta referência.`,
+    errGeneric: "A cunhagem foi recusada.",
+  },
+  ko: {
+    priceStatement:
+      "가격: TTTI-T당 10,000 USD. q TTTI-T의 지불 금액은 20,000 USD × q ÷ 0.99이며 ICP, ckBTC, ckUSDC 또는 ckUSDT로 지불합니다. 최소: 0.0001 TTTI-T.",
+    modeLegend: "금액 입력",
+    modeTtti: "TTTI-T 수량으로 입력",
+    modeUsd: "달러 금액으로 입력",
+    tttiLabel: "발행할 TTTI-T",
+    tttiHint: "최소 0.0001 TTTI-T, 소수점 8자리까지.",
+    usdLabel: "지불할 금액(달러)",
+    usdHint: "지불의 달러 가치입니다. TTTI-T 수량은 소수점 8자리로 내림됩니다.",
+    invalidTtti:
+      "소수점 8자리 이하의 TTTI-T 수량을 입력하세요. 점 또는 쉼표를 사용할 수 있습니다.",
+    invalidUsd:
+      "0보다 크고 소수점 8자리 이하인 달러 금액을 입력하세요. 점 또는 쉼표를 사용할 수 있습니다.",
+    previewHeading: "미리보기",
+    previewIdle: "금액을 입력하면 미리보기가 표시됩니다.",
+    previewLoading: "미리보기 계산 중…",
+    rowMinted: "발행되는 TTTI-T",
+    rowPay: "지불 금액",
+    splitHeading: "결제 분배",
+    rowPosition: "유동성 포지션",
+    rowGuarantee: "개인 보증금",
+    rowFee: "수수료",
+    rowDust: "반올림 잔액",
+    poolPriceHeading: "대상 풀 가격, zap 전과 후",
+    priceBefore: "이전",
+    priceAfter: "이후",
+    emptyPool: "빈 풀",
+    consolidatedPriceHeading: "통합 가격 (참고)",
+    consolidatedPriceNote: "TTTI-T당 USD, 열린 풀의 깊이로 가중.",
+    poolPriceNote: "지불 토큰의 TTTI-T 풀에서 TTTI-T당 USD.",
+    gapHeading: "풀 가격과 통합 가격의 차이",
+    gapUnavailable: "차이를 사용할 수 없음",
+    firstDepositNote:
+      "빈 풀: 첫 예치는 1 대 1, TTTI-T당 10,000 USD로 이루어집니다.",
+    zapLabel: "균형 스왑",
+    noZap: "균형 스왑이 필요하지 않습니다.",
+    maxPayLabel: "이 허용 범위의 최대 지불액",
+    expiryNote: "5분 안에 실행되지 않으면 발행이 거부됩니다.",
+    previewFailedTitle: "미리보기를 사용할 수 없음",
+    mintFailedTitle: "발행이 완료되지 않았습니다",
+    successTitle: (amount: string) => `${amount} 발행됨`,
+    successPaid: (pay: string, id: string) => `지불 ${pay} · 발행 #${id}`,
+    successPosition: (id: string) => `유동성 포지션 #${id}`,
+    successHoldings: (token: string, ttti: string) =>
+      `포지션에는 ${token}와(과) ${ttti}이(가) 들어 있습니다.`,
+    successGuarantee: (amount: string) => `개인 보증금: ${amount}.`,
+    successLink: "내 유동성 포지션 보기",
+    errAnonymous: "발행하려면 로그인하거나 지갑을 연결하세요.",
+    errRateUnavailable: (symbol: string) =>
+      `현재 유효한 ${symbol}/USD 환율이 없습니다. 아무것도 차감되지 않았습니다. 나중에 다시 시도하세요.`,
+    errBelowMinimum: (minimum: string) => `최소 수량은 ${minimum}입니다.`,
+    errTooManyDecimals: (max: string, step: string) =>
+      `TTTI-T 수량은 소수점 ${max}자리까지입니다(최소 단위 ${step}).`,
+    errInvalidAmount: "0보다 큰 금액을 입력하세요.",
+    errAboveCap: (cap: string, remaining: string) =>
+      `총 한도 ${cap}에 도달했거나 초과하게 됩니다. 남은 수량: ${remaining}.`,
+    errInsufficientBalance: (
+      symbol: string,
+      required: string,
+      balance: string,
+    ) =>
+      `${symbol} 잔액 부족: 원장 수수료 포함 ${required} 필요, 사용 가능 ${balance}.`,
+    errInsufficientAllowance: (
+      symbol: string,
+      required: string,
+      allowance: string,
+    ) =>
+      `${symbol} 승인 한도가 부족합니다: ${required} 필요, ${allowance} 승인됨. 다시 승인한 후 재시도하세요.`,
+    errSlippageExceeded: (percent: string) =>
+      `풀 가격이 허용 범위 ${percent} %를 벗어났습니다. 발행되지 않았습니다. 다시 시도하거나 허용 범위를 높이세요.`,
+    errInvalidSlippage: (percent: string) =>
+      `허용 범위는 ${percent} %를 넘을 수 없습니다.`,
+    errMaxPayExceeded: (pay: string, max: string) =>
+      `지불액이 현재 ${pay}로, 미리보기를 기준으로 정한 최대 ${max}를 넘었습니다. 미리보기를 새로고침한 후 재시도하세요.`,
+    errDeadlineExpired:
+      "발행이 실행되기 전에 5분 기한이 지났습니다. 다시 시도하세요.",
+    errInProgress: "이 계정의 발행이 이미 진행 중입니다.",
+    errAcknowledgements: "발행하려면 확인 사항에 동의하세요.",
+    errSalesPaused: "발행이 일시 중지되었습니다.",
+    errDexPaused: "풀이 일시 중지되어 발행할 수 없습니다.",
+    errPoolRemoved: (symbol: string) => `TTTI-T/${symbol} 풀이 제거되었습니다.`,
+    errRemovalAnnounced: (symbol: string, date: string) =>
+      `TTTI-T/${symbol} 풀의 제거가 ${date}에 예정되어 있습니다. 이 풀로의 발행은 중단되었습니다.`,
+    errPoolNotFound: (symbol: string) => `TTTI-T/${symbol} 풀이 없습니다.`,
+    errMinimumsNotSet: "풀 최소 한도가 아직 설정되지 않았습니다.",
+    errLedger: (symbol: string, message: string) =>
+      `${symbol} 원장 오류: ${message}`,
+    errDepositRefunded: (id: string) =>
+      `풀 예치에 실패했습니다. 결제금이 원장 수수료를 제외하고 환불되었습니다(발행 #${id}).`,
+    refundingTitle: "결제금 반환 중",
+    errDepositRefunding: (id: string) =>
+      `풀 예치에 실패했습니다. 결제금이 반환되는 중이며, 그동안 지갑 잔액에 남아 있습니다(발행 #${id}).`,
+    errDepositRefundFailed: (id: string) =>
+      `풀 예치에 실패했고 환불이 완료되지 않았습니다(발행 #${id}). 이 번호를 보관하세요.`,
+    errGeneric: "발행이 거부되었습니다.",
+  },
+  "pa-Guru": {
+    priceStatement:
+      "ਕੀਮਤ: ਪ੍ਰਤੀ TTTI-T 10,000 USD। q TTTI-T ਲਈ ਅਦਾ ਕਰਨ ਵਾਲੀ ਰਕਮ 20,000 USD × q ÷ 0.99 ਹੈ, ICP, ckBTC, ckUSDC ਜਾਂ ckUSDT ਵਿੱਚ। ਘੱਟੋ-ਘੱਟ: 0.0001 TTTI-T।",
+    modeLegend: "ਰਕਮ ਦਰਜ ਕਰਨਾ",
+    modeTtti: "TTTI-T ਵਿੱਚ ਰਕਮ",
+    modeUsd: "ਡਾਲਰਾਂ ਵਿੱਚ ਰਕਮ",
+    tttiLabel: "ਮਿੰਟ ਕਰਨ ਲਈ TTTI-T",
+    tttiHint: "ਘੱਟੋ-ਘੱਟ 0.0001 TTTI-T, 8 ਦਸ਼ਮਲਵ ਤੱਕ।",
+    usdLabel: "ਅਦਾ ਕਰਨ ਵਾਲੀ ਰਕਮ, ਡਾਲਰਾਂ ਵਿੱਚ",
+    usdHint:
+      "ਅਦਾਇਗੀ ਦਾ ਡਾਲਰ ਮੁੱਲ। TTTI-T ਦੀ ਮਾਤਰਾ 8 ਦਸ਼ਮਲਵ ਤੱਕ ਹੇਠਾਂ ਵੱਲ ਗੋਲ ਕੀਤੀ ਜਾਂਦੀ ਹੈ।",
+    invalidTtti:
+      "8 ਦਸ਼ਮਲਵ ਤੱਕ TTTI-T ਦੀ ਰਕਮ ਦਰਜ ਕਰੋ। ਬਿੰਦੂ ਜਾਂ ਕਾਮਾ ਵਰਤਿਆ ਜਾ ਸਕਦਾ ਹੈ।",
+    invalidUsd:
+      "0 ਤੋਂ ਵੱਡੀ ਅਤੇ 8 ਦਸ਼ਮਲਵ ਤੱਕ ਡਾਲਰ ਰਕਮ ਦਰਜ ਕਰੋ। ਬਿੰਦੂ ਜਾਂ ਕਾਮਾ ਵਰਤਿਆ ਜਾ ਸਕਦਾ ਹੈ।",
+    previewHeading: "ਝਲਕ",
+    previewIdle: "ਝਲਕ ਦੇਖਣ ਲਈ ਰਕਮ ਦਰਜ ਕਰੋ।",
+    previewLoading: "ਝਲਕ ਦੀ ਗਣਨਾ ਹੋ ਰਹੀ ਹੈ…",
+    rowMinted: "ਮਿੰਟ ਹੋਏ TTTI-T",
+    rowPay: "ਤੁਸੀਂ ਅਦਾ ਕਰਦੇ ਹੋ",
+    splitHeading: "ਅਦਾਇਗੀ ਦੀ ਵੰਡ",
+    rowPosition: "ਲਿਕਵਿਡਿਟੀ ਪੋਜ਼ੀਸ਼ਨ",
+    rowGuarantee: "ਨਿੱਜੀ ਗਾਰੰਟੀ",
+    rowFee: "ਫੀਸ",
+    rowDust: "ਗੋਲ ਕਰਨ ਤੋਂ ਬਚੀ ਰਕਮ",
+    poolPriceHeading: "ਨਿਸ਼ਾਨਾ ਪੂਲ ਦੀ ਕੀਮਤ, zap ਤੋਂ ਪਹਿਲਾਂ ਅਤੇ ਬਾਅਦ",
+    priceBefore: "ਪਹਿਲਾਂ",
+    priceAfter: "ਬਾਅਦ",
+    emptyPool: "ਖਾਲੀ ਪੂਲ",
+    consolidatedPriceHeading: "ਇਕਸਾਰ ਕੀਮਤ (ਹਵਾਲਾ)",
+    consolidatedPriceNote: "ਪ੍ਰਤੀ TTTI-T USD, ਖੁੱਲ੍ਹੇ ਪੂਲਾਂ ਦੀ ਡੂੰਘਾਈ ਅਨੁਸਾਰ ਭਾਰਿਤ।",
+    poolPriceNote: "ਅਦਾ ਕੀਤੇ ਟੋਕਨ ਦੇ TTTI-T ਪੂਲ ਵਿੱਚ ਪ੍ਰਤੀ TTTI-T USD।",
+    gapHeading: "ਪੂਲ ਕੀਮਤ ਅਤੇ ਇਕਸਾਰ ਕੀਮਤ ਵਿਚਕਾਰ ਅੰਤਰ",
+    gapUnavailable: "ਅੰਤਰ ਉਪਲਬਧ ਨਹੀਂ",
+    firstDepositNote:
+      "ਖਾਲੀ ਪੂਲ: ਪਹਿਲੀ ਜਮ੍ਹਾਂ ਰਕਮ 1 ਤੋਂ 1 ਦੇ ਅਨੁਪਾਤ ਨਾਲ, ਪ੍ਰਤੀ TTTI-T 10,000 USD 'ਤੇ ਹੁੰਦੀ ਹੈ।",
+    zapLabel: "ਸੰਤੁਲਨ ਸਵੈਪ",
+    noZap: "ਸੰਤੁਲਨ ਸਵੈਪ ਦੀ ਲੋੜ ਨਹੀਂ ਹੈ।",
+    maxPayLabel: "ਇਸ ਸਹਿਣਸ਼ੀਲਤਾ 'ਤੇ ਵੱਧ ਤੋਂ ਵੱਧ ਅਦਾਇਗੀ",
+    expiryNote: "ਜੇ ਮਿੰਟ 5 ਮਿੰਟਾਂ ਵਿੱਚ ਪੂਰਾ ਨਾ ਹੋਵੇ ਤਾਂ ਇਹ ਰੱਦ ਕਰ ਦਿੱਤਾ ਜਾਂਦਾ ਹੈ।",
+    previewFailedTitle: "ਝਲਕ ਉਪਲਬਧ ਨਹੀਂ",
+    mintFailedTitle: "ਮਿੰਟ ਪੂਰਾ ਨਹੀਂ ਹੋਇਆ",
+    successTitle: (amount: string) => `${amount} ਮਿੰਟ ਹੋਏ`,
+    successPaid: (pay: string, id: string) => `ਅਦਾ ਕੀਤਾ ${pay} · ਮਿੰਟ #${id}`,
+    successPosition: (id: string) => `ਲਿਕਵਿਡਿਟੀ ਪੋਜ਼ੀਸ਼ਨ #${id}`,
+    successHoldings: (token: string, ttti: string) =>
+      `ਪੋਜ਼ੀਸ਼ਨ ਵਿੱਚ ${token} ਅਤੇ ${ttti} ਹਨ।`,
+    successGuarantee: (amount: string) => `ਨਿੱਜੀ ਗਾਰੰਟੀ: ${amount}।`,
+    successLink: "ਮੇਰੀਆਂ ਲਿਕਵਿਡਿਟੀ ਪੋਜ਼ੀਸ਼ਨਾਂ ਵੇਖੋ",
+    errAnonymous: "ਮਿੰਟ ਕਰਨ ਲਈ ਸਾਈਨ ਇਨ ਕਰੋ ਜਾਂ ਵਾਲਿਟ ਜੋੜੋ।",
+    errRateUnavailable: (symbol: string) =>
+      `ਇਸ ਵੇਲੇ ਕੋਈ ਵੈਧ ${symbol}/USD ਦਰ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਕੁਝ ਵੀ ਨਹੀਂ ਲਿਆ ਗਿਆ। ਬਾਅਦ ਵਿੱਚ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।`,
+    errBelowMinimum: (minimum: string) => `ਘੱਟੋ-ਘੱਟ ਮਾਤਰਾ ${minimum} ਹੈ।`,
+    errTooManyDecimals: (max: string, step: string) =>
+      `TTTI-T ਦੀ ਰਕਮ ਵਿੱਚ ਵੱਧ ਤੋਂ ਵੱਧ ${max} ਦਸ਼ਮਲਵ ਹੋ ਸਕਦੇ ਹਨ (ਸਭ ਤੋਂ ਛੋਟਾ ਕਦਮ ${step})।`,
+    errInvalidAmount: "0 ਤੋਂ ਵੱਡੀ ਰਕਮ ਦਰਜ ਕਰੋ।",
+    errAboveCap: (cap: string, remaining: string) =>
+      `ਕੁੱਲ ਸੀਮਾ ${cap} ਪੂਰੀ ਹੋ ਚੁੱਕੀ ਹੈ ਜਾਂ ਟੱਪ ਜਾਵੇਗੀ। ਬਾਕੀ: ${remaining}।`,
+    errInsufficientBalance: (
+      symbol: string,
+      required: string,
+      balance: string,
+    ) =>
+      `${symbol} ਬਕਾਇਆ ਨਾਕਾਫ਼ੀ: ਲੈਜਰ ਫੀਸਾਂ ਸਮੇਤ ${required} ਲੋੜੀਂਦੇ, ${balance} ਉਪਲਬਧ।`,
+    errInsufficientAllowance: (
+      symbol: string,
+      required: string,
+      allowance: string,
+    ) =>
+      `${symbol} ਮਨਜ਼ੂਰੀ ਬਹੁਤ ਘੱਟ ਹੈ: ${required} ਲੋੜੀਂਦੇ, ${allowance} ਮਨਜ਼ੂਰ। ਦੁਬਾਰਾ ਮਨਜ਼ੂਰੀ ਦਿਓ ਅਤੇ ਕੋਸ਼ਿਸ਼ ਕਰੋ।`,
+    errSlippageExceeded: (percent: string) =>
+      `ਪੂਲ ਕੀਮਤ ${percent} % ਦੀ ਸਹਿਣਸ਼ੀਲਤਾ ਤੋਂ ਬਾਹਰ ਚਲੀ ਗਈ। ਕੁਝ ਵੀ ਮਿੰਟ ਨਹੀਂ ਹੋਇਆ। ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ ਜਾਂ ਸਹਿਣਸ਼ੀਲਤਾ ਵਧਾਓ।`,
+    errInvalidSlippage: (percent: string) =>
+      `ਸਹਿਣਸ਼ੀਲਤਾ ${percent} % ਤੋਂ ਵੱਧ ਨਹੀਂ ਹੋ ਸਕਦੀ।`,
+    errMaxPayExceeded: (pay: string, max: string) =>
+      `ਹੁਣ ਅਦਾ ਕਰਨ ਵਾਲੀ ਰਕਮ ${pay} ਹੈ, ਜੋ ਝਲਕ ਤੋਂ ਤੈਅ ਕੀਤੀ ਵੱਧ ਤੋਂ ਵੱਧ ${max} ਤੋਂ ਉੱਪਰ ਹੈ। ਝਲਕ ਤਾਜ਼ਾ ਕਰੋ ਅਤੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।`,
+    errDeadlineExpired:
+      "ਮਿੰਟ ਪੂਰਾ ਹੋਣ ਤੋਂ ਪਹਿਲਾਂ 5 ਮਿੰਟ ਦੀ ਸਮਾਂ-ਸੀਮਾ ਲੰਘ ਗਈ। ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+    errInProgress: "ਇਸ ਖਾਤੇ ਤੋਂ ਇੱਕ ਮਿੰਟ ਪਹਿਲਾਂ ਹੀ ਜਾਰੀ ਹੈ।",
+    errAcknowledgements: "ਮਿੰਟ ਕਰਨ ਲਈ ਪੁਸ਼ਟੀਆਂ ਸਵੀਕਾਰ ਕਰੋ।",
+    errSalesPaused: "ਮਿੰਟਿੰਗ ਰੁਕੀ ਹੋਈ ਹੈ।",
+    errDexPaused: "ਪੂਲ ਰੁਕੇ ਹੋਏ ਹਨ। ਮਿੰਟਿੰਗ ਉਪਲਬਧ ਨਹੀਂ ਹੈ।",
+    errPoolRemoved: (symbol: string) => `TTTI-T/${symbol} ਪੂਲ ਹਟਾ ਦਿੱਤਾ ਗਿਆ ਹੈ।`,
+    errRemovalAnnounced: (symbol: string, date: string) =>
+      `TTTI-T/${symbol} ਪੂਲ ਨੂੰ ${date} ਨੂੰ ਹਟਾਉਣ ਦਾ ਐਲਾਨ ਕੀਤਾ ਗਿਆ ਹੈ। ਇਸ ਵਿੱਚ ਮਿੰਟਿੰਗ ਮੁਅੱਤਲ ਹੈ।`,
+    errPoolNotFound: (symbol: string) => `TTTI-T/${symbol} ਪੂਲ ਮੌਜੂਦ ਨਹੀਂ ਹੈ।`,
+    errMinimumsNotSet: "ਪੂਲ ਦੇ ਘੱਟੋ-ਘੱਟ ਮੁੱਲ ਅਜੇ ਤੈਅ ਨਹੀਂ ਹੋਏ।",
+    errLedger: (symbol: string, message: string) =>
+      `${symbol} ਲੈਜਰ ਗਲਤੀ: ${message}`,
+    errDepositRefunded: (id: string) =>
+      `ਪੂਲ ਵਿੱਚ ਜਮ੍ਹਾਂ ਅਸਫਲ ਰਹੀ। ਅਦਾਇਗੀ ਲੈਜਰ ਫੀਸਾਂ ਘਟਾ ਕੇ ਵਾਪਸ ਕਰ ਦਿੱਤੀ ਗਈ (ਮਿੰਟ #${id})।`,
+    refundingTitle: "ਅਦਾਇਗੀ ਵਾਪਸ ਕੀਤੀ ਜਾ ਰਹੀ ਹੈ",
+    errDepositRefunding: (id: string) =>
+      `ਪੂਲ ਵਿੱਚ ਜਮ੍ਹਾਂ ਅਸਫਲ ਰਹੀ। ਅਦਾਇਗੀ ਵਾਪਸ ਕੀਤੀ ਜਾ ਰਹੀ ਹੈ ਅਤੇ ਇਸ ਦੌਰਾਨ ਤੁਹਾਡੇ ਵਾਲਿਟ ਬਕਾਏ ਵਿੱਚ ਰਹਿੰਦੀ ਹੈ (ਮਿੰਟ #${id})।`,
+    errDepositRefundFailed: (id: string) =>
+      `ਪੂਲ ਵਿੱਚ ਜਮ੍ਹਾਂ ਅਸਫਲ ਰਹੀ ਅਤੇ ਵਾਪਸੀ ਪੂਰੀ ਨਹੀਂ ਹੋਈ (ਮਿੰਟ #${id})। ਇਹ ਹਵਾਲਾ ਸੰਭਾਲ ਕੇ ਰੱਖੋ।`,
+    errGeneric: "ਮਿੰਟ ਰੱਦ ਕਰ ਦਿੱਤਾ ਗਿਆ।",
+  },
+});
+
+/** Pools value versus capitalisation block of the mint screen. */
+export const BUY_POOL_CAP_TEXT = defineDict({
+  en: {
+    title: "Pools value and capitalisation",
+    loading: "Loading…",
+    loadError: "The figures could not be loaded.",
+    retry: "Retry",
+    notAvailable: "Not available",
+    poolsValue: "Pools value",
+    capitalisation: "Capitalisation",
+    currentRatio: "Current ratio",
+    averageRatio: "24-hour average ratio",
+    targetRatio: "Target ratio",
+    lockedShare: "Locked share m",
+    samples: (count: string) => `${count} samples`,
+    computedAt: (date: string) => `Computed ${date}`,
+    noteNoPoolsValue: "No pool value: no open TTTI-T pool or no valid rate.",
+    noteNoCapitalisation:
+      "No capitalisation: no consolidated price or no valid rate.",
+    noteNoRatio: "Needs both the pools value and the capitalisation.",
+    noteNoAverage: "No ratio sample recorded yet.",
+    noteLockedDefault:
+      "No retained ratio yet: the locked share is the maximum, 50 %.",
+    definitionsToggle: "Definitions",
+    defPoolsValue:
+      "Pools value: 2 times the counterpart reserve of each TTTI-T pool, at oracle rates.",
+    defCapitalisation:
+      "Capitalisation: circulating TTTI-T times the instantaneous consolidated price, measured at the same moment as the pools value.",
+    defRatio: "Ratio: pools value divided by capitalisation.",
+    defLockedShare:
+      "Locked share m: derived from the retained ratio, the lower of the current ratio and the 24-hour average.",
+  },
+  fr: {
+    title: "Valeur des pools et capitalisation",
+    loading: "Chargement…",
+    loadError: "Les chiffres n'ont pas pu être chargés.",
+    retry: "Réessayer",
+    notAvailable: "Non disponible",
+    poolsValue: "Valeur des pools",
+    capitalisation: "Capitalisation",
+    currentRatio: "Ratio actuel",
+    averageRatio: "Ratio moyen sur 24 h",
+    targetRatio: "Ratio cible",
+    lockedShare: "Part verrouillée m",
+    samples: (count: string) => `${count} échantillons`,
+    computedAt: (date: string) => `Calculé le ${date}`,
+    noteNoPoolsValue:
+      "Pas de valeur des pools : aucun pool TTTI-T ouvert ou aucun taux valide.",
+    noteNoCapitalisation:
+      "Pas de capitalisation : aucun prix consolidé ou aucun taux valide.",
+    noteNoRatio: "Nécessite la valeur des pools et la capitalisation.",
+    noteNoAverage: "Aucun échantillon de ratio enregistré pour l'instant.",
+    noteLockedDefault:
+      "Pas encore de ratio retenu : la part verrouillée est au maximum, 50 %.",
+    definitionsToggle: "Définitions",
+    defPoolsValue:
+      "Valeur des pools : 2 fois la réserve de contrepartie de chaque pool TTTI-T, aux taux de l'oracle.",
+    defCapitalisation:
+      "Capitalisation : TTTI-T en circulation multiplié par le prix consolidé instantané, mesuré au même moment que la valeur des pools.",
+    defRatio: "Ratio : valeur des pools divisée par la capitalisation.",
+    defLockedShare:
+      "Part verrouillée m : déduite du ratio retenu, le plus bas entre le ratio actuel et la moyenne sur 24 h.",
+  },
+  es: {
+    title: "Valor de los pools y capitalización",
+    loading: "Cargando…",
+    loadError: "No se pudieron cargar las cifras.",
+    retry: "Reintentar",
+    notAvailable: "No disponible",
+    poolsValue: "Valor de los pools",
+    capitalisation: "Capitalización",
+    currentRatio: "Ratio actual",
+    averageRatio: "Ratio medio de 24 horas",
+    targetRatio: "Ratio objetivo",
+    lockedShare: "Parte bloqueada m",
+    samples: (count: string) => `${count} muestras`,
+    computedAt: (date: string) => `Calculado el ${date}`,
+    noteNoPoolsValue:
+      "Sin valor de los pools: ningún pool TTTI-T abierto o ninguna tasa válida.",
+    noteNoCapitalisation:
+      "Sin capitalización: ningún precio consolidado o ninguna tasa válida.",
+    noteNoRatio: "Requiere el valor de los pools y la capitalización.",
+    noteNoAverage: "Todavía no hay muestras del ratio.",
+    noteLockedDefault:
+      "Aún no hay ratio retenido: la parte bloqueada es el máximo, 50 %.",
+    definitionsToggle: "Definiciones",
+    defPoolsValue:
+      "Valor de los pools: 2 veces la reserva de contrapartida de cada pool TTTI-T, a las tasas del oráculo.",
+    defCapitalisation:
+      "Capitalización: TTTI-T en circulación multiplicado por el precio consolidado instantáneo, medido en el mismo momento que el valor de los pools.",
+    defRatio: "Ratio: valor de los pools dividido por la capitalización.",
+    defLockedShare:
+      "Parte bloqueada m: derivada del ratio retenido, el menor entre el ratio actual y la media de 24 horas.",
+  },
+  "zh-Hans": {
+    title: "资金池价值与市值",
+    loading: "加载中…",
+    loadError: "无法加载这些数据。",
+    retry: "重试",
+    notAvailable: "不可用",
+    poolsValue: "资金池价值",
+    capitalisation: "市值",
+    currentRatio: "当前比率",
+    averageRatio: "24 小时平均比率",
+    targetRatio: "目标比率",
+    lockedShare: "锁定份额 m",
+    samples: (count: string) => `${count} 个样本`,
+    computedAt: (date: string) => `计算时间：${date}`,
+    noteNoPoolsValue: "无资金池价值：没有开放的 TTTI-T 资金池或没有有效汇率。",
+    noteNoCapitalisation: "无市值：没有综合价格或没有有效汇率。",
+    noteNoRatio: "需要资金池价值和市值。",
+    noteNoAverage: "尚未记录比率样本。",
+    noteLockedDefault: "尚无采用的比率：锁定份额为最大值 50%。",
+    definitionsToggle: "定义",
+    defPoolsValue:
+      "资金池价值：每个 TTTI-T 资金池的对手方储备的 2 倍，按预言机汇率计算。",
+    defCapitalisation:
+      "市值：流通中的 TTTI-T 乘以即时综合价格，该价格与资金池价值在同一时刻测得。",
+    defRatio: "比率：资金池价值除以市值。",
+    defLockedShare:
+      "锁定份额 m：由采用的比率得出，即当前比率与 24 小时平均值中较低者。",
+  },
+  "pt-BR": {
+    title: "Valor dos pools e capitalização",
+    loading: "Carregando…",
+    loadError: "Não foi possível carregar os valores.",
+    retry: "Tentar novamente",
+    notAvailable: "Indisponível",
+    poolsValue: "Valor dos pools",
+    capitalisation: "Capitalização",
+    currentRatio: "Razão atual",
+    averageRatio: "Razão média de 24 horas",
+    targetRatio: "Razão-alvo",
+    lockedShare: "Parcela bloqueada m",
+    samples: (count: string) => `${count} amostras`,
+    computedAt: (date: string) => `Calculado em ${date}`,
+    noteNoPoolsValue:
+      "Sem valor dos pools: nenhum pool TTTI-T aberto ou nenhuma taxa válida.",
+    noteNoCapitalisation:
+      "Sem capitalização: nenhum preço consolidado ou nenhuma taxa válida.",
+    noteNoRatio: "Exige o valor dos pools e a capitalização.",
+    noteNoAverage: "Nenhuma amostra da razão registrada ainda.",
+    noteLockedDefault:
+      "Ainda sem razão retida: a parcela bloqueada é o máximo, 50 %.",
+    definitionsToggle: "Definições",
+    defPoolsValue:
+      "Valor dos pools: 2 vezes a reserva da contraparte de cada pool TTTI-T, às taxas do oráculo.",
+    defCapitalisation:
+      "Capitalização: TTTI-T em circulação multiplicado pelo preço consolidado instantâneo, medido no mesmo momento que o valor dos pools.",
+    defRatio: "Razão: valor dos pools dividido pela capitalização.",
+    defLockedShare:
+      "Parcela bloqueada m: derivada da razão retida, a menor entre a razão atual e a média de 24 horas.",
+  },
+  ko: {
+    title: "풀 가치와 시가총액",
+    loading: "불러오는 중…",
+    loadError: "수치를 불러오지 못했습니다.",
+    retry: "다시 시도",
+    notAvailable: "사용할 수 없음",
+    poolsValue: "풀 가치",
+    capitalisation: "시가총액",
+    currentRatio: "현재 비율",
+    averageRatio: "24시간 평균 비율",
+    targetRatio: "목표 비율",
+    lockedShare: "잠금 비중 m",
+    samples: (count: string) => `샘플 ${count}개`,
+    computedAt: (date: string) => `계산 시각: ${date}`,
+    noteNoPoolsValue:
+      "풀 가치 없음: 열린 TTTI-T 풀이 없거나 유효한 환율이 없습니다.",
+    noteNoCapitalisation:
+      "시가총액 없음: 통합 가격이 없거나 유효한 환율이 없습니다.",
+    noteNoRatio: "풀 가치와 시가총액이 모두 필요합니다.",
+    noteNoAverage: "기록된 비율 샘플이 아직 없습니다.",
+    noteLockedDefault: "적용된 비율이 아직 없어 잠금 비중은 최대값 50%입니다.",
+    definitionsToggle: "정의",
+    defPoolsValue:
+      "풀 가치: 각 TTTI-T 풀의 상대 자산 준비금의 2배, 오라클 환율 기준.",
+    defCapitalisation:
+      "시가총액: 유통 중인 TTTI-T에 즉시 통합 가격을 곱한 값으로, 이 가격은 풀 가치와 같은 시점에 측정됩니다.",
+    defRatio: "비율: 풀 가치를 시가총액으로 나눈 값.",
+    defLockedShare:
+      "잠금 비중 m: 적용된 비율에서 도출되며, 현재 비율과 24시간 평균 중 낮은 값입니다.",
+  },
+  "pa-Guru": {
+    title: "ਪੂਲਾਂ ਦਾ ਮੁੱਲ ਅਤੇ ਪੂੰਜੀਕਰਨ",
+    loading: "ਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…",
+    loadError: "ਅੰਕੜੇ ਲੋਡ ਨਹੀਂ ਹੋ ਸਕੇ।",
+    retry: "ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ",
+    notAvailable: "ਉਪਲਬਧ ਨਹੀਂ",
+    poolsValue: "ਪੂਲਾਂ ਦਾ ਮੁੱਲ",
+    capitalisation: "ਪੂੰਜੀਕਰਨ",
+    currentRatio: "ਮੌਜੂਦਾ ਅਨੁਪਾਤ",
+    averageRatio: "24 ਘੰਟਿਆਂ ਦਾ ਔਸਤ ਅਨੁਪਾਤ",
+    targetRatio: "ਟੀਚਾ ਅਨੁਪਾਤ",
+    lockedShare: "ਲਾਕ ਕੀਤਾ ਹਿੱਸਾ m",
+    samples: (count: string) => `${count} ਨਮੂਨੇ`,
+    computedAt: (date: string) => `ਗਣਨਾ ਦਾ ਸਮਾਂ: ${date}`,
+    noteNoPoolsValue: "ਪੂਲਾਂ ਦਾ ਮੁੱਲ ਨਹੀਂ: ਕੋਈ ਖੁੱਲ੍ਹਾ TTTI-T ਪੂਲ ਨਹੀਂ ਜਾਂ ਕੋਈ ਵੈਧ ਦਰ ਨਹੀਂ।",
+    noteNoCapitalisation: "ਪੂੰਜੀਕਰਨ ਨਹੀਂ: ਕੋਈ ਇਕੱਠੀ ਕੀਮਤ ਨਹੀਂ ਜਾਂ ਕੋਈ ਵੈਧ ਦਰ ਨਹੀਂ।",
+    noteNoRatio: "ਪੂਲਾਂ ਦਾ ਮੁੱਲ ਅਤੇ ਪੂੰਜੀਕਰਨ ਦੋਵੇਂ ਲੋੜੀਂਦੇ ਹਨ।",
+    noteNoAverage: "ਅਜੇ ਤੱਕ ਕੋਈ ਅਨੁਪਾਤ ਨਮੂਨਾ ਦਰਜ ਨਹੀਂ ਹੋਇਆ।",
+    noteLockedDefault: "ਅਜੇ ਕੋਈ ਰੱਖਿਆ ਅਨੁਪਾਤ ਨਹੀਂ: ਲਾਕ ਕੀਤਾ ਹਿੱਸਾ ਵੱਧ ਤੋਂ ਵੱਧ, 50 %, ਹੈ।",
+    definitionsToggle: "ਪਰਿਭਾਸ਼ਾਵਾਂ",
+    defPoolsValue:
+      "ਪੂਲਾਂ ਦਾ ਮੁੱਲ: ਹਰ TTTI-T ਪੂਲ ਦੇ ਸਾਹਮਣੇ ਵਾਲੇ ਰਿਜ਼ਰਵ ਦਾ 2 ਗੁਣਾ, ਔਰੇਕਲ ਦਰਾਂ ਉੱਤੇ।",
+    defCapitalisation:
+      "ਪੂੰਜੀਕਰਨ: ਚਲਨ ਵਿੱਚ TTTI-T ਗੁਣਾ ਤੁਰੰਤ ਇਕੱਠੀ ਕੀਮਤ, ਜੋ ਪੂਲਾਂ ਦੇ ਮੁੱਲ ਵਾਲੇ ਹੀ ਸਮੇਂ ਮਾਪੀ ਜਾਂਦੀ ਹੈ।",
+    defRatio: "ਅਨੁਪਾਤ: ਪੂਲਾਂ ਦਾ ਮੁੱਲ ਭਾਗ ਪੂੰਜੀਕਰਨ।",
+    defLockedShare:
+      "ਲਾਕ ਕੀਤਾ ਹਿੱਸਾ m: ਰੱਖੇ ਗਏ ਅਨੁਪਾਤ ਤੋਂ ਨਿਕਲਦਾ ਹੈ, ਜੋ ਮੌਜੂਦਾ ਅਨੁਪਾਤ ਅਤੇ 24 ਘੰਟਿਆਂ ਦੀ ਔਸਤ ਵਿੱਚੋਂ ਘੱਟ ਹੈ।",
   },
 });

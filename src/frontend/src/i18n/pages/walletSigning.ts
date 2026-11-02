@@ -2,7 +2,7 @@ import { defineDict } from "../core/dict";
 
 /**
  * Automatic wallet signing: errors shown after a wallet signature attempt and
- * the admin buyback funding card's signer texts. English is authoritative.
+ * the signer texts. English is authoritative.
  * Wallet names and principals are passed in unchanged.
  */
 export const WALLET_SIGNING_TEXT = defineDict({

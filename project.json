@@ -1,21 +1,18 @@
 {
-  "overview": "The Ten Thousand Immortals token app: mint TTTI-T with ICP, ckBTC, ckUSDC, ckUSDT or BTC, manage a wallet, trade on native pools, with an organized English admin console.",
+  "overview": "Une application de jeton TTTI avec portefeuille, mint, pools de liquidité et enchères, dont le menu Échanger unifie les pools natifs et ICPSwap et affiche l'équivalent en USD des montants.",
   "features": [
-    "Mint TTTI-T with ICP, ckBTC, ckUSDC, ckUSDT or BTC",
-    "Mint revenue sent directly to the admin's wallet for each payment token",
-    "Mint fee kept in a dedicated contract account and shared with liquidity providers and permanent liquidity",
-    "Admin console grouped into clear sections with a single token selector",
-    "One filterable admin history and one filterable review list",
-    "Wallet, buyback, native pools and white paper in 7 languages"
+    "Menu Échanger unifié: pools natifs et ICPSwap comparés, route la moins chère suggérée, choix manuel de la route",
+    "Équivalent en USD à côté de chaque montant en crypto",
+    "Portefeuille, mint, pools de liquidité, garantie et enchères",
+    "Sept langues, l'anglais fait foi"
   ],
-  "category": "crypto-token",
+  "category": "crypto-wallet",
   "tags": [
-    "internet-computer",
-    "token",
-    "icrc",
+    "crypto",
+    "wallet",
     "dex",
-    "admin-console",
-    "multilingual"
+    "token",
+    "swap"
   ],
-  "last_updated": "2026-10-28T18:43:19.453Z"
+  "last_updated": "2026-11-02T05:43:37.736Z"
 }

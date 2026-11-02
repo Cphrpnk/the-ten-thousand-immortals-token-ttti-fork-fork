@@ -226,9 +226,6 @@ export function WalletPage() {
     ? tokenList.find((tk) => tk.canisterId.toText() === stableNote)
     : undefined;
 
-  const openBuyback = (purchaseId?: bigint) =>
-    setDialog({ kind: "buyback", purchaseId });
-
   const handleCopy = async () => {
     if (!accountText) return;
     try {
@@ -285,7 +282,6 @@ export function WalletPage() {
       <WalletSummary
         tokens={tokenList}
         account={account}
-        rates={rates}
         onReceive={() => setDialog({ kind: "receive" })}
         onSend={() => setDialog({ kind: "send" })}
         onSwap={() => setDialog({ kind: "swap" })}
@@ -475,7 +471,6 @@ export function WalletPage() {
                 onSend={(tokenId) => setDialog({ kind: "send", tokenId })}
                 onReceive={(tokenId) => setDialog({ kind: "receive", tokenId })}
                 onHistory={(tokenId) => setDialog({ kind: "history", tokenId })}
-                onBuyback={() => setDialog({ kind: "buyback" })}
                 onBuy={accountText ? handleBuy : undefined}
                 onSelect={handleSelectToken}
               />
@@ -536,7 +531,7 @@ export function WalletPage() {
           {t.walletHistoryTitle}
         </h2>
         <TttiMovements account={account} />
-        {iiPrincipal && <PurchaseHistorySection onBuyback={openBuyback} />}
+        {iiPrincipal && <PurchaseHistorySection />}
       </section>
 
       <WalletDialogs
@@ -545,7 +540,6 @@ export function WalletPage() {
         tokens={tokenList}
         account={account}
         hasIi={!!iiPrincipal}
-        onBuyback={openBuyback}
       />
     </div>
   );

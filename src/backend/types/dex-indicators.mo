@@ -4,7 +4,7 @@ import Dex "dex";
 import DexReserve "dex-reserve";
 
 // DEX lot 7: public indicators computed once per hour and stored. Facts only:
-// no APY, no yield projection. Percentages are basis points (10_000 = 100 %).
+// fees actually paid over the period only, no projection. Percentages are basis points (10_000 = 100 %).
 // Token amounts are base units of the token concerned; USD values are USD with
 // 8 decimals (usdE8) and absent when the hourly rate is absent or expired.
 module {
@@ -118,7 +118,7 @@ module {
   };
 
   // Plain figure over the period: fees collected in the period against the
-  // pool liquidity, both in USD, in basis points. No annualisation.
+  // pool liquidity, both in USD, in basis points.
   public type ObservedFee = {
     periodDays : Nat;
     feesUsdE8 : ?Nat;

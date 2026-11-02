@@ -8,7 +8,7 @@ import MintFeeTypes "../types/mint-fee";
 import PayTypes "../types/pay-token";
 
 // DC batch history (admin, read-only: no new batch runs), protocol liquidity
-// locked forever (public), the caller's already-earned locked-LP bonus (DL),
+// locked forever (public), the permanent-liquidity journal and summary (public), the caller's already-earned locked-LP bonus (DL),
 // mint-fee LP balances, set-aside amounts and liquidity injections.
 mixin (
   protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
@@ -66,5 +66,18 @@ mixin (
   // Public: liquidity injections, newest first, `limit` capped at 100.
   public query func listLiquidityInjections(offset : Nat, limit : Nat) : async MintFeeTypes.InjectionPage {
     ProtocolFeesLib.injections(protocolFeeContext, offset, limit);
+  };
+
+  // --- PTM-4: permanent liquidity journal (public) --------------------------
+
+  // Public: permanent-liquidity operations, newest first, `limit` capped at 100.
+  public query func listPermanentLiquidityLog(offset : Nat, limit : Nat) : async Types.PermanentLogPage {
+    ProtocolFeesLib.listPermanentLog(protocolFeeContext.permanent, offset, limit);
+  };
+
+  // Public: contract-locked shares and value per pool, set-aside amounts and
+  // the next injection target.
+  public query func getPermanentLiquiditySummary() : async Types.PermanentSummary {
+    ProtocolFeesLib.permanentSummary(protocolFeeContext, Time.now());
   };
 };

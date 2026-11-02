@@ -6,14 +6,18 @@ import Text "mo:core/Text";
 import Time "mo:core/Time";
 import AccessControl "mo:caffeineai-authorization/access-control";
 import DexLib "../lib/dex";
+import DexPotLib "../lib/dex-pot";
 import IcrcLib "../lib/icrc";
 import OracleLib "../lib/oracle";
 import RetryLib "../lib/retry";
 import Types "../types/dex";
+import PageTypes "../types/page";
+import ProtocolFeeTypes "../types/protocol-fees";
 
 // DEX lot 1 endpoints: pool registry, pair requests and admin review.
 // DEX lot 2: deposit subaccounts, internal balances, DD / DW and DQ refunds.
 // DEX lot 3: filling gauge, liquidity, LP positions, quotes and swaps.
+// PTM-5: consolidated TTTI-T price, per-pool spread and in-app LP alerts.
 mixin (
   dex : Types.DexStore,
   ledger : IcrcLib.Ledger,
@@ -22,13 +26,16 @@ mixin (
   dexContext : RetryLib.DexContext,
   oracle : OracleLib.OracleStore,
   tokenRates : OracleLib.TokenRateStore,
+  refreshSources : () -> async Nat,
+  consolidatedPrices : ProtocolFeeTypes.ConsolidatedPriceStore,
 ) {
-  // Usable USD rate of a pool token: TTTI-T fixed (DexLib.TTTI_T_USD_E8);
-  // ICP / ckBTC / ckUSDC / ckUSDT via RetryLib.dexPayToken,
-  // OracleLib.storeFor and OracleLib.usableRate; null otherwise.
+  // Usable hourly USD rate of a pool token: ICP / ckBTC / ckUSDC / ckUSDT via
+  // RetryLib.dexPayToken, OracleLib.storeFor and OracleLib.usableRate. TTTI-T
+  // has no USD rate (DEX-2: never valued at a fixed price); null when the rate
+  // is absent or expired.
   func usdRateOf(token : Types.PoolToken) : ?Nat {
     switch (DexLib.poolDexToken(token)) {
-      case (?#tttiT) ?DexLib.TTTI_T_USD_E8;
+      case (?#tttiT) null;
       case (?t) {
         switch (RetryLib.dexPayToken(t)) {
           case (?pay) OracleLib.usableRate(OracleLib.storeFor(oracle, tokenRates, pay), Time.now());
@@ -36,6 +43,21 @@ mixin (
         };
       };
       case null null;
+    };
+  };
+
+  // PTM-9f: the DEX tokens of a pool (the deposit accounts a swap on it touches).
+  func poolDexTokens(poolId : Nat) : [Types.DexToken] {
+    switch (dex.pools.get(poolId)) {
+      case (?p) {
+        switch (DexLib.poolDexToken(p.token0), DexLib.poolDexToken(p.token1)) {
+          case (?a, ?b) [a, b];
+          case (?a, null) [a];
+          case (null, ?b) [b];
+          case (null, null) [];
+        };
+      };
+      case null [];
     };
   };
 
@@ -129,6 +151,8 @@ mixin (
       case (#Err(e)) return #err(#depositFailed(debug_show (e)));
     };
     let request = DexLib.addRequest(dex, caller, token, counter, args.feeTier, args.message, checks, depositBlock, now);
+    // PTM-9f: new activity of the caller: its deposit account is read again.
+    RetryLib.reincludeOnActivity(dexContext.batch, caller, [#tttiT]);
     #ok(DexLib.toRequestView(request, canister));
   };
 
@@ -152,7 +176,7 @@ mixin (
         RetryLib.unlock(dexContext.locks, key);
       };
     };
-    #ok(DexLib.toPoolView(pool, canister, Time.now(), usdRateOf));
+    #ok(DexLib.toPoolView(dex, pool, canister, Time.now(), usdRateOf));
   };
 
   // --- DEX lot 2 ---------------------------------------------------------
@@ -173,12 +197,25 @@ mixin (
     DexLib.balancesOf(dexContext.balances, owner, canister);
   };
 
+  // Unpaged. Kept only while the frontend (hooks/useDex.ts) still calls it;
+  // replaced by getDexTransfersPage and removed once the frontend has moved.
   public query func getDexTransfers(owner : Principal) : async [Types.DexTransferView] {
     RetryLib.dexTransfersOf(dexContext, owner);
   };
 
-  // DD: ICRC-2 transfer_from (amount + ledger fee approved) into the
-  // caller's DEX deposit subaccount.
+  // PTM-9f: deposits and withdrawals of `owner`, newest first, by pages. The
+  // cursor is the transfer number `n` (global, unique across deposits and
+  // withdrawals): cursor = null returns the newest `limit` transfers, cursor =
+  // ?c the transfers with n strictly below c. `limit` is clamped by
+  // PageTypes.clampLimit (0 -> 50, cap PageTypes.MAX_PAGE_SIZE = 100).
+  // nextCursor = n of the last returned transfer while older ones may remain,
+  // null on the last page.
+  public query func getDexTransfersPage(owner : Principal, cursor : ?Nat, limit : Nat) : async PageTypes.Page<Types.DexTransferView> {
+    RetryLib.dexTransfersPageOf(dexContext, owner, cursor, limit);
+  };
+
+  // DD: ICRC-2 transfer_from (amount + ledger fee approved) from the caller's
+  // default account into the token's DEX custody account (DEX-1).
   public shared ({ caller }) func depositToDex(args : Types.DexAmountArgs) : async Result.Result<Types.DexTransferView, Types.DexDepositError> {
     requireNotPaused();
     if (caller.isAnonymous()) {
@@ -209,7 +246,8 @@ mixin (
     };
   };
 
-  // DW: internal balance to the caller's default account, ledger fee deducted.
+  // DW: internal balance to the caller's default account, ledger fee deducted,
+  // paid from the token's DEX custody account (DEX-1).
   public shared ({ caller }) func withdrawFromDex(args : Types.DexAmountArgs) : async Result.Result<Types.DexTransferView, Types.DexWithdrawError> {
     if (caller.isAnonymous()) {
       return #err(#anonymous);
@@ -251,15 +289,71 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func removePair(poolId : Nat) : async Result.Result<Types.PoolView, Types.RemovePairError> {
+  // DEX-2: announces the removal (no immediate removal). Public reason,
+  // effectiveAt = now + 5 days. From the announcement swaps and liquidity
+  // adds are suspended in the pool; voluntary removals stay allowed subject to
+  // unlockAt. At effectiveAt every remaining position is liquidated and paid to
+  // the owner's wallet (LQ), then the pool becomes #removed.
+  public shared ({ caller }) func removePair(poolId : Nat, reason : Text) : async Result.Result<Types.PoolView, Types.RemovePairError> {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       return #err(#notAuthorized);
     };
     let now = Time.now();
-    switch (DexLib.remove(dex, poolId, now)) {
-      case (#ok(p)) #ok(DexLib.toPoolView(p, canister, now, usdRateOf));
+    switch (DexLib.announceRemoval(dex, poolId, reason, now)) {
+      case (#ok(pool)) #ok(DexLib.toPoolView(dex, pool, canister, now, usdRateOf));
       case (#err(e)) #err(e);
     };
+  };
+
+  // DEX-2: admin cancels an announced removal before its effective date; the
+  // pool resumes normally.
+  public shared ({ caller }) func cancelPairRemoval(poolId : Nat) : async Result.Result<Types.PoolView, Types.CancelRemovalError> {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      return #err(#notAuthorized);
+    };
+    let now = Time.now();
+    switch (DexLib.cancelRemoval(dex, poolId, now)) {
+      case (#ok(pool)) #ok(DexLib.toPoolView(dex, pool, canister, now, usdRateOf));
+      case (#err(e)) #err(e);
+    };
+  };
+
+  // DEX-2: first-deposit reference price of a pool, public: TTTI-T price
+  // (depth-weighted), sources and weights, rate validity, readable /
+  // unavailable status. Null when the pool does not exist.
+  public query func getReferencePrice(poolId : Nat) : async ?Types.ReferencePrice {
+    DexLib.referencePrice(dex, poolId, usdRateOf, Time.now());
+  };
+
+  // PTM-5: consolidated TTTI-T price (USD x 1e8) from all open native TTTI-T
+  // pools, current oracle rates, depth-weighted, with the hourly and 24 h
+  // averages. `price` is #unavailable when no pool or no valid rate is usable.
+  public query func getConsolidatedTttiPrice() : async Types.ConsolidatedPrice {
+    DexLib.consolidatedPriceView(dex, consolidatedPrices.samples, usdRateOf, Time.now());
+  };
+
+  // PTM-5: spread of each native TTTI-T pool against the consolidated price
+  // (signed bps), the pool's own USD price and the 2 % alert flag.
+  public query func getPoolSpreads() : async Types.PoolSpreadReport {
+    DexLib.poolSpreads(dex, usdRateOf, Time.now());
+  };
+
+  // PTM-5: pools where the caller holds a liquidity position and whose spread
+  // currently exceeds 2 %. Computed on each call, nothing stored; empty for an
+  // anonymous caller and once the spread is back to 2 % or less.
+  public shared query ({ caller }) func getMyPoolSpreadAlerts() : async [Types.PoolSpreadAlert] {
+    DexLib.spreadAlerts(dex, caller, usdRateOf, Time.now());
+  };
+
+  // DEX-2: reads the ICPSwap TTTI-T pairs and stores their latest prices and
+  // depths (input of getReferencePrice). Returns the number of readable pairs.
+  // Admin only; the hourly timer runs the same read. Read only: no order, no
+  // transfer, no TTTI-T created.
+  public shared ({ caller }) func refreshReferenceSources() : async Nat {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: only an admin can refresh the reference sources");
+    };
+    await refreshSources();
   };
 
   public shared ({ caller }) func setUtilityPairMinimums(poolId : Nat, minimums : Types.TokenMinimums) : async Result.Result<Types.PoolView, Types.SetMinimumsError> {
@@ -267,7 +361,7 @@ mixin (
       return #err(#notAuthorized);
     };
     switch (DexLib.setUtilityMinimums(dex, poolId, minimums)) {
-      case (#ok(p)) #ok(DexLib.toPoolView(p, canister, Time.now(), usdRateOf));
+      case (#ok(p)) #ok(DexLib.toPoolView(dex, p, canister, Time.now(), usdRateOf));
       case (#err(e)) #err(e);
     };
   };
@@ -275,7 +369,7 @@ mixin (
   // --- DEX lot 3 ---------------------------------------------------------
 
   public query func quoteAddLiquidity(args : Types.AddLiquidityQuoteArgs) : async Result.Result<Types.AddLiquidityQuote, Types.AddLiquidityError> {
-    DexLib.quoteAddLiquidity(dex, args, usdRateOf);
+    DexLib.quoteAddLiquidity(dex, args, usdRateOf, Time.now());
   };
 
   // Takes every key or none; false when one is already held.
@@ -315,8 +409,38 @@ mixin (
     };
   };
 
+  // DEX-1: pulls `shortfall` of `token` from the caller's default account into
+  // the token's custody account (ICRC-2 transfer_from, memo DD, created_at_time,
+  // retry rules of lib/retry.mo) and credits the internal balance on Ok /
+  // Duplicate. The caller already holds the owner token lock. #err carries the
+  // additional amount the allowance or balance would have allowed (nothing is
+  // credited).
+  func pullShortfall(caller : Principal, token : Types.DexToken, shortfall : Nat) : async* { #ok; #err : Nat } {
+    let fee = RetryLib.dexFee(dexContext, token);
+    let opened = RetryLib.openDexDeposit(dexContext, caller, token, shortfall);
+    let (transfer, err) = await RetryLib.sendDexDepositDetailed(dexContext, opened.n);
+    switch (transfer.status) {
+      case (#completed(_)) #ok;
+      case (_) {
+        let usable = switch (err) {
+          case (?#InsufficientAllowance({ allowance })) { if (allowance > fee) Nat.sub(allowance, fee) else 0 };
+          case (?#InsufficientFunds({ balance })) { if (balance > fee) Nat.sub(balance, fee) else 0 };
+          case (_) 0;
+        };
+        #err(usable);
+      };
+    };
+  };
+
   // From the caller's internal available balances on a filling or open pool;
-  // one new position with its own lock (24 h to 5 years).
+  // one new position with its own optional lock (none by default; otherwise
+  // 3 months to 5 years). DEX-2: the fixed side is `amount`; the other side is computed at
+  // the pool ratio after the funds arrived, within slippageBps (default 50);
+  // outside the tolerance the add is refused and the funds stay in the
+  // internal balance, as does any surplus. Any shortfall of
+  // either pool token is first pulled into custody by ICRC-2 transfer_from
+  // and credited (DEX-1); without enough allowance or balance the call is
+  // refused with #insufficientBalance.
   public shared ({ caller }) func addLiquidity(args : Types.AddLiquidityArgs) : async Result.Result<Types.AddLiquidityResult, Types.AddLiquidityError> {
     requireNotPaused();
     if (caller.isAnonymous()) {
@@ -330,6 +454,24 @@ mixin (
       return #err(#operationInProgress);
     };
     try {
+      let need = switch (DexLib.addLiquidityNeed(dex, args, usdRateOf, Time.now())) {
+        case (#ok(n)) n;
+        case (#err(e)) return #err(e);
+      };
+      let have0 = DexLib.available(dexContext.balances, caller, need.token0);
+      if (have0 < need.amount0) {
+        switch (await* pullShortfall(caller, need.token0, Nat.sub(need.amount0, have0))) {
+          case (#ok) {};
+          case (#err(usable)) return #err(#insufficientBalance({ token = need.token0; available = have0 + usable; required = need.amount0 }));
+        };
+      };
+      let have1 = DexLib.available(dexContext.balances, caller, need.token1);
+      if (have1 < need.amount1) {
+        switch (await* pullShortfall(caller, need.token1, Nat.sub(need.amount1, have1))) {
+          case (#ok) {};
+          case (#err(usable)) return #err(#insufficientBalance({ token = need.token1; available = have1 + usable; required = need.amount1 }));
+        };
+      };
       let isCreator = AccessControl.isAdmin(accessControlState, caller);
       DexLib.addLiquidity(dex, dexContext.balances, canister, caller, isCreator, args, usdRateOf, Time.now());
     } finally {
@@ -337,7 +479,8 @@ mixin (
     };
   };
 
-  // Position owner only; after the unlock date, or any time on a removed pair.
+  // Position owner only; after the unlock date in every pool state (no lock =
+  // any time). Allowed during an announced removal.
   public shared ({ caller }) func removeLiquidity(positionId : Nat) : async Result.Result<Types.RemoveLiquidityResult, Types.RemoveLiquidityError> {
     if (caller.isAnonymous()) {
       return #err(#anonymous);
@@ -360,8 +503,10 @@ mixin (
     };
   };
 
-  // Position owner only; never shortens, at most 5 years from the position creation date.
-  public shared ({ caller }) func extendLock(positionId : Nat, newUnlockAt : Int) : async Result.Result<Types.PositionView, Types.ExtendLockError> {
+  // Position owner only; never shortens, at most 5 years from the lock start,
+  // 3 months to 5 years remaining after the extension.
+  // PTM-3: the added weight relieves the other locked positions of the pool.
+  public shared ({ caller }) func extendLock(positionId : Nat, newUnlockAt : Int) : async Result.Result<Types.ExtendLockResult, Types.ExtendLockError> {
     if (caller.isAnonymous()) {
       return #err(#anonymous);
     };
@@ -370,7 +515,7 @@ mixin (
       return #err(#operationInProgress);
     };
     try {
-      DexLib.extendLock(dex, canister, caller, positionId, newUnlockAt, Time.now());
+      DexLib.extendLock(dex, canister, caller, positionId, newUnlockAt, usdRateOf, Time.now());
     } finally {
       unlockAll(keys);
     };
@@ -392,7 +537,10 @@ mixin (
     DexLib.quoteSwap(dex, poolId, tokenIn, amountIn, slippageBps, usdRateOf, Time.now());
   };
 
-  // Exact input from internal balances; deadline at most 5 minutes after the call.
+  // Exact input from internal balances; deadline at most 5 minutes after the
+  // call. A shortfall of the input token is first pulled into custody by
+  // ICRC-2 transfer_from and credited (DEX-1); without enough allowance or
+  // balance the call is refused with #insufficientBalance before any effect.
   public shared ({ caller }) func swap(poolId : Nat, tokenIn : Types.DexToken, amountIn : Nat, minAmountOut : Nat, deadline : Int) : async Result.Result<Types.SwapResult, Types.SwapError> {
     requireNotPaused();
     if (caller.isAnonymous()) {
@@ -406,9 +554,63 @@ mixin (
       return #err(#operationInProgress);
     };
     try {
+      // PTM-9f: new activity of the caller: its deposit accounts are read again.
+      RetryLib.reincludeOnActivity(dexContext.batch, caller, poolDexTokens(poolId));
+      let have = DexLib.available(dexContext.balances, caller, tokenIn);
+      if (have < amountIn) {
+        switch (DexLib.swapPrecheck(dex, poolId, tokenIn, amountIn, minAmountOut, deadline, usdRateOf, Time.now())) {
+          case (?e) return #err(e);
+          case null {};
+        };
+        switch (await* pullShortfall(caller, tokenIn, Nat.sub(amountIn, have))) {
+          case (#ok) {};
+          case (#err(usable)) return #err(#insufficientBalance({ available = have + usable }));
+        };
+      };
       DexLib.swap(dex, dexContext.balances, canister, caller, poolId, tokenIn, amountIn, minAmountOut, deadline, false, usdRateOf, Time.now(), dexContext.indicators);
     } finally {
       unlockAll(keys);
     };
+  };
+
+  // --- PTM-9d: per-pool LP fee pot and daily sliced sharing --------------------
+  // Logic in lib/dex-pot.mo.
+
+  // Public: pending pot of every pool (amount in each of the pool's two tokens)
+  // and the time of the next sharing.
+  public query func getDexPendingPots() : async [Types.PendingPotView] {
+    DexPotLib.pendingPots(dex);
+  };
+
+  // Public: pending pot of one pool; null when the pool does not exist.
+  public query func getDexPendingPot(poolId : Nat) : async ?Types.PendingPotView {
+    DexPotLib.pendingPot(dex, poolId);
+  };
+
+  // Public (positions are public): estimated share of one position for the
+  // current day, with the same weight rule as the sharing; null when the
+  // position does not exist.
+  public query func getDexEstimatedShare(positionId : Nat) : async ?Types.EstimatedShareView {
+    DexPotLib.estimatedShareOf(dex, positionId, Time.now());
+  };
+
+  // The caller's positions with their estimated share for the current day.
+  // Empty for an anonymous caller.
+  public shared query ({ caller }) func getMyDexEstimatedShares() : async [Types.EstimatedShareView] {
+    DexPotLib.estimatedSharesOf(dex, caller, Time.now());
+  };
+
+  // Timer entry: runs ONE slice (Types.SLICE_SIZE positions) of the daily
+  // sharing of one pool. Anyone may call; it does nothing when no sharing is
+  // running for the pool. The composition wires it to the recurring timer.
+  public shared func runDexPotSlice(poolId : Nat) : async Types.PotSliceReport {
+    DexPotLib.runSlice(dex, dexContext.balances, poolId, Types.SLICE_SIZE);
+  };
+
+  // Timer entry: starts the daily day-roll once the day is over (freezes each
+  // pool's pending pot and starts its sliced sharing). Anyone may call; it does
+  // nothing before the next sharing time. The composition wires it to a timer.
+  public shared func startDexDayRoll() : async Types.DayRollReport {
+    DexPotLib.startDayRoll(dex, Time.now());
   };
 };

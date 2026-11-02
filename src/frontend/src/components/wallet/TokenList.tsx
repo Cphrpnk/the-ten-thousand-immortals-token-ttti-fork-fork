@@ -11,8 +11,6 @@ interface TokenListProps {
   onSend: (canisterId: string) => void;
   onReceive: (canisterId: string) => void;
   onHistory: (canisterId: string) => void;
-  /** Buyback action of the TTTI-T card. */
-  onBuyback?: () => void;
   /** Buy via Onramper, shown on the ICP, ckBTC, ckUSDC and ckUSDT cards. */
   onBuy?: (canisterId: string) => void;
   /** Called with the selected row's canister ID (null when none). */
@@ -21,8 +19,7 @@ interface TokenListProps {
 
 /**
  * Compact token list. One row at a time can be selected to show its Send,
- * Receive and History actions (plus Buy on ICP and the ck tokens, Buyback on
- * TTTI-T); a click outside that row or Escape hides them.
+ * Receive and History actions (plus Buy on ICP and the ck tokens); a click outside that row or Escape hides them.
  */
 export function TokenList({
   tokens,
@@ -31,7 +28,6 @@ export function TokenList({
   onSend,
   onReceive,
   onHistory,
-  onBuyback,
   onBuy,
   onSelect,
 }: TokenListProps) {
@@ -89,7 +85,6 @@ export function TokenList({
             onSend={() => onSend(id)}
             onReceive={() => onReceive(id)}
             onHistory={() => onHistory(id)}
-            onBuyback={onBuyback}
             onBuy={
               onBuy && PAY_TOKEN_LEDGER_IDS.includes(id)
                 ? () => onBuy(id)

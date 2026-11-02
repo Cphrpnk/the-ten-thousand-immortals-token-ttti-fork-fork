@@ -24,6 +24,7 @@ import {
   formatUnits,
 } from "../../lib/token";
 import { ExplorerLink } from "../ExplorerLink";
+import { FiatAmount } from "../FiatAmount";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
@@ -129,6 +130,12 @@ function MovementRow({
           <span className="font-semibold text-foreground tabular-nums">
             {sign}
             {formatUnits(m.amount, TTTI_DECIMALS, 2, lang)} {TTTI_SYMBOL}
+            <FiatAmount
+              token="ttti"
+              amount={m.amount}
+              className="ml-2"
+              ocid={`wallet.movements.fiat.${index}`}
+            />
           </span>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">

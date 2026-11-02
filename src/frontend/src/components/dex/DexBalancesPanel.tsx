@@ -1,101 +1,160 @@
 import type { Principal } from "@icp-sdk/core/principal";
-import { RefreshCw } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
-import { useDexBalances, useDexTokens } from "../../hooks/useDex";
+import {
+  useDexBalances,
+  useDexTokens,
+  useWithdrawFromDex,
+} from "../../hooks/useDex";
 import { useDict } from "../../i18n/core";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
-import { DexAmountDialog, type DexDialogKind } from "./DexAmountDialog";
+import { buildBalanceRows } from "./DexBalanceTable";
+import { DexFiat, useDexUnitsText } from "./DexFiat";
 import {
-  type DexBalanceRow,
-  DexBalanceTable,
-  buildBalanceRows,
-} from "./DexBalanceTable";
-import { DexDepositSubaccount } from "./DexDepositSubaccount";
-import { DexTransfersList } from "./DexTransfersList";
+  dexCallErrorText,
+  dexTransferErrorText,
+  formatDexUnits,
+} from "./dexFormat";
 
-const SKELETONS = Array.from({ length: 5 }, (_, i) => `balance-skeleton-${i}`);
+type Feedback = { tone: "info" | "danger"; text: string };
 
-/** Signed-in user's DEX balances, deposit / withdraw dialogs and transfers. */
+/** Discreet DEX balance line and a single button returning it to the wallet. */
 export function DexBalancesPanel({ owner }: { owner: Principal }) {
   const t = useDict(DEX_TEXT);
   const tokens = useDexTokens();
   const balances = useDexBalances(owner);
-  const [dialog, setDialog] = useState<{
-    kind: DexDialogKind;
-    row: DexBalanceRow;
-  } | null>(null);
+  const withdraw = useWithdrawFromDex();
+  const unitsText = useDexUnitsText();
+  const [running, setRunning] = useState(false);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const loading = tokens.isPending || balances.isPending;
   const failed = tokens.isError || balances.isError;
   const rows = buildBalanceRows(tokens.data ?? [], balances.data ?? []);
-  const empty = rows.every((r) => r.available === 0n && r.reserved === 0n);
+  const shown = rows.filter((r) => r.available > 0n || r.reserved > 0n);
+
+  const onRecover = async () => {
+    if (running) return;
+    const targets = rows.filter((r) => r.available > 0n);
+    if (targets.length === 0) {
+      setFeedback({ tone: "info", text: t.recoverNothing });
+      return;
+    }
+    setRunning(true);
+    setFeedback(null);
+    const done: Array<string> = [];
+    let failure: string | null = null;
+    for (const row of targets) {
+      try {
+        const outcome = await withdraw.mutateAsync({
+          token: row.token.token,
+          amount: row.available,
+        });
+        if (outcome.__kind__ === "ok") {
+          done.push(unitsText(row.available, row.token));
+        } else {
+          failure ??= `${row.token.symbol}: ${dexTransferErrorText(t, outcome.err, row.token)}`;
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        failure ??= `${row.token.symbol}: ${dexCallErrorText(t, message, (d) => d)}`;
+      }
+    }
+    setRunning(false);
+    if (failure !== null) {
+      setFeedback({ tone: "danger", text: t.recoverError(failure) });
+    } else {
+      setFeedback({ tone: "info", text: t.recoverDone(done.join(", ")) });
+    }
+  };
 
   return (
-    <div className="flex flex-col gap-6 rounded-lg border border-border bg-card p-5 sm:p-6">
-      <DexDepositSubaccount owner={owner} ocid="pools.balances.subaccount" />
+    <div className="flex flex-col gap-3" data-ocid="pools.balances.panel">
+      <h3 className="font-display text-base tracking-wide text-muted-foreground">
+        {t.recoverHeading}
+      </h3>
       {loading ? (
-        <div
-          className="flex flex-col gap-2"
+        <Skeleton
+          className="h-5 w-48"
           data-ocid="pools.balances.loading_state"
           aria-label={t.balancesLoading}
-        >
-          {SKELETONS.map((id) => (
-            <Skeleton key={id} className="h-12 w-full" />
-          ))}
-        </div>
+        />
       ) : failed ? (
-        <div
-          className="callout-danger flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+        <p
+          className="text-sm text-muted-foreground"
           data-ocid="pools.balances.error_state"
         >
-          <span>{t.balancesLoadError}</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void tokens.refetch();
-              void balances.refetch();
-            }}
-            aria-label={t.balancesLoadError}
-            data-ocid="pools.balances.retry_button"
-          >
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </div>
+          {t.balancesLoadError}
+        </p>
       ) : (
-        <div className="flex flex-col gap-3">
-          {empty && (
+        shown.length > 0 && (
+          <ul
+            className="flex flex-col gap-0.5 text-sm text-muted-foreground"
+            data-ocid="pools.balances.list"
+          >
+            {shown.map((row, i) => (
+              <li
+                key={row.token.token}
+                className="font-mono tabular-nums break-all"
+                data-ocid={`pools.balances.item.${i + 1}`}
+              >
+                {formatDexUnits(row.available, row.token)}{" "}
+                <DexFiat token={row.token} amount={row.available} />
+                {row.reserved > 0n && (
+                  <>
+                    {` · ${t.colReserved} ${formatDexUnits(row.reserved, row.token)} `}
+                    <DexFiat token={row.token} amount={row.reserved} />
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+      <p className="text-xs text-muted-foreground">{t.recoverExplain}</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="min-h-11 sm:min-h-9"
+          onClick={() => void onRecover()}
+          disabled={running || loading}
+          data-ocid="pools.balances.recover_button"
+        >
+          {running ? (
+            <>
+              <Loader2
+                className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              {t.recovering}
+            </>
+          ) : (
+            t.recoverButton
+          )}
+        </Button>
+        <div aria-live="polite" className="min-w-0 text-sm">
+          {feedback && (
             <p
-              className="text-sm text-muted-foreground"
-              data-ocid="pools.balances.empty_state"
+              className={
+                feedback.tone === "info"
+                  ? "text-muted-foreground"
+                  : "text-destructive break-words"
+              }
+              data-ocid={
+                feedback.tone === "info"
+                  ? "pools.balances.success_state"
+                  : "pools.balances.recover.error_state"
+              }
             >
-              {t.balancesEmpty}
+              {feedback.text}
             </p>
           )}
-          <DexBalanceTable
-            rows={rows}
-            ocid="pools.balances"
-            onAction={(kind, row) => setDialog({ kind, row })}
-          />
         </div>
-      )}
-      <DexTransfersList owner={owner} tokens={tokens.data ?? []} />
-      {dialog && (
-        <DexAmountDialog
-          key={`${dialog.kind}-${dialog.row.token.token}`}
-          kind={dialog.kind}
-          token={dialog.row.token}
-          available={
-            rows.find((r) => r.token.token === dialog.row.token.token)
-              ?.available ?? dialog.row.available
-          }
-          owner={owner}
-          onClose={() => setDialog(null)}
-        />
-      )}
+      </div>
     </div>
   );
 }

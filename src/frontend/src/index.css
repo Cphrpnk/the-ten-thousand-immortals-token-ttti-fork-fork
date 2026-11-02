@@ -665,4 +665,98 @@
     font-size: 1.125rem;
     color: oklch(var(--foreground));
   }
+
+  /* ── Public Pools page (existing tokens only) ──────────────────── */
+  /* Sticky section nav under the site header; links reuse .admin-nav-link. */
+  .pools-nav {
+    position: sticky;
+    top: 4rem;
+    z-index: 30;
+    background: oklch(var(--background) / 0.9);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid oklch(var(--border));
+  }
+  .pools-section {
+    scroll-margin-top: 8rem;
+  }
+  /* Compact pool row: pair · status · gauge · fee · actions. */
+  .pool-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+    min-height: 4rem;
+    padding: 0.875rem 0;
+    border-top: 1px solid oklch(var(--border));
+  }
+  @media (min-width: 768px) {
+    .pool-row {
+      grid-template-columns: minmax(10rem, 1.4fr) 7rem minmax(9rem, 1.6fr) 4rem auto;
+    }
+  }
+  .pool-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-family: var(--font-mono), monospace;
+    font-size: 0.875rem;
+    letter-spacing: 0.02em;
+    color: oklch(var(--foreground));
+  }
+  /* Status dot: open = success, filling = primary, paused/removed = muted. */
+  .pool-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: oklch(var(--muted-foreground));
+  }
+  .pool-status::before {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 9999px;
+    background: oklch(var(--muted-foreground) / 0.6);
+  }
+  .pool-status[data-status="open"]::before {
+    background: oklch(var(--success));
+  }
+  .pool-status[data-status="filling"]::before {
+    background: oklch(var(--primary));
+  }
+  .pool-status[data-status="paused"]::before,
+  .pool-status[data-status="removed"]::before {
+    background: oklch(var(--warning));
+  }
+  /* 100 USD gauge: hairline track, thin gold fill. */
+  .pool-gauge {
+    height: 3px;
+    width: 100%;
+    border-radius: 9999px;
+    background: oklch(var(--step-inactive));
+    overflow: hidden;
+  }
+  .pool-gauge-fill {
+    height: 100%;
+    border-radius: 9999px;
+    background: var(--gradient-primary);
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .pool-gauge[data-unavailable="true"] .pool-gauge-fill {
+    background: oklch(var(--muted-foreground) / 0.4);
+  }
+  .pool-fee {
+    font-family: var(--font-mono), monospace;
+    font-size: 0.75rem;
+    color: oklch(var(--muted-foreground));
+  }
+  /* Inline "Détails" disclosure inside a pool row, spans full width. */
+  .pool-details {
+    grid-column: 1 / -1;
+    padding: 0.75rem 1rem;
+    border-inline-start: 2px solid oklch(var(--primary) / 0.35);
+    background: oklch(var(--muted) / 0.4);
+    border-radius: calc(var(--radius) - 2px);
+  }
 }

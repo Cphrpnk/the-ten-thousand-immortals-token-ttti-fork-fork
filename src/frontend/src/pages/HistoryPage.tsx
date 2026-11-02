@@ -26,6 +26,7 @@ import {
 } from "react";
 import type { DataCertificate, GetBlocksArgs } from "../backend";
 import { ExplorerLink } from "../components/ExplorerLink";
+import { FiatAmount } from "../components/FiatAmount";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import {
@@ -76,7 +77,12 @@ import {
   shortHex,
   toHex,
 } from "../lib/icrc3Blocks";
-import { TTTI_SYMBOL, formatInteger, formatUnits } from "../lib/token";
+import {
+  TTTI_DECIMALS,
+  TTTI_SYMBOL,
+  formatInteger,
+  formatUnits,
+} from "../lib/token";
 
 /** Blocks shown per page (always below the 100-block per-call cap). */
 const PAGE_SIZE = 50n;
@@ -90,6 +96,37 @@ const OUTLINE_GOLD =
 function formatAmount(amount: bigint | null | undefined, decimals: number) {
   if (amount === null || amount === undefined) return "—";
   return formatUnits(amount, decimals);
+}
+
+/**
+ * Discreet USD equivalent of a ledger amount. Legacy blocks may use another
+ * number of decimals, so the amount is first rescaled to TTTI-T base units.
+ */
+function HistoryFiat({
+  amount,
+  decimals,
+  className,
+  ocid,
+}: {
+  amount: bigint | null | undefined;
+  decimals: number;
+  className?: string;
+  ocid?: string;
+}) {
+  const units =
+    amount === null || amount === undefined
+      ? null
+      : decimals === TTTI_DECIMALS
+        ? amount
+        : (amount * 10n ** BigInt(TTTI_DECIMALS)) / 10n ** BigInt(decimals);
+  return (
+    <FiatAmount
+      token="ttti"
+      amount={units}
+      className={className}
+      ocid={ocid ?? "history.fiat"}
+    />
+  );
 }
 
 function formatTimestamp(
@@ -307,6 +344,11 @@ function FeeDetail({ entry }: { entry: DecodedBlock }) {
       <span className="font-mono tabular-nums">
         {formatAmount(entry.fee, entry.decimals)}
       </span>
+      <HistoryFiat
+        amount={entry.fee}
+        decimals={entry.decimals}
+        ocid="history.fee_fiat"
+      />
       {entry.feeCollector && (
         <span
           className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
@@ -377,7 +419,16 @@ function detailItems(entry: DecodedBlock, t: HistoryText): DetailItem[] {
     items.push({
       key: "expected",
       label: t.detailExpectedAllowance,
-      value: `${formatAmount(entry.expectedAllowance, entry.decimals)} ${TTTI_SYMBOL}`,
+      value: (
+        <>
+          {formatAmount(entry.expectedAllowance, entry.decimals)} {TTTI_SYMBOL}{" "}
+          <HistoryFiat
+            amount={entry.expectedAllowance}
+            decimals={entry.decimals}
+            ocid="history.expected_allowance_fiat"
+          />
+        </>
+      ),
     });
   }
   return items;
@@ -585,6 +636,13 @@ function EntryRow({
         <TableCell className="align-top text-right font-mono font-semibold tabular-nums text-foreground">
           {entry.kind === "burn" && entry.amount !== null ? "−" : ""}
           {formatAmount(entry.amount, entry.decimals)}
+          <span className="block">
+            <HistoryFiat
+              amount={entry.amount}
+              decimals={entry.decimals}
+              ocid="history.amount_fiat"
+            />
+          </span>
         </TableCell>
         <TableCell className="align-top text-right text-xs">
           <FeeDetail entry={entry} />
@@ -640,7 +698,12 @@ function EntryCard({
           </span>
           <span className="font-mono text-lg font-semibold tabular-nums text-primary">
             {entry.kind === "burn" && entry.amount !== null ? "−" : ""}
-            {formatAmount(entry.amount, entry.decimals)} {TTTI_SYMBOL}
+            {formatAmount(entry.amount, entry.decimals)} {TTTI_SYMBOL}{" "}
+            <HistoryFiat
+              amount={entry.amount}
+              decimals={entry.decimals}
+              ocid="history.amount_fiat"
+            />
           </span>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">

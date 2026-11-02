@@ -23,11 +23,13 @@ export function PairRequestList({
   requests,
   loading,
   ocid,
+  emptyText,
 }: {
-  title: string;
+  title?: string;
   requests: Array<PairRequestView> | undefined;
   loading: boolean;
   ocid: string;
+  emptyText?: string;
 }) {
   const t = useDict(DEX_TEXT);
   const { lang } = useLanguage();
@@ -37,7 +39,9 @@ export function PairRequestList({
 
   return (
     <section className="flex flex-col gap-4" data-ocid={`${ocid}.section`}>
-      <h2 className="font-display text-2xl tracking-wide">{title}</h2>
+      {title && (
+        <h2 className="font-display text-2xl tracking-wide">{title}</h2>
+      )}
       {loading ? (
         <div
           className="flex flex-col gap-2"
@@ -52,7 +56,7 @@ export function PairRequestList({
           className="border-t border-border pt-4 text-sm text-muted-foreground"
           data-ocid={`${ocid}.empty_state`}
         >
-          {t.noRequests}
+          {emptyText ?? t.noRequests}
         </p>
       ) : (
         <ul

@@ -27,7 +27,7 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingEyebrow: "Corrected edition / source-aligned",
     readingTitle: "01 / Read this first",
     readingP1:
-      "TTTI is a speculative meme token, not a claim on a business or a promise of profit. It has no intrinsic value, backing, revenue rights or guaranteed market. Its market price, if any, can fall to zero. Do not buy with money you cannot afford to lose entirely.",
+      "TTTI is a speculative meme token, not a claim on a business or a promise of profit. It has no intrinsic value, revenue rights or guaranteed market. The only guarantee is personal: each minter can recover their own stake by returning TTTI to the contract under the redemption rules, with no common reserve and no promise of value. Its market price, if any, can fall to zero. Do not buy with money you cannot afford to lose entirely.",
     readingP2:
       "This edition explains what the current application source implements. It is not proof of a particular deployment, an independent audit, a live account balance or a guarantee that a purchase can be completed now.",
     englishOnlyNotice: "",
@@ -54,7 +54,7 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingEyebrow: "Édition corrigée / alignée sur le code source",
     readingTitle: "01 / À lire en premier",
     readingP1:
-      "TTTI est un jeton mème spéculatif, et non un droit sur une entreprise ni une promesse de profit. Il n'a aucune valeur intrinsèque, aucun adossement, aucun droit à des revenus ni aucun marché garanti. Son prix de marché, s'il en a un, peut tomber à zéro. N'achetez pas avec de l'argent que vous ne pouvez pas vous permettre de perdre entièrement.",
+      "TTTI est un jeton mème spéculatif, et non un droit sur une entreprise ni une promesse de profit. Il n'a aucune valeur intrinsèque, aucun droit à des revenus ni aucun marché garanti. La seule garantie est personnelle : chaque minteur peut récupérer sa propre mise en rendant du TTTI au contrat selon les règles de rachat, sans réserve commune ni promesse de valeur. Son prix de marché, s'il en a un, peut tomber à zéro. N'achetez pas avec de l'argent que vous ne pouvez pas vous permettre de perdre entièrement.",
     readingP2:
       "Cette édition explique ce que met en œuvre le code source actuel de l'application. Elle ne constitue ni la preuve d'un déploiement particulier, ni un audit indépendant, ni un solde de compte en temps réel, ni la garantie qu'un achat puisse être effectué maintenant.",
     englishOnlyNotice:
@@ -82,7 +82,7 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingEyebrow: "Edición corregida / alineada con el código fuente",
     readingTitle: "01 / Lea esto primero",
     readingP1:
-      "TTTI es un token meme especulativo, no un derecho sobre un negocio ni una promesa de beneficios. No tiene valor intrínseco, respaldo, derechos sobre ingresos ni un mercado garantizado. Su precio de mercado, si lo tiene, puede caer a cero. No compre con dinero que no pueda permitirse perder por completo.",
+      "TTTI es un token meme especulativo, no un derecho sobre un negocio ni una promesa de beneficios. No tiene valor intrínseco, derechos sobre ingresos ni un mercado garantizado. La única garantía es personal: cada minter puede recuperar su propia aportación devolviendo TTTI al contrato según las reglas de canje, sin reserva común ni promesa de valor. Su precio de mercado, si lo tiene, puede caer a cero. No compre con dinero que no pueda permitirse perder por completo.",
     readingP2:
       "Esta edición explica lo que implementa el código fuente actual de la aplicación. No constituye prueba de un despliegue concreto, ni una auditoría independiente, ni un saldo de cuenta en tiempo real, ni una garantía de que una compra pueda completarse ahora.",
     englishOnlyNotice:
@@ -109,7 +109,7 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingEyebrow: "修订版 / 与源代码一致",
     readingTitle: "01 / 请先阅读",
     readingP1:
-      "TTTI 是一种投机性的 meme 代币，不代表对任何企业的权利，也不构成任何盈利承诺。它没有内在价值、没有资产支持、没有收益权，也没有保证的市场。其市场价格（如有）可能跌至零。请勿使用您无法承受全部损失的资金购买。",
+      "TTTI 是一种投机性的 meme 代币，不代表对任何企业的权利，也不构成任何盈利承诺。它没有内在价值、没有收益权，也没有保证的市场。唯一的保障是个人性的：每位铸造者都可以按赎回规则将 TTTI 退还给合约，从而收回自己的本金，没有共同储备，也不承诺任何价值。其市场价格（如有）可能跌至零。请勿使用您无法承受全部损失的资金购买。",
     readingP2:
       "本版本说明当前应用源代码所实现的内容。它不能证明任何特定部署，不是独立审计，不代表实时账户余额，也不保证现在能够完成购买。",
     englishOnlyNotice: "以下第 02 至 07 节仅提供英文版本。",
@@ -136,7 +136,7 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingEyebrow: "Edição corrigida / alinhada ao código-fonte",
     readingTitle: "01 / Leia isto primeiro",
     readingP1:
-      "TTTI é um token meme especulativo, e não um direito sobre uma empresa nem uma promessa de lucro. Ele não tem valor intrínseco, lastro, direitos sobre receitas nem mercado garantido. Seu preço de mercado, se houver, pode cair a zero. Não compre com dinheiro que você não possa se dar ao luxo de perder por completo.",
+      "TTTI é um token meme especulativo, e não um direito sobre uma empresa nem uma promessa de lucro. Ele não tem valor intrínseco, direitos sobre receitas nem mercado garantido. A única garantia é pessoal: cada minter pode recuperar o próprio aporte devolvendo TTTI ao contrato conforme as regras de resgate, sem reserva comum nem promessa de valor. Seu preço de mercado, se houver, pode cair a zero. Não compre com dinheiro que você não possa se dar ao luxo de perder por completo.",
     readingP2:
       "Esta edição explica o que o código-fonte atual do aplicativo implementa. Ela não é prova de uma implantação específica, nem uma auditoria independente, nem um saldo de conta em tempo real, nem uma garantia de que uma compra possa ser concluída agora.",
     englishOnlyNotice:
@@ -163,7 +163,7 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingEyebrow: "수정판 / 소스 코드 기준",
     readingTitle: "01 / 먼저 읽어 주세요",
     readingP1:
-      "TTTI는 투기적인 밈 토큰이며, 어떤 사업에 대한 권리나 수익의 약속이 아닙니다. TTTI에는 내재 가치, 담보, 수익에 대한 권리, 보장된 시장이 없습니다. 시장 가격이 있더라도 0으로 떨어질 수 있습니다. 전부 잃을 경우 감당할 수 없는 돈으로는 구매하지 마십시오.",
+      "TTTI는 투기적인 밈 토큰이며, 어떤 사업에 대한 권리나 수익의 약속이 아닙니다. TTTI에는 내재 가치, 수익에 대한 권리, 보장된 시장이 없습니다. 유일한 보장은 개인별입니다. 각 민터는 상환 규칙에 따라 TTTI를 컨트랙트에 반환하여 자신의 지분을 회수할 수 있으며, 공동 준비금도 가치에 대한 약속도 없습니다. 시장 가격이 있더라도 0으로 떨어질 수 있습니다. 전부 잃을 경우 감당할 수 없는 돈으로는 구매하지 마십시오.",
     readingP2:
       "이 판은 현재 애플리케이션 소스 코드가 구현하는 내용을 설명합니다. 이는 특정 배포에 대한 증명, 독립적인 감사, 실시간 계정 잔액, 또는 지금 구매를 완료할 수 있다는 보장이 아닙니다.",
     englishOnlyNotice: "아래 02~07절은 영어로만 제공됩니다.",
@@ -189,7 +189,7 @@ export const WHITE_PAPER_TEXT = defineDict({
     readingEyebrow: "ਸੋਧਿਆ ਸੰਸਕਰਣ / ਸਰੋਤ ਕੋਡ ਨਾਲ ਮੇਲ ਖਾਂਦਾ",
     readingTitle: "01 / ਪਹਿਲਾਂ ਇਹ ਪੜ੍ਹੋ",
     readingP1:
-      "TTTI ਇੱਕ ਸੱਟੇਬਾਜ਼ੀ ਵਾਲਾ ਮੀਮ ਟੋਕਨ ਹੈ, ਨਾ ਕਿ ਕਿਸੇ ਕਾਰੋਬਾਰ ਉੱਤੇ ਦਾਅਵਾ ਜਾਂ ਮੁਨਾਫ਼ੇ ਦਾ ਵਾਅਦਾ। ਇਸਦਾ ਕੋਈ ਅੰਦਰੂਨੀ ਮੁੱਲ, ਸਮਰਥਨ, ਆਮਦਨ ਦੇ ਅਧਿਕਾਰ ਜਾਂ ਗਾਰੰਟੀਸ਼ੁਦਾ ਬਾਜ਼ਾਰ ਨਹੀਂ ਹੈ। ਇਸਦੀ ਬਾਜ਼ਾਰ ਕੀਮਤ, ਜੇ ਕੋਈ ਹੋਵੇ, ਜ਼ੀਰੋ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ। ਉਸ ਪੈਸੇ ਨਾਲ ਨਾ ਖਰੀਦੋ ਜਿਸਨੂੰ ਪੂਰੀ ਤਰ੍ਹਾਂ ਗੁਆਉਣਾ ਤੁਸੀਂ ਬਰਦਾਸ਼ਤ ਨਹੀਂ ਕਰ ਸਕਦੇ।",
+      "TTTI ਇੱਕ ਸੱਟੇਬਾਜ਼ੀ ਵਾਲਾ ਮੀਮ ਟੋਕਨ ਹੈ, ਨਾ ਕਿ ਕਿਸੇ ਕਾਰੋਬਾਰ ਉੱਤੇ ਦਾਅਵਾ ਜਾਂ ਮੁਨਾਫ਼ੇ ਦਾ ਵਾਅਦਾ। ਇਸਦਾ ਕੋਈ ਅੰਦਰੂਨੀ ਮੁੱਲ, ਆਮਦਨ ਦੇ ਅਧਿਕਾਰ ਜਾਂ ਗਾਰੰਟੀਸ਼ੁਦਾ ਬਾਜ਼ਾਰ ਨਹੀਂ ਹੈ। ਇੱਕੋ-ਇੱਕ ਗਾਰੰਟੀ ਨਿੱਜੀ ਹੈ: ਹਰ ਮਿੰਟਰ ਰਿਡੈਂਪਸ਼ਨ ਦੇ ਨਿਯਮਾਂ ਅਨੁਸਾਰ TTTI ਕੰਟਰੈਕਟ ਨੂੰ ਮੋੜ ਕੇ ਆਪਣੀ ਹੀ ਰਕਮ ਵਾਪਸ ਲੈ ਸਕਦਾ ਹੈ, ਬਿਨਾਂ ਸਾਂਝੇ ਰਿਜ਼ਰਵ ਅਤੇ ਬਿਨਾਂ ਮੁੱਲ ਦੇ ਵਾਅਦੇ ਦੇ। ਇਸਦੀ ਬਾਜ਼ਾਰ ਕੀਮਤ, ਜੇ ਕੋਈ ਹੋਵੇ, ਜ਼ੀਰੋ ਤੱਕ ਡਿੱਗ ਸਕਦੀ ਹੈ। ਉਸ ਪੈਸੇ ਨਾਲ ਨਾ ਖਰੀਦੋ ਜਿਸਨੂੰ ਪੂਰੀ ਤਰ੍ਹਾਂ ਗੁਆਉਣਾ ਤੁਸੀਂ ਬਰਦਾਸ਼ਤ ਨਹੀਂ ਕਰ ਸਕਦੇ।",
     readingP2:
       "ਇਹ ਸੰਸਕਰਣ ਦੱਸਦਾ ਹੈ ਕਿ ਐਪਲੀਕੇਸ਼ਨ ਦਾ ਮੌਜੂਦਾ ਸਰੋਤ ਕੋਡ ਕੀ ਲਾਗੂ ਕਰਦਾ ਹੈ। ਇਹ ਕਿਸੇ ਖਾਸ ਤੈਨਾਤੀ ਦਾ ਸਬੂਤ, ਸੁਤੰਤਰ ਆਡਿਟ, ਲਾਈਵ ਖਾਤਾ ਬਕਾਇਆ ਜਾਂ ਇਸ ਗੱਲ ਦੀ ਗਾਰੰਟੀ ਨਹੀਂ ਹੈ ਕਿ ਹੁਣੇ ਖਰੀਦ ਪੂਰੀ ਕੀਤੀ ਜਾ ਸਕਦੀ ਹੈ।",
     englishOnlyNotice: "ਹੇਠਾਂ ਦਿੱਤੇ ਭਾਗ 02 ਤੋਂ 07 ਸਿਰਫ਼ ਅੰਗਰੇਜ਼ੀ ਵਿੱਚ ਉਪਲਬਧ ਹਨ।",

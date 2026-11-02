@@ -4,6 +4,7 @@ import { DEX_TEXT } from "../../i18n/pages/dex";
 import { parseUnits } from "../../lib/token";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { DexFiat, type DexFiatSource } from "./DexFiat";
 
 /** Amount input accepting '.' or ',' as decimal separator. */
 export function DexAmountField({
@@ -13,6 +14,7 @@ export function DexAmountField({
   onChange,
   decimals,
   hint,
+  fiatToken,
   disabled,
   ocid,
 }: {
@@ -22,6 +24,8 @@ export function DexAmountField({
   onChange: (text: string) => void;
   decimals: number;
   hint?: string;
+  /** Token of the field: shows the discreet USD value of the typed amount. */
+  fiatToken?: DexFiatSource;
   disabled: boolean;
   ocid: string;
 }) {
@@ -57,6 +61,9 @@ export function DexAmountField({
         >
           {t.amountInvalid}
         </p>
+      )}
+      {fiatToken && parsed !== null && parsed > 0n && (
+        <DexFiat token={fiatToken} amount={parsed} ocid={`${ocid}.fiat`} />
       )}
       {hint && (
         <span className="text-xs text-muted-foreground tabular-nums">
