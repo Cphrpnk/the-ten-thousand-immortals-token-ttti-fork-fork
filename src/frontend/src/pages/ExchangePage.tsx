@@ -1,4 +1,4 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { useLocation } from "@tanstack/react-router";
 import {
   AlertCircle,
   ArrowRight,
@@ -8,9 +8,18 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { type MintArgs, PayToken, PriceSource } from "../backend";
+import {
+  type MintArgs,
+  PayToken,
+  PriceSource,
+  RemainderChoice,
+} from "../backend";
 import { FiatAmount } from "../components/FiatAmount";
 import { FlatTokenIcon } from "../components/FlatTokenIcon";
+import {
+  WalletTermsBlock,
+  WalletTermsOpenButton,
+} from "../components/acceptance";
 import {
   SlippageField,
   defaultSlippageText,
@@ -18,6 +27,10 @@ import {
 import { DEFAULT_SLIPPAGE_BPS } from "../components/dex/liquidityFormat";
 import { BtcPurchasePanel } from "../components/exchange/BtcPurchasePanel";
 import { DeliveryAddressCard } from "../components/exchange/DeliveryAddressCard";
+import {
+  ConvertNotice,
+  FinalMintButton,
+} from "../components/exchange/FinalMintButton";
 import { GetIcpFirstPanel } from "../components/exchange/GetIcpFirstPanel";
 import { MigrationNotice } from "../components/exchange/MigrationNotice";
 import {
@@ -25,6 +38,7 @@ import {
   type MintOutcomeSource,
 } from "../components/exchange/MintOutcomeAlerts";
 import { MintPaymentBreakdown } from "../components/exchange/MintPaymentBreakdown";
+import { MintPoolSelector } from "../components/exchange/MintPoolSelector";
 import {
   type OrderMode,
   OrderModeToggle,
@@ -39,17 +53,24 @@ import {
 import { WalletPercentBar } from "../components/exchange/WalletPercentBar";
 import { ZeroBalanceTransferOffer } from "../components/exchange/ZeroBalanceTransferOffer";
 import {
-  MINT_MIN_TTTI,
   MINT_QUOTE_DEBOUNCE_MS,
   describeMintError,
+  formatMinimumUsd,
   formatMintTtti,
+  isTermsRequiredError,
   maxPayWithTolerance,
   mintDeadline,
   mintInputKey,
   parseMintInput,
-  tttiFromUsdPayment,
-  usdFromTokenAmount,
 } from "../components/exchange/liquidityMint";
+import { MINT_RESERVE_TEXT } from "../components/exchange/mintReserveText";
+import {
+  type MintSourceKind,
+  dexTokenOf,
+  planHeldConversion,
+  useHeldBtcConversion,
+  useMintSources,
+} from "../components/exchange/mintSources";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -70,6 +91,12 @@ import {
 import { usePayTokenApprove } from "../hooks/useIcpApprove";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
+  useMintAmountForPayment,
+  useMintPoolSelection,
+  useMintPricePreview,
+} from "../hooks/useMintPreview";
+import { useNativeWalletSwap } from "../hooks/useNativeSwap";
+import {
   useWalletAcceptPurchaseAcknowledgements,
   useWalletApprove,
   useWalletMintLiquidity,
@@ -85,19 +112,21 @@ import {
   useGetSaleStatus,
   useLiquidityMintQuote,
   useMintLiquidity,
+  useMintPoolPreview,
   useMyBtcDeposits,
   useRefreshOnDepositProgress,
   useWalletBtcDeposits,
 } from "../hooks/useQueries";
+import { walletFailureMessage } from "../hooks/useSignerWallet";
 import { usePayTokenBalance } from "../hooks/useWallet";
-import { SITE_TEXT } from "../i18n/common/site";
 import { useDict, useLanguage } from "../i18n/core/dict";
 import {
   BUY_BTC_TEXT,
   BUY_LIQUIDITY_TEXT,
+  BUY_MINT_POOL_TEXT,
   BUY_PAGE_TEXT,
 } from "../i18n/pages/buy";
-import { PLAIN_RULES_TEXT } from "../i18n/pages/dex";
+import { DEX_TEXT, PLAIN_RULES_TEXT } from "../i18n/pages/dex";
 import { requiredTokenBalance } from "../lib/icpLedger";
 import {
   BTC_PAY_OPTION,
@@ -106,7 +135,6 @@ import {
   TTTI_DECIMALS,
   TTTI_SYMBOL,
   encodeAccountText,
-  feeLabelFor,
   formatPayAmount,
   tokenForWalletPercent,
   unitsInputValue,
@@ -128,20 +156,6 @@ const OUTLINE_BUTTON =
 const AMOUNT_INPUT =
   "h-14 border-gold bg-background/60 pr-20 font-mono text-xl tabular-nums transition-smooth focus-visible:border-gold-strong focus-visible:ring-2 focus-visible:ring-ring";
 
-/**
- * Six mandatory acknowledgements, asked once at the account's first purchase.
- * Their sentences live in BUY_PAGE_TEXT (i18n/pages/buy.ts).
- */
-const ACKNOWLEDGEMENTS = [
-  { id: "read-first", textKey: "ackReadFirst" },
-  { id: "no-rights", textKey: "ackNoRights" },
-  { id: "price-zero", textKey: "ackPriceZero" },
-  { id: "icp-creator", textKey: "ackIcpCreator" },
-  { id: "no-profit", textKey: "ackNoProfit" },
-  { id: "afford-loss", textKey: "ackAffordLoss" },
-] as const;
-type AcknowledgementId = (typeof ACKNOWLEDGEMENTS)[number]["id"];
-
 type ActiveWallet = ConnectedWalletKind | "internetIdentity";
 /** A refused input shown as an alert, in the active language. */
 type Validation = { title: string; message: string };
@@ -150,9 +164,11 @@ export function ExchangePage() {
   const t = useDict(BUY_PAGE_TEXT);
   const tl = useDict(BUY_LIQUIDITY_TEXT);
   const plain = useDict(PLAIN_RULES_TEXT);
+  const reserve = useDict(MINT_RESERVE_TEXT);
   const tb = useDict(BUY_BTC_TEXT);
+  const tpool = useDict(BUY_MINT_POOL_TEXT);
+  const tdex = useDict(DEX_TEXT);
   const { lang } = useLanguage();
-  const site = useDict(SITE_TEXT);
   const { identity } = useInternetIdentity();
   const connected = useConnectedWallet();
   const externalPrincipal = connected.principal;
@@ -201,9 +217,8 @@ export function ExchangePage() {
   const ackQuery = isExternal ? walletAckQuery : iiAckQuery;
   const acceptAck = isExternal ? walletAcceptAck : iiAcceptAck;
 
-  const [checked, setChecked] = useState<
-    Partial<Record<AcknowledgementId, boolean>>
-  >({});
+  // The single checkbox of the wallet terms block.
+  const [termsChecked, setTermsChecked] = useState(false);
   const [amount, setAmount] = useState("");
   const [tttiAmount, setTttiAmount] = useState("");
   const [mode, setMode] = useState<OrderMode>("ttti");
@@ -214,11 +229,27 @@ export function ExchangePage() {
   // A chosen wallet percentage drives the TTTI-T amount from the live balance.
   const [percent, setPercent] = useState<number | null>(null);
   const [step, setStep] = useState<
-    "idle" | "accepting" | "approving" | "buying"
+    "idle" | "accepting" | "approving" | "buying" | "moving"
   >("idle");
   const [outcomeSource, setOutcome] = useState<MintOutcomeSource | null>(null);
+  // The last mint came from the final button: its result shows under that button.
+  const [outcomeFromFinal, setOutcomeFromFinal] = useState(false);
+  const [finalNotice, setFinalNotice] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+  // One-click mint from the DEX balance: withdrawal first, then the wallet mint.
+  const [dexPhase, setDexPhase] = useState<"withdraw" | "mint" | null>(null);
+  const dexChainRunning = useRef(false);
+  const mintSources = useMintSources(token);
+  const heldConversion = useHeldBtcConversion();
+  const nativeSwap = useNativeWalletSwap(activePrincipal);
   const [now, setNow] = useState(() => Date.now());
   const [mintInfoOpen, setMintInfoOpen] = useState(false);
+  // Remainder choice: A keeps it in the pool position, B keeps it in the wallet.
+  const [remainderChoice, setRemainderChoice] = useState<RemainderChoice>(
+    RemainderChoice.pool,
+  );
   const busy = step !== "idle";
 
   // Re-evaluate rate expiry without waiting for the next status poll.
@@ -257,6 +288,10 @@ export function ExchangePage() {
   // BTC deposits: any signed-in wallet, once the ckBTC treasury is configured.
   const btcAvailable = !!wallet && tokenAvailable(PayToken.ckbtc);
   const btcActive = btcSelected && btcAvailable;
+  // Pool of the mint: the backend recommendation, preselected on arrival and
+  // on every pay token change; a manual pick holds until the token changes.
+  const poolSelection = useMintPoolSelection(token, selectedAvailable);
+  const poolId = poolSelection.selectedPoolId;
 
   // ICP stays selected on arrival; a BTC purchase address with deposits is
   // signalled by a status line (in progress or waiting) that opens its tracking.
@@ -305,22 +340,48 @@ export function ExchangePage() {
     rate.source !== PriceSource.none &&
     !rateExpired;
   const rateLine = priceAvailable ? formatTokenRateLine(token, rate) : "";
-  const feeBps = tokenStatus?.feeBps ?? descriptor.feeBps;
-  const feeLabel = feeLabelFor(feeBps);
 
   const closed = !!status?.salesPaused;
   const balance = balanceQuery.data;
+  // DEX balance that one Mint click withdraws to the wallet (ledger fee kept
+  // out); it counts toward the amount cap and the percentage bar.
+  const dexHeld = mintSources.dex ?? 0n;
+  const dexUsable = dexHeld > descriptor.fee ? dexHeld - descriptor.fee : 0n;
+  const spendableBalance =
+    balance !== undefined ? balance + dexUsable : undefined;
+  // Anything held for this token (DEX, or ckBTC kept by the contract) keeps
+  // the amount form available.
+  const heldElsewhere = dexHeld > 0n || mintSources.held > 0n;
 
-  // A wallet percentage turns the spendable token amount into TTTI-T.
-  const percentTtti =
-    percent !== null && balance !== undefined && priceAvailable
-      ? tttiFromUsdPayment(
-          usdFromTokenAmount(
-            tokenForWalletPercent(balance, token, percent),
-            decimals,
-            price,
-          ),
-        )
+  // Every mint figure on this screen comes from the backend queries.
+  const mintPreview = useMintPricePreview().data;
+  const minimumTtti = mintPreview?.minimumTtti;
+
+  // A wallet percentage turns the spendable token amount into TTTI-T; the
+  // backend answers with the quantity that amount pays for.
+  const percentPay =
+    percent !== null && spendableBalance !== undefined
+      ? tokenForWalletPercent(spendableBalance, token, percent)
+      : null;
+  const percentQuery = useMintAmountForPayment(
+    token,
+    percentPay,
+    remainderChoice,
+    poolId,
+  );
+  const percentResult =
+    percentQuery.data?.__kind__ === "ok" ? percentQuery.data.ok : null;
+  const percentTtti = percentResult?.tttiAmount ?? null;
+  // TTTI-T that one whole unit of the selected token pays for.
+  const oneTokenQuery = useMintAmountForPayment(
+    token,
+    10n ** BigInt(decimals),
+    remainderChoice,
+    poolId,
+  );
+  const oneTokenBuys =
+    oneTokenQuery.data?.__kind__ === "ok"
+      ? oneTokenQuery.data.ok.tttiAmount
       : null;
   const typedText =
     mode === "usd"
@@ -328,7 +389,7 @@ export function ExchangePage() {
       : percentTtti !== null
         ? unitsInputValue(percentTtti, TTTI_DECIMALS)
         : tttiAmount;
-  const mintInput = parseMintInput(mode, typedText);
+  const mintInput = parseMintInput(mode, typedText, minimumTtti);
   const inputKey = mintInputKey(token, mintInput);
 
   // The preview is requested once typing pauses; both modes share one quote.
@@ -341,16 +402,30 @@ export function ExchangePage() {
     return () => window.clearTimeout(timer);
   }, [inputKey]);
   const settled = settledKey === inputKey;
+  const settledAmount =
+    mintInput.kind === "ready" && settled ? mintInput.amount : null;
   const quoteQuery = useLiquidityMintQuote(
     token,
-    mintInput.kind === "ready" && settled ? mintInput.amount : null,
+    settledAmount,
+    remainderChoice,
+    poolId,
   );
+  const poolPreviewQuery = useMintPoolPreview(
+    token,
+    settledAmount,
+    remainderChoice,
+    poolId,
+  );
+  const poolPreviewData =
+    settled && mintInput.kind === "ready" ? poolPreviewQuery.data : undefined;
+  const poolPreview =
+    poolPreviewData?.__kind__ === "ok" ? poolPreviewData.ok : null;
   const quoteData =
     settled && mintInput.kind === "ready" ? quoteQuery.data : undefined;
   const previewQuote = quoteData?.__kind__ === "ok" ? quoteData.ok : null;
   const previewError =
     quoteData?.__kind__ === "err"
-      ? describeMintError(quoteData.err, token, "preview", lang)
+      ? describeMintError(quoteData.err, token, "preview", lang, mintPreview)
       : mintInput.kind === "ready" && settled && quoteQuery.isError
         ? { title: tl.previewFailedTitle, message: t.purchaseNotSubmitted }
         : null;
@@ -358,7 +433,7 @@ export function ExchangePage() {
     mintInput.kind === "ready" &&
     (!settled || quoteQuery.isFetching) &&
     previewQuote === null;
-  const orderPay = previewQuote?.payAmount ?? 0n;
+  const orderPay = previewQuote?.totalPayAmount ?? 0n;
   const hasAmount = previewQuote !== null;
   const required = hasAmount ? requiredTokenBalance(token, orderPay) : 0n;
 
@@ -372,7 +447,10 @@ export function ExchangePage() {
   } else if (typedText.trim() !== "" && mintInput.kind === "belowMinimum") {
     validation = {
       title: t.belowMinimumTitle,
-      message: tl.errBelowMinimum(formatMintTtti(MINT_MIN_TTTI)),
+      message: tl.errBelowMinimum(
+        minimumTtti !== undefined ? formatMintTtti(minimumTtti) : "—",
+        formatMinimumUsd(mintPreview),
+      ),
     };
   } else if (hasAmount && balance !== undefined && balance < required) {
     insufficient = true;
@@ -385,11 +463,23 @@ export function ExchangePage() {
     };
   }
 
-  const showIcpPanel = insufficient && token === PayToken.icp;
-  const zeroIcp = token === PayToken.icp && balance === 0n && !busy;
+  // A short wallet balance is not a problem when the DEX balance covers it.
+  const dexCovers =
+    insufficient &&
+    spendableBalance !== undefined &&
+    spendableBalance >= required;
+  const showIcpPanel = insufficient && !dexCovers && token === PayToken.icp;
+  // The transfer offer shows only when neither the wallet nor the DEX nor the
+  // contract holds this token.
+  const zeroIcp =
+    token === PayToken.icp && balance === 0n && !busy && !heldElsewhere;
   // ckBTC, ckUSDC, ckUSDT: a loaded zero balance shows the transfer offer.
   const zeroToken =
-    token !== PayToken.icp && balance === 0n && !busy && selectedAvailable;
+    token !== PayToken.icp &&
+    balance === 0n &&
+    !busy &&
+    selectedAvailable &&
+    !heldElsewhere;
   const walletAddress = activePrincipal
     ? encodeAccountText({ owner: activePrincipal })
     : "";
@@ -397,6 +487,7 @@ export function ExchangePage() {
     !!wallet &&
     !closed &&
     selectedAvailable &&
+    poolId !== null &&
     previewQuote !== null &&
     slippageBps !== null &&
     !validation &&
@@ -404,11 +495,22 @@ export function ExchangePage() {
   // The acknowledgement status is read for the active wallet's principal.
   const ackKnown = !!wallet && ackQuery.data !== undefined;
   const needsAck = !!wallet && ackQuery.data?.accepted === false;
-  const allChecked = ACKNOWLEDGEMENTS.every((item) => checked[item.id]);
-  const canSubmit = canPurchase && ackKnown && (!needsAck || allChecked);
+  const canSubmit = canPurchase && ackKnown && (!needsAck || termsChecked);
+  // Same checks without the wallet balance (a DEX balance is withdrawn first).
+  const canSubmitAfterWithdraw =
+    !!wallet &&
+    !closed &&
+    selectedAvailable &&
+    poolId !== null &&
+    previewQuote !== null &&
+    slippageBps !== null &&
+    (!validation || insufficient) &&
+    ackKnown &&
+    (!needsAck || termsChecked);
 
   const resetAttempt = () => {
     setOutcome(null);
+    setFinalNotice(null);
   };
 
   const handleTokenChange = (next: PayToken) => {
@@ -482,15 +584,33 @@ export function ExchangePage() {
     resetAttempt();
   };
 
-  const handleMint = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!wallet || !canSubmit || !previewQuote || slippageBps === null) return;
+  /**
+   * Mints the amount shown in the preview. `walletBalance` is the freshly read
+   * wallet balance after a DEX withdrawal; it replaces the cached balance.
+   * Resolves true only when the mint was recorded.
+   */
+  const handleMint = async (
+    event?: FormEvent,
+    fromFinal = false,
+    walletBalance?: bigint,
+  ): Promise<boolean> => {
+    event?.preventDefault();
+    const allowed =
+      walletBalance === undefined ? canSubmit : canSubmitAfterWithdraw;
+    if (!wallet || !allowed || !previewQuote || slippageBps === null) {
+      return false;
+    }
     const mintToken = token;
+    const targetPoolId = poolId;
+    if (targetPoolId === null) return false;
     const frozen = previewQuote;
     const tolerance = slippageBps;
+    const payBalance = walletBalance ?? balance;
     // OISY/NFID: open the wallet window now, from the click, for the calls below.
     const releaseSession = isExternal ? connected.beginSession() : () => {};
     setOutcome(null);
+    setFinalNotice(null);
+    setOutcomeFromFinal(fromFinal);
     try {
       if (needsAck) {
         setStep("accepting");
@@ -500,13 +620,13 @@ export function ExchangePage() {
       const approval = isExternal
         ? await walletApprove.mutateAsync({
             token: mintToken,
-            amount: frozen.payAmount,
-            balance,
+            amount: frozen.totalPayAmount,
+            balance: payBalance,
           })
         : await approve.mutateAsync({
             token: mintToken,
-            amount: frozen.payAmount,
-            balance,
+            amount: frozen.totalPayAmount,
+            balance: payBalance,
             wallet: "internetIdentity",
           });
       if (!approval.ok) {
@@ -515,7 +635,7 @@ export function ExchangePage() {
           token: mintToken,
           message: approval.message,
         });
-        return;
+        return false;
       }
       setStep("buying");
       const args: MintArgs = {
@@ -524,9 +644,11 @@ export function ExchangePage() {
           __kind__: "baseUnits",
           baseUnits: frozen.tttiAmount,
         },
-        maxPayAmount: maxPayWithTolerance(frozen.payAmount, tolerance),
+        maxPayAmount: maxPayWithTolerance(frozen.totalPayAmount, tolerance),
         slippageBps: tolerance,
         deadline: mintDeadline(),
+        choice: remainderChoice,
+        targetPoolId,
       };
       const result = isExternal
         ? await walletMintLiquidity.mutateAsync(args)
@@ -536,14 +658,18 @@ export function ExchangePage() {
         setAmount("");
         setTttiAmount("");
         setPercent(null);
-      } else {
-        setOutcome({ kind: "refused", error: result.err, token: mintToken });
+        return true;
       }
+      setOutcome({ kind: "refused", error: result.err, token: mintToken });
+      // A refused pool: read the list again so the user picks from it.
+      if (result.err.__kind__ === "invalidTargetPool") poolSelection.retry();
+      return false;
     } catch (error) {
       setOutcome({
         kind: "thrown",
         message: error instanceof Error && error.message ? error.message : null,
       });
+      return false;
     } finally {
       releaseSession();
       setStep("idle");
@@ -551,20 +677,180 @@ export function ExchangePage() {
     }
   };
 
+  // Why the wallet mint cannot start yet, in words (the form shows the rest).
+  // With `ignoreBalance`, a short wallet balance is not a reason (the DEX
+  // balance is withdrawn first).
+  const finalBlockReason = (ignoreBalance = false): string | null => {
+    if (ignoreBalance ? canSubmitAfterWithdraw : canSubmit) return null;
+    if (validation && !(ignoreBalance && insufficient)) {
+      return validation.message;
+    }
+    if (previewQuote === null) return t.finalEnterAmount;
+    if (needsAck && !termsChecked) return t.ackTickAll;
+    if (!ackKnown) return t.finalChecking;
+    return t.finalEnterAmount;
+  };
+
+  // DEX balance: one action withdraws it to the wallet, then mints the
+  // previewed amount from the wallet. Nothing is minted when the withdrawal
+  // fails; after a failed mint the funds stay in the wallet and the next click
+  // mints from the wallet.
+  const mintFromDex = async () => {
+    if (dexChainRunning.current || busy) return;
+    const dexAmount = mintSources.dex ?? 0n;
+    if (dexAmount <= 0n) return;
+    const reason = finalBlockReason(true);
+    if (reason !== null) {
+      setFinalNotice({ ok: false, text: reason });
+      return;
+    }
+    const available =
+      (balance ?? 0n) +
+      (dexAmount > descriptor.fee ? dexAmount - descriptor.fee : 0n);
+    if (available < required) {
+      setFinalNotice({
+        ok: false,
+        text: t.finalDexTooLow(
+          formatPayAmount(available, token),
+          formatPayAmount(required, token),
+        ),
+      });
+      return;
+    }
+    dexChainRunning.current = true;
+    setOutcome(null);
+    setFinalNotice(null);
+    setOutcomeFromFinal(true);
+    setDexPhase("withdraw");
+    setStep("moving");
+    try {
+      let withdrawal: { kind: "done" } | { kind: "failed"; detail: string };
+      try {
+        withdrawal = await nativeSwap.withdrawDex(dexTokenOf(token), dexAmount);
+      } catch (failure) {
+        withdrawal = {
+          kind: "failed",
+          detail:
+            walletFailureMessage(failure) ??
+            (failure instanceof Error ? failure.message : ""),
+        };
+      }
+      if (withdrawal.kind === "failed") {
+        setFinalNotice({
+          ok: false,
+          text: t.finalDexFailed(withdrawal.detail),
+        });
+        return;
+      }
+      // Fresh wallet balance and preview before the mint.
+      const [refreshed] = await Promise.all([
+        refetchBalance(),
+        quoteQuery.refetch(),
+        poolPreviewQuery.refetch(),
+      ]);
+      const fresh = refreshed.data ?? available;
+      if (fresh < required) {
+        setFinalNotice({
+          ok: false,
+          text: t.finalDexShort(
+            formatPayAmount(fresh, token),
+            formatPayAmount(required, token),
+          ),
+        });
+        return;
+      }
+      setDexPhase("mint");
+      const minted = await handleMint(undefined, true, fresh);
+      if (!minted) {
+        setFinalNotice({
+          ok: false,
+          text: t.finalDexMintKept(formatPayAmount(fresh, token)),
+        });
+      }
+    } finally {
+      dexChainRunning.current = false;
+      setDexPhase(null);
+      setStep("idle");
+      void refetchBalance();
+    }
+  };
+
+  const handleFinalMint = (source: MintSourceKind) => {
+    setFinalNotice(null);
+    if (source === "contract") {
+      setOutcome(null);
+      const plan = planHeldConversion({
+        held: mintSources.held,
+        poolId,
+        choice: remainderChoice,
+        slippageBps,
+      });
+      if (plan.kind !== "ready") {
+        heldConversion.reset();
+        setFinalNotice({
+          ok: false,
+          text: plan.kind === "noPool" ? tpool.noPool : tdex.slippageInvalid,
+        });
+        return;
+      }
+      heldConversion.convert(mintSources.heldIndexes, plan.params);
+      return;
+    }
+    if (source === "dex") {
+      void mintFromDex();
+      return;
+    }
+    heldConversion.reset();
+    const reason = finalBlockReason();
+    if (reason !== null) {
+      setFinalNotice({ ok: false, text: reason });
+      return;
+    }
+    void handleMint(undefined, true);
+  };
+
+  const finalBusyLabel =
+    heldConversion.state.kind === "working"
+      ? t.finalConverting
+      : dexPhase === "withdraw"
+        ? t.finalDexWithdrawing
+        : dexPhase === "mint"
+          ? t.finalDexMinting
+          : step === "moving"
+            ? t.finalMoving
+            : busy
+              ? t.finalMinting
+              : null;
+
   const buyLabel =
     step === "accepting"
       ? t.recordingAcks
-      : step === "approving"
-        ? t.approving(symbol)
-        : step === "buying"
-          ? t.buying
-          : status?.salesPaused
-            ? t.salesPaused
-            : !selectedAvailable
-              ? t.tokenUnavailable(symbol)
-              : t.buyWith(symbol);
+      : step === "moving"
+        ? t.finalMoving
+        : step === "approving"
+          ? t.approving(symbol)
+          : step === "buying"
+            ? t.buying
+            : status?.salesPaused
+              ? t.salesPaused
+              : !selectedAvailable
+                ? t.tokenUnavailable(symbol)
+                : t.buyWith(symbol);
 
-  const outcomeAlerts = <MintOutcomeAlerts source={outcomeSource} />;
+  // A mint refused for a missing acceptance offers the acceptance dialog.
+  const termsRefused =
+    outcomeSource?.kind === "refused" &&
+    isTermsRequiredError(outcomeSource.error);
+  const outcomeAlerts = (
+    <>
+      <MintOutcomeAlerts source={outcomeSource} />
+      {termsRefused && (
+        <WalletTermsOpenButton ocid="exchange.terms.open_button" />
+      )}
+    </>
+  );
+
+  const formOutcomeAlerts = outcomeFromFinal ? null : outcomeAlerts;
 
   const unitSuffix = (text: string) => (
     <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-mono text-sm font-semibold text-muted-foreground">
@@ -607,53 +893,12 @@ export function ExchangePage() {
       )}
 
       {needsAck && (
-        <fieldset
-          className="space-y-1 rounded-lg border border-border bg-background/60 px-3 py-2"
-          data-ocid="exchange.acknowledgements.panel"
-        >
-          <legend className="px-1 text-xs text-muted-foreground">
-            {t.ackLegend}
-          </legend>
-          {ACKNOWLEDGEMENTS.map((item, index) => (
-            <label
-              key={item.id}
-              htmlFor={`exchange-ack-${item.id}`}
-              className="flex min-h-11 cursor-pointer items-start gap-3 py-1 text-sm"
-            >
-              <input
-                id={`exchange-ack-${item.id}`}
-                type="checkbox"
-                checked={!!checked[item.id]}
-                onChange={(event) => {
-                  const value = event.target.checked;
-                  setChecked((prev) => ({ ...prev, [item.id]: value }));
-                }}
-                disabled={busy || closed}
-                className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed"
-                data-ocid={`exchange.acknowledgement.checkbox.${index + 1}`}
-              />
-              <span className="min-w-0 text-muted-foreground">
-                {t[item.textKey]}
-              </span>
-            </label>
-          ))}
-          {site.conflictNotice && (
-            <p
-              className="px-1 text-xs text-muted-foreground"
-              data-ocid="exchange.acknowledgements.conflict_notice"
-            >
-              {site.conflictNotice}
-            </p>
-          )}
-          <Link
-            to="/white-paper"
-            hash="reading-notice"
-            className="inline-block px-1 pb-1 text-xs font-medium text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            data-ocid="exchange.white_paper.link"
-          >
-            {t.ackWhitePaperLink}
-          </Link>
-        </fieldset>
+        <WalletTermsBlock
+          checked={termsChecked}
+          onCheckedChange={setTermsChecked}
+          disabled={busy || closed}
+          ocidPrefix="exchange.acknowledgements"
+        />
       )}
     </>
   );
@@ -774,10 +1019,14 @@ export function ExchangePage() {
             acknowledgements={acknowledgementBlock}
             ackKnown={ackKnown}
             needsAck={needsAck}
-            allChecked={allChecked}
+            allChecked={termsChecked}
             onAccept={() => acceptAck.mutateAsync()}
             closed={closed}
             closedLabel={status?.complete ? t.saleComplete : t.salesPaused}
+            onUseTokenForm={() => handleTokenChange(PayToken.ckbtc)}
+            poolId={poolId}
+            choice={remainderChoice}
+            slippageBps={slippageBps}
           />
         ) : (
           <>
@@ -792,7 +1041,7 @@ export function ExchangePage() {
               <>
                 <ZeroBalanceTransferOffer symbol={symbol} />
                 <GetIcpFirstPanel address={walletAddress} balanceE8s={0n} />
-                {outcomeAlerts}
+                {formOutcomeAlerts}
               </>
             ) : zeroToken && !closed ? (
               <>
@@ -800,7 +1049,7 @@ export function ExchangePage() {
                   symbol={symbol}
                   address={walletAddress}
                 />
-                {outcomeAlerts}
+                {formOutcomeAlerts}
               </>
             ) : (
               <form onSubmit={handleMint} className="space-y-4" noValidate>
@@ -850,27 +1099,30 @@ export function ExchangePage() {
                   </p>
                 </div>
 
+                <MintPoolSelector
+                  selection={poolSelection}
+                  disabled={closed || busy}
+                />
+
                 <MintPaymentBreakdown
                   token={token}
                   quote={previewQuote}
                   loading={previewLoading}
                   error={previewError}
+                  poolPreview={poolPreview}
+                  choice={remainderChoice}
+                  onChoiceChange={setRemainderChoice}
+                  choiceDisabled={busy}
                 />
 
                 <WalletPercentBar
                   token={token}
-                  balance={balance}
+                  balance={spendableBalance}
                   walletConnected={!!wallet}
                   percent={percent}
                   currentAmount={orderPay}
                   disabled={closed || busy}
-                  quote={(pay) =>
-                    priceAvailable
-                      ? tttiFromUsdPayment(
-                          usdFromTokenAmount(pay, decimals, price),
-                        )
-                      : null
-                  }
+                  quote={(pay) => (pay === percentPay ? percentTtti : null)}
                   onSelect={handlePercent}
                 />
 
@@ -893,7 +1145,7 @@ export function ExchangePage() {
                     <span className="font-mono text-foreground">
                       {formatPayAmount(
                         maxPayWithTolerance(
-                          previewQuote.payAmount,
+                          previewQuote.totalPayAmount,
                           slippageBps,
                         ),
                         token,
@@ -902,7 +1154,7 @@ export function ExchangePage() {
                     <FiatAmount
                       token={token}
                       amount={maxPayWithTolerance(
-                        previewQuote.payAmount,
+                        previewQuote.totalPayAmount,
                         slippageBps,
                       )}
                       ocid="exchange.max_pay.fiat"
@@ -911,7 +1163,7 @@ export function ExchangePage() {
                   </p>
                 )}
 
-                {validation && !showIcpPanel && (
+                {validation && !showIcpPanel && !dexCovers && (
                   <Alert
                     variant="destructive"
                     data-ocid="exchange.validation_error"
@@ -932,11 +1184,11 @@ export function ExchangePage() {
                   />
                 )}
 
-                {outcomeAlerts}
+                {formOutcomeAlerts}
 
                 {acknowledgementBlock}
 
-                {canPurchase && needsAck && !allChecked && (
+                {canPurchase && needsAck && !termsChecked && (
                   <p
                     className="text-xs text-muted-foreground"
                     data-ocid="exchange.acknowledgements.hint"
@@ -1026,14 +1278,18 @@ export function ExchangePage() {
               >
                 <p>{t.mintInfoBody1}</p>
                 <p>{t.mintInfoBody2}</p>
+                <p data-ocid="exchange.mint_cost.statement">{tl.paymentRule}</p>
+                <p data-ocid="exchange.mint_locked.statement">
+                  {tl.lockedRule}
+                </p>
                 <p>{plain.chance}</p>
                 <p>
                   <span className="font-medium">{plain.zapTitle}. </span>
                   {plain.zap}
                 </p>
                 <p>
-                  <span className="font-medium">{plain.guaranteeTitle}. </span>
-                  {plain.guarantee}
+                  <span className="font-medium">{reserve.ruleTitle}. </span>
+                  {reserve.rule}
                 </p>
               </div>
             )}
@@ -1055,24 +1311,57 @@ export function ExchangePage() {
             rateLine={rateLine}
             priceAvailable={priceAvailable}
             isLoading={statusQuery.isLoading}
-            oneTokenBuys={
-              priceAvailable
-                ? tttiFromUsdPayment(
-                    usdFromTokenAmount(
-                      10n ** BigInt(decimals),
-                      decimals,
-                      price,
-                    ),
-                  )
-                : null
+            oneTokenBuys={oneTokenBuys}
+            minimumText={
+              minimumTtti !== undefined ? formatMintTtti(minimumTtti) : "—"
             }
-            feeLabel={feeLabel}
-            minimumText={formatMintTtti(MINT_MIN_TTTI)}
             className={CARD_CLASS}
           />
           <PoolCapRatio className={CARD_CLASS} />
         </aside>
       </div>
+
+      {!btcActive && wallet && (
+        <div className={cn(CARD_CLASS, "p-4 md:p-6")}>
+          <FinalMintButton
+            token={token}
+            symbol={symbol}
+            sources={mintSources}
+            busyLabel={finalBusyLabel}
+            blocked={closed || !selectedAvailable}
+            preview={
+              previewQuote
+                ? t.finalPreview(
+                    `${formatMintTtti(previewQuote.tttiAmount)} ${TTTI_SYMBOL}`,
+                    formatPayAmount(previewQuote.totalPayAmount, token),
+                  )
+                : undefined
+            }
+            onMint={handleFinalMint}
+            notice={
+              <>
+                {finalNotice && (
+                  <p
+                    className={cn(
+                      "px-1 text-sm",
+                      finalNotice.ok
+                        ? "text-foreground"
+                        : "text-muted-foreground",
+                    )}
+                    role={finalNotice.ok ? "status" : "alert"}
+                    data-ocid="exchange.final_mint.notice"
+                  >
+                    {finalNotice.text}
+                  </p>
+                )}
+                {outcomeFromFinal && outcomeAlerts}
+                <ConvertNotice state={heldConversion.state} />
+              </>
+            }
+            ocidPrefix="exchange.final_mint"
+          />
+        </div>
+      )}
     </div>
   );
 }

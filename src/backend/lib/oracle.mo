@@ -18,6 +18,8 @@ module {
   public type TokenPrice = Oracle.TokenPrice;
   public type TokenPriceResult = Oracle.TokenPriceResult;
   public type PayToken = Oracle.PayToken;
+  public type SecondSourceObservation = Oracle.SecondSourceObservation;
+  public type SecondRateStore = Oracle.SecondRateStore;
 
   // Stable rate state. fetchedAt / validUntil are 0 while no rate exists.
   public type OracleStore = {
@@ -75,9 +77,29 @@ module {
     };
   };
 
+  // PTM-10d: the observation of the other feed stored with `token`'s rate.
+  public func secondFor(seconds : SecondRateStore, token : PayToken) : ?SecondSourceObservation {
+    switch (token) {
+      case (#icp) seconds.icp;
+      case (#ckbtc) seconds.ckbtc;
+      case (#ckusdc) seconds.ckusdc;
+      case (#ckusdt) seconds.ckusdt;
+    };
+  };
+
+  func setSecond(seconds : SecondRateStore, token : PayToken, value : ?SecondSourceObservation) {
+    switch (token) {
+      case (#icp) { seconds.icp := value };
+      case (#ckbtc) { seconds.ckbtc := value };
+      case (#ckusdc) { seconds.ckusdc := value };
+      case (#ckusdt) { seconds.ckusdt := value };
+    };
+  };
+
   // Public view of one token's rate at `now`. Never performs an outcall.
-  public func getTokenPrice(store : OracleStore, token : PayToken, now : Timestamp) : TokenPrice {
+  public func getTokenPrice(store : OracleStore, seconds : SecondRateStore, token : PayToken, now : Timestamp) : TokenPrice {
     {
+      secondSource = secondFor(seconds, token);
       token;
       pair = pairOf(token);
       usdE8 = store.usdE8;
@@ -91,12 +113,12 @@ module {
   };
 
   // Every pay token's rate (#icp, #ckbtc, #ckusdc, #ckusdt in that order).
-  public func allPrices(oracle : OracleStore, rates : TokenRateStore, now : Timestamp) : [TokenPrice] {
+  public func allPrices(oracle : OracleStore, rates : TokenRateStore, seconds : SecondRateStore, now : Timestamp) : [TokenPrice] {
     [
-      getTokenPrice(oracle, #icp, now),
-      getTokenPrice(rates.ckbtc, #ckbtc, now),
-      getTokenPrice(rates.ckusdc, #ckusdc, now),
-      getTokenPrice(rates.ckusdt, #ckusdt, now),
+      getTokenPrice(oracle, seconds, #icp, now),
+      getTokenPrice(rates.ckbtc, seconds, #ckbtc, now),
+      getTokenPrice(rates.ckusdc, seconds, #ckusdc, now),
+      getTokenPrice(rates.ckusdt, seconds, #ckusdt, now),
     ];
   };
 
@@ -113,20 +135,33 @@ module {
     };
   };
 
-  // Coinbase then CoinGecko for `token`; same storage and error rules as
-  // fetchAndStore. Never traps.
-  public func fetchAndStoreToken(store : OracleStore, token : PayToken, transform : OutCall.Transform) : async PriceResult {
-    let coinbaseError = switch (await fetchPrice(coinbaseUrl(token), transform)) {
-      case (#ok(usdE8)) { return #Ok(storeRate(store, usdE8, #coinbase)) };
-      case (#err(message)) {
-        store.lastError := ?{ message = "Coinbase: " # message; at = Time.now() };
-        message;
+  // PTM-10d: Coinbase AND CoinGecko are fetched each time. The main rate is the
+  // first feed that answered (Coinbase first); the other feed's value is
+  // stored as the second-source observation (null when that feed failed, so a
+  // stale observation never stands in for it). Never traps.
+  public func fetchAndStoreToken(store : OracleStore, seconds : SecondRateStore, token : PayToken, transform : OutCall.Transform) : async PriceResult {
+    let coinbase = await fetchPrice(coinbaseUrl(token), transform);
+    let coingecko = await fetchPrice(coingeckoUrl(token), transform);
+    switch (coinbase, coingecko) {
+      case (#ok(a), #ok(b)) {
+        let stored = storeRate(store, a, #coinbase);
+        setSecond(seconds, token, ?{ source = #coingecko; usdE8 = b; fetchedAt = store.fetchedAt });
+        #Ok(stored);
       };
-    };
-    switch (await fetchPrice(coingeckoUrl(token), transform)) {
-      case (#ok(usdE8)) { #Ok(storeRate(store, usdE8, #coingecko)) };
-      case (#err(message)) {
-        let combined = "Coinbase: " # coinbaseError # "; CoinGecko: " # message;
+      case (#ok(a), #err(message)) {
+        let stored = storeRate(store, a, #coinbase);
+        setSecond(seconds, token, null);
+        store.lastError := ?{ message = "CoinGecko: " # message; at = Time.now() };
+        #Ok(stored);
+      };
+      case (#err(message), #ok(b)) {
+        store.lastError := ?{ message = "Coinbase: " # message; at = Time.now() };
+        let stored = storeRate(store, b, #coingecko);
+        setSecond(seconds, token, null);
+        #Ok(stored);
+      };
+      case (#err(a), #err(b)) {
+        let combined = "Coinbase: " # a # "; CoinGecko: " # b;
         store.lastError := ?{ message = combined; at = Time.now() };
         #Err(combined);
       };
@@ -134,21 +169,27 @@ module {
   };
 
   // Admin refresh of one token: refused (no outcall) while its rate is valid.
-  public func adminRefreshToken(oracle : OracleStore, rates : TokenRateStore, token : PayToken, transform : OutCall.Transform) : async TokenPriceResult {
+  public func adminRefreshToken(oracle : OracleStore, rates : TokenRateStore, seconds : SecondRateStore, token : PayToken, transform : OutCall.Transform) : async TokenPriceResult {
     let store = storeFor(oracle, rates, token);
     let now = Time.now();
     if (store.fetchedAt > 0 and store.usdE8 > 0 and now <= store.validUntil) {
       return #Err("Refresh refused: the current " # pairOf(token) # " rate is still valid until " # store.validUntil.toText() # " (nanoseconds since the Unix epoch); no fetch was made");
     };
-    switch (await fetchAndStoreToken(store, token, transform)) {
-      case (#Ok(_)) { #Ok(getTokenPrice(store, token, Time.now())) };
+    switch (await fetchAndStoreToken(store, seconds, token, transform)) {
+      case (#Ok(_)) { #Ok(getTokenPrice(store, seconds, token, Time.now())) };
       case (#Err(message)) { #Err(message) };
     };
   };
 
   // True when no rate exists or less than 5 minutes of validity remain.
-  func needsFetch(store : OracleStore, now : Timestamp) : Bool {
-    store.fetchedAt == 0 or store.usdE8 == 0 or now + RETRY_SECONDS * 1_000_000_000 > store.validUntil;
+  // PTM-10d: also true while the second-source observation is absent or has
+  // less than 5 minutes of validity left (a failed second feed is retried).
+  func needsFetch(store : OracleStore, second : ?SecondSourceObservation, now : Timestamp) : Bool {
+    if (store.fetchedAt == 0 or store.usdE8 == 0 or now + RETRY_SECONDS * 1_000_000_000 > store.validUntil) return true;
+    switch (second) {
+      case (?o) now + RETRY_SECONDS * 1_000_000_000 > o.fetchedAt + VALID_FOR_NS;
+      case null true;
+    };
   };
 
   // Arms the ck-token rate timers (called from the actor body on every install
@@ -157,11 +198,11 @@ module {
   // `onRateStored` runs synchronously after each newly stored rate (the actor
   // uses it to persist the opening of filling pools); it is not an import of
   // the DEX modules, so there is no import cycle.
-  public func startTokenTimers<system>(rates : TokenRateStore, transform : OutCall.Transform, onRateStored : () -> ()) : () {
+  public func startTokenTimers<system>(rates : TokenRateStore, seconds : SecondRateStore, transform : OutCall.Transform, onRateStored : () -> ()) : () {
     func tick() : async () {
       for ((store, token) in [(rates.ckbtc, #ckbtc), (rates.ckusdc, #ckusdc), (rates.ckusdt, #ckusdt)].values()) {
-        if (needsFetch(store, Time.now())) {
-          switch (await fetchAndStoreToken(store, token, transform)) {
+        if (needsFetch(store, secondFor(seconds, token), Time.now())) {
+          switch (await fetchAndStoreToken(store, seconds, token, transform)) {
             case (#Ok(_)) { onRateStored() };
             case (#Err(_)) {};
           };
@@ -229,22 +270,8 @@ module {
   // fetchedAt = now; validUntil = now + 1 h } and lastSuccessAt; on failure
   // records lastError (exact text, date) and keeps the stored rate. Timer
   // context only (update). Never traps.
-  public func fetchAndStore(store : OracleStore, transform : OutCall.Transform) : async PriceResult {
-    let coinbaseError = switch (await fetchPrice(COINBASE_URL, transform)) {
-      case (#ok(usdE8)) { return #Ok(storeRate(store, usdE8, #coinbase)) };
-      case (#err(message)) {
-        store.lastError := ?{ message = "Coinbase: " # message; at = Time.now() };
-        message;
-      };
-    };
-    switch (await fetchPrice(COINGECKO_URL, transform)) {
-      case (#ok(usdE8)) { #Ok(storeRate(store, usdE8, #coingecko)) };
-      case (#err(message)) {
-        let combined = "Coinbase: " # coinbaseError # "; CoinGecko: " # message;
-        store.lastError := ?{ message = combined; at = Time.now() };
-        #Err(combined);
-      };
-    };
+  public func fetchAndStore(store : OracleStore, seconds : SecondRateStore, transform : OutCall.Transform) : async PriceResult {
+    await fetchAndStoreToken(store, seconds, #icp, transform);
   };
 
   func storeRate(store : OracleStore, usdE8 : Nat, source : PriceSource) : IcpPrice {
@@ -259,12 +286,12 @@ module {
 
   // Admin refresh: refuses with #Err("... rate still valid until <time>")
   // and no outcall while now <= validUntil; otherwise fetchAndStore.
-  public func adminRefresh(store : OracleStore, transform : OutCall.Transform) : async PriceResult {
+  public func adminRefresh(store : OracleStore, seconds : SecondRateStore, transform : OutCall.Transform) : async PriceResult {
     let now = Time.now();
     if (store.fetchedAt > 0 and store.usdE8 > 0 and now <= store.validUntil) {
       return #Err("Refresh refused: the current ICP/USD rate is still valid until " # store.validUntil.toText() # " (nanoseconds since the Unix epoch); no fetch was made");
     };
-    await fetchAndStore(store, transform);
+    await fetchAndStore(store, seconds, transform);
   };
 
   // Arms the rate timer (called from the actor body, so on every install and
@@ -273,11 +300,11 @@ module {
   // a successful rate is refetched once an hour and a failed fetch is retried
   // every 5 minutes.
   // `onRateStored` runs synchronously after each newly stored rate.
-  public func startTimer<system>(store : OracleStore, transform : OutCall.Transform, onRateStored : () -> ()) : () {
+  public func startTimer<system>(store : OracleStore, seconds : SecondRateStore, transform : OutCall.Transform, onRateStored : () -> ()) : () {
     func tick() : async () {
       let now = Time.now();
-      if (store.fetchedAt == 0 or store.usdE8 == 0 or now + RETRY_SECONDS * 1_000_000_000 > store.validUntil) {
-        switch (await fetchAndStore(store, transform)) {
+      if (needsFetch(store, secondFor(seconds, #icp), now)) {
+        switch (await fetchAndStore(store, seconds, transform)) {
           case (#Ok(_)) { onRateStored() };
           case (#Err(_)) {};
         };

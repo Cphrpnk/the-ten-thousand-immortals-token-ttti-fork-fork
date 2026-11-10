@@ -1,4 +1,5 @@
 import Nat "mo:core/Nat";
+import Nat8 "mo:core/Nat8";
 import Principal "mo:core/Principal";
 import Result "mo:core/Result";
 import Runtime "mo:core/Runtime";
@@ -9,6 +10,7 @@ import DexLib "../lib/dex";
 import DexPotLib "../lib/dex-pot";
 import IcrcLib "../lib/icrc";
 import OracleLib "../lib/oracle";
+import PayTokenLib "../lib/pay-token";
 import RetryLib "../lib/retry";
 import Types "../types/dex";
 import PageTypes "../types/page";
@@ -68,30 +70,50 @@ mixin (
     };
   };
 
+  // Speed: transient read cache (rebuilt after every upgrade, never stored).
+  // Served only while unchanged and under 5 s old; see DexLib.ViewCache. A
+  // query discards its writes, so the update calls below warm it.
+  transient let viewCache : DexLib.ViewCache = DexLib.newViewCache();
+
+  func warmViewCaches() {
+    DexLib.warmViewCaches(viewCache, dex, consolidatedPrices.samples, canister, Time.now(), usdRateOf);
+  };
+
   public query func listDexPools() : async [Types.PoolView] {
-    DexLib.listPools(dex, canister, Time.now(), usdRateOf);
+    DexLib.listPoolsCached(viewCache, dex, canister, Time.now(), usdRateOf);
   };
 
   public query func getDexPool(poolId : Nat) : async ?Types.PoolView {
-    DexLib.getPool(dex, canister, Time.now(), poolId, usdRateOf);
+    DexLib.getPoolCached(viewCache, dex, canister, Time.now(), poolId, usdRateOf);
   };
 
   public query func getDexConfig() : async Types.DexConfig {
     DexLib.config(canister);
   };
 
+  // PTM-10c: token a pair request deposit was paid in (TTTI-T for earlier requests).
+  func requestDepositToken(requestId : Nat) : Types.DexToken {
+    RetryLib.depositTokenOf(dexContext.payments, requestId);
+  };
+
   public query func listPairRequests() : async [Types.PairRequestView] {
-    DexLib.listRequests(dex, canister);
+    DexLib.listRequests(dex, canister, requestDepositToken);
   };
 
   public shared query ({ caller }) func getMyPairRequests() : async [Types.PairRequestView] {
-    DexLib.requestsOf(dex, canister, caller);
+    DexLib.requestsOf(dex, canister, caller, requestDepositToken);
   };
 
   public shared ({ caller }) func requestPair(args : Types.RequestPairArgs) : async Result.Result<Types.PairRequestView, Types.RequestPairError> {
     requireNotPaused();
     if (caller.isAnonymous()) {
       return #err(#anonymous);
+    };
+    // PTM-10c: the deposit is paid in an accepted token for 0.0005 TTTI-T at
+    // the mint price (5 USD) at the current hourly rate; never in TTTI-T.
+    let pay = switch (RetryLib.dexPayToken(args.payToken)) {
+      case (?p) p;
+      case null return #err(#payTokenNotAccepted("The deposit is paid in ICP, ckBTC, ckUSDC or ckUSDT, never in TTTI-T"));
     };
     switch (DexLib.checkRequestLimits(dex, caller, args.message, Time.now())) {
       case (?e) return #err(e);
@@ -116,44 +138,63 @@ mixin (
       case (#ok(result)) result;
       case (#err(e)) return #err(e);
     };
-    // State may have changed during the ledger calls: check again.
-    let now = Time.now();
-    switch (DexLib.checkRequestLimits(dex, caller, args.message, now)) {
-      case (?e) return #err(e);
-      case null {};
+    let userKey = "PQ/" # caller.toText();
+    let pairKey = "PQP/" # args.ledgerId.toText();
+    if (not RetryLib.tryLock(dexContext.locks, userKey)) {
+      return #err(#requestInProgress);
     };
-    switch (DexLib.findExisting(dex, canister, args.ledgerId, counterLedger, args.feeTier)) {
-      case (?existing) return #err(#pairExists(existing));
-      case null {};
+    if (not RetryLib.tryLock(dexContext.locks, pairKey)) {
+      RetryLib.unlock(dexContext.locks, userKey);
+      return #err(#requestInProgress);
     };
-    let copiedSymbolOf = if (DexLib.isKnownLedger(args.ledgerId)) null else DexLib.copiedSymbol(token.symbol);
-    let checks : Types.RequestChecks = { readChecks with pairUnique = true; copiedSymbolOf };
-    let required = DexLib.REQUEST_DEPOSIT + IcrcLib.fee(ledger);
-    let depositBlock = switch (
-      IcrcLib.transferFrom(
-        ledger,
-        canister,
-        canister,
-        {
-          spender_subaccount = null;
-          from = { owner = caller; subaccount = null };
-          to = DexLib.requestDepositAccount(canister);
-          amount = DexLib.REQUEST_DEPOSIT;
-          fee = null;
-          memo = null;
-          created_at_time = null;
-        },
-      )
-    ) {
-      case (#Ok(block)) block;
-      case (#Err(#InsufficientAllowance({ allowance }))) return #err(#insufficientAllowance({ allowance; required }));
-      case (#Err(#InsufficientFunds({ balance }))) return #err(#insufficientFunds({ balance }));
-      case (#Err(e)) return #err(#depositFailed(debug_show (e)));
+    try {
+      // State may have changed during the ledger calls: check again.
+      let now = Time.now();
+      switch (DexLib.checkRequestLimits(dex, caller, args.message, now)) {
+        case (?e) return #err(e);
+        case null {};
+      };
+      switch (DexLib.findExisting(dex, canister, args.ledgerId, counterLedger, args.feeTier)) {
+        case (?existing) return #err(#pairExists(existing));
+        case null {};
+      };
+      let usdE8 = switch (OracleLib.usableRate(OracleLib.storeFor(oracle, tokenRates, pay), now)) {
+        case (?r) r;
+        case null return #err(#rateUnavailable("The hourly " # PayTokenLib.symbol(pay) # " rate is absent or expired; try again after the next rate refresh"));
+      };
+      let amount = DexLib.requestDepositAmount(usdE8, PayTokenLib.expectedDecimals(pay).toNat());
+      if (amount == 0) {
+        return #err(#rateUnavailable("The deposit amount could not be computed from the " # PayTokenLib.symbol(pay) # " rate"));
+      };
+      let copiedSymbolOf = if (DexLib.isKnownLedger(args.ledgerId)) null else DexLib.copiedSymbol(token.symbol);
+      let checks : Types.RequestChecks = { readChecks with pairUnique = true; copiedSymbolOf };
+      let required = amount + PayTokenLib.expectedFee(pay);
+      // ICRC-2 transferFrom from the caller's default account into the request
+      // deposit account of the token (the canister is the spender).
+      let collected = await PayTokenLib.collect(
+        PayTokenLib.ledger(pay),
+        caller,
+        DexLib.requestDepositAccountOf(canister, args.payToken),
+        amount,
+        RetryLib.memoBlob(#PQ, dex.nextRequestId, 1),
+        RetryLib.dexNow(),
+      );
+      let depositBlock = switch (collected) {
+        case (#ok(block)) block;
+        case (#ledgerError(#InsufficientAllowance({ allowance }))) return #err(#insufficientAllowance({ allowance; required }));
+        case (#ledgerError(#InsufficientFunds({ balance }))) return #err(#insufficientFunds({ balance }));
+        case (#ledgerError(e)) return #err(#depositFailed(PayTokenLib.transferFromErrorMessage(pay, e)));
+        case (#callFailed(m)) return #err(#depositFailed("The " # PayTokenLib.symbol(pay) # " ledger could not be reached (" # m # "); check your wallet before trying again"));
+      };
+      let request = DexLib.addRequest(dex, caller, token, counter, args.feeTier, args.message, checks, amount, depositBlock, Time.now());
+      dexContext.payments.add(request.id, { requestId = request.id; token = args.payToken; setAside = null; setAsideAt = null });
+      // PTM-9f: new activity of the caller: its deposit account is read again.
+      RetryLib.reincludeOnActivity(dexContext.batch, caller, [args.payToken]);
+      #ok(DexLib.toRequestView(request, canister, args.payToken));
+    } finally {
+      RetryLib.unlock(dexContext.locks, pairKey);
+      RetryLib.unlock(dexContext.locks, userKey);
     };
-    let request = DexLib.addRequest(dex, caller, token, counter, args.feeTier, args.message, checks, depositBlock, now);
-    // PTM-9f: new activity of the caller: its deposit account is read again.
-    RetryLib.reincludeOnActivity(dexContext.batch, caller, [#tttiT]);
-    #ok(DexLib.toRequestView(request, canister));
   };
 
   // Creates the pool, then records and sends the DQ refund through
@@ -171,11 +212,12 @@ mixin (
     let key = RetryLib.dexRequestLockKey(requestId);
     if (RetryLib.tryLock(dexContext.locks, key)) {
       try {
-        RetryLib.sendPairRefund(dexContext, requestId);
+        await RetryLib.sendPairRefund(dexContext, requestId);
       } finally {
         RetryLib.unlock(dexContext.locks, key);
       };
     };
+    warmViewCaches();
     #ok(DexLib.toPoolView(dex, pool, canister, Time.now(), usdRateOf));
   };
 
@@ -284,7 +326,7 @@ mixin (
       return #err(#notAuthorized);
     };
     switch (DexLib.refuse(dex, requestId, reason, Time.now())) {
-      case (#ok(r)) #ok(DexLib.toRequestView(r, canister));
+      case (#ok(r)) #ok(DexLib.toRequestView(r, canister, requestDepositToken(r.id)));
       case (#err(e)) #err(e);
     };
   };
@@ -300,7 +342,10 @@ mixin (
     };
     let now = Time.now();
     switch (DexLib.announceRemoval(dex, poolId, reason, now)) {
-      case (#ok(pool)) #ok(DexLib.toPoolView(dex, pool, canister, now, usdRateOf));
+      case (#ok(pool)) {
+        warmViewCaches();
+        #ok(DexLib.toPoolView(dex, pool, canister, now, usdRateOf));
+      };
       case (#err(e)) #err(e);
     };
   };
@@ -313,7 +358,10 @@ mixin (
     };
     let now = Time.now();
     switch (DexLib.cancelRemoval(dex, poolId, now)) {
-      case (#ok(pool)) #ok(DexLib.toPoolView(dex, pool, canister, now, usdRateOf));
+      case (#ok(pool)) {
+        warmViewCaches();
+        #ok(DexLib.toPoolView(dex, pool, canister, now, usdRateOf));
+      };
       case (#err(e)) #err(e);
     };
   };
@@ -329,7 +377,7 @@ mixin (
   // pools, current oracle rates, depth-weighted, with the hourly and 24 h
   // averages. `price` is #unavailable when no pool or no valid rate is usable.
   public query func getConsolidatedTttiPrice() : async Types.ConsolidatedPrice {
-    DexLib.consolidatedPriceView(dex, consolidatedPrices.samples, usdRateOf, Time.now());
+    DexLib.consolidatedPriceCached(viewCache, dex, consolidatedPrices.samples, usdRateOf, Time.now());
   };
 
   // PTM-5: spread of each native TTTI-T pool against the consolidated price
@@ -356,12 +404,25 @@ mixin (
     await refreshSources();
   };
 
+  // Admin only: last ICPSwap reading of each pair used by the first-deposit
+  // reference price, in DEX_TOKENS order without TTTI-T. #notReadYet until a
+  // reading is recorded; otherwise the price and method, or the failed step.
+  public shared query ({ caller }) func getReferenceReadings() : async [Types.ReferenceReadingEntry] {
+    if (not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: only an admin can read the reference readings");
+    };
+    DexLib.referenceReadingEntries(dex);
+  };
+
   public shared ({ caller }) func setUtilityPairMinimums(poolId : Nat, minimums : Types.TokenMinimums) : async Result.Result<Types.PoolView, Types.SetMinimumsError> {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       return #err(#notAuthorized);
     };
     switch (DexLib.setUtilityMinimums(dex, poolId, minimums)) {
-      case (#ok(p)) #ok(DexLib.toPoolView(dex, p, canister, Time.now(), usdRateOf));
+      case (#ok(p)) {
+        warmViewCaches();
+        #ok(DexLib.toPoolView(dex, p, canister, Time.now(), usdRateOf));
+      };
       case (#err(e)) #err(e);
     };
   };
@@ -453,7 +514,7 @@ mixin (
     if (not lockAll(keys)) {
       return #err(#operationInProgress);
     };
-    try {
+    let result = try {
       let need = switch (DexLib.addLiquidityNeed(dex, args, usdRateOf, Time.now())) {
         case (#ok(n)) n;
         case (#err(e)) return #err(e);
@@ -477,6 +538,8 @@ mixin (
     } finally {
       unlockAll(keys);
     };
+    warmViewCaches();
+    result;
   };
 
   // Position owner only; after the unlock date in every pool state (no lock =
@@ -496,11 +559,13 @@ mixin (
     if (not lockAll(keys)) {
       return #err(#operationInProgress);
     };
-    try {
+    let result = try {
       DexLib.removeLiquidity(dex, dexContext.balances, canister, caller, positionId, usdRateOf, Time.now());
     } finally {
       unlockAll(keys);
     };
+    warmViewCaches();
+    result;
   };
 
   // Position owner only; never shortens, at most 5 years from the lock start,
@@ -514,11 +579,13 @@ mixin (
     if (not lockAll(keys)) {
       return #err(#operationInProgress);
     };
-    try {
+    let result = try {
       DexLib.extendLock(dex, canister, caller, positionId, newUnlockAt, usdRateOf, Time.now());
     } finally {
       unlockAll(keys);
     };
+    warmViewCaches();
+    result;
   };
 
   public query func getDexPosition(positionId : Nat) : async ?Types.PositionView {

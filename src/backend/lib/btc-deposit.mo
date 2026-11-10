@@ -21,6 +21,9 @@ import MinterLib "ckbtc-minter";
 import PayTokenLib "pay-token";
 import DexLib "dex";
 import LiquidityMintLib "liquidity-mint";
+import MintTypes "../types/liquidity-mint";
+import OracleLib "oracle";
+import IcrcLib "icrc";
 
 // BTC deposit flows through the ckBTC minter: per-buyer deposit subaccount,
 // update_balance progress tracking, purchase finalization (ckBTC -> TTTI-T)
@@ -167,6 +170,8 @@ module {
       errorMessage = null;
       btcRefund = null;
       costToRefund = null;
+      conversionCause = null;
+      causePermanent = false;
     };
   };
 
@@ -517,12 +522,10 @@ module {
   // One step of the rule for the BR refund of entry (caller, index): at most
   // one send, only when the deposit subaccount balance covers amount plus
   // fee, under the transfer lock (released in a finally).
-  // Nothing is sent (nor a new attempt opened) while sales are paused: the
-  // recorded attempt stays on the entry for the timer after the pause.
+  // A deposit refund is sent even while sales are paused: the ckBTC goes back to
+  // the buyer's wallet account and the deposit subaccount is emptied. The pause
+  // still blocks every other BTC transfer (cost sends).
   func stepBtcRefund(store : BtcDepositStore, tctx : TransferContext, caller : Principal, index : Nat) : async () {
-    if (tctx.sale.salesPaused) {
-      return;
-    };
     let e = entryOf(store, caller, index) ?? (return);
     let r = e.btcRefund ?? (return);
     let now = RetryLib.now64();
@@ -553,7 +556,7 @@ module {
       // Re-read after the balance await: send only the attempt still recorded.
       let cur = entryOf(store, caller, index) ?? (return);
       let latest = cur.btcRefund ?? (return);
-      if (tctx.sale.salesPaused or latest.attempt.n != attempt.n or latest.attempt.attempt != attempt.attempt) {
+      if (latest.attempt.n != attempt.n or latest.attempt.attempt != attempt.attempt) {
         return;
       };
       switch (latest.attempt.outcome) {
@@ -698,6 +701,9 @@ module {
     };
   };
 
+  // First id of the stuck-conversion rows in To review; far above any conversion id.
+  let STUCK_ROW_BASE : Nat = 1_000_000_000_000_000;
+
   func btcRow(kind : RetryTypes.TransferKind, id : Nat, buyer : Principal, depositIndex : Nat, conversionId : ?Nat, purpose : ?RetryTypes.BtcRefundPurpose, a : RetryTypes.TransferAttempt) : RetryTypes.TransferReview {
     let noMemo = a.memo.size() == 0;
     {
@@ -766,6 +772,38 @@ module {
             };
           };
           case null {};
+        };
+      };
+    };
+    // Conversions stopped by a permanent cause: an admin finishes the mint or refunds
+    // with the "Finish mint" card. The row uses kind #BM with an id in its own space
+    // (STUCK_ROW_BASE + running number), so no real conversion id, trace number or
+    // attempt number is ever matched; its action buttons are refused (#notApplicable).
+    var stuckN : Nat = 0;
+    for ((p, t) in store.purchases.entries()) {
+      for (e in t.deposits.values()) {
+        if (e.causePermanent and toConvert(e) > FEE) {
+          rows.add({
+            kind = #BM;
+            purchaseId = STUCK_ROW_BASE + stuckN;
+            block = null;
+            collect = null;
+            token = #ckbtc;
+            memoText = null;
+            memoHex = null;
+            createdAtTimeNs = null;
+            amount = toConvert(e);
+            fee = ?FEE;
+            destination = ?{ owner = p; subaccount = null };
+            sends = 0;
+            lastError = ?("ckBTC to TTTI-T conversion stopped: " # (e.conversionCause ?? "permanent cause") # ". The timer converts it or refunds it to the buyer wallet automatically; diagnoseBtcMint and finishBtcMint remain available; the buttons of this row do not apply");
+            buyer = ?p;
+            depositIndex = ?e.index;
+            conversionId = e.conversionId;
+            refundPurpose = null;
+            outcome = null;
+          });
+          stuckN += 1;
         };
       };
     };
@@ -868,6 +906,10 @@ module {
   public func markBtcRefunded(store : BtcDepositStore, tctx : TransferContext, kind : RetryTypes.TransferKind, id : Nat, block : Nat) : RetryTypes.ReviewResult {
     switch (kind) {
       case (#BM) {
+        if (id >= STUCK_ROW_BASE) {
+          // A stuck-conversion row: finish or refund it with finishBtcMint, not here.
+          return #err(#notApplicable);
+        };
         if (not costRefunded(store, id, block)) {
           return #err(#notFound);
         };
@@ -878,13 +920,73 @@ module {
     };
   };
 
+  // Real cause of a refused conversion, as plain English text.
+  func mintCauseText(err : MintTypes.LiquidityMintError) : Text {
+    switch (err) {
+      case (#anonymousCaller) "The buyer is the anonymous principal";
+      case (#purchaseInProgress) "Another purchase or mint for this buyer is in progress (purchase lock held)";
+      case (#acknowledgementRequired) "The buyer has not accepted the purchase acknowledgements";
+      case (#salesPaused) "Sales are paused";
+      case (#dexPaused) "The DEX is paused";
+      case (#mintEnded) "The mint is over: the TTTI-T left to mint is below the minimum mint of 0.0001 TTTI-T";
+      case (#rateUnavailable(_)) "No fresh BTC-USD rate is available";
+      case (#rateSourcesDiverge(_)) "The BTC-USD rate is not confirmed by both Coinbase and CoinGecko";
+      case (#belowMinimum(_)) "The ckBTC amount is below the minimum mint of 0.0001 TTTI-T";
+      case (#aboveCap(c)) "The 1 TTTI-T cap leaves " # c.remainingTtti.toText() # " base units to mint, too little for this deposit";
+      case (#invalidAmount) "No valid TTTI-T amount fits this ckBTC amount (nothing left to sell or the split is invalid)";
+      case (#poolUnavailable(m)) "The pool cannot take the mint: " # m.message;
+      case (#invalidTargetPool(t)) "The chosen pool " # t.poolId.toText() # " cannot take this mint (unknown, other pair, removed or removal announced); choose another pool and mint again";
+      case (#deadlineExpired(_)) "The mint deadline you set had passed before the conversion started; mint again";
+      case (#maxPayExceeded(m)) "The payment would be " # m.payAmount.toText() # " sats, above your maximum of " # m.maxPayAmount.toText() # " sats; raise the maximum or mint again";
+      case (#invalidSlippage(m)) "The slippage tolerance is above the maximum of " # m.maximumBps.toText() # " bps; choose a lower tolerance";
+      case (#slippageExceeded(m)) "The price moved beyond your slippage tolerance of " # m.toleranceBps.toText() # " bps; mint again";
+      case (#ledgerError(m)) "ckBTC ledger error: " # m.message;
+      case (_) "The liquidity mint is not available right now";
+    };
+  };
+
+  // A cause is temporary when the next attempt can succeed on its own: no fresh
+  // rate, two rate sources not agreeing, another purchase running, a ledger
+  // error. Every other cause (mint ended, amount outside the limits, sales or
+  // DEX paused, pool unavailable, acknowledgements missing, anonymous caller...)
+  // is permanent: the ckBTC is refunded to the buyer's wallet automatically.
+  func mintCausePermanent(err : MintTypes.LiquidityMintError) : Bool {
+    switch (err) {
+      case (#rateUnavailable(_) or #rateSourcesDiverge(_) or #purchaseInProgress or #ledgerError(_) or #invalidTargetPool(_) or #deadlineExpired(_) or #maxPayExceeded(_) or #invalidSlippage(_) or #slippageExceeded(_)) false;
+      case (_) true;
+    };
+  };
+
+  // A temporary cause that lasts longer than this after the deposit was first
+  // detected also ends in the automatic refund, so no deposit stays held for
+  // ever. 24 hours, measured from DepositEntry.detectedAt (the timer retries
+  // every 10 minutes meanwhile), so no new stored field is needed.
+  let TEMP_CAUSE_WINDOW_NS : Int = 86_400_000_000_000;
+
+  // Newest conversion cause of a tracking (OQL), and whether any entry's is permanent.
+  public func trackingCause(t : DepositTracking) : ?Text {
+    switch (t.deposits.find(func(e : Btc.DepositEntry) : Bool = e.conversionCause != null)) {
+      case (?e) e.conversionCause;
+      case null null;
+    };
+  };
+
+  public func trackingCausePermanent(t : DepositTracking) : Bool {
+    t.deposits.any(func(e : Btc.DepositEntry) : Bool = e.causePermanent);
+  };
+
   // ckBTC this entry still accounts for in the buyer subaccount.
   func held(e : Btc.DepositEntry) : Nat = Nat.max(e.ckbtcPendingSats, toConvert(e));
 
   // Converts each minted purchase entry for its own amount, oldest first, one
   // at a time (excess beyond the delivered amount is refunded), then retries
   // failed excess refunds. The caller holds the purchase lock for `caller`.
-  func finalize(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, caller : Principal, t : DepositTracking) : async* DepositTracking {
+  // `force` also converts entries whose conversion cause is permanent (admin
+  // finishBtcMint); the timer and the buyer's own check pass false.
+  func finalize(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, caller : Principal, t : DepositTracking, force : Bool, params : ?MintTypes.DepositMintParams) : async* DepositTracking {
+    // `params` null (timer, background check, admin finish) mints nothing: the
+    // ckBTC stays held for the user, who converts it with their own parameters
+    // (convertHeld), or is refunded under the existing cause rules.
     let subaccount = purchaseSubaccount(caller);
     let payLedger = PayTokenLib.ledger(#ckbtc);
     let own = { owner = caller; subaccount = null };
@@ -901,6 +1003,29 @@ module {
     };
 
     let tctx = ctx.transfers;
+
+    // Automatic refund of `amount` (the tracked amount capped by the real ledger
+    // balance just read) from the deposit subaccount to {owner = caller,
+    // subaccount = null}: BR attempt recorded before its first send (lib/retry.mo,
+    // memo TTTI-BR-n-1, created_at_time, identical resend for 23 h, then To review).
+    // An entry that already has a refund attempt is never given a second one.
+    func autoRefund(i : Nat, amount : Nat, cause : Text, message : Text) : async* () {
+      let hasRefund = switch (entryAt(i)) { case (?e) { e.btcRefund != null }; case null { true } };
+      let refund = if (hasRefund) null else openBtcRefund(tctx, caller, #fullRefund, amount);
+      switch (refund) {
+        case (?r) {
+          save(i, func e = { e with stage = #error; ckbtcPendingSats = amount; errorKind = ?#unrecoverable; errorMessage = ?message; conversionCause = ?cause; causePermanent = true; btcRefund = ?r });
+          await stepBtcRefund(store, tctx, caller, i);
+        };
+        case null {
+          save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?(cause # "; the ckBTC stays in your deposit account"); conversionCause = ?cause; causePermanent = true });
+        };
+      };
+    };
+    func tooOld(i : Nat) : Bool {
+      switch (entryAt(i)) { case (?e) { Time.now() - e.detectedAt > TEMP_CAUSE_WINDOW_NS }; case null { false } };
+    };
+
     let queue = current().deposits.filter(func(e : Btc.DepositEntry) : Bool = toConvert(e) > FEE and not costOpen(tctx, caller, e.index)).reverse();
     for (queued in queue.values()) {
       let i = queued.index;
@@ -908,11 +1033,30 @@ module {
       if (wanted > FEE) {
         let balance = switch (await PayTokenLib.balanceOf(payLedger, depositAccount)) {
           case (#ok(b)) { b };
-          case (#err(_)) { return current() };
+          case (#err(message)) {
+            save(i, func e = { e with conversionCause = ?("The ckBTC ledger balance of the deposit account could not be read: " # message); causePermanent = false });
+            return current();
+          };
         };
         let amount = Nat.min(wanted, balance);
         if (amount > FEE) {
-          switch (await LiquidityMintLib.mintFromDeposit(mctx, caller, subaccount, i, amount)) {
+          switch (params) {
+            case null {
+              // No user parameters: nothing is minted. A cause recorded earlier follows the
+              // existing refund rules (permanent, or older than 24 hours); the admin force
+              // finish never refunds.
+              let recorded = switch (entryAt(i)) { case (?e) { if (e.conversionCause != null and e.causePermanent) { e.conversionCause } else if (e.conversionCause != null and tooOld(i)) { e.conversionCause } else { null } }; case null { null } };
+              switch (recorded) {
+                case (?cause) {
+                  if (not force) {
+                    await* autoRefund(i, amount, cause, cause # "; the ckBTC is being refunded to your wallet account minus the 10 sat ledger fee");
+                  };
+                };
+                case null {};
+              };
+            };
+            case (?mintParams) {
+          switch (await LiquidityMintLib.mintFromDeposit(mctx, caller, subaccount, i, amount, mintParams)) {
             case (#ok(minted)) {
               // The mint moved payAmount + the ledger fee out of the deposit account.
               let spent = minted.payAmount + FEE;
@@ -929,6 +1073,8 @@ module {
                   conversionId = ?minted.mintId;
                   errorKind = null;
                   errorMessage = null;
+                  conversionCause = null;
+                  causePermanent = false;
                   btcRefund = switch (refund) { case (?r) { ?r }; case null { e.btcRefund } };
                 },
               );
@@ -937,42 +1083,59 @@ module {
             case (#err(err)) {
               switch (err) {
                 case (#rateUnavailable(_)) {
-                  save(i, func e = { e with stage = #pendingRate; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?"No valid BTC-USD rate is available for this hour; the ckBTC stays in your deposit account" });
+                  if (not force and tooOld(i)) {
+                    let cause = mintCauseText(err);
+                    await* autoRefund(i, amount, cause, cause # " for more than 24 hours; the ckBTC is being refunded to your wallet account minus the 10 sat ledger fee");
+                  } else {
+                  save(i, func e = { e with stage = #pendingRate; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?"No valid BTC-USD rate is available for this hour; the ckBTC stays in your deposit account"; conversionCause = ?mintCauseText(err); causePermanent = false });
+                  };
                 };
                 case (#belowMinimum(_) or #aboveCap(_)) {
-                  // R2: the full refund attempt is recorded before its send.
-                  let refund = openBtcRefund(tctx, caller, #fullRefund, amount);
-                  save(i, func e = { e with stage = #error; ckbtcPendingSats = amount; errorKind = ?#unrecoverable; errorMessage = ?("This ckBTC amount cannot form a liquidity mint (minimum 0.0001 TTTI-T or the 1 TTTI-T cap is reached); the ckBTC is being refunded to your account minus the 10 sat ledger fee"); btcRefund = switch (refund) { case (?r) { ?r }; case null { e.btcRefund } } });
-                  if (refund != null) await stepBtcRefund(store, tctx, caller, i);
+                  if (force) {
+                    // Admin finish without refund: never opens a refund on its own. The exact
+                    // cause is recorded; refunding needs finishBtcMint with refund = true.
+                    let cause = mintCauseText(err);
+                    save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?(cause # "; the ckBTC stays in your deposit account until the next automatic pass refunds it to your wallet account"); conversionCause = ?cause; causePermanent = true });
+                  } else {
+                    // R2: the full refund attempt is recorded before its send.
+                    await* autoRefund(i, amount, mintCauseText(err), "This ckBTC amount cannot form a liquidity mint (minimum 0.0001 TTTI-T or the 1 TTTI-T cap is reached); the ckBTC is being refunded to your account minus the 10 sat ledger fee");
+                  };
                 };
                 case (#depositFailedRefunding(r)) {
                   // The mint was refused (nothing minted) and the refund withdrawal is not settled yet:
                   // never delivered, never converted again; the funds are in the DEX custody on their way back,
                   // and the mint status (getMyLiquidityMints) follows the withdrawal.
-                  save(i, func e = { e with stage = #error; ckbtcPendingSats = 0; errorKind = ?#other; errorMessage = ?("The liquidity mint " # r.mintId.toText() # " was refused and the ckBTC refund is in progress; it is resent until it settles, and the mint status shows the outcome") });
+                  save(i, func e = { e with stage = #error; ckbtcPendingSats = 0; errorKind = ?#other; errorMessage = ?("The liquidity mint " # r.mintId.toText() # " was refused and the ckBTC refund is in progress; it is resent until it settles, and the mint status shows the outcome"); conversionCause = ?"The liquidity mint was refused and its ckBTC refund is in progress"; causePermanent = false });
                 };
                 case (#depositFailedRefundFailed(_)) {
                   // The payment is in the buyer's DEX balance (withdrawable); nothing is lost.
-                  save(i, func e = { e with stage = #error; ckbtcPendingSats = 0; errorKind = ?#unrecoverable; errorMessage = ?"The liquidity mint was refused and its refund failed; the ckBTC is in your DEX balance and can be withdrawn there" });
+                  save(i, func e = { e with stage = #error; ckbtcPendingSats = 0; errorKind = ?#unrecoverable; errorMessage = ?"The liquidity mint was refused and its refund failed; the ckBTC is in your DEX balance and can be withdrawn there"; conversionCause = ?"The liquidity mint was refused and its refund failed; the ckBTC is in the buyer's DEX balance"; causePermanent = false });
                 };
                 case (#depositFailedRefunded(_)) {
                   // Refunded from the DEX custody to the buyer's own account.
-                  save(i, func e = { e with stage = #refunded; ckbtcPendingSats = 0; errorKind = null; errorMessage = ?"The liquidity mint failed and the ckBTC was refunded to your account" });
+                  save(i, func e = { e with stage = #refunded; ckbtcPendingSats = 0; errorKind = null; errorMessage = ?"The liquidity mint failed and the ckBTC was refunded to your account"; conversionCause = ?"The liquidity mint failed and the ckBTC was refunded to the buyer"; causePermanent = false });
                 };
                 case (_) {
-                  // Nothing taken (pool or sales unavailable, unknown outcome...): stays in the deposit account.
-                  let text = switch (err) {
-                    case (#poolUnavailable(m)) m.message;
-                    case (#ledgerError(m)) m.message;
-                    case (#salesPaused) "Sales are paused";
-                    case (#dexPaused) "The DEX is paused";
-                    case _ "The liquidity mint is not available right now";
+                  // Nothing taken. A temporary cause keeps retrying on the timer for up to 24 hours
+                  // from the first detection; a permanent cause (or an expired window) refunds the
+                  // ckBTC to the buyer's wallet automatically. The admin force finish only records
+                  // the cause; the timer then refunds it on its next pass.
+                  let cause = mintCauseText(err);
+                  let permanent = mintCausePermanent(err);
+                  if (not force and (permanent or tooOld(i))) {
+                    await* autoRefund(i, amount, cause, cause # "; the ckBTC is being refunded to your wallet account minus the 10 sat ledger fee");
+                  } else {
+                    let suffix = if (permanent) "; the ckBTC will be refunded to your wallet account" else "; the ckBTC stays in your deposit account";
+                    save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?(cause # suffix); conversionCause = ?cause; causePermanent = permanent });
                   };
-                  save(i, func e = { e with stage = #minted; ckbtcPendingSats = amount; errorKind = null; errorMessage = ?(text # "; the ckBTC stays in your deposit account") });
                 };
               };
             };
           };
+            };
+          };
+        } else {
+          save(i, func e = { e with conversionCause = ?("The deposit account holds " # balance.toText() # " sats, at or below the 10 sat ledger fee, so there is nothing to convert"); causePermanent = false });
         };
       };
     };
@@ -989,14 +1152,12 @@ module {
     };
 
     // R3: every BR attempt still to send follows the lib/retry.mo rule (same
-    // request resent for 23 h, new attempt only after a known Err); not while
-    // sales are paused.
-    if (not ctx.sale.salesPaused) {
-      let now = RetryLib.now64();
-      for (e in current().deposits.values()) {
-        if (brActive(e, now)) {
-          await stepBtcRefund(store, tctx, caller, e.index);
-        };
+    // request resent for 23 h, new attempt only after a known Err); also while
+    // sales are paused (a deposit refund is not blocked by the pause).
+    let now = RetryLib.now64();
+    for (e in current().deposits.values()) {
+      if (brActive(e, now)) {
+        await stepBtcRefund(store, tctx, caller, e.index);
       };
     };
     current();
@@ -1034,8 +1195,28 @@ module {
       return checkResult(updated, outcome);
     };
     store.purchases.add(caller, updated);
-    let tracking = await* finalize(store, ctx, mctx, caller, updated);
+    let tracking = await* finalize(store, ctx, mctx, caller, updated, false, null);
     checkResult(tracking, outcome);
+  };
+
+  // The buyer's own button: converts the ckBTC this canister holds for `caller` in
+  // their purchase subaccount into TTTI-T (same finalize and isolated mint core as
+  // the timer: any failure rolls the mint back). A permanent failure (or a
+  // temporary one older than 24 hours) opens the automatic refund to the caller's
+  // wallet account instead. Acts only on the caller's own tracking and calls no
+  // minter method. The caller (mixin) holds the stamped purchase lock.
+  public func convertHeld(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, caller : Principal, params : MintTypes.DepositMintParams) : async* BtcDepositResult {
+    if (caller.isAnonymous()) {
+      return failure(#anonymousCaller, "Please sign in to convert your held ckBTC");
+    };
+    let tracking = switch (store.purchases.get(caller)) {
+      case (?t) t;
+      case null return failure(#noAddressYet, "No Bitcoin purchase deposit is tracked for this account; nothing is held to convert");
+    };
+    if (not needsFinalize(tracking)) {
+      return #Ok(tracking);
+    };
+    #Ok(await* finalize(store, ctx, mctx, caller, tracking, false, ?params));
   };
 
   // Wallet flow: address of owner = caller, no subaccount. Nothing is stored.
@@ -1116,6 +1297,23 @@ module {
     Int.compare(b.activeAt, a.activeAt);
   };
 
+  // An error of one buyer's check or conversion is recorded on that buyer's
+  // newest entry (transient: the retry goes on) and never stops the tick.
+  func recordFailure(store : BtcDepositStore, buyer : Principal, message : Text) {
+    switch (store.purchases.get(buyer)) {
+      case (?t) {
+        switch (latest(t)) {
+          case (?e) {
+            let text = "Unexpected error during the conversion: " # message;
+            store.purchases.add(buyer, setEntry(t, { e with conversionCause = ?(if (text.size() > 300) Text.fromIter(text.chars().take(300)) else text) }));
+          };
+          case null {};
+        };
+      };
+      case null {};
+    };
+  };
+
   // Purchase finalization only, under the shared purchase lock.
   func finalizeLocked(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, inFlight : Set.Set<Principal>, principal : Principal) : async* () {
     switch (store.purchases.get(principal)) {
@@ -1126,7 +1324,9 @@ module {
           case null return;
         };
         try {
-          ignore await* finalize(store, ctx, mctx, principal, t);
+          ignore await* finalize(store, ctx, mctx, principal, t, false, null);
+        } catch (e) {
+          recordFailure(store, principal, e.message());
         } finally {
           LiquidityMintLib.releasePurchaseLock(mctx.lockTimes, inFlight, principal, stamp);
         };
@@ -1169,7 +1369,9 @@ module {
         case (#wallet) {
           if (calls < MAX_MINTER_CALLS_PER_TICK) {
             calls += 1;
-            ignore await* checkWallet(store, c.principal);
+            try {
+              ignore await* checkWallet(store, c.principal);
+            } catch (_) {};
           };
         };
         case (#purchase) {
@@ -1179,6 +1381,8 @@ module {
                 calls += 1;
                 try {
                   ignore await* checkPurchase(store, ctx, mctx, c.principal);
+                } catch (e) {
+                  recordFailure(store, c.principal, e.message());
                 } finally {
                   LiquidityMintLib.releasePurchaseLock(mctx.lockTimes, inFlight, c.principal, stamp);
                 };
@@ -1194,7 +1398,329 @@ module {
     for (principal in finalizeOnly.values()) {
       await* finalizeLocked(store, ctx, mctx, inFlight, principal);
     };
-    await retryBtcCosts(store, ctx, mctx);
+    try {
+      await retryBtcCosts(store, ctx, mctx);
+    } catch (_) {};
+  };
+
+  // --- Admin recovery of a stuck ckBTC -> TTTI-T mint -------------------------
+
+  func hexValue(c : Char) : ?Nat {
+    let code = c.toNat32().toNat();
+    if (code >= 48 and code <= 57) ?(code - 48) else if (code >= 97 and code <= 102) ?(code - 87) else if (code >= 65 and code <= 70) ?(code - 55) else null;
+  };
+
+  // The buyer principal from either its text form or the 64-hex-character
+  // deposit subaccount (0xBD, length byte, principal bytes, zero padding).
+  public func buyerOfInput(input : Text) : { #ok : Principal; #err : Text } {
+    let text = input.trim(#predicate(func c = c == ' ' or c == '\t' or c == '\n' or c == '\r'));
+    if (text.size() == 0) {
+      return #err("Provide the buyer principal or the 64-character deposit subaccount in hex");
+    };
+    let chars = text.toArray();
+    if (chars.size() == 64 and chars.all(func c = hexValue(c) != null)) {
+      let bytes = Array.tabulate(32, func i = ((hexValue(chars[2 * i]) ?? 0) * 16 + (hexValue(chars[2 * i + 1]) ?? 0)).toNat8());
+      if (bytes[0] != SUBACCOUNT_TAG) {
+        return #err("Invalid deposit subaccount: the first byte must be bd");
+      };
+      let n = bytes[1].toNat();
+      if (n < 1 or n > 29) {
+        return #err("Invalid deposit subaccount: the principal length byte (second byte) must be between 1 and 29");
+      };
+      var i = n + 2;
+      while (i < 32) {
+        if (bytes[i] != 0) {
+          return #err("Invalid deposit subaccount: the bytes after the principal must be zero");
+        };
+        i += 1;
+      };
+      let buyer = Principal.fromBlob(Array.tabulate(n, func k = bytes[k + 2]).toBlob());
+      if (buyer.isAnonymous()) {
+        return #err("Invalid deposit subaccount: it decodes to the anonymous principal");
+      };
+      return #ok(buyer);
+    };
+    switch (SaleLib.parseDeliveryAddress(text)) {
+      case (#ok(buyer)) #ok(buyer);
+      case (#err(e)) #err("Invalid buyer: " # e.message);
+    };
+  };
+
+  type Blocker = { code : Text; text : Text; permanent : Bool; action : Btc.RecoveryAction };
+
+  func lockKeyOf(buyer : Principal) : Text = "P/" # buyer.toText();
+
+  // #free: no lock. #held: stamped and within LOCK_TTL_NS. #unstamped: in the
+  // set without a take time. #expired: stamped but older than LOCK_TTL_NS.
+  func lockState(mctx : LiquidityMintLib.MintContext, inFlight : Set.Set<Principal>, buyer : Principal) : { #free; #held; #unstamped; #expired } {
+    if (not inFlight.contains(buyer)) return #free;
+    switch (mctx.lockTimes.get(lockKeyOf(buyer))) {
+      case null #unstamped;
+      case (?at) { if (Time.now() - at < LiquidityMintLib.LOCK_TTL_NS) #held else #expired };
+    };
+  };
+
+  func dexLockHeld(mctx : LiquidityMintLib.MintContext, key : Text) : Bool {
+    if (not mctx.dex.locks.contains(key)) return false;
+    switch (mctx.lockTimes.get(key)) {
+      case (?at) { Time.now() - at < LiquidityMintLib.LOCK_TTL_NS };
+      case null { true };
+    };
+  };
+
+  // A mint for the buyer is actually executing: an open ckBTC cost attempt of
+  // the entry, or a DEX lock of the buyer in force.
+  func mintRunning(mctx : LiquidityMintLib.MintContext, buyer : Principal, index : Nat) : Bool {
+    costOpen(mctx.transfers, buyer, index) or dexLockHeld(mctx, RetryLib.dexLockKey(buyer, #tttiT)) or dexLockHeld(mctx, RetryLib.dexLockKey(buyer, #ckbtc));
+  };
+
+  func refundOpen(e : Btc.DepositEntry) : Bool {
+    switch (e.btcRefund) {
+      case (?r) { switch (r.attempt.outcome) { case (#succeeded(_)) false; case (_) true } };
+      case null false;
+    };
+  };
+
+  // What the real mint checks would refuse right now, read from live state
+  // (nothing is mutated, no external call).
+  func liveBlocker(mctx : LiquidityMintLib.MintContext, buyer : Principal) : ?Blocker {
+    let minimum = LiquidityMintLib.MIN_MINT_TTTI;
+    let remaining = IcrcLib.mintableRemaining(mctx.ledger);
+    if (remaining < minimum) {
+      return ?{ code = "mintEnded"; text = "The mint is over: only " # remaining.toText() # " TTTI-T base units remain to mint, below the minimum mint of " # minimum.toText() # ". The ckBTC cannot become TTTI-T and should be refunded."; permanent = true; action = #refund };
+    };
+    let available = SaleLib.available(mctx.sale, mctx.ledger, mctx.canister);
+    if (available < minimum) {
+      return ?{ code = "capReached"; text = "The 1 TTTI-T cap leaves only " # available.toText() # " base units to sell (" # remaining.toText() # " still mintable, the rest is reserved), below the minimum mint of " # minimum.toText() # ". The ckBTC should be refunded."; permanent = true; action = #refund };
+    };
+    if (mctx.sale.salesPaused) {
+      return ?{ code = "salesPaused"; text = "Sales are paused; the conversion resumes or can be finished once sales are unpaused."; permanent = false; action = #none };
+    };
+    if (mctx.dex.pause.paused) {
+      return ?{ code = "dexPaused"; text = "The DEX is paused; the conversion resumes or can be finished once the DEX is unpaused."; permanent = false; action = #none };
+    };
+    let now = Time.now();
+    let price = OracleLib.getTokenPrice(OracleLib.storeFor(mctx.oracle, mctx.tokenRates, #ckbtc), mctx.secondRates, #ckbtc, now);
+    if (not price.usable) {
+      return ?{ code = "noRate"; text = "No fresh BTC-USD rate is available; the conversion waits for the next rate."; permanent = false; action = #none };
+    };
+    switch (LiquidityMintLib.rateSourcesVerdict(#ckbtc, price, now)) {
+      case (#err(_)) {
+        return ?{ code = "rateSourcesDiverge"; text = "The BTC-USD rate is not confirmed by both Coinbase and CoinGecko within the allowed difference; the conversion waits."; permanent = false; action = #none };
+      };
+      case (#ok(_)) {};
+    };
+    if (not SaleLib.hasAccepted(mctx.acknowledgements, buyer)) {
+      return ?{ code = "acknowledgementRequired"; text = "The buyer has not accepted the current purchase acknowledgements; they must accept them in the app, otherwise the ckBTC can be refunded."; permanent = true; action = #none };
+    };
+    null;
+  };
+
+  // Read-only diagnosis of the newest convertible purchase entry of `buyer`.
+  public func diagnose(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, inFlight : Set.Set<Principal>, buyer : Principal) : async* Btc.BtcMintDiagnosis {
+    let subaccount = purchaseSubaccount(buyer);
+    let balance : ?Nat = switch (await PayTokenLib.balanceOf(PayTokenLib.ledger(#ckbtc), { owner = ctx.canister; subaccount = ?subaccount })) {
+      case (#ok(b)) ?b;
+      case (#err(_)) null;
+    };
+    let entry : ?Btc.DepositEntry = switch (store.purchases.get(buyer)) {
+      case (?t) {
+        switch (t.deposits.find(func(e : Btc.DepositEntry) : Bool = toConvert(e) > FEE)) {
+          case (?e) ?e;
+          case null latest(t);
+        };
+      };
+      case null null;
+    };
+    let now = Time.now();
+    let price = OracleLib.getTokenPrice(OracleLib.storeFor(mctx.oracle, mctx.tokenRates, #ckbtc), mctx.secondRates, #ckbtc, now);
+    let rateOk = price.usable and (switch (LiquidityMintLib.rateSourcesVerdict(#ckbtc, price, now)) { case (#ok(_)) true; case (#err(_)) false });
+    let lock = lockState(mctx, inFlight, buyer);
+    let costAttemptOpen = switch (entry) {
+      case (?e) { costOpen(mctx.transfers, buyer, e.index) or refundOpen(e) };
+      case null false;
+    };
+
+    func verdict() : (Text, Text, Btc.RecoveryAction) {
+      let e = switch (entry) {
+        case (?x) x;
+        case null return ("noDeposit", "No purchase deposit is tracked for this buyer; there is nothing to convert.", #none);
+      };
+      let tracked = toConvert(e);
+      if (tracked <= FEE) {
+        return switch (e.stage) {
+          case (#addressShown or #depositDetected or #confirming(_)) ("waitingForBtc", "The Bitcoin deposit is not minted into ckBTC yet; nothing to convert.", #none);
+          case (#delivered) ("alreadyDone", "The TTTI-T of this deposit was delivered (" # e.tttiDelivered.toText() # " base units); nothing is left to convert.", #none);
+          case (#refunded) ("terminalStage", "The deposit is in the terminal stage refunded; the ckBTC was returned to the buyer.", #none);
+          case (#error) ("terminalStage", "The deposit is in a terminal error stage: " # (e.errorMessage ?? "no message") # ".", #none);
+          case (#minted or #pendingRate) ("balanceAtFee", "The ckBTC left to convert is at or below the 10 sat ledger fee; nothing can be converted.", #none);
+        };
+      };
+      switch (balance) {
+        case (?b) {
+          if (b <= FEE) {
+            return ("balanceAtFee", "The deposit subaccount holds " # b.toText() # " sats, at or below the 10 sat ledger fee; there is nothing left to convert.", #none);
+          };
+        };
+        case null {
+          return ("balanceUnreadable", "The ckBTC ledger balance of the deposit subaccount could not be read; run the diagnosis again.", #none);
+        };
+      };
+      switch (liveBlocker(mctx, buyer)) {
+        case (?b) return (b.code, b.text, b.action);
+        case null {};
+      };
+      if (costAttemptOpen) {
+        return ("costOpen", "A ckBTC cost or refund send for this deposit is not settled yet; resolve it in To review before converting.", #none);
+      };
+      switch (lock) {
+        case (#held) {
+          return ("lockHeld", "A purchase lock is held for this buyer (it releases itself after 10 minutes); wait and retry.", #none);
+        };
+        case (#unstamped or #expired) {
+          if (mintRunning(mctx, buyer, e.index)) {
+            return ("lockHeld", "A purchase for this buyer is still running; wait and retry.", #none);
+          };
+          let code = switch (lock) { case (#unstamped) "lockUnstamped"; case (_) "lockExpired" };
+          return (code, "A stale purchase lock blocks the retries and no purchase is running; finishBtcMint releases it and converts.", #finishMint);
+        };
+        case (#free) {};
+      };
+      switch (e.conversionCause) {
+        case (?c) return ("previousCause", "The last automatic attempt failed with: " # c # ". Nothing blocks the conversion now; finishBtcMint converts " # tracked.toText() # " sats.", #finishMint);
+        case null {};
+      };
+      ("ok", "Nothing blocks the conversion; finishBtcMint converts " # tracked.toText() # " sats.", #finishMint);
+    };
+
+    let (verdictCode, verdictText, recommendedAction) = verdict();
+    {
+      buyer = buyer.toText();
+      depositSubaccountHex = RetryLib.hex(subaccount);
+      trackingStage = switch (entry) { case (?e) stageText(e.stage); case null "none" };
+      lastErrorKind = switch (entry) { case (?e) errorKindText(e.errorKind); case null null };
+      lastErrorText = switch (entry) { case (?e) e.errorMessage; case null null };
+      conversionCause = switch (entry) { case (?e) e.conversionCause; case null null };
+      causePermanent = switch (entry) { case (?e) e.causePermanent; case null false };
+      pendingCkbtcSats = switch (entry) { case (?e) e.ckbtcPendingSats; case null 0 };
+      subaccountBalanceSats = balance ?? 0;
+      purchaseLockHeld = inFlight.contains(buyer);
+      costAttemptOpen;
+      mintableRemaining = IcrcLib.mintableRemaining(mctx.ledger);
+      minimumMint = LiquidityMintLib.MIN_MINT_TTTI;
+      salesPaused = mctx.sale.salesPaused;
+      dexPaused = mctx.dex.pause.paused;
+      validRateAvailable = rateOk;
+      verdictCode;
+      verdictText;
+      recommendedAction;
+    };
+  };
+
+  // Finishes (refund = false) or refunds (refund = true) the newest convertible
+  // purchase entry of `buyer`. Every check is synchronous and runs before any
+  // external call; a done mint answers #alreadyDone and an opened refund is not
+  // opened twice. Never touches sale.reserved, balances or blocks.
+  public func finish(store : BtcDepositStore, ctx : SaleLib.PurchaseContext, mctx : LiquidityMintLib.MintContext, inFlight : Set.Set<Principal>, buyer : Principal, refund : Bool) : async* Btc.FinishMintResult {
+    let tracking = switch (store.purchases.get(buyer)) {
+      case (?t) t;
+      case null return #refused("No purchase deposit is tracked for buyer " # buyer.toText());
+    };
+    let entry = switch (tracking.deposits.find(func(e : Btc.DepositEntry) : Bool = toConvert(e) > FEE)) {
+      case (?e) e;
+      case null {
+        if (refund) {
+          switch (tracking.deposits.find(func(e : Btc.DepositEntry) : Bool = switch (e.btcRefund) { case (?r) r.purpose == #fullRefund; case null false })) {
+            case (?e) return #alreadyDone("A ckBTC refund was already opened for entry " # e.index.toText() # "; it is not opened twice");
+            case null return #refused("Nothing to refund: no ckBTC of this buyer is waiting for conversion");
+          };
+        };
+        return #alreadyDone("Nothing is left to convert for this buyer (" # total(tracking, func e = e.tttiDelivered).toText() # " TTTI-T base units delivered); no duplicate mint is made");
+      };
+    };
+    let index = entry.index;
+    if (costOpen(mctx.transfers, buyer, index) or refundOpen(entry)) {
+      return #refused("A ckBTC cost or refund send for entry " # index.toText() # " is not settled yet; resolve it in To review first");
+    };
+    let blocker = liveBlocker(mctx, buyer);
+    switch (blocker) {
+      case (?b) {
+        // The real cause is kept on the entry so the diagnosis and To review show it.
+        updateEntry(store, buyer, index, func x = { x with conversionCause = ?b.text; causePermanent = b.permanent });
+        if (not refund) return #refused(b.text);
+      };
+      case null {};
+    };
+    if (refund) {
+      let permanent = entry.causePermanent or (switch (blocker) { case (?b) b.permanent; case null false });
+      if (not permanent) {
+        return #refused("A refund needs a permanent cause (mint ended, cap reached, amount too small or acknowledgements missing). Current cause: " # (entry.conversionCause ?? "none recorded") # ". Run finishBtcMint with refund=false instead");
+      };
+    };
+    // A stale lock (unstamped or expired) is released only when nothing is running.
+    switch (lockState(mctx, inFlight, buyer)) {
+      case (#free) {};
+      case (#held) return #refused("A purchase lock is held for this buyer; wait up to 10 minutes for it to finish or expire");
+      case (#unstamped or #expired) {
+        if (mintRunning(mctx, buyer, index)) {
+          return #refused("A purchase for this buyer is still running (open ckBTC cost attempt or DEX lock); try again later");
+        };
+        inFlight.remove(buyer);
+        mctx.lockTimes.remove(lockKeyOf(buyer));
+      };
+    };
+    let stamp = switch (LiquidityMintLib.takePurchaseLock(mctx.lockTimes, inFlight, buyer)) {
+      case (?s) s;
+      case null return #refused("A purchase lock is held for this buyer; try again in a moment");
+    };
+    try {
+      if (not refund) {
+        let before = entry.tttiDelivered;
+        ignore await* finalize(store, ctx, mctx, buyer, tracking, true, null);
+        switch (entryOf(store, buyer, index)) {
+          case (?after) {
+            if (after.stage == #delivered and after.tttiDelivered > before) {
+              #minted({ tttiOut = Nat.sub(after.tttiDelivered, before); conversionId = after.conversionId ?? 0 });
+            } else {
+              switch (after.conversionCause) {
+                case (?c) {
+                  if (after.causePermanent) {
+                    #refused(c # ". No refund was opened by this call; the automatic pass refunds the ckBTC to the buyer wallet, or finishBtcMint(refund = true) does it now");
+                  } else { #refused(c) };
+                };
+                case null #refused(after.errorMessage ?? "The conversion did not complete; run diagnoseBtcMint");
+              };
+            };
+          };
+          case null #refused("The deposit entry disappeared");
+        };
+      } else {
+        let balance = switch (await PayTokenLib.balanceOf(PayTokenLib.ledger(#ckbtc), { owner = ctx.canister; subaccount = ?purchaseSubaccount(buyer) })) {
+          case (#ok(b)) b;
+          case (#err(message)) return #refused("The ckBTC ledger balance of the deposit subaccount could not be read: " # message);
+        };
+        // Re-read after the await: refund only what is still waiting, once.
+        let cur = switch (entryOf(store, buyer, index)) {
+          case (?c) c;
+          case null return #refused("The deposit entry disappeared");
+        };
+        if (toConvert(cur) <= FEE or cur.btcRefund != null) {
+          return #alreadyDone("Entry " # index.toText() # " no longer waits for conversion or already has a refund; no second refund is opened");
+        };
+        let debit = Nat.min(toConvert(cur), balance);
+        switch (openBtcRefund(mctx.transfers, buyer, #fullRefund, debit)) {
+          case null return #refused("The deposit subaccount holds " # balance.toText() # " sats, not more than the 10 sat ledger fee; nothing can be refunded");
+          case (?r) {
+            let reason = cur.conversionCause ?? "permanent cause";
+            updateEntry(store, buyer, index, func x = { x with stage = #error; ckbtcPendingSats = debit; errorKind = ?#unrecoverable; errorMessage = ?("The ckBTC is being refunded to the buyer by an admin (" # reason # "), minus the 10 sat ledger fee"); btcRefund = ?r });
+            await stepBtcRefund(store, mctx.transfers, buyer, index);
+            #refundOpened({ refundSats = Nat.sub(debit, FEE) });
+          };
+        };
+      };
+    } finally {
+      LiquidityMintLib.releasePurchaseLock(mctx.lockTimes, inFlight, buyer, stamp);
+    };
   };
 
   // Caches get_minter_info; failures keep the previous cache.

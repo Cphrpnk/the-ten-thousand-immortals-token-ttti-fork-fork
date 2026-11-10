@@ -1,5 +1,6 @@
 import Int "mo:core/Int";
 import List "mo:core/List";
+import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Principal "mo:core/Principal";
 import Result "mo:core/Result";
@@ -11,6 +12,7 @@ import Types "../types/dex-reserve";
 import DexTypes "../types/dex";
 import BatchTypes "../types/dex-batch";
 import InflightTypes "../types/inflight";
+import RetryTypes "../types/retry";
 import CreatorFeesLib "creator-fees";
 import DexLib "dex";
 import IcrcLib "icrc";
@@ -21,6 +23,8 @@ import InflightLib "inflight";
 import RouterLib "router";
 import AuctionLib "auction";
 import AuctionTypes "../types/auction";
+import GuaranteeLib "guarantee";
+import GuaranteeTypes "../types/guarantee";
 
 // DEX lot 6: reserve check and the DEX-specific pause. Each ledger account is
 // compared only with its own obligations, never mixed with another account:
@@ -46,6 +50,50 @@ module {
     closing : AuctionTypes.ClosingStore; // PTM-6b: withdrawable and pending-settlement balances
     inflight : InflightTypes.InflightStore; // PTM-9e: stored index of unfinished operations
     batch : BatchTypes.BatchStore; // PTM-9e: stored cursor, batch size, alert, zeroed accounts
+    guaranteeAccount : GuaranteeTypes.GuaranteeAccountStore; // PTM-10d: guarantee account per token (reference)
+    breakdown : BreakdownCache; // PTM-10d: per-token breakdown of the check in progress and the last one (transient)
+  };
+
+  // --- PTM-10d: per-token balance breakdown (transient, nothing stored) ------
+
+  // Obligations of the DEX holdings of one token, split. Their sum equals
+  // internalTotal, except when the guarantee account of the token is larger
+  // than the contract's own internal balance: the gap is then counted in
+  // `guarantees` on top, which makes the per-token total larger than the sum
+  // of the account totals.
+  public type HoldingsParts = {
+    poolReserves : Nat;
+    guarantees : Nat;
+    creatorHoldings : Nat;
+    dexBalances : Nat;
+    permanentLiquidity : Nat;
+  };
+
+  type HoldingsSlot = { parts : HoldingsParts; inFlight : Nat; ledger : Nat };
+  type AmountSlot = { amount : Nat; ledger : Nat };
+  // What one token gathered during the run: DEX holdings, request deposits and,
+  // for the paid tokens, auction deposits. Each slot is the obligations
+  // snapshot taken in the same step as the ledger read of that account.
+  type TokenSlots = {
+    var holdings : ?HoldingsSlot;
+    var requests : ?AmountSlot;
+    var auction : ?AmountSlot;
+  };
+
+  // Lost on upgrade: the breakdown is rebuilt by the next check. `runId` = the
+  // run the slots belong to (they are dropped when a new run starts).
+  public type BreakdownCache = {
+    var runId : Nat;
+    slots : Map.Map<Text, TokenSlots>;
+    var openHoldings : ?{ parts : HoldingsParts; inFlight : Nat };
+    var openAmount : ?Nat;
+    var published : [Types.TokenBalanceBreakdown];
+    var checkedAt : Int;
+    var complete : Bool;
+  };
+
+  public func emptyBreakdownCache() : BreakdownCache {
+    { var runId = 0; slots = Map.empty(); var openHoldings = null; var openAmount = null; var published = []; var checkedAt = 0; var complete = false };
   };
 
   type Account = { owner : Principal; subaccount : ?Blob };
@@ -78,7 +126,11 @@ module {
     for (token in DexLib.DEX_TOKENS.values()) {
       out.add({ kind = #dexHoldings; token });
     };
+    // PTM-10c: one request deposit account per token (TTTI-T for earlier requests).
     out.add({ kind = #requestDeposits; token = #tttiT });
+    for (token in PAY_TOKENS.values()) {
+      out.add({ kind = #requestDeposits; token });
+    };
     for (token in PAY_TOKENS.values()) {
       out.add({ kind = #mintFee; token });
     };
@@ -96,27 +148,43 @@ module {
     DexLib.poolDexToken(t) == ?token;
   };
 
-  // TTTI-T held in the request deposit subaccount: pending requests, refused
-  // requests not yet fed to the protocol liquidity (and not refunded), and
-  // approved requests whose DQ refund has not completed.
-  func heldRequestDeposits(ctx : ReserveContext) : Nat {
+  // Amount held in the request deposit account of `token`: pending requests,
+  // refused requests not yet moved to the set-aside (whatever the token, TTTI-T
+  // included: held until the move into the permanent liquidity set-aside is
+  // recorded) and approved requests whose DQ refund has not completed.
+  // Requests without a payment record were deposited in TTTI-T.
+  func heldRequestDeposits(ctx : ReserveContext, token : DexTypes.DexToken) : Nat {
     var total = 0;
     for (request in ctx.dex.dex.requests.values()) {
-      let held = switch (request.status) {
-        case (#pending) true;
-        case (#refused(_)) request.refundBlock == null and ctx.fees.refusedFeeds.get(request.id) == null;
-        case (#approved(_)) {
-          switch (request.refundStatus) {
-            case (#inProgress or #needsReview) true;
-            case (_) false;
-          };
+      if (RetryLib.depositTokenOf(ctx.dex.payments, request.id) == token) {
+        if (requestDepositHeld(request, ctx.dex.payments.get(request.id), ctx.fees.refusedFeeds.get(request.id) != null)) {
+          total += request.depositAmount;
         };
-      };
-      if (held) {
-        total += request.depositAmount;
       };
     };
     total;
+  };
+
+  // Pure: whether the deposit of `request` is still held in its request
+  // deposit account. `payment` is its PairPayDeposit record, `fed` whether a
+  // legacy refusedFeeds record covers it (only read without a payment record).
+  public func requestDepositHeld(request : DexTypes.PairRequest, payment : ?RetryTypes.PairPayDeposit, fed : Bool) : Bool {
+    switch (request.status) {
+      case (#pending) true;
+      case (#refused(_)) {
+        let moved = switch (payment) {
+          case (?p) p.setAsideAt != null;
+          case null fed;
+        };
+        request.refundBlock == null and not moved;
+      };
+      case (#approved(_)) {
+        switch (request.refundStatus) {
+          case (#inProgress or #needsReview) true;
+          case (_) false;
+        };
+      };
+    };
   };
 
   // Obligations of the DEX holdings of `token`: user balances (available +
@@ -202,7 +270,7 @@ module {
   func owedOf(ctx : ReserveContext, target : Target) : Nat {
     switch (target.kind) {
       case (#dexHoldings) internalTotal(ctx, target.token);
-      case (#requestDeposits) heldRequestDeposits(ctx);
+      case (#requestDeposits) heldRequestDeposits(ctx, target.token);
       case (#mintFee) mintFeeOwed(ctx, target.token);
       case (#protocolFees) protocolFeesOwed(ctx);
       case (#auctionDeposits) AuctionLib.heldDeposits(ctx.auction, ctx.closing, ctx.dex, target.token);
@@ -229,7 +297,7 @@ module {
     let canister = ctx.dex.canister;
     switch (target.kind) {
       case (#requestDeposits) {
-        { accounts = [{ owner = canister; subaccount = DexLib.requestDepositAccount(canister).subaccount }]; excluded = 0 };
+        { accounts = [{ owner = canister; subaccount = DexLib.requestDepositAccountOf(canister, target.token).subaccount }]; excluded = 0 };
       };
       case (#mintFee) {
         { accounts = [{ owner = canister; subaccount = ?ProtocolFeesLib.MINT_FEE_ACCOUNT_SUBACCOUNT }]; excluded = 0 };
@@ -342,11 +410,28 @@ module {
       },
     );
     if (open) return true;
-    if (token == #tttiT) {
-      for (request in ctx.dex.dex.requests.values()) {
+    // DQ refunds in flight, per token the deposit was paid in.
+    for (request in ctx.dex.dex.requests.values()) {
+      if (RetryLib.depositTokenOf(ctx.dex.payments, request.id) == token) {
         switch (request.refundStatus) {
           case (#inProgress or #needsReview) return true;
           case (_) {};
+        };
+      };
+    };
+    // PTM-10c / PTM-11b: a move of a refused deposit into the set-aside whose
+    // outcome is pending or unknown (a known failure moved nothing: the amount
+    // is still counted as held in the request deposit account).
+    for (payment in ctx.dex.payments.values()) {
+      if (payment.token == token and payment.setAsideAt == null) {
+        switch (payment.setAside) {
+          case (?attempt) {
+            switch (attempt.outcome) {
+              case (#failed(_)) {};
+              case (_) return true;
+            };
+          };
+          case null {};
         };
       };
     };
@@ -357,6 +442,38 @@ module {
       if (ctx.fees.store.dcLegs.size() > 0) return true;
     };
     false;
+  };
+
+  // PTM-10d: funds of `token` moved by operations started and not settled:
+  // unfinished DD deposits (auction deposits excluded: they are counted in the
+  // auction account) and routed swaps whose input has not left the custody yet
+  // (#recorded, #movingIn). A token with such an operation is deferred by the
+  // check, so a compared breakdown carries 0 here.
+  public func inFlightAmount(ctx : ReserveContext, token : DexTypes.DexToken) : Nat {
+    InflightLib.syncTransfers(ctx.inflight, ctx.dex.transfers);
+    var total = 0;
+    InflightLib.forEachOfToken(
+      ctx.inflight,
+      token,
+      func(e : InflightTypes.Entry) {
+        switch (e.kind) {
+          case (#deposit) {
+            switch (ctx.dex.transfers.deposits.get(e.n)) {
+              case (?t) { if (t.token == token and not RetryLib.isAuctionDeposit(t)) total += t.amount };
+              case null {};
+            };
+          };
+          case (#swap) {
+            switch (ctx.router.store.swaps.get(e.n)) {
+              case (?s) { if (s.tokenIn == token and (s.stage == #recorded or s.stage == #movingIn)) total += s.amountIn };
+              case null {};
+            };
+          };
+          case (_) {};
+        };
+      },
+    );
+    total;
   };
 
   // --- Results ---------------------------------------------------------------
@@ -697,6 +814,285 @@ module {
     };
   };
 
+  // --- PTM-10d: per-token balance breakdown ----------------------------------
+
+  // The DEX holdings obligations of `token`, split (see HoldingsParts).
+  public func holdingsParts(ctx : ReserveContext, token : DexTypes.DexToken) : HoldingsParts {
+    let key = DexLib.tokenKey(token);
+    var others = 0;
+    var own = 0;
+    for ((owner, inner) in ctx.dex.balances.entries()) {
+      switch (inner.get(key)) {
+        case (?b) {
+          if (owner == ctx.dex.canister) { own += b.available + b.reserved } else { others += b.available + b.reserved };
+        };
+        case null {};
+      };
+    };
+    var pools = 0;
+    for (pool in ctx.dex.dex.pools.values()) {
+      let (pot0, pot1) = DexLib.potOwed(ctx.dex.dex, pool.id);
+      if (isToken(pool.token0, token)) {
+        pools += pool.reserve0 + pool.protocolFee0 + pot0;
+      };
+      if (isToken(pool.token1, token)) {
+        pools += pool.reserve1 + pool.protocolFee1 + pot1;
+      };
+    };
+    for ((poolId, sa) in ctx.router.store.setAside.entries()) {
+      switch (ctx.dex.dex.pools.get(poolId)) {
+        case (?pool) {
+          if (isToken(pool.token0, token)) { pools += sa.amount0 };
+          if (isToken(pool.token1, token)) { pools += sa.amount1 };
+        };
+        case null {};
+      };
+    };
+    // The guarantee is also kept as a DEX balance of the contract: it is
+    // counted once, in `guarantees`; the rest of the contract balance is a
+    // plain DEX balance.
+    let guarantees = GuaranteeLib.accountBalance(ctx.guaranteeAccount, token);
+    {
+      poolReserves = pools;
+      guarantees;
+      creatorHoldings = CreatorFeesLib.owed(ctx.fees.creator, token);
+      dexBalances = others + (if (own > guarantees) own - guarantees else 0);
+      permanentLiquidity = ProtocolFeesLib.permanentAmount(ctx.fees.permanent, token);
+    };
+  };
+
+  func auctionOwed(ctx : ReserveContext, token : DexTypes.DexToken) : Nat {
+    if (token == #tttiT) 0 else AuctionLib.heldDeposits(ctx.auction, ctx.closing, ctx.dex, token);
+  };
+
+  func rowOf(token : DexTypes.DexToken, parts : HoldingsParts, inFlight : Nat, requests : Nat, auction : Nat, ledger : Nat) : Types.TokenBalanceBreakdown {
+    let total = parts.poolReserves + parts.guarantees + parts.creatorHoldings + parts.dexBalances + parts.permanentLiquidity + requests + auction + inFlight;
+    {
+      token;
+      poolReserves = parts.poolReserves;
+      guarantees = parts.guarantees;
+      creatorHoldings = parts.creatorHoldings;
+      dexBalances = parts.dexBalances;
+      permanentLiquidity = parts.permanentLiquidity;
+      requestDeposits = requests;
+      auctionDeposits = auction;
+      inFlight;
+      total;
+      ledgerBalance = ledger;
+      difference = ledger.toInt() - total.toInt();
+      status = statusOf(total, ledger);
+    };
+  };
+
+  // The breakdown of `token` from the current obligations against a given
+  // ledger balance (the sum of the token's compared accounts: DEX holdings,
+  // request deposits and, for paid tokens, auction deposits). Pure read.
+  public func breakdownOf(ctx : ReserveContext, token : DexTypes.DexToken, ledgerBalance : Nat) : Types.TokenBalanceBreakdown {
+    rowOf(token, holdingsParts(ctx, token), inFlightAmount(ctx, token), heldRequestDeposits(ctx, token), auctionOwed(ctx, token), ledgerBalance);
+  };
+
+  func syncRun(ctx : ReserveContext) {
+    let c = ctx.breakdown;
+    let id = ctx.batch.reserve.runId;
+    if (c.runId != id) {
+      c.runId := id;
+      c.slots.clear();
+      c.openHoldings := null;
+      c.openAmount := null;
+    };
+  };
+
+  // Called in the same synchronous step as the obligations snapshot of a
+  // compared account, so the breakdown comes from the same snapshot.
+  func captureOpen(ctx : ReserveContext, target : Target, owed : Nat) {
+    syncRun(ctx);
+    switch (target.kind) {
+      case (#dexHoldings) {
+        ctx.breakdown.openHoldings := ?{ parts = holdingsParts(ctx, target.token); inFlight = inFlightAmount(ctx, target.token) };
+      };
+      case (#requestDeposits or #auctionDeposits) { ctx.breakdown.openAmount := ?owed };
+      case (_) {};
+    };
+  };
+
+  // Called when an account has been compared: stores its captured snapshot and
+  // its ledger total in the slots of the token.
+  func recordSlot(ctx : ReserveContext, target : Target, r : Types.AccountResult) {
+    syncRun(ctx);
+    let c = ctx.breakdown;
+    let key = DexLib.tokenKey(target.token);
+    let slots : TokenSlots = switch (c.slots.get(key)) {
+      case (?s) s;
+      case null {
+        let s : TokenSlots = { var holdings = null; var requests = null; var auction = null };
+        c.slots.add(key, s);
+        s;
+      };
+    };
+    switch (target.kind) {
+      case (#dexHoldings) {
+        switch (c.openHoldings) {
+          case (?o) { slots.holdings := ?{ parts = o.parts; inFlight = o.inFlight; ledger = r.ledgerBalance } };
+          case null {};
+        };
+        c.openHoldings := null;
+      };
+      case (#requestDeposits) {
+        switch (c.openAmount) {
+          case (?a) { slots.requests := ?{ amount = a; ledger = r.ledgerBalance } };
+          case null {};
+        };
+        c.openAmount := null;
+      };
+      case (#auctionDeposits) {
+        switch (c.openAmount) {
+          case (?a) { slots.auction := ?{ amount = a; ledger = r.ledgerBalance } };
+          case null {};
+        };
+        c.openAmount := null;
+      };
+      case (_) {};
+    };
+  };
+
+  // The breakdown of `token` from this run's slots; null when one of its
+  // accounts was not compared in this run.
+  func slotRow(ctx : ReserveContext, token : DexTypes.DexToken) : ?Types.TokenBalanceBreakdown {
+    let slots = switch (ctx.breakdown.slots.get(DexLib.tokenKey(token))) {
+      case (?s) s;
+      case null return null;
+    };
+    switch (slots.holdings, slots.requests) {
+      case (?h, ?r) {
+        if (token == #tttiT) {
+          ?rowOf(token, h.parts, h.inFlight, r.amount, 0, h.ledger + r.ledger);
+        } else {
+          switch (slots.auction) {
+            case (?a) ?rowOf(token, h.parts, h.inFlight, r.amount, a.amount, h.ledger + r.ledger + a.ledger);
+            case null null;
+          };
+        };
+      };
+      case (_) null;
+    };
+  };
+
+  // A per-token shortfall is confirmed like an account shortfall: a fresh
+  // obligations snapshot and a second ledger read of the token's accounts.
+  // Null when the token is now in flight or a read failed (nothing decided).
+  func confirmRow(ctx : ReserveContext, token : DexTypes.DexToken, id : Nat) : async ?Types.TokenBalanceBreakdown {
+    if (tokenInFlight(ctx, token)) return null;
+    let parts = holdingsParts(ctx, token);
+    let inFlight = inFlightAmount(ctx, token);
+    let requests = heldRequestDeposits(ctx, token);
+    let auction = auctionOwed(ctx, token);
+    let kinds : [Types.AccountKind] = if (token == #tttiT) [#dexHoldings, #requestDeposits] else [#dexHoldings, #requestDeposits, #auctionDeposits];
+    var ledger = 0;
+    for (kind in kinds.values()) {
+      let read = await readLedger(ctx, { kind; token });
+      if (ctx.batch.reserve.runId != id) return null;
+      switch (read) {
+        case (#ok(n)) { ledger += n };
+        case (#err(e)) {
+          noteError(ctx.store, ctx.batch.reserve, "Per-token balance " # DexLib.tokenKey(token) # ": " # e, Time.now());
+          return null;
+        };
+      };
+    };
+    ?rowOf(token, parts, inFlight, requests, auction, ledger);
+  };
+
+  // A confirmed per-token shortfall raises the same alert and pause as an
+  // account shortfall. Skipped when an account of the token already raised it.
+  func raiseShortfall(ctx : ReserveContext, r : Types.TokenBalanceBreakdown, now : Int) {
+    for (a in ctx.store.accounts.values()) {
+      if (a.token == r.token and a.status == #shortfall and (a.kind == #dexHoldings or a.kind == #requestDeposits or a.kind == #auctionDeposits)) return;
+    };
+    let result : Types.AccountResult = {
+      kind = #dexHoldings;
+      accountLabel = "DEX per-token total";
+      token = r.token;
+      ledgerBalance = r.ledgerBalance;
+      owed = r.total;
+      difference = r.difference;
+      status = #shortfall;
+      checkedAt = now;
+    };
+    recordMismatch(ctx.store, result, now);
+    if (not ctx.store.pause.paused) {
+      ctx.store.pause.paused := true;
+      ctx.store.pause.reason := ?{ token = r.token; internalTotal = r.total; ledgerTotal = r.ledgerBalance; at = now };
+      ctx.store.pauseAccount := ?{ kind = result.kind; accountLabel = result.accountLabel; token = r.token };
+    };
+  };
+
+  // End of a complete run: builds the per-token breakdowns from the slots,
+  // confirms and raises any shortfall, and publishes them. A token that was not
+  // fully compared keeps its previous row and marks the snapshot incomplete.
+  func settleBreakdown(ctx : ReserveContext) : async () {
+    let run = ctx.batch.reserve;
+    let id = run.runId;
+    syncRun(ctx);
+    let cache = ctx.breakdown;
+    let rows = List.empty<Types.TokenBalanceBreakdown>();
+    var complete = true;
+    for (token in DexLib.DEX_TOKENS.values()) {
+      var row : ?Types.TokenBalanceBreakdown = slotRow(ctx, token);
+      switch (row) {
+        case (?first) {
+          if (first.status == #shortfall) {
+            row := await confirmRow(ctx, token, id);
+            if (run.runId != id) return;
+          };
+        };
+        case null {};
+      };
+      switch (row) {
+        case (?r) {
+          rows.add(r);
+          if (r.status == #shortfall) raiseShortfall(ctx, r, Time.now());
+        };
+        case null {
+          complete := false;
+          for (p in cache.published.values()) {
+            if (p.token == token) rows.add(p);
+          };
+        };
+      };
+    };
+    cache.published := rows.toArray();
+    cache.checkedAt := Time.now();
+    cache.complete := complete;
+  };
+
+  // Public view: the breakdown of the last complete run, with the time of the
+  // check and whether every token was compared (false while a run is in
+  // progress). After an upgrade, before the first run, the rows are rebuilt from
+  // the current obligations and the ledger totals of the stored account
+  // results, and flagged incomplete.
+  public func breakdownSnapshot(ctx : ReserveContext) : Types.DexBalanceBreakdownSnapshot {
+    let c = ctx.breakdown;
+    if (c.published.size() > 0) {
+      return { tokens = c.published; checkedAt = c.checkedAt; complete = c.complete and not ctx.batch.reserve.active };
+    };
+    if (ctx.store.accounts.size() == 0) return { tokens = []; checkedAt = 0; complete = false };
+    let rows = List.empty<Types.TokenBalanceBreakdown>();
+    var checkedAt : Int = 0;
+    for (token in DexLib.DEX_TOKENS.values()) {
+      var ledger = 0;
+      var seen = false;
+      for (a in ctx.store.accounts.values()) {
+        if (a.token == token and (a.kind == #dexHoldings or a.kind == #requestDeposits or a.kind == #auctionDeposits)) {
+          ledger += a.ledgerBalance;
+          if (a.kind == #dexHoldings) seen := true;
+          if (a.checkedAt > checkedAt) checkedAt := a.checkedAt;
+        };
+      };
+      if (seen) rows.add(breakdownOf(ctx, token, ledger));
+    };
+    { tokens = rows.toArray(); checkedAt; complete = false };
+  };
+
   // --- Async driver ----------------------------------------------------------
 
   // Reads up to `budget` ledger balances of the current compared account and
@@ -710,9 +1106,10 @@ module {
     if (run.owedSnapshot == null) {
       let listing = accountsOf(ctx, target);
       // The snapshot is taken here, in the same step as the first read.
-      switch (openTarget(ctx.batch, listing.accounts.size(), listing.excluded, tokenInFlight(ctx, token), owedOf(ctx, target))) {
+      let owedNow = owedOf(ctx, target);
+      switch (openTarget(ctx.batch, listing.accounts.size(), listing.excluded, tokenInFlight(ctx, token), owedNow)) {
         case (#skipped) return 0;
-        case (#reading) {};
+        case (#reading) { captureOpen(ctx, target, owedNow) };
       };
     };
     let accounts = accountsOf(ctx, target).accounts;
@@ -735,7 +1132,10 @@ module {
     // Rest of the accounts at the next tick.
     if (run.accountIndex < accounts.size()) return used;
     switch (compareTarget(ctx.batch, ctx.store, target, Time.now(), null)) {
-      case (#compared(_)) return used;
+      case (#compared(r)) {
+        recordSlot(ctx, target, r);
+        return used;
+      };
       case (#needsConfirm) {};
     };
     // Possible shortfall: a second, fresh snapshot and a second full read.
@@ -744,6 +1144,7 @@ module {
       return used;
     };
     let fresh = owedOf(ctx, target);
+    captureOpen(ctx, target, fresh);
     let second = await readLedger(ctx, target);
     if (run.runId != id) return used;
     switch (second) {
@@ -752,7 +1153,10 @@ module {
         skipTarget(ctx.batch);
       };
       case (#ok(ledger)) {
-        ignore compareTarget(ctx.batch, ctx.store, target, Time.now(), ?{ owed = fresh; ledger });
+        switch (compareTarget(ctx.batch, ctx.store, target, Time.now(), ?{ owed = fresh; ledger })) {
+          case (#compared(r)) recordSlot(ctx, target, r);
+          case (#needsConfirm) {};
+        };
       };
     };
     used + 1;
@@ -760,6 +1164,14 @@ module {
 
   // One batch: up to batchSize ledger reads, then the cursor is stored and the
   // next tick resumes. Finishes the run when the last compared account is done.
+  // PTM-10d: the per-token breakdown is settled before the run ends.
+  func completeRun(ctx : ReserveContext) : async () {
+    let run = ctx.batch.reserve;
+    let id = run.runId;
+    await settleBreakdown(ctx);
+    if (run.active and run.runId == id) finishRun(ctx.batch, ctx.store, Time.now());
+  };
+
   func reserveBatch(ctx : ReserveContext) : async () {
     let run = ctx.batch.reserve;
     startBatch(ctx.batch, Time.now());
@@ -769,14 +1181,14 @@ module {
     while (run.active and budget > 0 and rounds < 128) {
       rounds += 1;
       if (run.targetIndex >= all.size()) {
-        finishRun(ctx.batch, ctx.store, Time.now());
+        await completeRun(ctx);
       } else {
         let used = await stepTarget(ctx, all[run.targetIndex], budget);
         budget := Nat.sub(budget, Nat.min(used, budget));
       };
     };
     if (run.active and run.targetIndex >= all.size()) {
-      finishRun(ctx.batch, ctx.store, Time.now());
+      await completeRun(ctx);
     };
   };
 
@@ -856,6 +1268,11 @@ module {
       for (r in ctx.store.accounts.values()) {
         if (r.status == #shortfall) {
           return #err(#checkFailed("Shortfall remains on " # r.accountLabel # " " # DexLib.tokenKey(r.token) # ": ledger " # r.ledgerBalance.toText() # ", owed " # r.owed.toText()));
+        };
+      };
+      for (r in ctx.breakdown.published.values()) {
+        if (r.status == #shortfall) {
+          return #err(#checkFailed("Shortfall remains on per-token total " # DexLib.tokenKey(r.token) # ": ledger " # r.ledgerBalance.toText() # ", owed " # r.total.toText()));
         };
       };
       ctx.store.pause.paused := false;

@@ -148,6 +148,12 @@ func addMint(store : Types.LiquidityMintStore, id : Nat, status : Types.MintStat
       rateUsdE8 = 500_000_000;
       poolId = 1;
       positionId = null;
+      mShareE6 = 0;
+      choice = #pool;
+      lockedPositionId = null;
+      lockedTokenAmount = 0;
+      lockedTttiAmount = 0;
+      handTttiAmount = 0;
       paymentBlock = ?77;
       status;
       createdAt = 0;
@@ -290,4 +296,112 @@ do {
   assert statusOf(store, 0) == #inProgress;
   assert store.guarantees.size() == 0;
   assert store.creatorSetAsides.size() == 0;
+};
+
+// --- 4. Reference price of the mint preview ----------------------------------------------------
+//
+// mintPoolPreview / listMintPools need a full MintContext (ledger, oracle, sale,
+// guarantee stores...), which the interpreter tests do not build. Their
+// reference price is `DexLib.consolidatedExcluding(dex, rates, now, targetPool)`
+// (referenceExcluding), so the properties below are asserted on that function:
+// the targeted pool is left out, neither its current nor its after-zap reserves
+// matter, and without another open pool there is no reference (the preview then
+// reports noIndependentReference and null gaps, never a gap of 0).
+
+let previewNow : Int = 1_000_000_000_000_000_000;
+
+let tttiToken : DexTypes.PoolToken = { ledger = #internal; symbol = "TTTI-T"; decimals = 8 };
+let usdcToken : DexTypes.PoolToken = {
+  ledger = #external(Principal.fromText("xevnm-gaaaa-aaaar-qafnq-cai"));
+  symbol = "ckUSDC";
+  decimals = 6;
+};
+let usdtToken : DexTypes.PoolToken = {
+  ledger = #external(Principal.fromText("cngnf-vqaaa-aaaar-qag4q-cai"));
+  symbol = "ckUSDT";
+  decimals = 6;
+};
+
+func previewRate(token : DexTypes.PoolToken) : ?Nat {
+  if (token.symbol == "ckUSDC" or token.symbol == "ckUSDT") ?100_000_000 else null;
+};
+
+func previewPool(id : Nat, counter : DexTypes.PoolToken, tttiReserve : Nat, counterReserve : Nat) : DexTypes.Pool {
+  {
+    id;
+    token0 = tttiToken;
+    token1 = counter;
+    feeTier = #bps30;
+    kind = #tttiPair;
+    status = #active;
+    createdAt = 0;
+    subaccount = "" : Blob;
+    minimumLocked = { token0 = null; token1 = null };
+    newPairBadgeUntil = null;
+    requestId = null;
+    removedAt = null;
+    reserve0 = tttiReserve;
+    reserve1 = counterReserve;
+    totalShares = 1_000_000;
+    lockedShares = 0;
+    protocolFee0 = 0;
+    protocolFee1 = 0;
+    lockedFeesPaid0 = 0;
+    lockedFeesPaid1 = 0;
+  };
+};
+
+func previewStore(pools : [DexTypes.Pool]) : DexTypes.DexStore {
+  let map = Map.empty<Nat, DexTypes.Pool>();
+  for (p in pools.values()) { map.add(p.id, p) };
+  {
+    pools = map;
+    requests = Map.empty<DexTypes.RequestId, DexTypes.PairRequest>();
+    lastRefusalAt = Map.empty<Principal, Int>();
+    var nextPoolId = pools.size() + 1;
+    var nextRequestId = 1;
+    positions = Map.empty<DexTypes.PositionId, DexTypes.Position>();
+    var nextPositionId = 1;
+    removals = Map.empty<DexTypes.PoolId, DexTypes.PairRemoval>();
+    icpswapSamples = Map.empty<Text, DexTypes.IcpSwapSample>();
+    referenceReadings = Map.empty<Text, DexTypes.ReferenceReading>();
+    poolPositions = Map.empty<DexTypes.PoolId, Set.Set<DexTypes.PositionId>>();
+    fees = {
+      var dayStart = 0;
+      var nextSharingAt = 86_400_000_000_000;
+      pots = Map.empty<DexTypes.PoolId, DexTypes.PoolPot>();
+      locks = Map.empty<DexTypes.PositionId, DexTypes.PositionLock>();
+      unpaid = Map.empty<Text, DexTypes.UnpaidShare>();
+    };
+  };
+};
+
+// Pool 1 (target) at 10 000 USD, pool 2 at 11 000 USD. The reference of pool 1
+// is pool 2's price whatever pool 1 holds, before or after the zap.
+do {
+  let rate = previewRate;
+  let other = previewPool(2, usdtToken, 10_000_000, 1_100_000_000);
+  let before = previewStore([previewPool(1, usdcToken, 10_000_000, 1_000_000_000), other]);
+  // After the zap: the pool received counterpart and TTTI-T, its own price moved.
+  let after = previewStore([previewPool(1, usdcToken, 9_000_000, 1_500_000_000), other]);
+  let refBefore = DexLib.consolidatedExcluding(before, rate, previewNow, 1);
+  let refAfter = DexLib.consolidatedExcluding(after, rate, previewNow, 1);
+  assert refBefore.price == ?1_100_000_000_000;
+  assert refAfter.price == refBefore.price;
+  // The pool's own gap against it is signed and never 0 by construction.
+  assert DexLib.consolidatedExcluding(before, rate, previewNow, 2).price == ?1_000_000_000_000;
+  // The all-pools consolidated price does move with the zap: it must not be used.
+  assert DexLib.consolidatedNow(before, rate, previewNow).price != DexLib.consolidatedNow(after, rate, previewNow).price;
+};
+
+// Single pool: no independent reference, before or after the zap.
+do {
+  let before = previewStore([previewPool(1, usdcToken, 10_000_000, 1_000_000_000)]);
+  let after = previewStore([previewPool(1, usdcToken, 9_000_000, 1_500_000_000)]);
+  let refBefore = DexLib.consolidatedExcluding(before, previewRate, previewNow, 1);
+  let refAfter = DexLib.consolidatedExcluding(after, previewRate, previewNow, 1);
+  assert refBefore.price == null;
+  assert refBefore.unavailable != null;
+  assert refAfter.price == null;
+  assert refAfter.unavailable != null;
 };

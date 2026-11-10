@@ -1,12 +1,13 @@
 import { Principal } from "@icp-sdk/core/principal";
 import { type FormEvent, useState } from "react";
-import { FeeTier } from "../../backend";
+import { DexToken, FeeTier } from "../../backend";
 import type { CounterToken, DexConfig } from "../../backend";
 import { useRequestPair } from "../../hooks/useDex";
-import { useIcrc1Fee } from "../../hooks/useQueries";
+import { useFiatRates } from "../../hooks/useFiatValue";
 import { useDict, useLanguage } from "../../i18n/core";
 import { formatNumber } from "../../i18n/core/lang";
 import { DEX_TEXT } from "../../i18n/pages/dex";
+import { formatUsdE8 } from "../../lib/token";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -20,12 +21,16 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Textarea } from "../ui/textarea";
-import { DexFiat, useDexFiatText } from "./DexFiat";
+import { DexFiat, fiatTokenOfDex, useDexFiatText } from "./DexFiat";
 import {
   FEE_TIER_ORDER,
-  approvalErrorText,
+  REQUEST_ALLOWANCE_MARGIN_BPS,
+  REQUEST_DEPOSIT_TOKENS,
+  dexTokenUnits,
   feeTierLabel,
+  formatDexUnits,
   formatTttiAmount,
+  requestDepositIn,
   requestErrorText,
 } from "./dexFormat";
 
@@ -66,16 +71,27 @@ function isCounterKey(value: string): value is CounterKey {
   return COUNTERS.some((c) => c.key === value);
 }
 
-export function PairRequestForm({ config }: { config: DexConfig }) {
+function isDepositToken(value: string): value is DexToken {
+  return REQUEST_DEPOSIT_TOKENS.some((tk) => tk === value);
+}
+
+export function PairRequestForm({
+  config,
+  caller,
+}: {
+  config: DexConfig;
+  caller: Principal | undefined;
+}) {
   const t = useDict(DEX_TEXT);
   const { lang } = useLanguage();
   const fiatText = useDexFiatText();
-  const feeQuery = useIcrc1Fee();
-  const request = useRequestPair();
+  const rates = useFiatRates();
+  const request = useRequestPair(caller);
 
   const [ledgerText, setLedgerText] = useState("");
   const [ledgerTouched, setLedgerTouched] = useState(false);
   const [counter, setCounter] = useState<CounterKey | "">("");
+  const [payToken, setPayToken] = useState<DexToken>(DexToken.icp);
   const [tier, setTier] = useState<FeeTier>(FeeTier.bps30);
   const [message, setMessage] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -87,18 +103,35 @@ export function PairRequestForm({ config }: { config: DexConfig }) {
   const ledgerId = parsePrincipal(ledgerText);
   const ledgerInvalid = ledgerTouched && ledgerText.trim() !== "" && !ledgerId;
   const tooLong = message.length > maxChars;
-  const fee = feeQuery.data;
+  const units = dexTokenUnits(payToken);
+  const fiatToken = fiatTokenOfDex(payToken);
+  const depositAmount = requestDepositIn(
+    config.requestDepositUsdE8,
+    units.decimals,
+    rates.usdE8PerToken(fiatToken),
+  );
+  const allowance =
+    depositAmount !== null
+      ? depositAmount +
+        (depositAmount * REQUEST_ALLOWANCE_MARGIN_BPS + 9_999n) / 10_000n
+      : null;
   const approvalAmount =
-    fee !== undefined
-      ? `${formatTttiAmount(config.requestDeposit + fee)} ${fiatText("ttti", config.requestDeposit + fee)}`
+    allowance !== null
+      ? `${formatDexUnits(allowance, units)} ${fiatText(fiatToken, allowance)}`
       : null;
   const canSubmit =
-    !!ledgerId && counter !== "" && !tooLong && confirmed && !request.isPending;
+    !!ledgerId &&
+    counter !== "" &&
+    !tooLong &&
+    confirmed &&
+    allowance !== null &&
+    !request.isPending;
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     setLedgerTouched(true);
     if (!ledgerId || counter === "" || tooLong || !confirmed) return;
+    if (allowance === null) return;
     const captured = { ledger: ledgerText, message };
     setError(null);
     setSuccess(false);
@@ -108,6 +141,8 @@ export function PairRequestForm({ config }: { config: DexConfig }) {
         counter: toCounterToken(counter),
         feeTier: tier,
         message: message.trim(),
+        payToken,
+        allowance,
       },
       {
         onSuccess: (outcome) => {
@@ -118,9 +153,9 @@ export function PairRequestForm({ config }: { config: DexConfig }) {
             setLedgerText((cur) => (cur === captured.ledger ? "" : cur));
             setMessage((cur) => (cur === captured.message ? "" : cur));
           } else if (outcome.__kind__ === "approvalFailed") {
-            setError(approvalErrorText(t, outcome.approvalFailed, fee ?? 0n));
+            setError(t.errApprovalFailed(outcome.approvalFailed));
           } else {
-            setError(requestErrorText(t, outcome.err, lang));
+            setError(requestErrorText(t, outcome.err, lang, units));
           }
         },
         onError: (err) => setError(t.errApprovalFailed(err.message)),
@@ -228,12 +263,51 @@ export function PairRequestForm({ config }: { config: DexConfig }) {
         </p>
       </div>
 
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="pair-pay-token">{t.payToken}</Label>
+        <Select
+          value={payToken}
+          onValueChange={(v) => isDepositToken(v) && setPayToken(v)}
+        >
+          <SelectTrigger
+            id="pair-pay-token"
+            data-ocid="pair_request.pay_token.select"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {REQUEST_DEPOSIT_TOKENS.map((tk) => (
+              <SelectItem key={tk} value={tk}>
+                {dexTokenUnits(tk).symbol}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="flex flex-col gap-3 border-t border-border pt-4 text-sm">
-        <p className="font-mono tabular-nums" data-ocid="pair_request.deposit">
-          {t.deposit(formatTttiAmount(config.requestDeposit))}{" "}
-          <DexFiat token="ttti" amount={config.requestDeposit} />
+        {depositAmount !== null ? (
+          <p
+            className="font-mono tabular-nums"
+            data-ocid="pair_request.deposit"
+          >
+            {t.deposit(formatDexUnits(depositAmount, units))}{" "}
+            <DexFiat token={fiatToken} amount={depositAmount} />
+          </p>
+        ) : (
+          <p
+            className="text-xs text-muted-foreground"
+            data-ocid="pair_request.deposit_rate_unavailable"
+          >
+            {t.depositRateUnavailable(units.symbol)}
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {t.depositRule(
+            formatUsdE8(config.requestDepositUsdE8, 2, lang),
+            formatTttiAmount(config.requestDeposit),
+          )}
         </p>
-        <p className="text-xs text-muted-foreground">{t.depositRule}</p>
         {approvalAmount && (
           <div className="callout-warning flex items-start gap-2 px-3 py-2.5">
             <Checkbox
@@ -248,7 +322,10 @@ export function PairRequestForm({ config }: { config: DexConfig }) {
               htmlFor="pair-approval-confirm"
               className="text-xs leading-relaxed font-normal"
             >
-              {t.depositApproval(approvalAmount)}
+              {t.depositApproval(
+                approvalAmount,
+                `${formatNumber(Number(REQUEST_ALLOWANCE_MARGIN_BPS) / 100)} %`,
+              )}
             </Label>
           </div>
         )}

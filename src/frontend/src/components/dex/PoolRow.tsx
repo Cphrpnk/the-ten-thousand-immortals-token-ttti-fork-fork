@@ -1,6 +1,12 @@
 import { ChevronDown, TriangleAlert } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { DepthBasis, PoolKind, PoolStatus, SpreadStatus } from "../../backend";
+import {
+  DepthBasis,
+  PoolKind,
+  PoolStatus,
+  SpreadStatus,
+  ThresholdBasis,
+} from "../../backend";
 import type {
   DexConfig,
   EstimatedShareView,
@@ -11,6 +17,7 @@ import type {
 } from "../../backend";
 import { useCountdown } from "../../hooks/useCountdown";
 import {
+  type PoolReferenceState,
   useDexPendingPots,
   usePoolPositions,
   usePoolSpreads,
@@ -433,12 +440,14 @@ function spreadReasonText(t: DexText, spread: PoolSpread | undefined): string {
       return t.spreadReasonNoRate;
     case SpreadStatus.noConsolidatedPrice:
       return t.spreadReasonNoConsolidated;
+    case SpreadStatus.noIndependentReference:
+      return t.spreadNoIndependentReference;
     default:
       return t.spreadReasonNotOpen;
   }
 }
 
-/** Signed spread versus the consolidated price, or a neutral dash with the reason. */
+/** Signed spread versus the other open pools, or a neutral dash with the reason. */
 function SpreadLine({
   index,
   spread,
@@ -509,6 +518,8 @@ export function PoolRow({
   onAction,
   canTrade,
   tradeNote,
+  reference,
+  onDetailsOpenChange,
 }: {
   pool: PoolView;
   config: DexConfig | undefined;
@@ -518,6 +529,10 @@ export function PoolRow({
   canTrade: boolean;
   /** Why Add / Swap are unavailable, when they are. */
   tradeNote?: string;
+  /** Reference price of this pool from the page's shared query. */
+  reference?: PoolReferenceState;
+  /** Told when the details open or close, so the page reads only what is shown. */
+  onDetailsOpenChange?: (poolId: bigint, open: boolean) => void;
 }) {
   const t = useDict(DEX_TEXT);
   const { lang } = useLanguage();
@@ -546,13 +561,27 @@ export function PoolRow({
   const pct = thresholdPct(pool);
   const pairName = `${pool.token0.symbol}/${pool.token1.symbol}`;
   const measured = pool.thresholdMeasuredUsdE8 ?? pool.gauge.currentUsdE8;
-  const depthLine =
-    unavailable || measured === undefined
-      ? poolDepthText(t, pool)
-      : `${formatUsdE8(measured)} USD / ${thresholdText(t, pool)}`;
+  let depthLine: string;
+  if (measured === undefined) {
+    depthLine = unavailable ? poolDepthText(t, pool) : t.depthUnavailable;
+  } else if (pool.thresholdBasis === ThresholdBasis.tttiSideAtPoolPrice) {
+    depthLine = t.thresholdProgressTtti(
+      formatUsdE8(measured),
+      formatUsdE8(pool.swapThresholdUsdE8),
+    );
+  } else {
+    depthLine = `${formatUsdE8(measured)} USD / ${thresholdText(t, pool)}`;
+  }
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} asChild>
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        onDetailsOpenChange?.(pool.id, next);
+      }}
+      asChild
+    >
       <li
         className={cn("pool-row", removed && "opacity-80")}
         data-ocid={`pools.item.${index}`}
@@ -808,7 +837,7 @@ export function PoolRow({
           )}
           {pool.totalShares === 0n && !addBlocked && (
             <div className="mt-3">
-              <ReferencePriceBlock pool={pool} />
+              <ReferencePriceBlock pool={pool} shared={reference} />
             </div>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-3">

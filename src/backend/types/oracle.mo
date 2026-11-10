@@ -48,9 +48,28 @@ module {
     #Err : Text;
   };
 
+  // PTM-10d: the rate the other feed returned in the same fetch. `source` is
+  // #coinbase or #coingecko and differs from the main rate's source; the
+  // main rate is the first feed that answered, this is the second one.
+  public type SecondSourceObservation = {
+    source : PriceSource;
+    usdE8 : Nat; // USD per whole token * 10^8
+    fetchedAt : Timestamp;
+  };
+
+  // Stable store of the second-source observation per pay token (null = none
+  // stored). Separate from the main rate stores, which keep their shape.
+  public type SecondRateStore = {
+    var icp : ?SecondSourceObservation;
+    var ckbtc : ?SecondSourceObservation;
+    var ckusdc : ?SecondSourceObservation;
+    var ckusdt : ?SecondSourceObservation;
+  };
+
   // One pay token's stored USD rate (ICP-USD, BTC-USD, USDC-USD, USDT-USD),
-  // same fields and rules as IcpPrice.
+  // same fields and rules as IcpPrice, plus the second-source observation.
   public type TokenPrice = {
+    secondSource : ?SecondSourceObservation; // null while no second rate is stored
     token : PayToken;
     pair : Text; // e.g. "BTC-USD"
     usdE8 : Nat; // USD per whole token * 10^8, 0 = no rate

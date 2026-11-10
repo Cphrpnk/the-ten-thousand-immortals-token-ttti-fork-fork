@@ -1,0 +1,90 @@
+import type en from "./en";
+
+const fr: typeof en = {
+  dateLocale: "fr-FR",
+  title: "Historique des transactions",
+  subtitle:
+    "Activité du ledger par ordre chronologique, les plus récentes en premier.",
+  totalBlocks: (count: string) => `${count} blocs`,
+  errorTitle: "Impossible de charger le journal des blocs",
+  errorDescription:
+    "Le ledger n'a pas répondu. Vérifiez votre connexion et réessayez.",
+  retry: "Réessayer",
+  tipTitle: "Certificat de tip",
+  tipCertified: "Certifié",
+  tipNoCertificate: "Aucun certificat",
+  tipDescription:
+    "Données de tip renvoyées par le ledger. Elles sont affichées à titre indicatif et ne sont pas vérifiées cryptographiquement dans ce navigateur.",
+  tipEmptyLog:
+    "Le journal des blocs est vide : il n'y a donc pas encore de tip à certifier. Un certificat apparaît après la première transaction.",
+  tipMissing: "Le ledger n'a pas renvoyé de certificat de tip.",
+  tipIndex: "Index du tip",
+  tipCertificateSize: "Taille du certificat",
+  tipBytes: (size: string) => `${size} octets`,
+  tipLastBlockHash: "Hash du dernier bloc",
+  tipDecodeError: "Impossible de décoder le hash tree",
+  tipReturnedBy: "Renvoyé par le ledger.",
+  kindTransfer: "Transfert",
+  kindMint: "Mint",
+  kindBurn: "Ajustement du ledger",
+  kindApprove: "Approbation",
+  kindLegacyUnknown: "Bloc",
+  transferFromTitle: "Transfert par un spender approuvé",
+  noFee: "Sans frais",
+  feeCollectorTitle: (account: string) =>
+    `Crédité au collecteur de frais ${account}`,
+  toFeeCollector: "au collecteur de frais",
+  detailSpender: "Spender",
+  detailMemo: "Mémo",
+  detailCreated: "Créé",
+  detailExpires: "Expire",
+  detailExpectedAllowance: "Allowance attendue",
+  legacyBadge: "ancien",
+  legacyBadgeTitle: (decimals: string) =>
+    `Enregistré avant la mise à jour avec ${decimals} décimales`,
+  parentHashTitle: (hash: string) => `Hash parent ${hash}`,
+  parentHashAria: (hash: string, block: string) =>
+    `Hash parent ${hash}, aller au bloc ${block}`,
+  blockHash: "Hash du bloc",
+  blockHashCopy: "Copier le hash du bloc",
+  blockHashCopied: "Copié",
+  minted: "Minté",
+  ledger: "Ledger",
+  spenderNote: "spender",
+  via: (account: string) => `via ${account}`,
+  allowance: "Allowance",
+  amount: "Montant",
+  from: "De",
+  to: "À",
+  spender: "Spender",
+  fee: "Frais",
+  feeCollector: "Collecteur de frais",
+  time: "Date",
+  emptyTitle: "Aucune transaction pour l'instant",
+  emptyDescription:
+    "L'activité enregistrée du ledger apparaîtra ici dès que le premier bloc sera enregistré.",
+  emptyBack: "Retour à la présentation du token",
+  pageLatest: "Blocs les plus récents",
+  pageNewerBlocks: "Blocs plus récents",
+  pageOlderBlocks: "Blocs plus anciens",
+  pageOldest: "Blocs les plus anciens",
+  pageNewer: "Plus récents",
+  pageOlder: "Plus anciens",
+  paginationAria: "Pages de l'historique des blocs",
+  pageOf: (range: string, page: string, total: string) =>
+    `${range} · Page ${page} sur ${total}`,
+  rangeBlocks: (newest: string, oldest: string, total: string) =>
+    `Blocs #${newest}–#${oldest} sur ${total}`,
+  rangeEmpty: (total: string) => `0 bloc sur ${total}`,
+  colBlock: "Bloc",
+  colType: "Type",
+  colFrom: "De",
+  colTo: "À",
+  colAmount: (symbol: string) => `Montant (${symbol})`,
+  colFee: "Frais",
+  colTime: "Date",
+  legacyNote: (boundary: string, legacy: string, current: string) =>
+    `Les blocs antérieurs au #${boundary} utilisent ${legacy} décimales, les blocs suivants ${current}.`,
+};
+
+export default fr;

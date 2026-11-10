@@ -65,7 +65,7 @@ export function useTttiAllowance(owner: Principal | undefined) {
 /**
  * Confirm flow: requests the ICRC-2 allowance when it does not cover the
  * quote (signed by the wallet that holds the account, 15 minute expiration),
- * then redeems. Failures are kept as the thrown value in `error`.
+ * then redeems against the common reserve. Failures are kept as the thrown value in `error`.
  */
 export function useGuaranteeRedeem(owner: Principal | undefined) {
   const signer = useAccountSigner(owner);
@@ -74,7 +74,7 @@ export function useGuaranteeRedeem(owner: Principal | undefined) {
   const redeem = useRedeemGuarantee();
   const [phase, setPhase] = useState<RedeemPhaseState>("idle");
   const [error, setError] = useState<unknown>(null);
-  const [result, setResult] = useState<Redemption | null>(null);
+  const [result, setResult] = useState<Array<Redemption> | null>(null);
 
   const ready = !!ttti && !!spender.data;
 
@@ -98,9 +98,8 @@ export function useGuaranteeRedeem(owner: Principal | undefined) {
       setPhase("redeeming");
       setResult(
         await redeem.mutateAsync({
-          token: quote.token,
           tttiAmount: quote.tttiAmount,
-          expectedNetAmount: quote.netAmount,
+          expectedPayoutUsdE8: quote.payoutUsdE8,
         }),
       );
     } catch (failure) {

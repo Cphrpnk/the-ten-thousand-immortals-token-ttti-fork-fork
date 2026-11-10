@@ -76,17 +76,16 @@ function invalidateAfterPurchase(queryClient: QueryClient) {
     "saleStatus",
     "technicalDetails",
     "conversions",
-    "treasuryState",
+    "myConversions",
+    "icrc3GetBlocks",
     "walletBalance",
     "icrc1BalanceOf",
     "tokenInfo",
-    "icpPrice",
-    "tokenPrices",
-    "deliveryAddress",
     "exactQuote",
     "liquidityMints",
     "myGuarantees",
     "dexPositionsOf",
+    "tttiAccountTransactions",
   ]) {
     void queryClient.invalidateQueries({ queryKey: [key] });
   }

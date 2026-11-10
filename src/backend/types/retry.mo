@@ -25,7 +25,7 @@ module {
   // DEX-1: SW (sweep of a legacy deposit or pool subaccount into the token custody account).
   // PTM-4: CF (creator fee payout to the receiving wallet) and CY (cycles share
   // of the 1 % mint and buyback fees moved from the ICP custody to the cycles reserve).
-  public type TransferPrefix = { #PC; #RF; #FW; #SH; #GR; #BR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST; #SW; #LQ; #CF; #CY; #AB };
+  public type TransferPrefix = { #PC; #RF; #FW; #SH; #GR; #BR; #DD; #DW; #DQ; #DC; #DL; #OW; #SR; #MF; #IR; #ST; #SW; #LQ; #CF; #CY; #AB; #PQ; #RD };
 
   // Transfer types handled by the admin review ("To review"): forwards (FW),
   // reserve shares (SH), purchase refunds (RF, keyed by purchase id),
@@ -189,6 +189,24 @@ module {
     withdrawals : Map.Map<Nat, DexTransfer>; // DW, keyed by n
     pairRefunds : Map.Map<Nat, DexTransferAttempt>; // DQ, keyed by request id
     liquidations : Map.Map<Nat, LiquidationPayout>; // LQ, keyed by n (DEX-2)
+  };
+
+  // PTM-10c: how the deposit of one pair request was paid (keyed by request
+  // id). A request without an entry was deposited in TTTI-T (earlier
+  // requests); PTM-11b creates its entry (token #tttiT) when its refused
+  // deposit is moved to the set-aside. `token` is the accepted token paid (ICP,
+  // ckBTC, ckUSDC or ckUSDT) or #tttiT for those earlier requests;
+  // PairRequest.depositAmount / depositBlock are in that token.
+  // After a refusal the deposit is moved from its request deposit account to
+  // the DEX custody account of the token by the RD attempt `setAside` (memo
+  // TTTI-RD-<request id>) and counted in the permanent liquidity set-aside in
+  // the same step that records the successful outcome (`setAsideAt`), so each
+  // refused deposit is counted exactly once.
+  public type PairPayDeposit = {
+    requestId : Nat;
+    token : DexToken;
+    setAside : ?DexTransferAttempt;
+    setAsideAt : ?Int;
   };
 
   // DEX-2, LQ: payout of one token of a liquidated position to the owner's

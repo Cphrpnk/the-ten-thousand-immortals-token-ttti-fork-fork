@@ -1,14 +1,11 @@
-import {
-  type GuaranteeError,
-  type GuaranteeMassView,
-  type PayToken,
-  type RedeemQuote,
-  RedeemRule,
-  type Redemption,
-  RedemptionKind,
+import type {
+  GuaranteeError,
+  PayToken,
+  RedeemQuote,
+  Redemption,
 } from "../backend";
 import { pickDict } from "../i18n/core/dict";
-import { type Lang, toIntlLocale } from "../i18n/core/lang";
+import type { Lang } from "../i18n/core/lang";
 import { GUARANTEE_TEXT } from "../i18n/pages/guarantee";
 import {
   type BlockLinkTarget,
@@ -17,7 +14,6 @@ import {
 } from "./explorer";
 import {
   PAY_TOKENS,
-  PAY_TOKEN_ORDER,
   TTTI_DECIMALS,
   TTTI_SYMBOL,
   defaultNumberLang,
@@ -27,18 +23,14 @@ import {
   formatUsdE8,
   parseTtti,
   payTokenSymbol,
-  tttiToUsdE8,
 } from "./token";
 
 /**
- * Pure helpers of the personal guarantee screen. Quantities are base units
- * (bigint); texts come from GUARANTEE_TEXT.
+ * Pure helpers of the common reserve screen. Quantities are base units
+ * (bigint); USD values are usdE8; texts come from GUARANTEE_TEXT.
  */
 
 export type GuaranteeText = (typeof GUARANTEE_TEXT)["en"];
-
-/** Redemption fee in basis points (1%), set aside for the creator. */
-export const REDEMPTION_FEE_BPS = 100n;
 
 /** Error thrown by query hooks when the backend returns a GuaranteeError. */
 export class GuaranteeFailure extends Error {
@@ -48,36 +40,6 @@ export class GuaranteeFailure extends Error {
     this.name = "GuaranteeFailure";
     this.error = error;
   }
-}
-
-/** Masses in payment-token order. */
-export function sortMasses(
-  masses: ReadonlyArray<GuaranteeMassView> | undefined,
-): Array<GuaranteeMassView> {
-  return [...(masses ?? [])].sort(
-    (a, b) =>
-      PAY_TOKEN_ORDER.indexOf(a.token) - PAY_TOKEN_ORDER.indexOf(b.token),
-  );
-}
-
-/** Mass of `token`, when any. */
-export function massFor(
-  masses: ReadonlyArray<GuaranteeMassView> | undefined,
-  token: PayToken | undefined,
-): GuaranteeMassView | undefined {
-  return token === undefined
-    ? undefined
-    : masses?.find((m) => m.token === token);
-}
-
-/** True when the mass still has TTTI-T that can be returned. */
-export function canRedeem(mass: GuaranteeMassView): boolean {
-  return mass.remainingTtti > 0n;
-}
-
-/** True when the owner can withdraw an excess (mint ended, excess left). */
-export function canWithdrawExcess(mass: GuaranteeMassView): boolean {
-  return mass.mintEnded && mass.withdrawableExcess > 0n;
 }
 
 // --- Amounts -----------------------------------------------------------------
@@ -106,58 +68,22 @@ export function formatTokenQuantity(
   return `${formatUnits(amount, decimals, 2, lang)} ${symbol}`;
 }
 
-/** USD value (usdE8) of `amount` base units of `token` at `rateUsdE8` per whole token. */
-export function payToUsdE8(
-  amount: bigint,
-  token: PayToken,
-  rateUsdE8: bigint,
-): bigint {
-  return (amount * rateUsdE8) / 10n ** BigInt(PAY_TOKENS[token].decimals);
-}
-
-/** USD text of a value in usdE8; "–" when the rate is unknown. */
+/** USD text of a value in usdE8; "–" when the value is unknown. */
 export function formatUsdValue(usdE8: bigint | undefined, lang: Lang): string {
   return usdE8 === undefined ? "–" : formatUsdE8(usdE8, 2, lang);
 }
 
-/** Percentage in `lang`'s format: "1%" in English, "1 %" in French. */
-export function formatFeePercent(lang: Lang): string {
-  return new Intl.NumberFormat(toIntlLocale(lang), {
-    style: "percent",
-    maximumFractionDigits: 2,
-  }).format(Number(REDEMPTION_FEE_BPS) / 10_000);
-}
-
 /**
- * Quantity of `token` worth `tttiAmount` TTTI-T at `rateUsdE8`
- * (10,000 USD per TTTI-T), as the backend's dayRateQuantity.
+ * TTTI-T the holder can return: the lower of the usable balance (balance
+ * minus the ledger fee of the pull) and the circulation outside the contract.
+ * Undefined while either figure is unknown.
  */
-export function dayRateQuantity(
-  token: PayToken,
-  tttiAmount: bigint,
-  rateUsdE8: bigint,
-): bigint {
-  if (rateUsdE8 <= 0n) return 0n;
-  return (
-    (tttiToUsdE8(tttiAmount) * 10n ** BigInt(PAY_TOKENS[token].decimals)) /
-    rateUsdE8
-  );
-}
-
-/** Redemption fee on a returned amount: 1%, rounded down. */
-export function redemptionFeeOf(returned: bigint): bigint {
-  return (returned * REDEMPTION_FEE_BPS) / 10_000n;
-}
-
-/**
- * TTTI-T allowance the user must approve: the amount returned plus the
- * TTTI-T ledger fee of the transfer_from.
- */
-export function requiredTttiAllowance(
-  tttiAmount: bigint,
-  tttiTransferFee: bigint,
-): bigint {
-  return tttiAmount + tttiTransferFee;
+export function redeemableAmount(
+  usable: bigint | undefined,
+  circulation: bigint | undefined,
+): bigint | undefined {
+  if (usable === undefined || circulation === undefined) return undefined;
+  return usable < circulation ? usable : circulation;
 }
 
 /** True when the active allowance covers the quote. */
@@ -166,93 +92,6 @@ export function allowanceCovers(
   quote: RedeemQuote,
 ): boolean {
   return allowance !== undefined && allowance >= quote.tttiAllowanceRequired;
-}
-
-// --- Preview ------------------------------------------------------------------
-
-/** One line of the preview, with an optional USD equivalent. */
-export interface PreviewRow {
-  key:
-    | "deposited"
-    | "dayRate"
-    | "returned"
-    | "excessKept"
-    | "fee"
-    | "thirdPartyFee"
-    | "net";
-  amount: string;
-  usd?: string;
-}
-
-/**
- * Lines of the preview of a redemption, in reading order: deposited
- * guarantee, quantity worth 10,000 USD per TTTI-T (during the mint only),
- * returned amount, excess kept, 1% fee, third-party fee and net amount.
- * USD equivalents use the quote's own rate and are absent after the mint.
- */
-export function previewRows(quote: RedeemQuote, lang: Lang): Array<PreviewRow> {
-  const rate = quote.rateUsdE8;
-  const row = (
-    key: PreviewRow["key"],
-    amount: bigint,
-    withUsd: boolean,
-  ): PreviewRow => ({
-    key,
-    amount: formatPayAmount(amount, quote.token, lang),
-    ...(withUsd && rate !== undefined
-      ? { usd: formatUsdE8(payToUsdE8(amount, quote.token, rate), 2, lang) }
-      : {}),
-  });
-  const rows: Array<PreviewRow> = [
-    row("deposited", quote.depositedGuarantee, true),
-  ];
-  if (quote.dayRateQuantity !== undefined) {
-    rows.push(row("dayRate", quote.dayRateQuantity, true));
-  }
-  rows.push(row("returned", quote.returnedAmount, true));
-  if (quote.excessKept > 0n)
-    rows.push(row("excessKept", quote.excessKept, true));
-  rows.push(row("fee", quote.redemptionFee, false));
-  rows.push(row("thirdPartyFee", quote.thirdPartyFee, false));
-  rows.push(row("net", quote.netAmount, true));
-  return rows;
-}
-
-/** Label of a preview line. */
-export function previewLabel(key: PreviewRow["key"], t: GuaranteeText): string {
-  switch (key) {
-    case "deposited":
-      return t.previewDeposited;
-    case "dayRate":
-      return t.previewDayRate;
-    case "returned":
-      return t.previewReturned;
-    case "excessKept":
-      return t.previewExcessKept;
-    case "fee":
-      return t.previewFee;
-    case "thirdPartyFee":
-      return t.previewThirdPartyFee;
-    case "net":
-      return t.previewNet;
-  }
-}
-
-/** Label of the rule applied to a quote or a redemption. */
-export function ruleLabel(rule: RedeemRule, t: GuaranteeText): string {
-  switch (rule) {
-    case RedeemRule.depositedGuarantee:
-      return t.ruleDeposited;
-    case RedeemRule.dayRate:
-      return t.ruleDayRate;
-    case RedeemRule.proRata:
-      return t.ruleProRata;
-  }
-}
-
-/** Short explanation of the rule applied. */
-export function ruleExplanation(rule: RedeemRule, t: GuaranteeText): string {
-  return rule === RedeemRule.proRata ? t.explainProRata : t.explainLowerOfTwo;
 }
 
 // --- Redemptions ----------------------------------------------------------------
@@ -282,16 +121,6 @@ export function redemptionStatusLabel(
     case "failed":
       return t.statusFailed;
   }
-}
-
-/** Label of a redemption kind. */
-export function redemptionKindLabel(
-  kind: RedemptionKind,
-  t: GuaranteeText,
-): string {
-  return kind === RedemptionKind.excessWithdrawal
-    ? t.kindExcessWithdrawal
-    : t.kindRedeem;
 }
 
 /** History target of the TTTI-T block taken from the user, when known. */
@@ -325,19 +154,26 @@ export function guaranteeErrorMessage(
       return t.errAnonymous;
     case "salesPaused":
       return t.errSalesPaused;
-    case "massNotFound":
-      return t.errMassNotFound;
-    case "nothingRemaining":
-      return t.errNothingRemaining;
     case "amountTooSmall":
       return t.errAmountTooSmall;
-    case "amountExceedsMass":
-      return t.errAmountExceedsMass(
-        formatTttiQuantity(error.amountExceedsMass.requested, lang),
-        formatTttiQuantity(error.amountExceedsMass.remaining, lang),
+    case "amountExceedsCirculation":
+      return t.errAmountExceedsCirculation(
+        formatTttiQuantity(error.amountExceedsCirculation.requested, lang),
+        formatTttiQuantity(error.amountExceedsCirculation.circulation, lang),
       );
+    case "reserveEmpty":
+      return t.errReserveEmpty;
     case "rateUnavailable":
       return t.errRateUnavailable(payTokenSymbol(error.rateUnavailable));
+    case "ledgerFeeNotCovered":
+      return t.errLedgerFeeNotCovered(
+        payTokenSymbol(error.ledgerFeeNotCovered.token),
+        formatPayAmount(
+          error.ledgerFeeNotCovered.fee,
+          error.ledgerFeeNotCovered.token,
+          lang,
+        ),
+      );
     case "tttiBalanceInsufficient":
       return t.errTttiBalance(
         formatTttiQuantity(error.tttiBalanceInsufficient.balance, lang),
@@ -349,13 +185,18 @@ export function guaranteeErrorMessage(
         formatTttiQuantity(error.allowanceInsufficient.required, lang),
       );
     case "slippage":
-      return t.errSlippage;
+      return t.errSlippage(
+        formatUsdE8(error.slippage.payoutUsdE8, 2, lang),
+        formatUsdE8(error.slippage.expectedPayoutUsdE8, 2, lang),
+      );
     case "redemptionInProgress":
       return t.errRedemptionInProgress;
-    case "mintNotEnded":
-      return t.errMintNotEnded;
-    case "noExcess":
-      return t.errNoExcess;
+    case "acknowledgementRequired":
+      return t.errAcknowledgementRequired;
+    case "nothingToConvert":
+      return t.errNothingToConvert;
+    case "conversionFailed":
+      return t.errConversionFailed(error.conversionFailed);
     case "pullFailed":
       return t.errPullFailed(error.pullFailed);
     case "callFailed":

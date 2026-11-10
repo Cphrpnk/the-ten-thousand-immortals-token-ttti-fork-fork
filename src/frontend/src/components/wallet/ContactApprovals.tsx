@@ -25,13 +25,13 @@ import {
 } from "../../lib/approvals";
 import { formatUnits, parseUnits } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
+import { normalizeToken } from "../../lib/ttti-token";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Skeleton } from "../ui/skeleton";
-import { normalizeToken } from "./TokenBalanceCard";
 import { TokenFiat } from "./TokenFiat";
 import { TokenLogo } from "./TokenLogo";
 

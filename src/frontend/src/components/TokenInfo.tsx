@@ -1,6 +1,11 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { Account, TechnicalDetails } from "../backend";
+import { PayToken } from "../backend";
+import type { Account, MintPricePreview, TechnicalDetails } from "../backend";
+import {
+  formatMintUsdE8,
+  useMintPriceDisplay,
+} from "../hooks/useMintPriceDisplay";
 import {
   useCyclesStatus,
   useTechnicalDetails,
@@ -16,19 +21,16 @@ import {
 import { icpDashboardCanisterUrl } from "../lib/explorer";
 import {
   PRICE_SCALE,
-  TOKEN_PRICE_USD,
   TTTI_DECIMALS,
   TTTI_SYMBOL,
   encodeAccountText,
-  formatBps,
   formatDecimal,
+  formatIcp,
   formatIcpE8s,
   formatInteger,
   formatTtti,
   formatUnits,
   formatUsdE8,
-  tttiToBuyerUsdE8,
-  tttiToUsdE8,
   useCyclesFeeText,
 } from "../lib/token";
 import { ExplorerLink } from "./ExplorerLink";
@@ -37,6 +39,11 @@ import { useBtcPaymentText } from "./btcPaymentText";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
+import {
+  NO_VALUE,
+  usdValueE8,
+  useConsolidatedTttiUsdE8,
+} from "./wallet/valuation";
 
 type TokenInfoText = (typeof TOKEN_INFO_TEXT)["en"];
 type BackendText = (typeof TECH_BACKEND_TEXT)["en"];
@@ -88,11 +95,15 @@ function buildRows(
   t: TokenInfoText,
   local: BackendText,
   btcText: string,
+  preview: MintPricePreview | undefined,
 ): DetailRow[] {
   const sym = d.tokenSymbol || TTTI_SYMBOL;
   const dec = d.decimals;
   const ttti = (v: bigint) => `${formatTtti(v, dec)} ${sym}`;
   const tr = (v: string) => translateBackend(v, local);
+  const minimumTotal = preview?.tokens.find(
+    (p) => p.token === PayToken.icp,
+  )?.minimumTotalPayAmount;
   return [
     { id: "token-name", label: t.tokenName, value: d.tokenName, mono: true },
     { id: "symbol", label: t.symbol, value: sym, mono: true },
@@ -123,15 +134,17 @@ function buildRows(
       ),
     },
     { id: "price", label: t.pricePerToken, value: usd(d.tokenPriceUsd) },
-    { id: "buyer-price", label: t.buyerPrice, value: usd(d.buyerPriceUsd) },
-    { id: "icp-fee", label: t.icpFee, value: formatBps(d.cyclesFeeBps) },
     {
       id: "min-purchase",
       label: t.minPurchase,
-      value: t.minPurchaseValue(
-        ttti(d.minPurchase),
-        formatUsdE8(tttiToBuyerUsdE8(d.minPurchase), 2),
-      ),
+      value: preview
+        ? t.minPurchaseValue(
+            minimumTotal === undefined
+              ? ttti(preview.minimumTtti)
+              : `${ttti(preview.minimumTtti)} · ${formatIcp(minimumTotal)} ICP`,
+            formatUsdE8(preview.minimumMintUsdE8, 2),
+          )
+        : NO_VALUE,
     },
     {
       id: "ledger-canister",
@@ -236,6 +249,8 @@ export function TokenInfo() {
   const t = useDict(TOKEN_INFO_TEXT);
   const backendText = useDict(TECH_BACKEND_TEXT);
   const btc = useBtcPaymentText();
+  const consolidatedUsdE8 = useConsolidatedTttiUsdE8();
+  const { data: mintPreview } = useMintPriceDisplay();
 
   if (isLoading) {
     return (
@@ -267,8 +282,15 @@ export function TokenInfo() {
 
   const decimals = tokenInfo.decimals || TTTI_DECIMALS;
   const symbol = tokenInfo.symbol || TTTI_SYMBOL;
-  const feeUsd = Number(tttiToUsdE8(tokenInfo.fee)) / Number(PRICE_SCALE);
-  const feeUsdText = formatDecimal(feeUsd, 2, 4);
+  const feeNote =
+    consolidatedUsdE8 === null
+      ? NO_VALUE
+      : `≈ ${formatDecimal(
+          Number(usdValueE8(tokenInfo.fee, decimals, consolidatedUsdE8)) /
+            Number(PRICE_SCALE),
+          2,
+          4,
+        )} USD`;
   const details = technical.data;
 
   return (
@@ -302,15 +324,19 @@ export function TokenInfo() {
             fiat={tokenInfo.totalSupply}
           />
           <Metric
-            label={t.referencePrice}
-            value={formatInteger(TOKEN_PRICE_USD)}
+            label={t.mintPriceLabel}
+            value={
+              mintPreview
+                ? formatMintUsdE8(mintPreview.pricePerTttiUsdE8)
+                : NO_VALUE
+            }
             unit="USD"
           />
           <Metric
             label={t.transferFee}
             value={formatUnits(tokenInfo.fee, decimals, 0)}
             unit={symbol}
-            note={`≈ ${feeUsdText} USD`}
+            note={feeNote}
           />
         </dl>
 
@@ -358,6 +384,7 @@ export function TokenInfo() {
                 t,
                 backendText,
                 `${btc.payment} ${btc.walletConversion}`,
+                mintPreview,
               ).map((row) => <Detail key={row.id} row={row} />)}
             {details && (
               <div className="min-w-0 sm:col-span-2">
@@ -493,7 +520,6 @@ function PayTokens({ details }: { details: TechnicalDetails }) {
                     formatUnits(pay.ledgerFee, pay.decimals, 0),
                     pay.symbol,
                     pay.ledgerFee.toString(),
-                    formatBps(pay.feeBps),
                   )}
                 </p>
               </div>

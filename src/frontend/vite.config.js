@@ -18,7 +18,21 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     sourcemap: false,
-    minify: false,
+    minify: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const match = /\/i18n\/split\/[^/]+\/([^/]+)\.tsx?$/.exec(id);
+          return match ? `i18n-${match[1]}` : undefined;
+        },
+      },
+    },
+  },
+  css: {
+    // The CSS minifier drops declarations it cannot parse (for example the
+    // invalid `var(--spacing(8))` emitted for a shadcn utility) instead of
+    // failing the build. Browsers ignore those declarations as well.
+    lightningcss: { errorRecovery: true },
   },
   optimizeDeps: {
     rolldownOptions: {

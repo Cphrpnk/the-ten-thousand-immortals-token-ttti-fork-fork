@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   Scale,
+  ScrollText,
   ShieldCheck,
   Wallet,
   WalletCards,
@@ -23,6 +24,7 @@ import { LAYOUT_TEXT } from "../i18n/common/layout";
 import { useDict } from "../i18n/core";
 import { FlatTokenIcon } from "./FlatTokenIcon";
 import { LanguagePicker } from "./LanguagePicker";
+import { useWalletTerms } from "./acceptance";
 import { BuyTttiButton } from "./funnel/BuyTttiButton";
 import { Button } from "./ui/button";
 import {
@@ -114,6 +116,7 @@ export function Header() {
   const { data: isAdmin } = useIsCallerAdmin();
   const queryClient = useQueryClient();
   const { openSetup } = useBuyFunnel();
+  const { status: termsStatus, open: openWalletTerms } = useWalletTerms();
   const [menuOpen, setMenuOpen] = useState(false);
   const t = useDict(LAYOUT_TEXT);
 
@@ -153,10 +156,10 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-card/95 shadow-subtle backdrop-blur-md supports-[backdrop-filter]:bg-card/85">
-      <div className="container mx-auto flex h-[4.5rem] items-center justify-between gap-4 px-4 md:h-20">
+      <div className="container mx-auto flex h-[4.5rem] items-center justify-between gap-2 px-4 sm:gap-4 md:h-20">
         <Link
           to="/"
-          className="group flex shrink-0 items-center gap-3 rounded-md transition-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group flex shrink-0 items-center gap-2 rounded-md sm:gap-3 transition-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-ocid="header.link"
         >
           <FlatTokenIcon
@@ -173,7 +176,7 @@ export function Header() {
           </span>
         </Link>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           <LanguagePicker className="hidden xl:flex" ocid="header.language" />
           <Button
             type="button"
@@ -187,7 +190,11 @@ export function Header() {
             <AuthIcon className="h-4 w-4" />
             <span>{authLabel}</span>
           </Button>
-          <BuyTttiButton size="sm" ocid="header.buy_ttti_button" />
+          <BuyTttiButton
+            size="sm"
+            className="px-3 sm:px-4"
+            ocid="header.buy_ttti_button"
+          />
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger asChild>
               <Button
@@ -243,6 +250,20 @@ export function Header() {
                   <WalletCards className="h-4 w-4" />
                   {t.setupWallet}
                 </button>
+                {!termsStatus.accepted && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      openWalletTerms();
+                    }}
+                    className={`${mobileLinkClass} w-full text-left`}
+                    data-ocid="header.mobile_wallet_terms_button"
+                  >
+                    <ScrollText className="h-4 w-4" />
+                    {t.navWalletTerms}
+                  </button>
+                )}
               </nav>
               <div className="mt-auto flex flex-col gap-3 border-t border-border p-4">
                 <LanguagePicker

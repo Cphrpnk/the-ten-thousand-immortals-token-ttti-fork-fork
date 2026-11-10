@@ -13,7 +13,6 @@ import OracleLib "../lib/oracle";
 import CyclesReserveLib "../lib/cycles-reserve";
 import PayTokenLib "../lib/pay-token";
 import RetryLib "../lib/retry";
-import ProtocolFeesLib "../lib/protocol-fees";
 import OwnerTypes "../types/owner-revenue";
 import SettlementLib "../lib/settlement";
 import List "mo:core/List";
@@ -43,8 +42,6 @@ mixin (
   transferContext : RetryLib.TransferContext,
   // DEX lot 4: weekly allocation state and cached mint treasury balances.
   treasuryAllocation : TreasuryLib.AllocationStore,
-  // Mint revenue correction: mint-fee routing context. Transient, owned by main.mo.
-  protocolFeeContext : ProtocolFeesLib.ProtocolFeeContext,
   // Mint revenue routing: wallets, fee account and one-time settlement. Transient, owned by main.mo.
   settlementContext : SettlementLib.SettlementContext,
 ) {
@@ -75,7 +72,6 @@ mixin (
       canister = canisterPrincipal;
       cyclesReserve;
       transfers = transferContext;
-      protocolFees = protocolFeeContext;
     };
   };
 
@@ -155,10 +151,11 @@ mixin (
   };
 
   // --- Mint revenue routing (admin only) -------------------------------------
-  // The 100/101 share of each mint is sent directly, in the paid token, to the
-  // receiving wallet configured for that token (BTC: the ckBTC wallet); the
-  // 1/101 fee goes to the dedicated fee account. Nothing accumulates in the
-  // contract and no endpoint withdraws from it.
+  // 1 % of the amount paid is the creator share. After the cycles reserve, it
+  // is sent directly, in the paid token, to the receiving wallet configured
+  // for that token (BTC: the ckBTC wallet). The rest forms the position and
+  // the guarantee. Nothing accumulates in the contract and no endpoint
+  // withdraws from it.
 
   // Admin only: sets the receiving wallet of `token` (ICRC account; not
   // anonymous, 32-byte subaccount, not an account of this contract). Records

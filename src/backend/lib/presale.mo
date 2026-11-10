@@ -21,7 +21,6 @@ import CyclesReserveLib "cycles-reserve";
 import CanisterInfoLib "canister-info";
 import CkbtcMinterLib "ckbtc-minter";
 import RetryLib "retry";
-import ProtocolFeesLib "protocol-fees";
 
 // TTTI-T sale: status, acknowledgements, delivery addresses and the balance
 // snapshot export.
@@ -62,8 +61,6 @@ module {
     cyclesReserve : CyclesReserveLib.CyclesReserveStore;
     // Retry module context for the purchase's forward (FW) and reserve share (SH).
     transfers : RetryLib.TransferContext;
-    // Mint revenue correction: routes the 1/101 fee (ProtocolFeesLib.routeMintFee).
-    protocolFees : ProtocolFeesLib.ProtocolFeeContext;
   };
 
   // Minimum purchase: 0.0001 TTTI-T (1.01 USD with the 1% fee in ICP, ckBTC,
@@ -83,10 +80,6 @@ module {
     if (sellable > sale.reserved) Nat.sub(sellable, sale.reserved) else 0;
   };
 
-  func buyerPriceUsd() : Nat {
-    TOKEN_PRICE_USD * (10_000 + TreasuryLib.CYCLES_FEE_BPS) / 10_000;
-  };
-
   // Per pay token: fee bps, minimum USD, ledger id, decimals, ledger fee,
   // treasury account configured and rate status at `now`.
   public func payTokenStatuses(_treasury : TreasuryLib.TreasuryStore, oracle : OracleLib.OracleStore, tokenRates : OracleLib.TokenRateStore, now : Int) : [PayTokenStatus] {
@@ -101,9 +94,8 @@ module {
           ledgerFee = PayTokenLib.expectedFee(token);
           feeBps = PayTokenLib.feeBps(token);
           minimumUsdE8 = PayTokenLib.minimumUsdE8(token);
-          buyerPriceUsd = PayTokenLib.buyerPriceUsd(token);
           fundsCycles = PayTokenLib.fundsCycles(token);
-          // Mint revenue: the 100/101 share stays in the contract and is managed by the admin through withdrawals.
+          // Mint revenue: 1 % of the amount paid goes to the creator after the cycles reserve.
           treasuryConfigured = true;
           priceUsdE8 = rate.usdE8;
           priceSource = rate.source;
@@ -135,7 +127,6 @@ module {
       minPurchase = MIN_PURCHASE;
       tokenPriceUsd = TOKEN_PRICE_USD;
       cyclesFeeBps = TreasuryLib.CYCLES_FEE_BPS;
-      buyerPriceUsd = buyerPriceUsd();
       salesPaused = sale.salesPaused;
       priceUsdE8 = oracle.usdE8;
       priceSource = oracle.source;
@@ -165,7 +156,6 @@ module {
       maxRateAgeSeconds = OracleLib.MAX_RATE_AGE_NS / 1_000_000_000;
       tokenPriceUsd = TOKEN_PRICE_USD;
       cyclesFeeBps = TreasuryLib.CYCLES_FEE_BPS;
-      buyerPriceUsd = buyerPriceUsd();
       minPurchase = MIN_PURCHASE;
       smallestUnit = 1;
       roundingRule = "TTTI-T amounts are rounded down to 1 base unit (0.00000001 TTTI-T). The cost of a delivered amount is rounded up to 1 base unit of the paid token (ICP and ckBTC: 8 decimals; ckUSDC and ckUSDT: 6 decimals).";
@@ -194,55 +184,44 @@ module {
 
   // --- One-time purchase acknowledgement -------------------------------------
 
-  // Version of the purchase acknowledgement terms in force. A stored record
-  // with another version must be accepted again before the next purchase.
-  public let CURRENT_ACK_VERSION : Nat = 2;
+  // Version of the wallet terms shown at a new acceptance (3 since PTM-11b:
+  // common reserve redemption). The acceptance is one-time: a stored record of
+  // ANY version counts as accepted, so a later bump never asks anyone again.
+  // `version` in the record only proves which text was shown.
+  public let CURRENT_ACK_VERSION : Nat = 3;
 
-  // True when `caller` accepted the current version of the purchase
-  // acknowledgements.
+  // True when `caller` has a stored acknowledgement record of any version.
   public func hasAccepted(store : AcknowledgementStore, caller : Principal) : Bool {
     if (caller.isAnonymous()) return false;
     switch (store.get(caller)) {
-      case (?record) { record.version == CURRENT_ACK_VERSION };
+      case (?_) { true };
       case null { false };
     };
   };
 
-  // The caller's acknowledgement: accepted only for the current version
-  // (accepted = false, acceptedAt = null otherwise, including anonymous callers).
+  // The caller's acknowledgement: accepted = true with the stored acceptedAt for
+  // a record of any version (accepted = false, acceptedAt = null otherwise,
+  // including anonymous callers).
   public func getAcknowledgement(store : AcknowledgementStore, caller : Principal) : PurchaseAcknowledgement {
     if (caller.isAnonymous()) {
       return { accepted = false; acceptedAt = null };
     };
     switch (store.get(caller)) {
-      case (?record) {
-        if (record.version == CURRENT_ACK_VERSION) {
-          { accepted = true; acceptedAt = ?record.acceptedAt };
-        } else {
-          { accepted = false; acceptedAt = null };
-        };
-      };
+      case (?record) { { accepted = true; acceptedAt = ?record.acceptedAt } };
       case null { { accepted = false; acceptedAt = null } };
     };
   };
 
-  // Records the acceptance of the current version for a signed-in caller.
-  // Idempotent at the current version (keeps the first timestamp); an older
-  // version is replaced by { acceptedAt = now; version = current }.
+  // Records the acceptance for a signed-in caller. Idempotent for a record of
+  // any version (keeps the first acceptedAt and its version as the proof); a
+  // new acceptance stores { acceptedAt = now; version = CURRENT_ACK_VERSION }.
   // Anonymous -> #err(#anonymousCaller).
   public func accept(store : AcknowledgementStore, caller : Principal, now : Sale.AcknowledgedAt) : { #ok : PurchaseAcknowledgement; #err : AcknowledgementError } {
     if (caller.isAnonymous()) {
       return #err(#anonymousCaller);
     };
     let at = switch (store.get(caller)) {
-      case (?record) {
-        if (record.version == CURRENT_ACK_VERSION) {
-          record.acceptedAt;
-        } else {
-          store.add(caller, { acceptedAt = now; version = CURRENT_ACK_VERSION });
-          now;
-        };
-      };
+      case (?record) { record.acceptedAt };
       case null {
         store.add(caller, { acceptedAt = now; version = CURRENT_ACK_VERSION });
         now;

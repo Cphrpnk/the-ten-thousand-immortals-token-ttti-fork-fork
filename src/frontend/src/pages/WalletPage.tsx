@@ -36,10 +36,6 @@ import {
 } from "../components/wallet/WalletDialogs";
 import { WalletSummary } from "../components/wallet/WalletSummary";
 import { useTokenUsdRates } from "../components/wallet/valuation";
-import {
-  WALLET_BTC_HASH,
-  WALLET_RECEIVE_HASH_PREFIX,
-} from "../hooks/useBuyFunnel";
 import { useConnectedWallet } from "../hooks/useConnectedWallet";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
@@ -52,6 +48,10 @@ import { useListTokens } from "../hooks/useWallet";
 import { pickDict, useDict } from "../i18n/core";
 import { WALLET_BUY_TEXT } from "../i18n/pages/swap";
 import { WALLET_TEXT } from "../i18n/pages/wallet";
+import {
+  WALLET_BTC_HASH,
+  WALLET_RECEIVE_HASH_PREFIX,
+} from "../lib/funnel-exit";
 import { ONRAMPER_BUY_URL, copyAddressAndOpenOnramper } from "../lib/onramper";
 import {
   CKBTC_LEDGER_CANISTER_ID,

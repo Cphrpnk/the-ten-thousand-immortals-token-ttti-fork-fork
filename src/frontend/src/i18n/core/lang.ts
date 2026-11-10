@@ -6,6 +6,8 @@
  * English. Only an explicit setLang() call is persisted.
  */
 
+import { isLanguageReady, loadLanguage } from "./loader";
+
 /** BCP 47 language tags. */
 export type Lang = "en" | "fr" | "es" | "zh-Hans" | "pt-BR" | "ko" | "pa-Guru";
 
@@ -123,16 +125,40 @@ export function getLang(): Lang {
   return current;
 }
 
-/** Switch language instantly (no reload) and remember the visitor's choice. */
+let requested: Lang = current;
+
+function applyLang(lang: Lang): void {
+  if (lang === current) return;
+  current = lang;
+  for (const listener of listeners) listener();
+}
+
+/**
+ * Switch language without a reload and remember the visitor's choice. The new
+ * texts appear as soon as that language's split dictionaries are loaded (at
+ * once when they already are); until then the current language stays active.
+ */
 export function setLang(lang: Lang): void {
   try {
     window.localStorage.setItem(LANG_STORAGE_KEY, lang);
   } catch {
     // Storage unavailable (private mode): the choice lasts for this visit.
   }
+  requested = lang;
   if (lang === current) return;
-  current = lang;
-  for (const listener of listeners) listener();
+  if (isLanguageReady(lang)) {
+    applyLang(lang);
+    return;
+  }
+  loadLanguage(lang).then(
+    () => {
+      // A later setLang() call supersedes this one.
+      if (requested === lang) applyLang(lang);
+    },
+    () => {
+      // Download failed: keep the current language.
+    },
+  );
 }
 
 export function subscribeLang(listener: () => void): () => void {

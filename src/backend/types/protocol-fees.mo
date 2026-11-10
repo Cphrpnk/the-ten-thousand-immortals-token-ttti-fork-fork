@@ -68,13 +68,24 @@ module {
 
   // PTM-10a: public pools / capitalisation indicators. Amounts in USD x 1e8,
   // ratios with `ratioScale` (10^12 = 100 %), `lockedShare` with
-  // `lockedShareScale` (10^6 = 100 %). Not used by the mint yet.
+  // `lockedShareScale` (10^6 = 100 %). PTM-10b: the mint and the auction
+  // settlement read m at payment time and lock m x q of the minted TTTI-T.
   public type PoolCapRatioView = {
     computedAt : Timestamp;
     poolsValueUsdE8 : ?Nat; // null when a needed oracle rate is absent or expired
     poolCount : Nat; // native TTTI-T pools counted (not removed, counterpart reserve > 0)
     circulatingTttiT : Nat; // base units: total minted minus the auction account
-    consolidatedPriceUsdE8 : ?Nat; // hourly average, null until 30 minutes of samples
+    // Information only: the consolidated TTTI-T price read for this view. It is
+    // NOT used in the ratio (that would make the ratio depend on the same pool
+    // reserves it measures).
+    consolidatedPriceUsdE8 : ?Nat;
+    // Reference the capitalisation is computed with: the target price of
+    // 10 000 USD per whole TTTI-T (USD x 1e8), independent of the pools.
+    capitalisationReferenceUsdE8 : Nat;
+    capitalisationReference : { #targetPrice };
+    // circulatingTttiT x capitalisationReferenceUsdE8 (USD x 1e8). The pools
+    // value is the counterpart reserves at the oracle rates, so neither side
+    // of the ratio depends on a price derived from the pool reserves.
     capitalisationUsdE8 : ?Nat;
     currentRatio : ?Nat;
     averageRatio24h : ?Nat;

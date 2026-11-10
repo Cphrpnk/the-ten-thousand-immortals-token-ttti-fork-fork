@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PayToken } from "../../backend";
+import { useConsolidatedTttiPrice } from "../../hooks/useDex";
 import type { FiatToken } from "../../hooks/useFiatValue";
-import { useIcpswapTttiPrice } from "../../hooks/useIcpSwap";
 import { useGetIcpPrice } from "../../hooks/useQueries";
 import { usableBtcUsdE8, useBtcUsdRate } from "../../hooks/useWallet";
 import type { Lang } from "../../i18n/core";
@@ -12,7 +12,7 @@ import {
   formatUsdE8,
 } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
-import { isTttiToken } from "./TokenBalanceCard";
+import { isTttiToken } from "../../lib/ttti-token";
 
 /** Pay token whose ledger is `canisterId`; null for TTTI-T or any other. */
 export function payTokenForLedger(canisterId: string): PayToken | null {
@@ -32,6 +32,16 @@ export function fiatTokenOfDescriptor(
 }
 
 /**
+ * The single TTTI-T USD price (usdE8 per whole token): the consolidated hourly
+ * average. Null while it is absent or expired, never a guess.
+ */
+export function useConsolidatedTttiUsdE8(): bigint | null {
+  const { data: consolidated } = useConsolidatedTttiPrice();
+  const average = consolidated?.hourlyAverageUsdE8;
+  return average !== undefined && average > 0n ? average : null;
+}
+
+/**
  * USD unit price (usdE8 per whole token) of each wallet token, keyed by
  * ledger canister ID; null when the rate is unavailable.
  */
@@ -40,7 +50,7 @@ export function useTokenUsdRates(
 ): Map<string, bigint | null> {
   const { data: icpPrice } = useGetIcpPrice();
   const { data: btcRate } = useBtcUsdRate();
-  const { data: tttiPrice } = useIcpswapTttiPrice();
+  const tttiUsdE8 = useConsolidatedTttiUsdE8();
   const icpUsdE8 =
     icpPrice?.usable && icpPrice.usdE8 > 0n ? icpPrice.usdE8 : null;
   // Re-check expiry every minute so a rate that lapses turns into a dash.
@@ -50,8 +60,6 @@ export function useTokenUsdRates(
     return () => clearInterval(timer);
   }, []);
   const btcUsdE8 = usableBtcUsdE8(btcRate, nowMs);
-  // TTTI-T: the ICPSwap price, cached in the browser for 24 hours.
-  const tttiUsdE8 = tttiPrice?.usdE8 ?? null;
 
   return useMemo(() => {
     const rates = new Map<string, bigint | null>();

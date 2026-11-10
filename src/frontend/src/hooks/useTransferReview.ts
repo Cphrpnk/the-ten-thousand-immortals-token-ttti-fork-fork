@@ -53,7 +53,6 @@ function useInvalidateReview() {
     void queryClient.invalidateQueries({ queryKey: ["conversions"] });
     void queryClient.invalidateQueries({ queryKey: ["cyclesStatus"] });
     void queryClient.invalidateQueries({ queryKey: ["myRedemptions"] });
-    void queryClient.invalidateQueries({ queryKey: ["redemptionFees"] });
     void queryClient.invalidateQueries({ queryKey: ["dexBalances"] });
     void queryClient.invalidateQueries({ queryKey: ["dexTransfers"] });
     void queryClient.invalidateQueries({ queryKey: ["pairRequests"] });

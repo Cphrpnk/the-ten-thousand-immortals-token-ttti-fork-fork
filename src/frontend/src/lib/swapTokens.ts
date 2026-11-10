@@ -1,10 +1,10 @@
-import { Actor } from "@icp-sdk/core/agent";
 import type { IDL } from "@icp-sdk/core/candid";
 import { Principal } from "@icp-sdk/core/principal";
 import {
   type RawMetadataValue,
   createLedgerActor,
   createLedgerAgent,
+  getCachedActor,
 } from "./icpLedger";
 import type { TokenDescriptor } from "./tokenRegistry";
 
@@ -231,10 +231,11 @@ const tokenListIdlFactory: IDL.InterfaceFactory = ({ IDL: I }) =>
 /** Tokens listed by ICPSwap (TokenList.getList), read on-chain. */
 export async function readIcpSwapTokenList(): Promise<Array<ListedToken>> {
   const agent = await createLedgerAgent();
-  const actor = Actor.createActor<TokenListActor>(tokenListIdlFactory, {
+  const actor = getCachedActor<TokenListActor>(
     agent,
-    canisterId: ICPSWAP_TOKEN_LIST_ID,
-  });
+    tokenListIdlFactory,
+    ICPSWAP_TOKEN_LIST_ID,
+  );
   const result = await actor.getList();
   if ("err" in result) throw new Error(result.err);
   return result.ok.map(({ canisterId, name, symbol }) => ({

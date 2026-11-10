@@ -13,10 +13,10 @@ import { useDict, useLanguage } from "../../i18n/core";
 import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import { formatUnits } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
+import { isTttiToken } from "../../lib/ttti-token";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
-import { isTttiToken } from "./TokenBalanceCard";
 import { TokenFiat } from "./TokenFiat";
 import { TokenLogo } from "./TokenLogo";
 import {

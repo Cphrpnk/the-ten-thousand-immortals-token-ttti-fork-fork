@@ -16,6 +16,11 @@ mixin (
   // protocol fees) with its own obligations, records one result per account,
   // appends confirmed mismatches to the history and pauses the DEX on a
   // shortfall confirmed by a second ledger read (a surplus never pauses).
+  // PTM-10d: when the run ends, the per-token total (pool reserves,
+  // guarantees, creator holdings, DEX balances, permanent liquidity, request
+  // deposits, auction deposits, operations in flight) is also compared with the
+  // token's ledger balance; a confirmed shortfall raises the same alert and
+  // pause. The breakdown is published by getDexBalanceBreakdown.
   public shared ({ caller }) func runDexReserveCheck() : async Result.Result<Types.ReserveCheckView, Types.DexReserveError> {
     if (not AccessControl.isAdmin(accessControlState, caller)) return #err(#unauthorized);
     await DexReserveLib.runCheck(reserve);

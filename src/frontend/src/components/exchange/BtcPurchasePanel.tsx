@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { BtcDepositErrorCode, PayToken } from "../../backend";
+import type { RemainderChoice } from "../../backend";
 import {
   isSignerKind,
   useConnectedWallet,
@@ -30,22 +31,37 @@ import {
 } from "../../hooks/useQueries";
 import { useDict, useLanguage } from "../../i18n/core/dict";
 import type { Lang } from "../../i18n/core/lang";
-import { BUY_BTC_TEXT } from "../../i18n/pages/buy";
+import {
+  BUY_BTC_TEXT,
+  BUY_MINT_POOL_TEXT,
+  BUY_PAGE_TEXT,
+} from "../../i18n/pages/buy";
+import { DEX_TEXT } from "../../i18n/pages/dex";
 import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import {
   BTC_PAY_OPTION,
   btcDepositText,
-  feeLabelFor,
+  encodeAccountText,
   formatSats,
   formatTtti,
 } from "../../lib/token";
 import { cn } from "../../lib/utils";
 import { FiatAmount } from "../FiatAmount";
+import { WalletTermsOpenButton } from "../acceptance";
 import { BtcDepositAddressCard } from "../btc/BtcDepositAddressCard";
 import { BtcDepositProgress } from "../btc/BtcDepositProgress";
+import { RefundDetails } from "../btc/RefundDetails";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { ConvertNotice, FinalMintButton } from "./FinalMintButton";
+import { ZeroBalanceTransferOffer } from "./ZeroBalanceTransferOffer";
+import {
+  type MintSourceKind,
+  planHeldConversion,
+  useHeldBtcConversion,
+  useMintSources,
+} from "./mintSources";
 
 const GOLD_BUTTON =
   "min-h-12 gap-2 rounded-lg border border-gold-strong bg-gradient-primary text-base font-semibold tracking-wide text-primary-foreground shadow-gold transition-smooth hover:shadow-gold-lg hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:shadow-none";
@@ -55,16 +71,25 @@ const MIN_AUTO_CHECK_MS = 30_000;
 const IDLE_CHECK_MS = 60_000;
 
 interface BtcPurchasePanelProps {
-  /** The page's acknowledgement status block (loading, error, checkboxes). */
+  /** The page's wallet terms block (loading, error, single checkbox). */
   acknowledgements: ReactNode;
   /** Acknowledgement status has been read for the signed-in principal. */
   ackKnown: boolean;
   needsAck: boolean;
+  /** The single wallet terms checkbox is ticked. */
   allChecked: boolean;
-  /** Records the six acknowledgements (existing flow). */
+  /** Records the acceptance (existing flow). */
   onAccept: () => Promise<unknown>;
   closed: boolean;
   closedLabel: string;
+  /** Opens the ckBTC payment form, for a ckBTC balance held in the wallet or DEX. */
+  onUseTokenForm: () => void;
+  /** Pool selected on the mint screen; null while none is selected. */
+  poolId: bigint | null;
+  /** Remainder choice of the mint screen. */
+  choice: RemainderChoice;
+  /** Slippage tolerance of the mint screen; null while its text is invalid. */
+  slippageBps: bigint | null;
 }
 
 function failureMessage(error: unknown, lang: Lang): string {
@@ -85,8 +110,18 @@ export function BtcPurchasePanel({
   onAccept,
   closed,
   closedLabel,
+  onUseTokenForm,
+  poolId,
+  choice,
+  slippageBps,
 }: BtcPurchasePanelProps) {
   const t = useDict(BUY_BTC_TEXT);
+  const tp = useDict(BUY_PAGE_TEXT);
+  const tpool = useDict(BUY_MINT_POOL_TEXT);
+  const tdex = useDict(DEX_TEXT);
+  const [finalNotice, setFinalNotice] = useState<string | null>(null);
+  const mintSources = useMintSources(PayToken.ckbtc);
+  const heldConversion = useHeldBtcConversion();
   const tw = useDict(WALLET_TEXT);
   const { lang } = useLanguage();
   const connected = useConnectedWallet();
@@ -207,7 +242,6 @@ export function BtcPurchasePanel({
   const requesting = accepting || getAddress.isPending;
   const canRequest =
     !closed && ackKnown && (!needsAck || allChecked) && !requesting;
-  const fee = feeLabelFor(BTC_PAY_OPTION.feeBps);
 
   // TTTI-T mint block of the shown delivered deposit, read from its conversion.
   const conversions = useMyConversions();
@@ -234,12 +268,45 @@ export function BtcPurchasePanel({
     void refetchConversions();
   }, [conversionMissing, conversionId, refetchConversions]);
 
+  const handleFinalMint = (source: MintSourceKind) => {
+    setFinalNotice(null);
+    if (source === "contract") {
+      const plan = planHeldConversion({
+        held: mintSources.held,
+        poolId,
+        choice,
+        slippageBps,
+      });
+      if (plan.kind !== "ready") {
+        heldConversion.reset();
+        setFinalNotice(
+          plan.kind === "noPool" ? tpool.noPool : tdex.slippageInvalid,
+        );
+        return;
+      }
+      heldConversion.convert(mintSources.heldIndexes, plan.params);
+      return;
+    }
+    heldConversion.reset();
+    onUseTokenForm();
+  };
+  const finalSource = mintSources.held > 0n ? "contract" : "token";
+
+  const termsRefused =
+    failure?.error instanceof BtcDepositFailure &&
+    failure.error.code === BtcDepositErrorCode.acknowledgementRequired;
+
   const errorAlert = error ? (
-    <Alert variant="destructive" data-ocid="btc.purchase.error_state">
-      <AlertCircle className="h-4 w-4" />
-      <AlertTitle>{t.errorTitle}</AlertTitle>
-      <AlertDescription>{error}</AlertDescription>
-    </Alert>
+    <>
+      <Alert variant="destructive" data-ocid="btc.purchase.error_state">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>{t.errorTitle}</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+      {termsRefused && (
+        <WalletTermsOpenButton ocid="btc.purchase.terms.open_button" />
+      )}
+    </>
   ) : null;
 
   const signatureNote =
@@ -269,7 +336,7 @@ export function BtcPurchasePanel({
             className="mt-0.5 h-4 w-4 shrink-0 text-primary"
             aria-hidden="true"
           />
-          <p>{t.intro(fee)}</p>
+          <p>{t.intro}</p>
         </div>
         {acknowledgements}
         {errorAlert}
@@ -345,7 +412,7 @@ export function BtcPurchasePanel({
             />
           </AlertTitle>
           <AlertDescription className="text-xs tabular-nums">
-            {t.deliveredDetail(fee)}
+            {t.deliveredDetail}
             {conversionId !== undefined && ` · #${conversionId.toString()}`}
           </AlertDescription>
         </Alert>
@@ -365,7 +432,15 @@ export function BtcPurchasePanel({
               ocid="btc.purchase.refunded_fiat"
             />
           </AlertTitle>
-          <AlertDescription>{t.refundedDetail}</AlertDescription>
+          <AlertDescription className="space-y-1">
+            <span className="block">{t.refundedDetail}</span>
+            {shown && (
+              <RefundDetails
+                entry={shown}
+                ocid="btc.purchase.refunded_details"
+              />
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -380,6 +455,47 @@ export function BtcPurchasePanel({
         tttiMintBlock={tttiMintBlock}
       />
       {signatureNote}
+      <FinalMintButton
+        token={PayToken.ckbtc}
+        symbol="ckBTC"
+        sources={mintSources}
+        busyLabel={
+          heldConversion.state.kind === "working" ? tp.finalConverting : null
+        }
+        blocked={closed}
+        onMint={handleFinalMint}
+        notice={
+          <>
+            {finalNotice !== null && (
+              <p
+                className="px-1 text-sm text-muted-foreground"
+                role="alert"
+                data-ocid="exchange.final_mint.notice"
+              >
+                {finalNotice}
+              </p>
+            )}
+            {finalSource === "token" &&
+              (mintSources.wallet ?? 0n) + (mintSources.dex ?? 0n) > 0n && (
+                <p className="px-1 text-xs text-muted-foreground">
+                  {tp.finalUseTokenForm}
+                </p>
+              )}
+            <ConvertNotice state={heldConversion.state} />
+          </>
+        }
+        offer={
+          <ZeroBalanceTransferOffer
+            symbol="ckBTC"
+            address={
+              mintSources.principal
+                ? encodeAccountText({ owner: mintSources.principal })
+                : undefined
+            }
+          />
+        }
+        ocidPrefix="exchange.final_mint"
+      />
     </div>
   );
 }

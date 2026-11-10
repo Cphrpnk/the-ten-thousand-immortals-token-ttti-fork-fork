@@ -1,0 +1,1 @@
+import{i as e}from"./link-DrwlGawN.js";function t(t){return e({select:e=>t?.select?t.select(e.location):e.location})}export{t};

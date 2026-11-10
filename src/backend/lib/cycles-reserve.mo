@@ -15,7 +15,8 @@ import TreasuryLib "treasury";
 // Cycles reserve domain logic: reserve share, cached balance, automatic CMC
 // top-up (timer), cycles samples, autonomy and the dynamic cycles share of the
 // 30 % pool protocol share (DEX lot 4). The reserve has no withdrawal path.
-// PTM-4: the ICP part of the 1 % mint and buyback fees fills the reserve first,
+// PTM-4: the ICP part of the 1 % mint fee (and, as history, the former buyback
+// fee; PTM-11 records no new redemption fee) fills the reserve first,
 // up to one year of measured consumption (planFeeSplit), and is moved to the
 // reserve account later by the settlement in lib/retry.mo.
 module {
@@ -85,7 +86,7 @@ module {
   // The same memo as the ICRC-1 blob: 8-byte little-endian encoding.
   public let TPUP_MEMO_BLOB : Blob = "\54\50\55\50\00\00\00\00";
 
-  public let RESERVE_RULE : Text = "Fixed 1% fee on every mint (ICP, ckBTC, ckUSDC, ckUSDT; BTC counts as ckBTC): 101 paid for 100 received. The 100/101 share goes directly, in the paid token, to the admin wallet configured for that token (BTC follows ckBTC); the 1/101 fee goes to a dedicated, non-withdrawable fee account of the contract and is redistributed to TTTI-T liquidity. The canister's public cycles reserve was topped up once to 2 ICP from the internal ICP mint treasury and is converted to cycles automatically when the cycles balance is below 20 T cycles. The reserve has no withdrawal path; the 2 ICP floor always stays available for cycles.";
+  public let RESERVE_RULE : Text = "Fixed 1% fee on the amount paid for every mint (ICP, ckBTC, ckUSDC, ckUSDT; BTC counts as ckBTC). The fee goes first to the public cycles reserve, up to one year of measured consumption, and the rest goes to the creator. The router fee follows the swap split: 70% to liquidity providers and a 30% protocol share, two thirds of it to the creator and one third to permanent liquidity. The cycles reserve is converted to cycles automatically when the cycles balance is below 20 T cycles. The reserve has no withdrawal path; the 2 ICP floor always stays available for cycles.";
 
   // --- Accounts and handles --------------------------------------------------
 
@@ -397,7 +398,7 @@ module {
     };
   };
 
-  // --- PTM-4: 1 % mint and buyback fees ----------------------------------------
+  // --- PTM-4: 1 % mint fee (buyback splits: history only since PTM-11) ----------------------------------------
 
   public func emptyFeeStore() : CyclesFeeStore {
     {

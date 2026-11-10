@@ -1,10 +1,11 @@
 import { ArrowLeft, Check, Minus } from "lucide-react";
 import { useCallback, useState } from "react";
-import { type SetupExit, useBuyFunnel } from "../../hooks/useBuyFunnel";
+import { useBuyFunnel } from "../../hooks/useBuyFunnel";
 import type { SetupWalletKind } from "../../hooks/useConnectedWallet";
 import { SetupOutcome } from "../../hooks/useSetupStatus";
 import { useDict } from "../../i18n/core";
 import { SETUP_TEXT } from "../../i18n/pages/setup";
+import type { SetupExit } from "../../lib/funnel-exit";
 import { cn } from "../../lib/utils";
 import { CrestLogo } from "../Footer";
 import { ChoiceTile } from "../setup/ChoiceTile";

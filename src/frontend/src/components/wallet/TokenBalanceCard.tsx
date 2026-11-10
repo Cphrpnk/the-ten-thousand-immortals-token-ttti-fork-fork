@@ -4,13 +4,9 @@ import type { Account } from "../../backend";
 import { useWalletBalance } from "../../hooks/useWallet";
 import { useDict } from "../../i18n/core";
 import { WALLET_TEXT } from "../../i18n/pages/wallet";
-import {
-  TOKEN_NAME,
-  TTTI_DECIMALS,
-  TTTI_SYMBOL,
-  formatUnits,
-} from "../../lib/token";
+import { formatUnits } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
+import { isTttiToken, normalizeToken } from "../../lib/ttti-token";
 import { FlatTokenIcon } from "../FlatTokenIcon";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -25,22 +21,6 @@ import { Skeleton } from "../ui/skeleton";
 import { TokenFiat } from "./TokenFiat";
 
 export { formatUnits };
-
-/** True for this app's own presale token (any TTTI symbol variant). */
-export function isTttiToken(token: TokenDescriptor): boolean {
-  return token.symbol.toUpperCase().startsWith("TTTI");
-}
-
-/** Present TTTI-P with its canonical name, symbol and 8 decimals. */
-export function normalizeToken(token: TokenDescriptor): TokenDescriptor {
-  if (!isTttiToken(token)) return token;
-  return {
-    ...token,
-    name: TOKEN_NAME,
-    symbol: TTTI_SYMBOL,
-    decimals: TTTI_DECIMALS,
-  };
-}
 
 interface TokenBalanceCardProps {
   token: TokenDescriptor;

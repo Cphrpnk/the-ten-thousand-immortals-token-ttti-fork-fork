@@ -299,7 +299,17 @@ function EntryRow({
       data-ocid={`pools.activity.item.${index}`}
     >
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span>{label}</span>
+        <span className="flex flex-wrap items-center gap-2">
+          {label}
+          {entry.kind === "mintFees" && (
+            <span
+              className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+              data-ocid={`pools.activity.legacy_badge.${index}`}
+            >
+              {m.legacyLabel}
+            </span>
+          )}
+        </span>
         <span className="font-mono tabular-nums break-all">{amount}</span>
         {fiat}
       </div>

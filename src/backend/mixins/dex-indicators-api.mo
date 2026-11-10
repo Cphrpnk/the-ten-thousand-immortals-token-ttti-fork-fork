@@ -4,6 +4,7 @@ import Time "mo:core/Time";
 import Types "../types/dex-indicators";
 import ProtocolFeeTypes "../types/protocol-fees";
 import ProtocolFeesLib "../lib/protocol-fees";
+import DexReserveLib "../lib/dex-reserve";
 
 // DEX lot 7: public indicators snapshot (computed once per hour by a timer) and
 // its admin status.
@@ -11,6 +12,8 @@ mixin (
   indicators : Types.IndicatorsStore,
   accessControlState : AccessControl.AccessControlState,
   protocolFees : ProtocolFeesLib.ProtocolFeeContext,
+  // PTM-10d: the reserve check context (same value as the one given to DexReserveApi).
+  reserve : DexReserveLib.ReserveContext,
 ) {
   // PTM-10a: public, no sign-in. Pools value, capitalisation, current ratio,
   // 24 h average, 50 % target and locked share m, computed on each call
@@ -23,6 +26,17 @@ mixin (
   // recomputes on read.
   public query func getDexIndicators() : async ?Types.DexIndicatorsSnapshot {
     indicators.snapshot;
+  };
+
+  // PTM-10d: public, no sign-in. Per-token breakdown of what the contract must
+  // hold (pool reserves, guarantees, creator holdings, DEX balances, permanent
+  // liquidity, pair-request deposits, auction deposits, operations in flight)
+  // against the ledger balance, from the last complete reserve check.
+  // checkedAt = end of that check (0 before any); complete = false while a
+  // check is running, when a token could not be compared, or after an upgrade
+  // until the next check. Nothing is stored by the call.
+  public query func getDexBalanceBreakdown() : async Types.DexBalanceBreakdownSnapshot {
+    DexReserveLib.breakdownSnapshot(reserve);
   };
 
   // Admin only (#err(#unauthorized) otherwise): snapshot time, last computation

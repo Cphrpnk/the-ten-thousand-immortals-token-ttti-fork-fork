@@ -25,6 +25,8 @@ module {
     token0 : PoolToken;
     token1 : PoolToken;
     fee : Nat;
+    // Present in the ICPSwap pool metadata; price = (sqrtPriceX96 / 2^96)^2.
+    sqrtPriceX96 : ?Nat;
   };
 
   public type MetadataResult = { #ok : PoolMetadata; #err : IcpSwapError };

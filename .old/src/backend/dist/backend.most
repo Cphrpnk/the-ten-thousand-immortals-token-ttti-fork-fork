@@ -76,11 +76,13 @@ type Account__295902693 = {owner : Principal__873421814; subaccount : ?Blob};
 type Account__308924489 =
   {owner : Principal__873421814; subaccount : ?Subaccount__645152844};
 type Account__326507027 = Account__559776022;
+type Account__332851284 = {owner : Principal; subaccount : ?Blob};
 type Account__350467372 = {owner : Principal__873421814; subaccount : ?Blob};
 type Account__356218119 = {owner : Principal; subaccount : ?Blob};
 type Account__373456865 = {owner : Principal__873421814; subaccount : ?Blob};
 type Account__381128109 = Account__559776022;
 type Account__450315820 = {owner : Principal; subaccount : ?Blob};
+type Account__458423235 = {owner : Principal; subaccount : ?Blob};
 type Account__480693695 = {owner : Principal__873421814; subaccount : ?Blob};
 type Account__552646568 = {owner : Principal__873421814; subaccount : ?Blob};
 type Account__554238307 =
@@ -111,7 +113,9 @@ type Account__890828910 =
   {owner : Principal__873421814; subaccount : ?Subaccount__559718560};
 type Account__893589583 = {owner : Principal; subaccount : ?Blob};
 type Account__941199617 = Account__559776022;
+type Account__954535011 = {owner : Principal; subaccount : ?Blob};
 type Account__969389502 = {owner : Principal__873421814; subaccount : ?Blob};
+type Account__993035174 = {owner : Principal; subaccount : ?Blob};
 type Account__995940298 = {owner : Principal__873421814; subaccount : ?Blob};
 type AcknowledgedAt__215381908 = Int;
 type AcknowledgementRecord__29591185 = {acceptedAt : Int; version : Nat};
@@ -157,6 +161,8 @@ type AttemptOutcome__143270163 =
   {#failed : Text; #pending; #succeeded : Nat; #unknown};
 type AttemptOutcome__260695117 =
   {#failed : Text; #pending; #succeeded : Nat; #unknown};
+type AttemptOutcome__356902603 =
+  {#failed : Text; #pending; #succeeded : Nat; #unknown};
 type AttemptOutcome__420349236 =
   {#failed : Text; #pending; #succeeded : Nat; #unknown};
 type AttemptOutcome__442259765 =
@@ -176,6 +182,10 @@ type AttemptOutcome__686382730 =
 type AttemptOutcome__691058526 =
   {#failed : Text; #pending; #succeeded : Nat; #unknown};
 type AttemptOutcome__739554757 =
+  {#failed : Text; #pending; #succeeded : Nat; #unknown};
+type AttemptOutcome__747895819 =
+  {#failed : Text; #pending; #succeeded : Nat; #unknown};
+type AttemptOutcome__751088882 =
   {#failed : Text; #pending; #succeeded : Nat; #unknown};
 type AttemptOutcome__792754338 =
   {#failed : Text; #pending; #succeeded : Nat; #unknown};
@@ -228,6 +238,20 @@ type AuctionMove__394714377 =
     status : {#completed : Nat; #failed : Text; #inProgress; #needsReview};
     token : PayToken__349649353
   };
+type AuctionMove__596127959 =
+  {
+    attempt : DexTransferAttempt__914468103;
+    bidId : ?Nat;
+    createdAt : Int;
+    credited : Nat;
+    fromPending : Nat;
+    fromWithdrawable : Nat;
+    gross : Nat;
+    n : Nat;
+    owner : Principal;
+    status : {#completed : Nat; #failed : Text; #inProgress; #needsReview};
+    token : PayToken__945411430
+  };
 type AuctionMove__607979342 =
   {
     attempt : DexTransferAttempt__808689538;
@@ -250,6 +274,15 @@ type AuctionStore__475618198 =
     var nextAuctionId : Nat;
     var nextBidId : Nat;
     pending : Map__230067015<Nat, PendingBid__803518345>
+  };
+type Auction__747979049 =
+  {
+    blockSale : Bool;
+    closesAt : Int;
+    id : Nat;
+    lotSizeE8s : Nat;
+    openedAt : Int;
+    remainderE8s : Nat
   };
 type Auction__869664979 =
   {
@@ -311,9 +344,14 @@ type BidSettlement__269133189 =
     bidId : BidId__839254788;
     bidder : Principal;
     carriedE8s : Nat;
+    choice : RemainderChoice__475482207;
     creatorShare : Nat;
     failureReason : ?Text;
     guaranteeAmount : Nat;
+    handE8s : Nat;
+    lockedAmount : Nat;
+    lockedPositionId : ?Nat;
+    mShareE6 : Nat;
     mintedE8s : Nat;
     positionAmount : Nat;
     positionId : ?Nat;
@@ -362,6 +400,7 @@ type Bid__57381860 =
     auctionId : AuctionId__618595027;
     bidder : Principal;
     block : Nat;
+    choice : RemainderChoice__475482207;
     createdAt : Timestamp__1011941403;
     deposited : Nat;
     id : BidId__839254788;
@@ -406,6 +445,13 @@ type BidderBalance__106311755 =
     token : PayToken__73279581;
     var withdrawable : Nat
   };
+type BidderBalance__1073371475 =
+  {
+    owner : Principal;
+    var pendingSettlement : Nat;
+    token : PayToken__945411430;
+    var withdrawable : Nat
+  };
 type BidderBalance__644683271 =
   {
     owner : Principal;
@@ -424,6 +470,8 @@ type BidderDust__29335764 =
   {var amount : Nat; owner : Principal; token : PayToken__1012193404};
 type BidderDust__822943279 =
   {var amount : Nat; owner : Principal; token : PayToken__73279581};
+type BidderDust__993021351 =
+  {var amount : Nat; owner : Principal; token : PayToken__945411430};
 type BonusClaim__1033041300 =
   {
     amountE8s : Nat;
@@ -486,6 +534,8 @@ type BtcCostToRefund__260025866 =
   {amount : Nat; conversionId : ?Nat; refundedBlock : ?Nat};
 type BtcCostToRefund__32018646 =
   {amount : Nat; conversionId : ?Nat; refundedBlock : ?Nat};
+type BtcCostToRefund__367200202 =
+  {amount : Nat; conversionId : ?Nat; refundedBlock : ?Nat};
 type BtcCostToRefund__489569500 =
   {amount : Nat; conversionId : ?Nat; refundedBlock : ?Nat};
 type BtcCostToRefund__608156981 =
@@ -528,6 +578,8 @@ type BtcDepositStore__671752534 =
     purchases : Map__230067015<Principal__873421814, Tracking__469203760>;
     wallets : Map__230067015<Principal__873421814, Tracking__469203760>
   };
+type BtcRefundPurpose__108380334 =
+  {#deliveryFailedExcess; #excess; #fullRefund};
 type BtcRefundPurpose__158243278 =
   {#deliveryFailedExcess; #excess; #fullRefund};
 type BtcRefundPurpose__443183427 =
@@ -536,6 +588,11 @@ type BtcRefundPurpose__631667416 =
   {#deliveryFailedExcess; #excess; #fullRefund};
 type BtcRefundPurpose__671732651 =
   {#deliveryFailedExcess; #excess; #fullRefund};
+type BtcRefund__125445440 =
+  {
+    attempt : TransferAttempt__704640352;
+    purpose : BtcRefundPurpose__108380334
+  };
 type BtcRefund__226812728 =
   {
     attempt : TransferAttempt__495158270;
@@ -648,6 +705,22 @@ type CanisterInfoStore__366661753 =
     var lastError : ?CanisterInfoError__506146253;
     var moduleHash : ?Blob
   };
+type ClosedAuction__1007221954 =
+  {
+    bidCount : Nat;
+    blockSale : Bool;
+    carriedOverE8s : Nat;
+    closedAt : Int;
+    closesAt : Int;
+    id : Nat;
+    lotSizeE8s : Nat;
+    openedAt : Int;
+    rates : [ClosingRate__917155296];
+    remainderE8s : Nat;
+    reserve : ReserveBreakdown__673465082;
+    servedE8s : Nat;
+    status : {#fullySold; #partiallySold; #unsold}
+  };
 type ClosedAuction__205877119 =
   {
     bidCount : Nat;
@@ -729,6 +802,7 @@ type ClosedBid__238402069 =
   {
     auctionId : AuctionId__618595027;
     bidder : Principal;
+    choice : RemainderChoice__475482207;
     createdAt : Timestamp__1011941403;
     deposited : Nat;
     id : BidId__839254788;
@@ -799,6 +873,7 @@ type ClosingRate__356894946 = {token : PayToken__799876343; usdE8 : ?Nat};
 type ClosingRate__459461436 = {token : PayToken__1012193404; usdE8 : ?Nat};
 type ClosingRate__56925570 = {token : PayToken__73279581; usdE8 : ?Nat};
 type ClosingRate__804199685 = {token : PayToken__349649353; usdE8 : ?Nat};
+type ClosingRate__917155296 = {token : PayToken__945411430; usdE8 : ?Nat};
 type ClosingStore__566752324 =
   {
     balances : Map__230067015<Text, BidderBalance__1049304468>;
@@ -1055,6 +1130,8 @@ type CreatorPayout__470240883 =
     token : DexToken__266961123;
     wallet : Account__326507027
   };
+type CreatorSetAside__1015902392 =
+  {amount : Nat; mintId : Nat; token : PayToken__945411430};
 type CreatorSetAside__602470599 =
   {amount : Nat; mintId : Nat; token : PayToken__497403174};
 type CreatorSetAside__758741997 =
@@ -1269,9 +1346,11 @@ type DepositEntry__643810751 =
     btcDetectedSats : Nat;
     btcRefund : ?BtcRefund__511447725;
     btcTxids : [Text];
+    causePermanent : Bool;
     ckbtcMintBlockIndex : ?Nat;
     ckbtcMintedSats : Nat;
     ckbtcPendingSats : Nat;
+    conversionCause : ?Text;
     conversionId : ?Nat;
     costToRefund : ?BtcCostToRefund__489569500;
     detectedAt : Timestamp__319346180;
@@ -1299,6 +1378,16 @@ type DepositEntry__724359327 =
     stage : DepositStage__318200123;
     tttiDelivered : Nat;
     updatedAt : Int
+  };
+type DepositErrorKind__239201518 =
+  {
+    #minterUnavailable;
+    #other;
+    #receivingWalletNotConfigured;
+    #refundFailed;
+    #tainted;
+    #unrecoverable;
+    #valueTooSmall
   };
 type DepositErrorKind__407563215 =
   {
@@ -1351,6 +1440,7 @@ type DepositKind__657952449 = {#purchase; #wallet};
 type DepositKind__686626753 = {#purchase; #wallet};
 type DepositKind__693462726 = {#purchase; #wallet};
 type DepositKind__883393621 = {#purchase; #wallet};
+type DepositKind__915730929 = {#purchase; #wallet};
 type DepositStage__169124988 =
   {
     #addressShown;
@@ -1429,6 +1519,17 @@ type DepositStage__572379688 =
     #refunded
   };
 type DepositStage__71060312 =
+  {
+    #addressShown;
+    #confirming : {current : Nat; required : Nat};
+    #delivered;
+    #depositDetected;
+    #error;
+    #minted;
+    #pendingRate;
+    #refunded
+  };
+type DepositStage__991811546 =
   {
     #addressShown;
     #confirming : {current : Nat; required : Nat};
@@ -1584,9 +1685,12 @@ type DexStore__12814971 =
   };
 type DexToken__155581944 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__187119158 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
+type DexToken__214881049 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__256482230 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__266961123 = DexToken__617906079;
+type DexToken__283265548 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__293470229 = DexToken__617906079;
+type DexToken__299695362 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__381789600 = DexToken__617906079;
 type DexToken__399947970 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__487066239 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
@@ -1602,6 +1706,7 @@ type DexToken__68803635 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__807040039 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__836714146 = DexToken__617906079;
 type DexToken__905167112 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
+type DexToken__909314109 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__916592285 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__968912616 = {#ckbtc; #ckusdc; #ckusdt; #icp; #tttiT};
 type DexToken__985285866 = DexToken__617906079;
@@ -1668,6 +1773,17 @@ type DexTransferAttempt__243410086 =
     request : DexTransferRequest__82816038;
     sends : Nat
   };
+type DexTransferAttempt__323410007 =
+  {
+    attempt : Nat;
+    created_at_time : Nat64;
+    lastError : ?Text;
+    memo : Blob;
+    n : Nat;
+    outcome : AttemptOutcome__751088882;
+    request : DexTransferRequest__279969409;
+    sends : Nat
+  };
 type DexTransferAttempt__487379132 =
   {
     attempt : Nat;
@@ -1699,6 +1815,17 @@ type DexTransferAttempt__521285700 =
     n : Nat;
     outcome : AttemptOutcome__691058526;
     request : DexTransferRequest__607615381;
+    sends : Nat
+  };
+type DexTransferAttempt__530286899 =
+  {
+    attempt : Nat;
+    created_at_time : Nat64;
+    lastError : ?Text;
+    memo : Blob;
+    n : Nat;
+    outcome : AttemptOutcome__747895819;
+    request : DexTransferRequest__973210597;
     sends : Nat
   };
 type DexTransferAttempt__565822125 =
@@ -1761,6 +1888,24 @@ type DexTransferAttempt__883243995 =
       };
     sends : Nat
   };
+type DexTransferAttempt__914468103 =
+  {
+    attempt : Nat;
+    created_at_time : Nat64;
+    lastError : ?Text;
+    memo : Blob;
+    n : Nat;
+    outcome : {#failed : Text; #pending; #succeeded : Nat; #unknown};
+    request :
+      {
+        amount : Nat;
+        fee : ?Nat;
+        from : Account__993035174;
+        to : Account__993035174;
+        token : DexToken__283265548
+      };
+    sends : Nat
+  };
 type DexTransferAttempt__993459708 =
   {
     attempt : Nat;
@@ -1795,6 +1940,14 @@ type DexTransferRequest__272195550 =
     from : Account__295902693;
     to : Account__295902693;
     token : DexToken__968912616
+  };
+type DexTransferRequest__279969409 =
+  {
+    amount : Nat;
+    fee : ?Nat;
+    from : Account__458423235;
+    to : Account__458423235;
+    token : DexToken__909314109
   };
 type DexTransferRequest__358666187 =
   {
@@ -1852,6 +2005,14 @@ type DexTransferRequest__82816038 =
     to : Account__450315820;
     token : DexToken__68803635
   };
+type DexTransferRequest__973210597 =
+  {
+    amount : Nat;
+    fee : ?Nat;
+    from : Account__954535011;
+    to : Account__954535011;
+    token : DexToken__214881049
+  };
 type DexTransferStatus__1054777963 =
   {#completed : Nat; #failed : Text; #inProgress; #needsReview};
 type DexTransferStatus__149242655 =
@@ -1864,6 +2025,8 @@ type DexTransferStatus__581842707 = DexTransferStatus__426353275;
 type DexTransferStatus__707505523 =
   {#completed : Nat; #failed : Text; #inProgress; #needsReview};
 type DexTransferStatus__825801036 =
+  {#completed : Nat; #failed : Text; #inProgress; #needsReview};
+type DexTransferStatus__848334561 =
   {#completed : Nat; #failed : Text; #inProgress; #needsReview};
 type DexTransferStatus__900985328 =
   {#completed : Nat; #failed : Text; #inProgress; #needsReview};
@@ -1976,6 +2139,14 @@ type FeeMove__995937928 =
     token : PayToken__676131929;
     updatedAt : Timestamp__845544666
   };
+type FeePotStore__123650094 =
+  {
+    var dayStart : Int;
+    locks : Map__230067015<Nat, PositionLock__190024033>;
+    var nextSharingAt : Int;
+    pots : Map__230067015<Nat, PoolPot__913215005>;
+    unpaid : Map__230067015<Text, UnpaidShare__589658319>
+  };
 type FeePotStore__252139569 =
   {
     var dayStart : Int;
@@ -1991,6 +2162,14 @@ type FeePotStore__362967631 =
     var nextSharingAt : Timestamp__475398610;
     pots : Map__230067015<PoolId__339215363, PoolPot__345002432>;
     unpaid : Map__230067015<Text, UnpaidShare__883530029>
+  };
+type FeePotStore__560035777 =
+  {
+    var dayStart : Int;
+    locks : Map__230067015<Nat, PositionLock__774781965>;
+    var nextSharingAt : Int;
+    pots : Map__230067015<Nat, PoolPot__339453196>;
+    unpaid : Map__230067015<Text, UnpaidShare__504937733>
   };
 type FeeSharing__530458520 =
   {
@@ -2009,8 +2188,10 @@ type FeeSharing__802473511 =
 type FeeSplit__1031204638 = {creator : Nat; cyclesE8s : Nat};
 type FeeSplit__699418262 = {creator : Nat; cyclesE8s : Nat};
 type FeeTier__204588102 = {#bps100; #bps30; #bps5};
+type FeeTier__453572595 = {#bps100; #bps30; #bps5};
 type FeeTier__561594592 = {#bps100; #bps30; #bps5};
 type FeeTier__657055682 = {#bps100; #bps30; #bps5};
+type FeeTier__665496132 = {#bps100; #bps30; #bps5};
 type FeeTier__910695057 = {#bps100; #bps30; #bps5};
 type FeeTier__915238978 = {#bps100; #bps30; #bps5};
 type FeeTier__952315497 = {#bps100; #bps30; #bps5};
@@ -2047,21 +2228,21 @@ type ForwardStatus__733382721 =
   {#failed : Text; #forwarded : Nat; #notRequired; #pending};
 type ForwardStatus__964067313 =
   {#failed : Text; #forwarded : Nat; #notRequired; #pending};
-type GuaranteeMass__1048797884 =
-  {
-    excess : Nat;
-    remainingGuarantee : Nat;
-    remainingTtti : Nat;
-    token : PayToken__1061403846;
-    totalGuarantee : Nat;
-    totalTtti : Nat
-  };
 type GuaranteeMass__205344153 =
   {
     excess : Nat;
     remainingGuarantee : Nat;
     remainingTtti : Nat;
     token : PayToken__131894481;
+    totalGuarantee : Nat;
+    totalTtti : Nat
+  };
+type GuaranteeMass__587621064 =
+  {
+    excess : Nat;
+    remainingGuarantee : Nat;
+    remainingTtti : Nat;
+    token : PayToken__377120516;
     totalGuarantee : Nat;
     totalTtti : Nat
   };
@@ -2081,6 +2262,14 @@ type Guarantee__1028976279 =
     mintId : Nat;
     owner : Principal;
     token : PayToken__497403174
+  };
+type Guarantee__1035260755 =
+  {
+    amount : Nat;
+    createdAt : Int;
+    mintId : Nat;
+    owner : Principal;
+    token : PayToken__945411430
   };
 type Guarantee__426230842 =
   {
@@ -2123,6 +2312,22 @@ type HourBucket__954054527 =
     var swapCount : Nat;
     var volume0 : Nat;
     var volume1 : Nat
+  };
+type IcpSwapSample__270104927 =
+  {
+    counter : DexToken__283265548;
+    counterPerTttiE8 : Nat;
+    counterReserve : Nat;
+    poolCanister : Principal;
+    readAt : Int
+  };
+type IcpSwapSample__486877530 =
+  {
+    counter : DexToken__299695362;
+    counterPerTttiE8 : Nat;
+    counterReserve : Nat;
+    poolCanister : Principal;
+    readAt : Int
   };
 type IcpSwapSample__54792067 =
   {
@@ -2459,8 +2664,14 @@ type LiquidityMint__168649150 =
   };
 type LiquidityMint__770095127 =
   {
+    choice : RemainderChoice__963675996;
     createdAt : Timestamp__508096336;
+    handTttiAmount : Nat;
     id : MintId__23309780;
+    lockedPositionId : ?PositionId__135925049;
+    lockedTokenAmount : Nat;
+    lockedTttiAmount : Nat;
+    mShareE6 : Nat;
     owner : Principal;
     payAmount : Nat;
     payer : Principal;
@@ -2572,6 +2783,8 @@ type MintRevenueStore__228439296 =
     walletChanges : List__836382695<WalletChange__1018521137>;
     wallets : Map__230067015<Text, ReceivingWallet__23016>
   };
+type MintStatus__117312357 =
+  {#completed; #inProgress; #refundFailed; #refunded; #refunding};
 type MintStatus__135217733 =
   {#completed; #inProgress; #refundFailed; #refunded};
 type MintStatus__571793193 =
@@ -2595,6 +2808,14 @@ type MinterInfoCache__247932392 =
     retrieveMinSats : Nat
   };
 type MinterInfoCache__320401711 =
+  {
+    checkFeeSats : Nat;
+    depositMinSats : Nat;
+    fetchedAt : Int;
+    minConfirmations : Nat;
+    retrieveMinSats : Nat
+  };
+type MinterInfoCache__565801351 =
   {
     checkFeeSats : Nat;
     depositMinSats : Nat;
@@ -2722,6 +2943,13 @@ type NewActor__159190963 =
     profileState : ProfileState__740725293;
     treasury : TreasuryStore__458048321
   };
+type NewActor__162821561 =
+  {
+    auction : NewAuctionStore__284025279;
+    auctionClosing : NewClosingStore__66999095;
+    dex : NewDexStore__378407925;
+    liquidityMints : NewLiquidityMintStore__227490752
+  };
 type NewActor__167098428 =
   {
     cyclesAutonomy : AutonomyStore__1068536233;
@@ -2745,6 +2973,7 @@ type NewActor__290166884 =
     dexReserve : NewDexReserveStore__498584051;
     dexSweep : SweepStore__250600686
   };
+type NewActor__324338690 = {redemptions : NewRedemptionStore__776361978};
 type NewActor__33065221 = {buybacks : BuybackStore__176857670};
 type NewActor__336689987 =
   {
@@ -2780,6 +3009,7 @@ type NewActor__41920180 =
     dex : NewDexStore__511374400;
     dexTransfers : NewDexTransferStore__110273052
   };
+type NewActor__428071253 = {btcDeposits : NewBtcDepositStore__958284237};
 type NewActor__442823154 =
   {
     dexBatch : BatchStore__1037197381;
@@ -2825,6 +3055,7 @@ type NewActor__58670277 =
     cyclesReserve : NewCyclesReserveStore__547555215;
     reservedReconciliations : ReconciliationStore__317892397
   };
+type NewActor__602027329 = {secondRates : SecondRateStore__524212551};
 type NewActor__624114054 = {treasury : Treasury__731000663};
 type NewActor__676710792 =
   {buybacks : NewBuybackStore__991825315; retry : RetryStore__592530678};
@@ -2881,6 +3112,8 @@ type NewActor__851523937 =
 type NewActor__857607810 = {addressBook : AddressBookStore__939593654};
 type NewActor__865718369 =
   {retry : NewRetryStore__859673830; treasury : NewTreasuryStore__451567606};
+type NewActor__867072722 =
+  {requestPayments : Map__230067015<Nat, PairPayDeposit__253766673>};
 type NewActor__894385230 =
   {
     auction : NewAuctionStore__987307284;
@@ -2890,6 +3123,7 @@ type NewActor__894385230 =
       Map__230067015<Principal,
                       Map__230067015<Text, GuaranteeMass__992247875>>
   };
+type NewActor__904255658 = {dex : NewDexStore__601882009};
 type NewActor__931223913 =
   {auctionClosing : NewClosingStore__994434197; dex : NewDexStore__345175303};
 type NewActor__947145178 = {ledger : Ledger__1032815789};
@@ -2898,6 +3132,16 @@ type NewActor__947486200 =
 type NewActor__948019064 = {btcDeposits : BtcDepositStore__671752534};
 type NewActor__96998807 =
   {tokenRates : TokenRateStore__527447788; treasury : Treasury__827492303};
+type NewAuctionStore__284025279 =
+  {
+    bids : Map__230067015<Nat, NewBid__36037970>;
+    var committedReturnedE8s : Nat;
+    var current : ?Auction__747979049;
+    var nextAuctionId : Nat;
+    var nextBidId : Nat;
+    pending : Map__230067015<Nat, NewPendingBid__780716662>;
+    var remainderCommittedE8s : Nat
+  };
 type NewAuctionStore__987307284 =
   {
     bids : Map__230067015<Nat, Bid__549529509>;
@@ -2948,6 +3192,46 @@ type NewBidSettlement__149133700 =
     takenAmount : Nat;
     token : PayToken__667376035
   };
+type NewBidSettlement__644997926 =
+  {
+    attemptedAt : ?Int;
+    auctionId : Nat;
+    bidId : Nat;
+    bidder : Principal;
+    carriedE8s : Nat;
+    choice : RemainderChoice__463806684;
+    creatorShare : Nat;
+    failureReason : ?Text;
+    guaranteeAmount : Nat;
+    handE8s : Nat;
+    lockedAmount : Nat;
+    lockedPositionId : ?Nat;
+    mShareE6 : Nat;
+    mintedE8s : Nat;
+    positionAmount : Nat;
+    positionId : ?Nat;
+    settledAt : ?Int;
+    settledE8s : Nat;
+    status : {#failed; #notRequired; #pending; #settled};
+    surplusReturned : Nat;
+    takenAmount : Nat;
+    token : PayToken__945411430
+  };
+type NewBid__36037970 =
+  {
+    auctionId : Nat;
+    bidder : Principal;
+    block : Nat;
+    choice : RemainderChoice__463806684;
+    createdAt : Int;
+    deposited : Nat;
+    id : Nat;
+    memo : Blob;
+    priceB : Nat;
+    quantityE8s : Nat;
+    requiredDeposit : Nat;
+    token : PayToken__945411430
+  };
 type NewBtcDepositStore__153353526 =
   {
     var minterInfo : ?MinterInfoCache__320401711;
@@ -2959,6 +3243,16 @@ type NewBtcDepositStore__366174964 =
     var minterInfo : ?MinterInfoCache__933893695;
     purchases : Map__230067015<Principal, NewTracking__870422853>;
     wallets : Map__230067015<Principal, NewTracking__870422853>
+  };
+type NewBtcDepositStore__958284237 =
+  {
+    var minterInfo : ?MinterInfoCache__565801351;
+    purchases :
+      Map__230067015<Principal,
+                      Tracking__773843780<NewDepositEntry__1047335135>>;
+    wallets :
+      Map__230067015<Principal,
+                      Tracking__773843780<NewDepositEntry__1047335135>>
   };
 type NewBuybackStatus__299178131 =
   {#cancelled; #completed; #inProgress; #payoutFailed};
@@ -3055,6 +3349,24 @@ type NewClosedAuction__529733565 =
     servedE8s : Nat;
     status : {#fullySold; #partiallySold; #unsold}
   };
+type NewClosedBid__232886579 =
+  {
+    auctionId : Nat;
+    bidder : Principal;
+    choice : RemainderChoice__463806684;
+    createdAt : Int;
+    deposited : Nat;
+    id : Nat;
+    outcome : {#discardedBelowReserve; #notServed; #partiallyServed; #served};
+    priceB : Nat;
+    pricePaidB : Nat;
+    quantityE8s : Nat;
+    requiredDeposit : Nat;
+    returned : Nat;
+    servedDeposit : Nat;
+    servedE8s : Nat;
+    token : PayToken__945411430
+  };
 type NewClosingStore__635335756 =
   {
     balances : Map__230067015<Text, BidderBalance__644683271>;
@@ -3074,6 +3386,20 @@ type NewClosingStore__642854685 =
     failedCarriedE8s : Map__230067015<Nat, Nat>;
     moves : Map__230067015<Nat, AuctionMove__37818519>;
     settlements : Map__230067015<Nat, NewBidSettlement__149133700>
+  };
+type NewClosingStore__66999095 =
+  {
+    activeMoves : Set__70493310<Nat>;
+    balances : Map__230067015<Text, BidderBalance__1073371475>;
+    closed : Map__230067015<Nat, ClosedAuction__1007221954>;
+    closedBids : Map__230067015<Nat, [NewClosedBid__232886579]>;
+    var closingSince : ?Int;
+    dust : Map__230067015<Text, BidderDust__993021351>;
+    failedCarriedE8s : Map__230067015<Nat, Nat>;
+    moves : Map__230067015<Nat, AuctionMove__596127959>;
+    movesByBidder : Map__230067015<Text, Set__70493310<Nat>>;
+    settledAuctions : Set__70493310<Nat>;
+    settlements : Map__230067015<Nat, NewBidSettlement__644997926>
   };
 type NewClosingStore__994434197 =
   {
@@ -3170,6 +3496,27 @@ type NewCyclesReserveStore__547555215 =
     shares : Map__230067015<Nat, ReserveShare__502576029>;
     withdrawals : List__836382695<ReserveWithdrawal__1007036683>
   };
+type NewDepositEntry__1047335135 =
+  {
+    btcDetectedSats : Nat;
+    btcRefund : ?BtcRefund__125445440;
+    btcTxids : [Text];
+    causePermanent : Bool;
+    ckbtcMintBlockIndex : ?Nat;
+    ckbtcMintedSats : Nat;
+    ckbtcPendingSats : Nat;
+    conversionCause : ?Text;
+    conversionId : ?Nat;
+    costToRefund : ?BtcCostToRefund__367200202;
+    detectedAt : Int;
+    errorKind : ?DepositErrorKind__239201518;
+    errorMessage : ?Text;
+    index : Nat;
+    refundedSats : Nat;
+    stage : DepositStage__991811546;
+    tttiDelivered : Nat;
+    updatedAt : Int
+  };
 type NewDepositEntry__728947385 =
   {
     btcDetectedSats : Nat;
@@ -3231,6 +3578,20 @@ type NewDexStore__345175303 =
     removals : Map__230067015<Nat, PairRemoval__906552>;
     requests : Map__230067015<Nat, PairRequest__632090104>
   };
+type NewDexStore__378407925 =
+  {
+    fees : FeePotStore__123650094;
+    icpswapSamples : Map__230067015<Text, IcpSwapSample__270104927>;
+    lastRefusalAt : Map__230067015<Principal, Int>;
+    var nextPoolId : Nat;
+    var nextPositionId : Nat;
+    var nextRequestId : Nat;
+    poolPositions : Map__230067015<Nat, Set__70493310<Nat>>;
+    pools : Map__230067015<Nat, Pool__158412760>;
+    positions : Map__230067015<Nat, NewPosition__918015576>;
+    removals : Map__230067015<Nat, PairRemoval__381824240>;
+    requests : Map__230067015<Nat, PairRequest__1072765824>
+  };
 type NewDexStore__511374400 =
   {
     icpswapSamples : Map__230067015<Text, IcpSwapSample__63171443>;
@@ -3250,6 +3611,21 @@ type NewDexStore__5388863 =
     var nextRequestId : Nat;
     pools : Map__230067015<Nat, Pool__417694753>;
     requests : Map__230067015<Nat, NewPairRequest__312107110>
+  };
+type NewDexStore__601882009 =
+  {
+    fees : FeePotStore__560035777;
+    icpswapSamples : Map__230067015<Text, IcpSwapSample__486877530>;
+    lastRefusalAt : Map__230067015<Principal, Int>;
+    var nextPoolId : Nat;
+    var nextPositionId : Nat;
+    var nextRequestId : Nat;
+    poolPositions : Map__230067015<Nat, Set__70493310<Nat>>;
+    pools : Map__230067015<Nat, Pool__742993685>;
+    positions : Map__230067015<Nat, Position__78036051>;
+    referenceReadings : Map__230067015<Text, ReferenceReading__6176519>;
+    removals : Map__230067015<Nat, PairRemoval__266730571>;
+    requests : Map__230067015<Nat, PairRequest__364538499>
   };
 type NewDexStore__625863983 =
   {
@@ -3311,6 +3687,13 @@ type NewLedger__841630126 =
     var merkleLeaves : [Blob];
     state : LedgerState__776929738
   };
+type NewLiquidityMintStore__227490752 =
+  {
+    creatorSetAsides : Map__230067015<Nat, CreatorSetAside__1015902392>;
+    guarantees : Map__230067015<Nat, Guarantee__1035260755>;
+    mints : Map__230067015<Nat, NewLiquidityMint__892851495>;
+    var nextMintId : Nat
+  };
 type NewLiquidityMint__1009147868 =
   {
     createdAt : Int;
@@ -3326,6 +3709,29 @@ type NewLiquidityMint__1009147868 =
     refusalCause : ?Text;
     status : NewMintStatus__782329089;
     token : PayToken__497403174;
+    tttiAmount : Nat
+  };
+type NewLiquidityMint__892851495 =
+  {
+    choice : RemainderChoice__463806684;
+    createdAt : Int;
+    handTttiAmount : Nat;
+    id : Nat;
+    lockedPositionId : ?Nat;
+    lockedTokenAmount : Nat;
+    lockedTttiAmount : Nat;
+    mShareE6 : Nat;
+    owner : Principal;
+    payAmount : Nat;
+    payer : Principal;
+    paymentBlock : ?Nat;
+    poolId : Nat;
+    positionId : ?Nat;
+    rateUsdE8 : Nat;
+    refundWithdrawalN : ?Nat;
+    refusalCause : ?Text;
+    status : MintStatus__117312357;
+    token : PayToken__945411430;
     tttiAmount : Nat
   };
 type NewMintStatus__782329089 =
@@ -3398,6 +3804,19 @@ type NewPairRequest__312107110 =
     status : RequestStatus__399194077;
     token : RequestedToken__85148531
   };
+type NewPendingBid__780716662 =
+  {
+    auctionId : Nat;
+    bidder : Principal;
+    choice : RemainderChoice__463806684;
+    createdAt : Int;
+    deposited : Nat;
+    n : Nat;
+    priceB : Nat;
+    quantityE8s : Nat;
+    requiredDeposit : Nat;
+    token : PayToken__945411430
+  };
 type NewPoolStatus__559963521 = {#active; #filling; #removed};
 type NewPool__810254657 =
   {
@@ -3457,6 +3876,39 @@ type NewPosition__458168974 =
     relayReceivedNs : Nat;
     shares : Nat;
     unlockAt : Int
+  };
+type NewPosition__918015576 =
+  {
+    createdAt : Int;
+    feesCollected0 : Nat;
+    feesCollected1 : Nat;
+    id : Nat;
+    isCreator : Bool;
+    lockDurationNs : Nat;
+    lockStartedAt : Int;
+    mintShareE6 : Nat;
+    owner : Principal;
+    poolId : Nat;
+    relayReceivedNs : Nat;
+    shares : Nat;
+    unlockAt : Int
+  };
+type NewRedemptionStore__776361978 =
+  {redemptions : Map__230067015<Nat, NewRedemption__472369605>};
+type NewRedemption__472369605 =
+  {
+    account : Account__954535011;
+    createdAt : Int;
+    id : Nat;
+    netAmount : Nat;
+    owner : Principal;
+    payout : DexTransferAttempt__530286899;
+    rateUsdE8 : ?Nat;
+    status : DexTransferStatus__848334561;
+    thirdPartyFee : Nat;
+    token : PayToken__377120516;
+    tttiAmount : Nat;
+    tttiPullBlock : ?Nat
   };
 type NewReserveRun__330492520 =
   {
@@ -3661,6 +4113,14 @@ type OldActor__189016288 = {auctionClosing : OldClosingStore__188322031};
 type OldActor__196791473 = {};
 type OldActor__216947015 = {};
 type OldActor__224735965 = {btcDeposits : BtcDepositStore__671752534};
+type OldActor__242572622 =
+  {
+    auction : OldAuctionStore__1067104243;
+    auctionClosing : OldClosingStore__531079736;
+    dex : OldDexStore__714758019;
+    liquidityMints : OldLiquidityMintStore__372193435
+  };
+type OldActor__251427689 = {dex : OldDexStore__769892707};
 type OldActor__263392624 = {};
 type OldActor__286077058 = {buybacks : OldBuybackStore__1040474080};
 type OldActor__288103442 =
@@ -3703,6 +4163,13 @@ type OldActor__401337812 = {};
 type OldActor__410646494 = {ledger : OldLedger__865467467};
 type OldActor__426534626 = {};
 type OldActor__435162136 = {};
+type OldActor__437581245 =
+  {
+    guaranteeMasses :
+      Map__230067015<Principal,
+                      Map__230067015<Text, GuaranteeMass__587621064>>;
+    redemptions : OldRedemptionStore__860296857
+  };
 type OldActor__439715301 =
   {retry : OldRetryStore__1017514748; treasury : OldTreasuryStore__241566112};
 type OldActor__440635105 = {dexReserve : OldDexReserveStore__665374991};
@@ -3724,6 +4191,7 @@ type OldActor__646472969 = {ledger : OldLedger__977773560};
 type OldActor__656152638 =
   {purchaseAcknowledgements : Map__230067015<Principal__873421814, Int>};
 type OldActor__659015430 = {};
+type OldActor__680688510 = {};
 type OldActor__712782347 = {router : RouterStore__742975065};
 type OldActor__717850601 = {};
 type OldActor__741346433 = {btcDeposits : OldBtcDepositStore__174925508};
@@ -3735,6 +4203,7 @@ type OldActor__805451794 =
     profileState : ProfileState__867357044;
     treasury : TreasuryStore__416531997
   };
+type OldActor__806030482 = {btcDeposits : OldBtcDepositStore__62003853};
 type OldActor__829858508 =
   {
     documentState : DocumentState__27693356;
@@ -3772,6 +4241,17 @@ type OldActor__964166319 =
       Map__230067015<Principal,
                       Map__230067015<Text, GuaranteeMass__992247875>>
   };
+type OldActor__988729321 = {};
+type OldAuctionStore__1067104243 =
+  {
+    bids : Map__230067015<Nat, OldBid__205894919>;
+    var committedReturnedE8s : Nat;
+    var current : ?Auction__747979049;
+    var nextAuctionId : Nat;
+    var nextBidId : Nat;
+    pending : Map__230067015<Nat, OldPendingBid__1014889443>;
+    var remainderCommittedE8s : Nat
+  };
 type OldAuctionStore__298184877 =
   {
     bids : Map__230067015<Nat, Bid__549529509>;
@@ -3790,6 +4270,26 @@ type OldBatchStore__324874188 =
     reserve : OldReserveRun__308874147;
     sweep : SweepRun__1066212493;
     zeroed : Map__230067015<Text, Int>
+  };
+type OldBidSettlement__526108687 =
+  {
+    attemptedAt : ?Int;
+    auctionId : Nat;
+    bidId : Nat;
+    bidder : Principal;
+    carriedE8s : Nat;
+    creatorShare : Nat;
+    failureReason : ?Text;
+    guaranteeAmount : Nat;
+    mintedE8s : Nat;
+    positionAmount : Nat;
+    positionId : ?Nat;
+    settledAt : ?Int;
+    settledE8s : Nat;
+    status : {#failed; #notRequired; #pending; #settled};
+    surplusReturned : Nat;
+    takenAmount : Nat;
+    token : PayToken__945411430
   };
 type OldBidSettlement__812876076 =
   {
@@ -3810,6 +4310,20 @@ type OldBidSettlement__812876076 =
     takenAmount : Nat;
     token : PayToken__667376035
   };
+type OldBid__205894919 =
+  {
+    auctionId : Nat;
+    bidder : Principal;
+    block : Nat;
+    createdAt : Int;
+    deposited : Nat;
+    id : Nat;
+    memo : Blob;
+    priceB : Nat;
+    quantityE8s : Nat;
+    requiredDeposit : Nat;
+    token : PayToken__945411430
+  };
 type OldBtcDepositStore__174925508 =
   {
     var minterInfo : ?MinterInfoCache__916271664;
@@ -3823,6 +4337,16 @@ type OldBtcDepositStore__276253880 =
     var minterInfo : ?MinterInfoCache__320401711;
     purchases : Map__230067015<Principal__873421814, OldTracking__97655680>;
     wallets : Map__230067015<Principal__873421814, OldTracking__97655680>
+  };
+type OldBtcDepositStore__62003853 =
+  {
+    var minterInfo : ?MinterInfoCache__565801351;
+    purchases :
+      Map__230067015<Principal,
+                      Tracking__773843780<OldDepositEntry__971376903>>;
+    wallets :
+      Map__230067015<Principal,
+                      Tracking__773843780<OldDepositEntry__971376903>>
   };
 type OldBtcDepositStore__640228151 =
   {
@@ -3926,6 +4450,23 @@ type OldClosedAuction__583008410 =
     servedE8s : Nat;
     status : {#fullySold; #partiallySold; #unsold}
   };
+type OldClosedBid__988444077 =
+  {
+    auctionId : Nat;
+    bidder : Principal;
+    createdAt : Int;
+    deposited : Nat;
+    id : Nat;
+    outcome : {#discardedBelowReserve; #notServed; #partiallyServed; #served};
+    priceB : Nat;
+    pricePaidB : Nat;
+    quantityE8s : Nat;
+    requiredDeposit : Nat;
+    returned : Nat;
+    servedDeposit : Nat;
+    servedE8s : Nat;
+    token : PayToken__945411430
+  };
 type OldClosingStore__181200689 =
   {
     balances : Map__230067015<Text, BidderBalance__1026360043>;
@@ -3952,6 +4493,20 @@ type OldClosingStore__217935203 =
     failedCarriedE8s : Map__230067015<Nat, Nat>;
     moves : Map__230067015<Nat, AuctionMove__607979342>;
     settlements : Map__230067015<Nat, BidSettlement__160300280>
+  };
+type OldClosingStore__531079736 =
+  {
+    activeMoves : Set__70493310<Nat>;
+    balances : Map__230067015<Text, BidderBalance__1073371475>;
+    closed : Map__230067015<Nat, ClosedAuction__1007221954>;
+    closedBids : Map__230067015<Nat, [OldClosedBid__988444077]>;
+    var closingSince : ?Int;
+    dust : Map__230067015<Text, BidderDust__993021351>;
+    failedCarriedE8s : Map__230067015<Nat, Nat>;
+    moves : Map__230067015<Nat, AuctionMove__596127959>;
+    movesByBidder : Map__230067015<Text, Set__70493310<Nat>>;
+    settledAuctions : Set__70493310<Nat>;
+    settlements : Map__230067015<Nat, OldBidSettlement__526108687>
   };
 type OldConversionStatus__979353916 =
   {#completed; #failed; #refundFailed; #refunded};
@@ -4084,6 +4639,25 @@ type OldDepositEntry__242005761 =
     tttiDelivered : Nat;
     updatedAt : Int
   };
+type OldDepositEntry__971376903 =
+  {
+    btcDetectedSats : Nat;
+    btcRefund : ?BtcRefund__125445440;
+    btcTxids : [Text];
+    ckbtcMintBlockIndex : ?Nat;
+    ckbtcMintedSats : Nat;
+    ckbtcPendingSats : Nat;
+    conversionId : ?Nat;
+    costToRefund : ?BtcCostToRefund__367200202;
+    detectedAt : Int;
+    errorKind : ?DepositErrorKind__239201518;
+    errorMessage : ?Text;
+    index : Nat;
+    refundedSats : Nat;
+    stage : DepositStage__991811546;
+    tttiDelivered : Nat;
+    updatedAt : Int
+  };
 type OldDepositErrorKind__332560599 =
   {#minterUnavailable; #other; #tainted; #valueTooSmall};
 type OldDepositErrorKind__402429976 =
@@ -4163,6 +4737,20 @@ type OldDexStore__516503630 =
     pools : Map__230067015<Nat, OldPool__85155265>;
     requests : Map__230067015<Nat, PairRequest__252001273>
   };
+type OldDexStore__714758019 =
+  {
+    fees : FeePotStore__123650094;
+    icpswapSamples : Map__230067015<Text, IcpSwapSample__270104927>;
+    lastRefusalAt : Map__230067015<Principal, Int>;
+    var nextPoolId : Nat;
+    var nextPositionId : Nat;
+    var nextRequestId : Nat;
+    poolPositions : Map__230067015<Nat, Set__70493310<Nat>>;
+    pools : Map__230067015<Nat, Pool__158412760>;
+    positions : Map__230067015<Nat, OldPosition__980366146>;
+    removals : Map__230067015<Nat, PairRemoval__381824240>;
+    requests : Map__230067015<Nat, PairRequest__1072765824>
+  };
 type OldDexStore__735899437 =
   {
     lastRefusalAt : Map__230067015<Principal__873421814, Int>;
@@ -4170,6 +4758,20 @@ type OldDexStore__735899437 =
     var nextRequestId : Nat;
     pools : Map__230067015<Nat, Pool__417694753>;
     requests : Map__230067015<Nat, OldPairRequest__400009879>
+  };
+type OldDexStore__769892707 =
+  {
+    fees : FeePotStore__560035777;
+    icpswapSamples : Map__230067015<Text, IcpSwapSample__486877530>;
+    lastRefusalAt : Map__230067015<Principal, Int>;
+    var nextPoolId : Nat;
+    var nextPositionId : Nat;
+    var nextRequestId : Nat;
+    poolPositions : Map__230067015<Nat, Set__70493310<Nat>>;
+    pools : Map__230067015<Nat, Pool__742993685>;
+    positions : Map__230067015<Nat, Position__78036051>;
+    removals : Map__230067015<Nat, PairRemoval__266730571>;
+    requests : Map__230067015<Nat, PairRequest__364538499>
   };
 type OldDexStore__88456187 =
   {
@@ -4290,6 +4892,13 @@ type OldLedger__977773560 =
     var merkleLeaves : [Blob];
     state : OldLedgerState__237190123
   };
+type OldLiquidityMintStore__372193435 =
+  {
+    creatorSetAsides : Map__230067015<Nat, CreatorSetAside__1015902392>;
+    guarantees : Map__230067015<Nat, Guarantee__1035260755>;
+    mints : Map__230067015<Nat, OldLiquidityMint__672612726>;
+    var nextMintId : Nat
+  };
 type OldLiquidityMint__669038309 =
   {
     createdAt : Int;
@@ -4303,6 +4912,23 @@ type OldLiquidityMint__669038309 =
     rateUsdE8 : Nat;
     status : OldMintStatus__473779887;
     token : PayToken__497403174;
+    tttiAmount : Nat
+  };
+type OldLiquidityMint__672612726 =
+  {
+    createdAt : Int;
+    id : Nat;
+    owner : Principal;
+    payAmount : Nat;
+    payer : Principal;
+    paymentBlock : ?Nat;
+    poolId : Nat;
+    positionId : ?Nat;
+    rateUsdE8 : Nat;
+    refundWithdrawalN : ?Nat;
+    refusalCause : ?Text;
+    status : MintStatus__117312357;
+    token : PayToken__945411430;
     tttiAmount : Nat
   };
 type OldMintStatus__473779887 =
@@ -4369,6 +4995,18 @@ type OldPairRequest__400009879 =
     status : RequestStatus__399194077;
     token : RequestedToken__85148531
   };
+type OldPendingBid__1014889443 =
+  {
+    auctionId : Nat;
+    bidder : Principal;
+    createdAt : Int;
+    deposited : Nat;
+    n : Nat;
+    priceB : Nat;
+    quantityE8s : Nat;
+    requiredDeposit : Nat;
+    token : PayToken__945411430
+  };
 type OldPoolStatus__967326304 = {#active; #awaitingFirstLiquidity; #removed};
 type OldPool__75483454 =
   {
@@ -4417,6 +5055,21 @@ type OldPosition__136900731 =
     shares : Nat;
     unlockAt : Int
   };
+type OldPosition__980366146 =
+  {
+    createdAt : Int;
+    feesCollected0 : Nat;
+    feesCollected1 : Nat;
+    id : Nat;
+    isCreator : Bool;
+    lockDurationNs : Nat;
+    lockStartedAt : Int;
+    owner : Principal;
+    poolId : Nat;
+    relayReceivedNs : Nat;
+    shares : Nat;
+    unlockAt : Int
+  };
 type OldPresale__980050705 =
   {
     var fallbackEnabled : Bool;
@@ -4431,6 +5084,33 @@ type OldPurchaseOrder__42211440 =
     sessionId : Text;
     status : OldOrderStatus__423849351;
     timestamp : Nat64
+  };
+type OldRedemptionStore__860296857 =
+  {
+    fees : Map__230067015<Nat, RedemptionFee__29450142>;
+    redemptions : Map__230067015<Nat, OldRedemption__626999802>
+  };
+type OldRedemption__626999802 =
+  {
+    account : Account__954535011;
+    createdAt : Int;
+    depositedGuarantee : Nat;
+    excessKept : Nat;
+    id : Nat;
+    kind : RedemptionKind__81779088;
+    netAmount : Nat;
+    owner : Principal;
+    payout : DexTransferAttempt__530286899;
+    phase : RedeemPhase__606048482;
+    rateUsdE8 : ?Nat;
+    redemptionFee : Nat;
+    returnedAmount : Nat;
+    rule : RedeemRule__883645341;
+    status : DexTransferStatus__848334561;
+    thirdPartyFee : Nat;
+    token : PayToken__377120516;
+    tttiAmount : Nat;
+    tttiPullBlock : ?Nat
   };
 type OldReserveRun__308874147 =
   {
@@ -4677,6 +5357,20 @@ type OwnerSend__62989723<S> =
     token : PayToken__70095199;
     updatedAt : Int
   };
+type PairPayDeposit__253766673 =
+  {
+    requestId : Nat;
+    setAside : ?DexTransferAttempt__323410007;
+    setAsideAt : ?Int;
+    token : DexToken__909314109
+  };
+type PairPayDeposit__46875168 =
+  {
+    requestId : Nat;
+    setAside : ?DexTransferAttempt__565822125;
+    setAsideAt : ?Int;
+    token : DexToken__836714146
+  };
 type PairRefundStatus__187780071 =
   {#inProgress; #needsReview; #none; #refunded : Nat};
 type PairRefundStatus__23815891 =
@@ -4684,6 +5378,10 @@ type PairRefundStatus__23815891 =
 type PairRefundStatus__262390724 =
   {#inProgress; #needsReview; #none; #refunded : Nat};
 type PairRefundStatus__331350714 =
+  {#inProgress; #needsReview; #none; #refunded : Nat};
+type PairRefundStatus__367561334 =
+  {#inProgress; #needsReview; #none; #refunded : Nat};
+type PairRefundStatus__709835021 =
   {#inProgress; #needsReview; #none; #refunded : Nat};
 type PairRefundStatus__780965968 =
   {#inProgress; #needsReview; #none; #refunded : Nat};
@@ -4696,6 +5394,22 @@ type PairRemoval__1072775096 =
     poolId : Nat;
     reason : Text;
     state : RemovalState__707792491
+  };
+type PairRemoval__266730571 =
+  {
+    announcedAt : Int;
+    effectiveAt : Int;
+    poolId : Nat;
+    reason : Text;
+    state : RemovalState__237270367
+  };
+type PairRemoval__381824240 =
+  {
+    announcedAt : Int;
+    effectiveAt : Int;
+    poolId : Nat;
+    reason : Text;
+    state : RemovalState__133303911
   };
 type PairRemoval__488178702 =
   {
@@ -4720,6 +5434,23 @@ type PairRemoval__955427560 =
     poolId : Nat;
     reason : Text;
     state : RemovalState__508542070
+  };
+type PairRequest__1072765824 =
+  {
+    checks : RequestChecks__116534708;
+    counter : PoolToken__894093025;
+    createdAt : Int;
+    depositAmount : Nat;
+    depositBlock : Nat;
+    feeTier : FeeTier__453572595;
+    id : Nat;
+    kind : PoolKind__302647886;
+    message : Text;
+    refundBlock : ?Nat;
+    refundStatus : PairRefundStatus__367561334;
+    requester : Principal;
+    status : RequestStatus__878058644;
+    token : RequestedToken__574151074
   };
 type PairRequest__229951399 =
   {
@@ -4753,6 +5484,23 @@ type PairRequest__252001273 =
     requester : Principal__873421814;
     status : RequestStatus__128802097;
     token : RequestedToken__762525699
+  };
+type PairRequest__364538499 =
+  {
+    checks : RequestChecks__895654799;
+    counter : PoolToken__829840470;
+    createdAt : Int;
+    depositAmount : Nat;
+    depositBlock : Nat;
+    feeTier : FeeTier__665496132;
+    id : Nat;
+    kind : PoolKind__87551546;
+    message : Text;
+    refundBlock : ?Nat;
+    refundStatus : PairRefundStatus__709835021;
+    requester : Principal;
+    status : RequestStatus__951143331;
+    token : RequestedToken__618496316
   };
 type PairRequest__457317328 =
   {
@@ -4882,6 +5630,7 @@ type PayToken__132316872 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__225517660 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__282417814 = PayToken__988666166;
 type PayToken__349649353 = {#ckbtc; #ckusdc; #ckusdt; #icp};
+type PayToken__377120516 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__418257986 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__461839623 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__473707012 = {#ckbtc; #ckusdc; #ckusdt; #icp};
@@ -4900,8 +5649,10 @@ type PayToken__799876343 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__852650124 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__89818114 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__924627570 = PayToken__988666166;
+type PayToken__945411430 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__950714423 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PayToken__988666166 = {#ckbtc; #ckusdc; #ckusdt; #icp};
+type PayToken__992454040 = {#ckbtc; #ckusdc; #ckusdt; #icp};
 type PaymentToRefund__350171507 =
   {
     amount : Nat;
@@ -4970,6 +5721,7 @@ type PendingBid__1061711297 =
   {
     auctionId : AuctionId__618595027;
     bidder : Principal;
+    choice : RemainderChoice__475482207;
     createdAt : Timestamp__1011941403;
     deposited : Nat;
     n : Nat;
@@ -5093,13 +5845,17 @@ type PoolIndicators__217682482 =
     valueUsdE8 : ?Nat
   };
 type PoolKind__226507408 = {#tttiPair; #utilityPair};
+type PoolKind__302647886 = {#tttiPair; #utilityPair};
 type PoolKind__391618841 = {#tttiPair; #utilityPair};
 type PoolKind__40599309 = {#tttiPair; #utilityPair};
 type PoolKind__544718274 = {#tttiPair; #utilityPair};
 type PoolKind__627618952 = {#tttiPair; #utilityPair};
 type PoolKind__666238634 = {#tttiPair; #utilityPair};
+type PoolKind__87551546 = {#tttiPair; #utilityPair};
 type PoolKind__881097289 = {#tttiPair; #utilityPair};
 type PoolMinimums__1063465729 = {token0 : ?Nat; token1 : ?Nat};
+type PoolMinimums__20499075 = {token0 : ?Nat; token1 : ?Nat};
+type PoolMinimums__221168874 = {token0 : ?Nat; token1 : ?Nat};
 type PoolMinimums__347310834 = {token0 : ?Nat; token1 : ?Nat};
 type PoolMinimums__552758311 = {token0 : ?Nat; token1 : ?Nat};
 type PoolMinimums__60819959 = {token0 : ?Nat; token1 : ?Nat};
@@ -5123,6 +5879,23 @@ type PoolPot__12109472 =
     var sharedDayStart : Int;
     var totalProductNs : Nat
   };
+type PoolPot__339453196 =
+  {
+    var cursor : ?Nat;
+    var frozen0 : Nat;
+    var frozen1 : Nat;
+    var lockedPositionShares : Nat;
+    var lockedScan : Nat;
+    var paid0 : Nat;
+    var paid1 : Nat;
+    var pending0 : Nat;
+    var pending1 : Nat;
+    var phase : SharingPhase__582432475;
+    poolId : Nat;
+    var sharedDayEnd : Int;
+    var sharedDayStart : Int;
+    var totalProductNs : Nat
+  };
 type PoolPot__345002432 =
   {
     var cursor : ?PositionId__738536498;
@@ -5140,9 +5913,28 @@ type PoolPot__345002432 =
     var sharedDayStart : Timestamp__475398610;
     var totalProductNs : Nat
   };
+type PoolPot__913215005 =
+  {
+    var cursor : ?Nat;
+    var frozen0 : Nat;
+    var frozen1 : Nat;
+    var lockedPositionShares : Nat;
+    var lockedScan : Nat;
+    var paid0 : Nat;
+    var paid1 : Nat;
+    var pending0 : Nat;
+    var pending1 : Nat;
+    var phase : SharingPhase__732396814;
+    poolId : Nat;
+    var sharedDayEnd : Int;
+    var sharedDayStart : Int;
+    var totalProductNs : Nat
+  };
+type PoolStatus__1002772103 = {#active; #filling; #removed};
 type PoolStatus__128855512 = {#active; #filling; #removed};
 type PoolStatus__455711185 = {#active; #awaitingFirstLiquidity; #removed};
 type PoolStatus__599067179 = {#active; #filling; #removed};
+type PoolStatus__70488061 = {#active; #filling; #removed};
 type PoolStatus__934458973 = {#active; #filling; #removed};
 type PoolStatus__93600080 = {#active; #awaitingFirstLiquidity; #removed};
 type PoolStatus__94972067 = {#active; #filling; #removed};
@@ -5160,6 +5952,33 @@ type PoolToken__599944752 =
   {decimals : Nat8; ledger : TokenLedger__101602396; symbol : Text};
 type PoolToken__662654742 =
   {decimals : Nat8; ledger : TokenLedger__879034855; symbol : Text};
+type PoolToken__829840470 =
+  {decimals : Nat8; ledger : TokenLedger__611301004; symbol : Text};
+type PoolToken__894093025 =
+  {decimals : Nat8; ledger : TokenLedger__371587896; symbol : Text};
+type Pool__158412760 =
+  {
+    createdAt : Int;
+    feeTier : FeeTier__453572595;
+    id : Nat;
+    kind : PoolKind__302647886;
+    lockedFeesPaid0 : Nat;
+    lockedFeesPaid1 : Nat;
+    lockedShares : Nat;
+    minimumLocked : PoolMinimums__20499075;
+    newPairBadgeUntil : ?Int;
+    protocolFee0 : Nat;
+    protocolFee1 : Nat;
+    removedAt : ?Int;
+    requestId : ?Nat;
+    reserve0 : Nat;
+    reserve1 : Nat;
+    status : PoolStatus__70488061;
+    subaccount : Blob;
+    token0 : PoolToken__894093025;
+    token1 : PoolToken__894093025;
+    totalShares : Nat
+  };
 type Pool__392791963 =
   {
     createdAt : Int;
@@ -5257,8 +6076,40 @@ type Pool__587339916 =
     token1 : PoolToken__214518447;
     totalShares : Nat
   };
+type Pool__742993685 =
+  {
+    createdAt : Int;
+    feeTier : FeeTier__665496132;
+    id : Nat;
+    kind : PoolKind__87551546;
+    lockedFeesPaid0 : Nat;
+    lockedFeesPaid1 : Nat;
+    lockedShares : Nat;
+    minimumLocked : PoolMinimums__221168874;
+    newPairBadgeUntil : ?Int;
+    protocolFee0 : Nat;
+    protocolFee1 : Nat;
+    removedAt : ?Int;
+    requestId : ?Nat;
+    reserve0 : Nat;
+    reserve1 : Nat;
+    status : PoolStatus__1002772103;
+    subaccount : Blob;
+    token0 : PoolToken__829840470;
+    token1 : PoolToken__829840470;
+    totalShares : Nat
+  };
 type PositionId__135925049 = PositionId__738536498;
 type PositionId__738536498 = Nat;
+type PositionLock__190024033 =
+  {
+    var lockedFrom : Int;
+    var lockedUntil : ?Int;
+    owner : Principal;
+    poolId : Nat;
+    positionId : Nat;
+    var weight : Nat
+  };
 type PositionLock__643287277 =
   {
     var lockedFrom : Timestamp__475398610;
@@ -5266,6 +6117,15 @@ type PositionLock__643287277 =
     owner : Principal;
     poolId : PoolId__339215363;
     positionId : PositionId__738536498;
+    var weight : Nat
+  };
+type PositionLock__774781965 =
+  {
+    var lockedFrom : Int;
+    var lockedUntil : ?Int;
+    owner : Principal;
+    poolId : Nat;
+    positionId : Nat;
     var weight : Nat
   };
 type PositionLock__985374149 =
@@ -5297,11 +6157,28 @@ type Position__124952586 =
     isCreator : Bool;
     lockDurationNs : Nat;
     lockStartedAt : Timestamp__475398610;
+    mintShareE6 : Nat;
     owner : Principal;
     poolId : PoolId__339215363;
     relayReceivedNs : Nat;
     shares : Nat;
     unlockAt : Timestamp__475398610
+  };
+type Position__78036051 =
+  {
+    createdAt : Int;
+    feesCollected0 : Nat;
+    feesCollected1 : Nat;
+    id : Nat;
+    isCreator : Bool;
+    lockDurationNs : Nat;
+    lockStartedAt : Int;
+    mintShareE6 : Nat;
+    owner : Principal;
+    poolId : Nat;
+    relayReceivedNs : Nat;
+    shares : Nat;
+    unlockAt : Int
   };
 type Position__838340889 =
   {
@@ -5343,6 +6220,7 @@ type PriceError__462828332 = {at : Int; message : Text};
 type PriceSample__73506873 = {at : Int; reserve0 : Nat; reserve1 : Nat};
 type PriceSample__940083712 =
   {at : Timestamp__317630209; reserve0 : Nat; reserve1 : Nat};
+type PriceSource__1003299666 = {#coinbase; #coingecko; #none};
 type PriceSource__16367523 = {#coinbase; #coingecko; #none};
 type PriceSource__248340097 = {#coinbase; #coingecko; #none};
 type PriceSource__337370088 = PriceSource__16367523;
@@ -5474,6 +6352,22 @@ type RateStore__1039718835 =
     var usdE8 : Nat;
     var validUntil : Int
   };
+type ReadingMethod__894114725 = {#quote; #spot};
+type ReadingMethod__896554369 = {#quote; #spot};
+type ReadingOutcome__487448968 =
+  {
+    #failed : {detail : ?Text; step : ReadingStep__555981182};
+    #ok : {counterPerTttiE8 : Nat; method : ReadingMethod__896554369}
+  };
+type ReadingOutcome__674579147 =
+  {
+    #failed : {detail : ?Text; step : ReadingStep__498396011};
+    #ok : {counterPerTttiE8 : Nat; method : ReadingMethod__894114725}
+  };
+type ReadingStep__498396011 =
+  {#metadata; #poolLookup; #quote; #reserve; #spotPrice};
+type ReadingStep__555981182 =
+  {#metadata; #poolLookup; #quote; #reserve; #spotPrice};
 type ReceivingWallet__23016 =
   {
     account : Account__893589583;
@@ -5493,10 +6387,17 @@ type ReconciliationStore__317892397 =
     history : List__836382695<ReservedReconciliation__477212441>;
     var last : ?ReservedReconciliation__477212441
   };
-type RedeemPhase__620292193 = {#afterMint; #duringMint};
+type RedeemPhase__606048482 = {#afterMint; #duringMint};
 type RedeemPhase__655367411 = {#afterMint; #duringMint};
-type RedeemRule__315592063 = {#dayRate; #depositedGuarantee; #proRata};
 type RedeemRule__706546336 = {#dayRate; #depositedGuarantee; #proRata};
+type RedeemRule__883645341 = {#dayRate; #depositedGuarantee; #proRata};
+type RedemptionFee__29450142 =
+  {
+    amount : Nat;
+    createdAt : Int;
+    redemptionId : Nat;
+    token : PayToken__377120516
+  };
 type RedemptionFee__32743970 =
   {
     amount : Nat;
@@ -5504,16 +6405,9 @@ type RedemptionFee__32743970 =
     redemptionId : Nat;
     token : PayToken__131894481
   };
-type RedemptionFee__831969508 =
-  {
-    amount : Nat;
-    createdAt : Timestamp__511512256;
-    redemptionId : RedemptionId__487270536;
-    token : PayToken__1061403846
-  };
 type RedemptionId__487270536 = Nat;
-type RedemptionKind__1020349937 = {#excessWithdrawal; #redeem};
 type RedemptionKind__314052689 = {#excessWithdrawal; #redeem};
+type RedemptionKind__81779088 = {#excessWithdrawal; #redeem};
 type RedemptionStore__802965658 =
   {
     fees : Map__230067015<Nat, RedemptionFee__32743970>;
@@ -5545,23 +6439,30 @@ type Redemption__412036004 =
   {
     account : Account__111760795;
     createdAt : Timestamp__511512256;
-    depositedGuarantee : Nat;
-    excessKept : Nat;
     id : RedemptionId__487270536;
-    kind : RedemptionKind__1020349937;
     netAmount : Nat;
     owner : Principal;
     payout : DexTransferAttempt__565822125;
-    phase : RedeemPhase__620292193;
     rateUsdE8 : ?Nat;
-    redemptionFee : Nat;
-    returnedAmount : Nat;
-    rule : RedeemRule__315592063;
     status : DexTransferStatus__426353275;
     thirdPartyFee : Nat;
     token : PayToken__1061403846;
     tttiAmount : Nat;
     tttiPullBlock : ?Nat
+  };
+type ReferenceReading__6176519 =
+  {
+    counter : DexToken__299695362;
+    outcome : ReadingOutcome__487448968;
+    poolCanister : ?Principal;
+    readAt : Int
+  };
+type ReferenceReading__987227562 =
+  {
+    counter : DexToken__617906079;
+    outcome : ReadingOutcome__674579147;
+    poolCanister : ?Principal;
+    readAt : Timestamp__475398610
   };
 type RefusedDepositFeed__594977289 =
   {
@@ -5580,6 +6481,23 @@ type RefusedDepositFeed__792096187 =
     fee : Nat;
     poolId : Nat;
     requestId : Nat
+  };
+type RemainderChoice__463806684 = {#pool; #wallet};
+type RemainderChoice__475482207 = RemainderChoice__963675996;
+type RemainderChoice__963675996 = {#pool; #wallet};
+type RemovalState__133303911 =
+  {
+    #announced;
+    #cancelled : {cancelledAt : Int};
+    #completed : {completedAt : Int};
+    #executing : {startedAt : Int}
+  };
+type RemovalState__237270367 =
+  {
+    #announced;
+    #cancelled : {cancelledAt : Int};
+    #completed : {completedAt : Int};
+    #executing : {startedAt : Int}
   };
 type RemovalState__508542070 =
   {
@@ -5610,6 +6528,14 @@ type RemovalState__707792491 =
     #executing : {startedAt : Int}
   };
 type RequestChecks__114965210 =
+  {
+    copiedSymbolOf : ?Text;
+    icrc1 : Bool;
+    icrc2 : Bool;
+    metadataRead : Bool;
+    pairUnique : Bool
+  };
+type RequestChecks__116534708 =
   {
     copiedSymbolOf : ?Text;
     icrc1 : Bool;
@@ -5665,6 +6591,14 @@ type RequestChecks__883081083 =
     metadataRead : Bool;
     pairUnique : Bool
   };
+type RequestChecks__895654799 =
+  {
+    copiedSymbolOf : ?Text;
+    icrc1 : Bool;
+    icrc2 : Bool;
+    metadataRead : Bool;
+    pairUnique : Bool
+  };
 type RequestId__864831974 = Nat;
 type RequestStatus__128802097 =
   {
@@ -5696,6 +6630,12 @@ type RequestStatus__801684349 =
     #pending;
     #refused : {at : Int; reason : Text}
   };
+type RequestStatus__878058644 =
+  {
+    #approved : {at : Int; poolId : Nat};
+    #pending;
+    #refused : {at : Int; reason : Text}
+  };
 type RequestStatus__912941165 =
   {
     #approved : {at : Int; poolId : Nat};
@@ -5703,6 +6643,12 @@ type RequestStatus__912941165 =
     #refused : {at : Int; reason : Text}
   };
 type RequestStatus__94276022 =
+  {
+    #approved : {at : Int; poolId : Nat};
+    #pending;
+    #refused : {at : Int; reason : Text}
+  };
+type RequestStatus__951143331 =
   {
     #approved : {at : Int; poolId : Nat};
     #pending;
@@ -5716,7 +6662,23 @@ type RequestedToken__395615761 =
     name : Text;
     symbol : Text
   };
+type RequestedToken__574151074 =
+  {
+    decimals : Nat8;
+    fee : Nat;
+    ledgerId : Principal;
+    name : Text;
+    symbol : Text
+  };
 type RequestedToken__605706989 =
+  {
+    decimals : Nat8;
+    fee : Nat;
+    ledgerId : Principal;
+    name : Text;
+    symbol : Text
+  };
+type RequestedToken__618496316 =
   {
     decimals : Nat8;
     fee : Nat;
@@ -5794,6 +6756,7 @@ type ReserveAlert__649553024 =
 type ReserveBinding__278744245 = {#consolidated; #dailyAverage; #floor};
 type ReserveBinding__530393401 = {#consolidated; #dailyAverage; #floor};
 type ReserveBinding__721912873 = {#consolidated; #dailyAverage; #floor};
+type ReserveBinding__907255798 = {#consolidated; #dailyAverage; #floor};
 type ReserveBinding__937068516 = {#consolidated; #dailyAverage; #floor};
 type ReserveBinding__995724275 = {#consolidated; #dailyAverage; #floor};
 type ReserveBreakdown__520498668 =
@@ -5807,6 +6770,14 @@ type ReserveBreakdown__520498668 =
 type ReserveBreakdown__591981957 =
   {
     binding : ReserveBinding__721912873;
+    consolidatedUsdE8 : ?Nat;
+    dailyAverageUsdE8 : ?Nat;
+    floorUsdE8 : Nat;
+    reserveUsdE8 : Nat
+  };
+type ReserveBreakdown__673465082 =
+  {
+    binding : ReserveBinding__907255798;
     consolidatedUsdE8 : ?Nat;
     dailyAverageUsdE8 : ?Nat;
     floorUsdE8 : Nat;
@@ -6251,6 +7222,21 @@ type RouterStore__742975065 =
   };
 type Sale__732639743 =
   {var reserved : Nat; var salesPaused : Bool; var sold : Nat};
+type SecondRateStore__524212551 =
+  {
+    var ckbtc : ?SecondSourceObservation__1027820689;
+    var ckusdc : ?SecondSourceObservation__1027820689;
+    var ckusdt : ?SecondSourceObservation__1027820689;
+    var icp : ?SecondSourceObservation__1027820689
+  };
+type SecondSourceObservation__1027820689 =
+  {fetchedAt : Int; source : PriceSource__1003299666; usdE8 : Nat};
+type SecondSourceObservation__562044534 =
+  {
+    fetchedAt : Timestamp__646234931;
+    source : PriceSource__16367523;
+    usdE8 : Nat
+  };
 type SetAside__284577809 =
   {
     amount : Nat;
@@ -6310,6 +7296,8 @@ type ShareChange__278615416 =
 type ShareChange__497227493 =
   {at : Int; autonomyDays : ?Nat; newShareBps : Nat; oldShareBps : Nat};
 type SharingPhase__327491652 = {#idle; #paying; #summing};
+type SharingPhase__582432475 = {#idle; #paying; #summing};
+type SharingPhase__732396814 = {#idle; #paying; #summing};
 type SharingPhase__970640497 = {#idle; #paying; #summing};
 type StripeConfiguration__429281337 =
   {allowedCountries : [Text]; secretKey : Text};
@@ -6560,8 +7548,10 @@ type TokenKey__446129730 = Text;
 type TokenLedger__101602396 = {#external : Principal; #internal};
 type TokenLedger__147360139 = {#external : Principal__873421814; #internal};
 type TokenLedger__292404502 = {#external : Principal; #internal};
+type TokenLedger__371587896 = {#external : Principal; #internal};
 type TokenLedger__547862320 = {#external : Principal__873421814; #internal};
 type TokenLedger__584205973 = {#external : Principal__873421814; #internal};
+type TokenLedger__611301004 = {#external : Principal; #internal};
 type TokenLedger__879034855 = {#external : Principal__873421814; #internal};
 type TokenLedger__938884280 = {#external : Principal__873421814; #internal};
 type TokenProof__42130106 =
@@ -6756,6 +7746,17 @@ type Tracking__469203760 =
     lastCheckedAt : ?Int;
     stage : DepositStage__296328287
   };
+type Tracking__773843780<D> =
+  {
+    btcAddress : Text;
+    createdAt : Int;
+    deposits : [D];
+    errorKind : ?DepositErrorKind__239201518;
+    errorMessage : ?Text;
+    kind : DepositKind__915730929;
+    lastCheckedAt : ?Int;
+    stage : DepositStage__991811546
+  };
 type TransferAttempt__231855955 = TransferAttempt__534346964;
 type TransferAttempt__236911864 =
   {
@@ -6821,6 +7822,17 @@ type TransferAttempt__69828801 =
     n : Nat;
     outcome : AttemptOutcome__66616250;
     request : TransferRequest__545545554;
+    sends : Nat
+  };
+type TransferAttempt__704640352 =
+  {
+    attempt : Nat;
+    created_at_time : Nat64;
+    lastError : ?Text;
+    memo : Blob;
+    n : Nat;
+    outcome : AttemptOutcome__356902603;
+    request : TransferRequest__437877547;
     sends : Nat
   };
 type TransferAttempt__797793770 =
@@ -6907,6 +7919,14 @@ type TransferRequest__354122730 =
     from_subaccount : ?Blob;
     to : Account__104595440;
     token : PayToken__225517660
+  };
+type TransferRequest__437877547 =
+  {
+    amount : Nat;
+    fee : ?Nat;
+    from_subaccount : ?Blob;
+    to : Account__332851284;
+    token : PayToken__992454040
   };
 type TransferRequest__545545554 =
   {
@@ -7124,6 +8144,10 @@ type UnlockSchedule__252569077 =
     thisWeek : UnlockBucket__962492562;
     year1 : UnlockBucket__962492562
   };
+type UnpaidShare__504937733 =
+  {owner : Principal; poolId : Nat; var productNs : Nat};
+type UnpaidShare__589658319 =
+  {owner : Principal; poolId : Nat; var productNs : Nat};
 type UnpaidShare__883530029 =
   {owner : Principal; poolId : PoolId__339215363; var productNs : Nat};
 type UnpaidShare__99221493 =
@@ -7299,7 +8323,13 @@ type WeeklyAllocation__329146582 =
   "20261206_000000" : (old : OldActor__889536587) -> NewActor__931223913;
   "20261207_000000" : (old : OldActor__712782347) -> NewActor__442823154;
   "20261208_000000" : (old : OldActor__899900436) -> NewActor__379553441;
-  "20261209_000000" : OldActor__563069109 -> NewActor__823556067
+  "20261209_000000" : OldActor__563069109 -> NewActor__823556067;
+  "20261210_000000" : OldActor__680688510 -> NewActor__867072722;
+  "20261211_000000" : OldActor__988729321 -> NewActor__602027329;
+  "20261212_000000" : (old : OldActor__437581245) -> NewActor__324338690;
+  "20261213_000000" : (old : OldActor__242572622) -> NewActor__162821561;
+  "20261214_000000" : (old : OldActor__251427689) -> NewActor__904255658;
+  "20261215_000000" : (old : OldActor__806030482) -> NewActor__428071253
 }
 actor  {
   stable accessControlState :
@@ -7399,6 +8429,7 @@ actor  {
                         Set__70493310<PositionId__738536498>>;
       pools : Map__230067015<PoolId__339215363, Pool__585332343>;
       positions : Map__230067015<PositionId__738536498, Position__124952586>;
+      referenceReadings : Map__230067015<Text, ReferenceReading__987227562>;
       removals : Map__230067015<PoolId__339215363, PairRemoval__488178702>;
       requests : Map__230067015<RequestId__864831974, PairRequest__612818366>
     };
@@ -7455,14 +8486,6 @@ actor  {
   stable guaranteeAccount :
     {
       var root : Node__204828119<TokenKey__207887918, Nat>;
-      var size : Nat__227979830
-    };
-  stable guaranteeMasses :
-    {
-      var root :
-        Node__204828119<Principal,
-                         Map__230067015<TokenKey__207887918,
-                                         GuaranteeMass__1048797884>>;
       var size : Nat__227979830
     };
   stable inflight :
@@ -7569,13 +8592,17 @@ actor  {
     };
   stable redemptions :
     {
-      fees : Map__230067015<RedemptionId__487270536, RedemptionFee__831969508>;
       redemptions :
         Map__230067015<RedemptionId__487270536, Redemption__412036004>
     };
   stable refusedDepositFeeds :
     {
       var root : Node__204828119<Nat, RefusedDepositFeed__594977289>;
+      var size : Nat__227979830
+    };
+  stable requestPayments :
+    {
+      var root : Node__204828119<Nat, PairPayDeposit__46875168>;
       var size : Nat__227979830
     };
   stable reservedReconciliations :
@@ -7609,6 +8636,13 @@ actor  {
       var size : Nat__227979830
     };
   stable sale : {var reserved : Nat; var salesPaused : Bool; var sold : Nat};
+  stable secondRates :
+    {
+      var ckbtc : ?SecondSourceObservation__562044534;
+      var ckusdc : ?SecondSourceObservation__562044534;
+      var ckusdt : ?SecondSourceObservation__562044534;
+      var icp : ?SecondSourceObservation__562044534
+    };
   stable tokenRates :
     {
       ckbtc : OracleStore__931855535;

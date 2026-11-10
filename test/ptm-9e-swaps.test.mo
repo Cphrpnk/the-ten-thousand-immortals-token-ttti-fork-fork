@@ -242,6 +242,7 @@ func dexStore() : DexTypes.DexStore {
     var nextPositionId = 100;
     removals = Map.empty<DexTypes.PoolId, DexTypes.PairRemoval>();
     icpswapSamples = Map.empty<Text, DexTypes.IcpSwapSample>();
+    referenceReadings = Map.empty<Text, DexTypes.ReferenceReading>();
     poolPositions = Map.empty<DexTypes.PoolId, Set.Set<DexTypes.PositionId>>();
     fees = {
       var dayStart = 0;
@@ -267,6 +268,7 @@ func addPosition(s : DexTypes.DexStore, id : Nat, poolId : Nat, who : Principal,
     relayReceivedNs = 0;
     feesCollected0 = 0;
     feesCollected1 = 0;
+    mintShareE6 = 0;
   };
   s.positions.add(id, p);
   DexLib.indexAdd(s, poolId, id);

@@ -62,6 +62,21 @@ function PoolCapBody({ data }: { data: PoolCapRatioView }) {
     <>
       <dl className="flex flex-col gap-3 text-sm">
         <Row
+          label={t.referencePrice}
+          ocid="exchange.pool_cap.reference_price"
+          value={formatUsdE8(data.capitalisationReferenceUsdE8, 2, lang)}
+          note={t.referencePriceNote}
+        />
+        <Row
+          label={t.consolidatedInfo}
+          ocid="exchange.pool_cap.consolidated_price"
+          value={
+            data.consolidatedPriceUsdE8 === undefined
+              ? dash
+              : formatUsdE8(data.consolidatedPriceUsdE8, 2, lang)
+          }
+        />{" "}
+        <Row
           label={t.poolsValue}
           ocid="exchange.pool_cap.pools_value"
           value={usd(data.poolsValueUsdE8)}

@@ -13,11 +13,15 @@ import { useState } from "react";
 import {
   type ApprovePairError,
   CancelRemovalError,
+  type DexTokenInfo,
   type PairRequestView,
   PoolKind,
   PoolStatus,
   type PoolTokenView,
   type PoolView,
+  ReadingMethod,
+  ReadingStep,
+  type ReferenceReadingEntry,
   type RefusePairError,
   type RemovalView,
   type RemovePairError,
@@ -29,7 +33,9 @@ import {
   useApprovePair,
   useCancelPairRemoval,
   useDexPools,
+  useDexTokens,
   usePairRequests,
+  useReferenceReadings,
   useRefreshReferenceSources,
   useRefusePair,
   useRemovePair,
@@ -374,7 +380,7 @@ function RequestItem({
             setReason("");
             notify({
               ok: true,
-              text: `${pair} refused. The deposit was kept.`,
+              text: `${pair} refused. The deposit joins the permanent liquidity set aside.`,
             });
           } else {
             notify({
@@ -504,7 +510,8 @@ function RequestItem({
             <DialogHeader>
               <DialogTitle>Refuse {pair}</DialogTitle>
               <DialogDescription>
-                The reason is shown publicly. The deposit is kept.
+                The reason is shown publicly. The deposit joins the permanent
+                liquidity set aside.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-1">
@@ -812,6 +819,140 @@ function PoolItem({
   );
 }
 
+const READING_STEP_LABEL: Record<ReadingStep, string> = {
+  [ReadingStep.poolLookup]: "pool lookup",
+  [ReadingStep.metadata]: "metadata",
+  [ReadingStep.spotPrice]: "spot price",
+  [ReadingStep.quote]: "quote",
+  [ReadingStep.reserve]: "reserve",
+};
+
+const READING_METHOD_LABEL: Record<ReadingMethod, string> = {
+  [ReadingMethod.spot]: "spot price",
+  [ReadingMethod.quote]: "1% quote",
+};
+
+/** One ICPSwap pair: last price, failed step, or not read yet. */
+function ReferenceReadingRow({
+  entry,
+  tokens,
+  index,
+}: {
+  entry: ReferenceReadingEntry;
+  tokens: Array<DexTokenInfo>;
+  index: number;
+}) {
+  const counter =
+    entry.__kind__ === "read" ? entry.read.counter : entry.notReadYet.counter;
+  const info = tokens.find((t) => t.token === counter);
+  const symbol = info?.symbol ?? counter;
+
+  let body: React.ReactNode;
+  if (entry.__kind__ === "notReadYet") {
+    body = <span className="text-muted-foreground">Not read yet</span>;
+  } else if (entry.read.outcome.__kind__ === "ok") {
+    const { counterPerTttiE8, method } = entry.read.outcome.ok;
+    body = (
+      <span>
+        <span className="font-mono">
+          {formatUnits(counterPerTttiE8, 8, 2)} {symbol}
+        </span>{" "}
+        per {TTTI_SYMBOL}
+        <span className="text-muted-foreground">
+          {" "}
+          · {READING_METHOD_LABEL[method]} ·{" "}
+          {formatTimestamp(entry.read.readAt)}
+        </span>
+      </span>
+    );
+  } else {
+    const { step, detail } = entry.read.outcome.failed;
+    body = (
+      <span>
+        <span className="text-destructive">
+          Failed at {READING_STEP_LABEL[step]}
+        </span>
+        <span className="text-muted-foreground">
+          {" "}
+          · {formatTimestamp(entry.read.readAt)}
+        </span>
+        {detail ? (
+          <span className="block break-words text-muted-foreground">
+            {detail}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+
+  return (
+    <li
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-xs"
+      data-ocid={`admin.dex_pairs.reference_reading.${index}`}
+    >
+      <span className="w-28 shrink-0 font-display text-sm">
+        {TTTI_SYMBOL}/{symbol}
+      </span>
+      <span className="min-w-0 flex-1">{body}</span>
+    </li>
+  );
+}
+
+/** Last reading of every ICPSwap pair, under the refresh button. */
+function ReferenceReadingsList() {
+  const readings = useReferenceReadings();
+  const tokens = useDexTokens();
+  const entries = readings.data ?? [];
+
+  if (readings.isLoading) {
+    return (
+      <Skeleton
+        className="h-16 w-full"
+        data-ocid="admin.dex_pairs.reference_readings_loading_state"
+      />
+    );
+  }
+  if (readings.isError) {
+    return (
+      <p
+        className="text-xs text-destructive"
+        data-ocid="admin.dex_pairs.reference_readings_error_state"
+      >
+        The last readings could not be loaded.
+      </p>
+    );
+  }
+  if (entries.length === 0) {
+    return (
+      <p
+        className="text-xs text-muted-foreground"
+        data-ocid="admin.dex_pairs.reference_readings_empty_state"
+      >
+        No ICPSwap pairs to read.
+      </p>
+    );
+  }
+  return (
+    <ul
+      className="divide-y divide-border"
+      data-ocid="admin.dex_pairs.reference_readings_list"
+    >
+      {entries.map((entry, i) => (
+        <ReferenceReadingRow
+          key={
+            entry.__kind__ === "read"
+              ? entry.read.counter
+              : entry.notReadYet.counter
+          }
+          entry={entry}
+          tokens={tokens.data ?? []}
+          index={i + 1}
+        />
+      ))}
+    </ul>
+  );
+}
+
 /** Refreshes the reference price sources used for first deposits. */
 function ReferenceSourcesControl({ notify }: { notify: Notify }) {
   const refresh = useRefreshReferenceSources();
@@ -834,38 +975,41 @@ function ReferenceSourcesControl({ notify }: { notify: Notify }) {
 
   return (
     <section
-      className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6"
+      className="space-y-4 border-t border-border pt-6"
       data-ocid="admin.dex_pairs.reference_sources_section"
     >
-      <div className="max-w-xl space-y-1">
-        <h3 className="font-display text-base">Reference price sources</h3>
-        <p className="text-xs text-muted-foreground">
-          First deposits into an empty pool are checked against these prices.
-          Refresh them to read the ICPSwap pairs again.
-          {count !== null && (
-            <span data-ocid="admin.dex_pairs.reference_sources_count">
-              {" "}
-              Readable sources: {count.toString()}.
-            </span>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="max-w-xl space-y-1">
+          <h3 className="font-display text-base">Reference price sources</h3>
+          <p className="text-xs text-muted-foreground">
+            First deposits into an empty pool are checked against these prices.
+            Refresh them to read the ICPSwap pairs again.
+            {count !== null && (
+              <span data-ocid="admin.dex_pairs.reference_sources_count">
+                {" "}
+                Readable sources: {count.toString()}.
+              </span>
+            )}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={SECONDARY_GOLD}
+          disabled={refresh.isPending}
+          onClick={onRefresh}
+          data-ocid="admin.dex_pairs.refresh_sources_button"
+        >
+          {refresh.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
           )}
-        </p>
+          Refresh reference sources
+        </Button>
       </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className={SECONDARY_GOLD}
-        disabled={refresh.isPending}
-        onClick={onRefresh}
-        data-ocid="admin.dex_pairs.refresh_sources_button"
-      >
-        {refresh.isPending ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
-        ) : (
-          <RefreshCw className="mr-2 h-4 w-4" />
-        )}
-        Refresh reference sources
-      </Button>
+      <ReferenceReadingsList />
     </section>
   );
 }

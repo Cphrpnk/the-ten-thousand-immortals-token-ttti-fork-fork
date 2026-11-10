@@ -7,6 +7,7 @@ import type {
   RouterFeeView,
   backendInterface,
 } from "../backend";
+import { QUOTE_TTL_MS } from "../lib/icpswap";
 import { useActor } from "./useActor";
 import {
   useDexPullApproval,
@@ -58,7 +59,7 @@ export function useQuoteRoutedSwap(args: RoutedQuoteArgs | null) {
       return actor.quoteRoutedSwap(args);
     },
     enabled: !!actor && !isFetching && !!args,
-    refetchInterval: 15_000,
+    refetchInterval: QUOTE_TTL_MS,
   });
 }
 

@@ -41,41 +41,48 @@ func bidOf(id : Nat, who : Principal) : Types.Bid {
     createdAt = 1;
     memo = "TTTI-AB-1";
     block = 7;
+    choice = #pool;
   };
 };
+
+// PTM-11: 10 000 USD in the smallest unit of an 8-decimal token (here 1 000 tokens).
+let RES8 : Nat = 100_000_000_000;
 
 // --- 1. Deposit formula -------------------------------------------------------
 
 do {
-  // 1 TTTI-T at B = 10_000 USD: 2 x 10_000 / 0.99 = 20_202.0202... USD.
-  // ckUSDC / ckUSDT (6 decimals): B = 10_000 x 10^6 = 10_000_000_000.
+  // PTM-11: 1 TTTI-T at B = 10_000 USD with a 10_000 USD reserve part:
+  // (10_000 + 10_000) / 0.99 = 20_202.0202... USD.
+  // ckUSDC / ckUSDT (6 decimals): 10_000 USD = 10_000 x 10^6 = 10_000_000_000.
   let b6 : Nat = 10_000_000_000;
-  // 2 x 10^10 x 10^8 x 100 / (99 x 10^8) = 20_202_020_202.02..., rounded up.
-  assert unwrap(AuctionLib.quoteDeposit(b6, ONE)) == 20_202_020_203;
-  assert unwrap(AuctionLib.quoteDeposit(b6, ONE)) == AuctionLib.depositFormula(b6, ONE);
-  // ICP (8 decimals) at B = 1_000 ICP: 2 x 1_000 x 10^8 / 0.99 = 202_020_202_020.2..., up.
+  // (10^10 + 10^10) x 10^8 x 100 / (99 x 10^8) = 20_202_020_202.02..., rounded up.
+  assert unwrap(AuctionLib.quoteDeposit(b6, b6, ONE)) == 20_202_020_203;
+  assert unwrap(AuctionLib.quoteDeposit(b6, b6, ONE)) == AuctionLib.depositFormula(b6, b6, ONE);
+  // B = 20_000 USD: (20_000 + 10_000) / 0.99 = 30_303.0303... USD, rounded up.
+  assert unwrap(AuctionLib.quoteDeposit(20_000_000_000, b6, ONE)) == 30_303_030_304;
+  // ICP (8 decimals), B = 1_000 ICP and a reserve part of 1_000 ICP: 202_020_202_020.2..., up.
   let b8 : Nat = 100_000_000_000;
-  assert unwrap(AuctionLib.quoteDeposit(b8, ONE)) == 202_020_202_021;
-  // ckBTC (8 decimals) at B = 0.1 BTC = 10_000_000 sat: 20_202_021 (exact value 20_202_020.2...).
+  assert unwrap(AuctionLib.quoteDeposit(b8, b8, ONE)) == 202_020_202_021;
+  // ckBTC (8 decimals), B = 0.1 BTC = 10_000_000 sat, reserve part 0.1 BTC: 20_202_021.
   let bBtc : Nat = 10_000_000;
-  assert unwrap(AuctionLib.quoteDeposit(bBtc, ONE)) == 20_202_021;
+  assert unwrap(AuctionLib.quoteDeposit(bBtc, bBtc, ONE)) == 20_202_021;
   // Half a TTTI-T halves the deposit, rounded up.
-  assert unwrap(AuctionLib.quoteDeposit(b6, ONE / 2)) == 10_101_010_102;
-  // An exact multiple is not rounded: B = 99, q = 1 TTTI-T -> 2 x 99 / 0.99 = 200.
-  assert unwrap(AuctionLib.quoteDeposit(99, ONE)) == 200;
+  assert unwrap(AuctionLib.quoteDeposit(b6, b6, ONE / 2)) == 10_101_010_102;
+  // An exact multiple is not rounded: B = 99, reserve 99, q = 1 TTTI-T -> (99 + 99) / 0.99 = 200.
+  assert unwrap(AuctionLib.quoteDeposit(99, 99, ONE)) == 200;
 };
 
 // --- 2. Minimum quantity and price ----------------------------------------------
 
 do {
-  assert AuctionLib.quoteDeposit(5, 99_999) == #err(#quantityBelowMinimum({ minimum = 100_000 }));
-  assert AuctionLib.quoteDeposit(5, 0) == #err(#quantityBelowMinimum({ minimum = 100_000 }));
-  // 0.001 TTTI-T is accepted: 2 x 5 x 100_000 x 100 / (99 x 10^8) rounds up to 1.
-  assert AuctionLib.quoteDeposit(5, 100_000) == #ok(1);
-  assert AuctionLib.quoteDeposit(0, ONE) == #err(#invalidPrice);
-  assert AuctionLib.quoteDeposit(AuctionLib.MAX_AMOUNT + 1, ONE) == #err(#invalidPrice);
-  assert AuctionLib.quoteDeposit(AuctionLib.MAX_AMOUNT, ONE) == #err(#invalidPrice);
-  assert AuctionLib.quoteDeposit(5, AuctionLib.MAX_QUANTITY_E8S + 1) == #err(#invalidPrice);
+  assert AuctionLib.quoteDeposit(5, 5, 99_999) == #err(#quantityBelowMinimum({ minimum = 100_000 }));
+  assert AuctionLib.quoteDeposit(5, 5, 0) == #err(#quantityBelowMinimum({ minimum = 100_000 }));
+  // 0.001 TTTI-T is accepted: (5 + 5) x 100_000 x 100 / (99 x 10^8) rounds up to 1.
+  assert AuctionLib.quoteDeposit(5, 5, 100_000) == #ok(1);
+  assert AuctionLib.quoteDeposit(0, 5, ONE) == #err(#invalidPrice);
+  assert AuctionLib.quoteDeposit(AuctionLib.MAX_AMOUNT + 1, 5, ONE) == #err(#invalidPrice);
+  assert AuctionLib.quoteDeposit(AuctionLib.MAX_AMOUNT, 5, ONE) == #err(#invalidPrice);
+  assert AuctionLib.quoteDeposit(5, 5, AuctionLib.MAX_QUANTITY_E8S + 1) == #err(#invalidPrice);
 };
 
 // --- 3. Ten bids per person -------------------------------------------------------
@@ -105,6 +112,7 @@ do {
       requiredDeposit = 11;
       deposited = 11;
       createdAt = 1;
+      choice = #pool;
     },
   );
   assert AuctionLib.bidCount(store, bob, 1) == 2;
@@ -166,6 +174,7 @@ do {
       requiredDeposit = 11;
       deposited = 50;
       createdAt = 1;
+      choice = #pool;
     },
   );
   let prices : [Types.TokenReservePrice] = [{ token = #icp; price = ?1 }, { token = #ckbtc; price = null }];
@@ -251,7 +260,7 @@ func newClosing() : Types.ClosingStore {
 
 // A bid with a deposit of the required amount plus 10 (the excess).
 func cbid(id : Nat, who : Principal, token : Types.PayToken, q : Nat, price : Nat, createdAt : Int) : Types.Bid {
-  let required = AuctionLib.depositFormula(price, q);
+  let required = AuctionLib.depositFormula(price, RES8, q);
   {
     id;
     auctionId = 1;
@@ -264,6 +273,7 @@ func cbid(id : Nat, who : Principal, token : Types.PayToken, q : Nat, price : Na
     createdAt;
     memo = "TTTI-AB-1";
     block = 1;
+    choice = #pool;
   };
 };
 
@@ -320,9 +330,9 @@ do {
   assert b2.pricePaidB == 15_000_000_000;
   assert b3.pricePaidB == 0 and b4.pricePaidB == 0;
   // Deposit of the served quantity at the offer's own price, the rest returned.
-  assert b2.servedDeposit == AuctionLib.depositFormula(15_000_000_000, 2 * ONE);
+  assert b2.servedDeposit == AuctionLib.depositFormula(15_000_000_000, RES8, 2 * ONE);
   assert b2.returned == 10;
-  assert b1.servedDeposit == AuctionLib.depositFormula(150_000_000_000, ONE / 2);
+  assert b1.servedDeposit == AuctionLib.depositFormula(150_000_000_000, RES8, ONE / 2);
   assert b1.returned == b1.deposited - b1.servedDeposit;
   assert b1.returned > 10;
   // Unserved and discarded offers get the whole deposit back.
@@ -492,20 +502,20 @@ do {
 
 // --- 7. PTM-6c settlement of the winners ---------------------------------------------------
 
-// Amounts: taken = 2 x B x q / 0.99 (rounded up), 1 % to the creator, B x q
-// for the position and B x q for the guarantee.
+// Amounts: taken = (B + 10 000 USD) x q / 0.99 (rounded up), 1 % to the creator,
+// B x q for the position and 10 000 USD x q for the common reserve.
 do {
-  // 1 TTTI-T at 1_500 ICP (e8s): B x q = 1_500 ICP.
-  let a = AuctionLib.settleAmounts(150_000_000_000, ONE);
+  // 1 TTTI-T at 1_500 ICP (e8s): B x q = 1_500 ICP, reserve part 1_000 ICP.
+  let a = AuctionLib.settleAmounts(150_000_000_000, RES8, ONE, 0, #pool);
   assert a.position == 150_000_000_000;
-  assert a.guarantee == 150_000_000_000;
-  assert a.taken == AuctionLib.depositFormula(150_000_000_000, ONE);
-  assert a.taken * 99 >= 2 * 150_000_000_000 * 100; // rounded up
-  assert a.taken * 99 < 2 * 150_000_000_000 * 100 + 99;
+  assert a.guarantee == RES8;
+  assert a.taken == AuctionLib.depositFormula(150_000_000_000, RES8, ONE);
+  assert a.taken * 99 >= (150_000_000_000 + RES8) * 100; // rounded up
+  assert a.taken * 99 < (150_000_000_000 + RES8) * 100 + 99;
   assert a.creator == a.taken / 100;
-  assert a.creator + 2 * a.position + a.dust == a.taken;
+  assert a.creator + a.position + a.guarantee + a.dust == a.taken;
   // Half a TTTI-T halves the position.
-  let h = AuctionLib.settleAmounts(150_000_000_000, ONE / 2);
+  let h = AuctionLib.settleAmounts(150_000_000_000, RES8, ONE / 2, 0, #pool);
   assert h.position == 75_000_000_000;
 };
 
@@ -513,21 +523,21 @@ do {
 // creator share first (never below zero), the rest by the winner's own excess.
 do {
   // 1 TTTI-T at 1_500 ICP: creator share is about 30.3 ICP, far above the 10_000 e8s fee.
-  let a = AuctionLib.settleAmounts(150_000_000_000, ONE);
+  let a = AuctionLib.settleAmounts(150_000_000_000, RES8, ONE, 0, #pool);
   let fee = 10_000;
   assert AuctionLib.feeBorneByCreator(a, fee) == fee;
   // An exact deposit (credit = taken - fee) is enough: the credit plus the fee borne equals taken.
   assert AuctionLib.requiredCredit(a, fee) == a.taken - fee;
   assert a.taken - fee + AuctionLib.feeBorneByCreator(a, fee) == a.taken;
-  // The creator is credited 1 % net of the fee, and the amounts of the position and guarantee stay exact.
+  // The creator is credited 1 % net of the fee, and the amounts of the position and reserve stay exact.
   assert a.creator - AuctionLib.feeBorneByCreator(a, fee) == a.taken / 100 - fee;
-  assert a.position == 150_000_000_000 and a.guarantee == 150_000_000_000;
+  assert a.position == 150_000_000_000 and a.guarantee == RES8;
   // Creator share smaller than the fee: the creator bears all of it (net zero), the winner's excess covers the rest.
-  let small = AuctionLib.settleAmounts(100, 1_000_000); // B x q = 1, taken = 3, creator = 0
+  let small = AuctionLib.settleAmounts(100, 100, 1_000_000, 0, #pool); // B x q = 1, taken = 3, creator = 0
   assert small.creator == 0;
   assert AuctionLib.feeBorneByCreator(small, 5) == 0;
   assert AuctionLib.requiredCredit(small, 5) == small.taken;
-  let mid = AuctionLib.settleAmounts(100_000, ONE); // B x q = 100_000, taken = 202_021, creator = 2_020
+  let mid = AuctionLib.settleAmounts(100_000, 100_000, ONE, 0, #pool); // B x q = 100_000, taken = 202_021, creator = 2_020
   assert mid.creator == 2_020;
   assert AuctionLib.feeBorneByCreator(mid, 10_000) == 2_020;
   assert AuctionLib.requiredCredit(mid, 10_000) == mid.taken - 2_020;

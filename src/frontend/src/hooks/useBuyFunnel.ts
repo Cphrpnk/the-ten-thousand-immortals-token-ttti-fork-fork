@@ -10,9 +10,9 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { SetupFlow } from "../components/funnel/SetupFlow";
 import { MESSAGES_TEXT } from "../i18n/common/messages";
 import { pickDict } from "../i18n/core/dict";
+import type { SetupExit } from "../lib/funnel-exit";
 import { type SetupPayChoice, isSetupPayChoice } from "../lib/token";
 import { hasSeenWhitePaper, markWhitePaperSeen } from "../lib/whitePaperGate";
 import { useConnectedWallet } from "./useConnectedWallet";
@@ -24,17 +24,6 @@ export type { SetupPayChoice };
 
 /** Route of the buy page. */
 export const BUY_PATH = "/buy";
-
-/** /wallet hash that opens the Receive dialog on a ledger: receive-<ledgerId>. */
-export const WALLET_RECEIVE_HASH_PREFIX = "receive-";
-/** /wallet hash that scrolls to the BTC → ckBTC conversion. */
-export const WALLET_BTC_HASH = "wallet-btc";
-
-/**
- * Where finishSetup goes: "buy" (default, /buy + mint card), "stay" (no
- * navigation) or /wallet with the given hash.
- */
-export type SetupExit = "buy" | "stay" | { walletHash: string };
 
 const MINT_CARD_SELECTOR =
   '[data-ocid="exchange.form_card"], [data-ocid="exchange.connect_card"]';
@@ -120,6 +109,10 @@ export interface BuyFunnelContextValue {
   /** Current setup status of the signed-in user (notStarted when signed out). */
   setupStatus: SetupStatus;
   isSetupOpen: boolean;
+  /** Bumped on every fresh open so the setup flow remounts at step 1. */
+  setupSession: number;
+  /** Set the open state of the setup flow directly (keeps the current step). */
+  setSetupOpen: (open: boolean) => void;
   /** True while finishSetup is saving the outcome. */
   isFinishingSetup: boolean;
 }
@@ -130,7 +123,7 @@ const BuyFunnelContext = createContext<BuyFunnelContextValue | undefined>(
 
 /**
  * Shared Buy TTTI-T funnel. Must be rendered inside the router so it can
- * navigate. Renders the guided SetupFlow dialog once for the whole app.
+ * navigate. The guided SetupFlow dialog is mounted once by SetupFlowHost.
  */
 export function BuyFunnelProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
@@ -242,6 +235,8 @@ export function BuyFunnelProvider({ children }: { children: React.ReactNode }) {
       isSignedIn,
       setupStatus: status,
       isSetupOpen: open,
+      setupSession: session,
+      setSetupOpen: setOpen,
       isFinishingSetup: isSaving,
     }),
     [
@@ -254,23 +249,12 @@ export function BuyFunnelProvider({ children }: { children: React.ReactNode }) {
       isSignedIn,
       status,
       open,
+      session,
       isSaving,
     ],
   );
 
-  return createElement(
-    BuyFunnelContext.Provider,
-    { value },
-    children,
-    createElement(SetupFlow, {
-      key: session,
-      open,
-      onOpenChange: (next: boolean) => {
-        if (next) setOpen(true);
-        else closeSetup();
-      },
-    }),
-  );
+  return createElement(BuyFunnelContext.Provider, { value }, children);
 }
 
 export function useBuyFunnel(): BuyFunnelContextValue {

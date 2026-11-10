@@ -45,7 +45,7 @@ export function HowItWorks() {
         <div className="relative mt-14">
           <div
             aria-hidden="true"
-            className="divider-gold absolute left-[16%] right-[16%] top-8 hidden w-auto md:block"
+            className="divider-gold absolute left-[16%] right-[16%] top-8 hidden !w-auto md:block"
           />
           <ol className="relative grid gap-10 md:grid-cols-3 md:gap-8">
             {steps.map((step, index) => (

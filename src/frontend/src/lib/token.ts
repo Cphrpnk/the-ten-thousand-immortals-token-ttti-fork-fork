@@ -19,25 +19,9 @@ export const ICP_DIVISOR = 10n ** BigInt(ICP_DECIMALS);
 /** ICP ledger transfer / approve fee: 0.0001 ICP. */
 export const ICP_FEE_E8S = 10_000n;
 
-/** Base price: 1 TTTI-T = 10 000 USD (before the fee). */
-export const TOKEN_PRICE_USD = 10_000;
-/** Fixed fee on ICP purchases (1/101 of the amount paid): 100 bps = 1%. */
-export const CYCLES_FEE_BPS = 100n;
-/** Fixed fee on ckBTC, ckUSDC and ckUSDT purchases: 100 bps = 1%. */
-export const CK_FEE_BPS = 100n;
-/** Price paid by the buyer per whole TTTI-T in ICP, fee included: 10 100 USD. */
-export const BUYER_PRICE_USD =
-  (TOKEN_PRICE_USD * (10_000 + Number(CYCLES_FEE_BPS))) / 10_000;
 /** Minimum purchase in TTTI-T base units (0.0001 TTTI-T). */
 export const MIN_PURCHASE = 10_000n;
-/** Minimum ICP purchase shown to buyers, fee included: 1.01 USD. */
-export const MIN_PURCHASE_USD = 1.01;
-/** Minimum ckBTC / ckUSDC / ckUSDT purchase, fee included: 1.01 USD. */
-export const CK_MIN_PURCHASE_USD = 1.01;
-/** Of every 101 paid: 100 stays in the contract (admin-managed), 1 as the mint fee. */
-export const MINT_PAID_UNITS = 101n;
-export const MINT_OWNER_UNITS = 100n;
-/** Mint fee halves are set aside until worth 0.001 TTTI-T (10 USD). */
+/** Set-aside amounts are added once worth 0.001 TTTI-T (10 USD). */
 export const SET_ASIDE_THRESHOLD_TTTI = 100_000n;
 export const SET_ASIDE_THRESHOLD_USD = 10;
 /** Native swap fee split: 70% to liquidity providers, 30% permanent liquidity. */
@@ -107,22 +91,6 @@ export function formatPercent2(
   return `${formatDecimal(percent, 2, 2, lang)}%`;
 }
 
-/** Display label of the ICP buyer price per whole TTTI-T: "10,100 USD". */
-export function buyerPriceLabel(lang: Lang = defaultNumberLang()): string {
-  return `${formatInteger(BUYER_PRICE_USD, lang)} USD`;
-}
-/** Display label of the base price per whole TTTI-T: "10,000 USD". */
-export function tokenPriceLabel(lang: Lang = defaultNumberLang()): string {
-  return `${formatInteger(TOKEN_PRICE_USD, lang)} USD`;
-}
-/** Display label of the ICP minimum purchase: "1.01 USD". */
-export function minPurchaseLabel(lang: Lang = defaultNumberLang()): string {
-  return `${formatDecimal(MIN_PURCHASE_USD, 2, 2, lang)} USD`;
-}
-/** Display label of the ICP fee: "1%". */
-export function cyclesFeeLabel(lang: Lang = defaultNumberLang()): string {
-  return formatBps(CYCLES_FEE_BPS, lang);
-}
 /** Public price sentence shared by the buy page, landing, FAQ and white paper (English). */
 export const PRICE_TEXT = FEE_TEXT.en.price;
 /** Public description of the mint revenue, mint fee and cycles reserve (English). */
@@ -164,10 +132,6 @@ export interface PayTokenDescriptor {
   decimals: number;
   /** Ledger transfer / approve fee in the token's base units. */
   fee: bigint;
-  /** Purchase fee in basis points. */
-  feeBps: bigint;
-  /** Minimum purchase in USD, fee included. */
-  minimumUsd: number;
   /** True when the fee share funds the canister's cycles. */
   fundsCycles: boolean;
 }
@@ -180,8 +144,6 @@ export const PAY_TOKENS: Record<PayToken, PayTokenDescriptor> = {
     ledgerCanisterId: ICP_LEDGER_ID,
     decimals: ICP_DECIMALS,
     fee: ICP_FEE_E8S,
-    feeBps: CYCLES_FEE_BPS,
-    minimumUsd: MIN_PURCHASE_USD,
     fundsCycles: true,
   },
   [PayToken.ckbtc]: {
@@ -191,8 +153,6 @@ export const PAY_TOKENS: Record<PayToken, PayTokenDescriptor> = {
     ledgerCanisterId: CKBTC_LEDGER_CANISTER_ID,
     decimals: 8,
     fee: 10n,
-    feeBps: CK_FEE_BPS,
-    minimumUsd: CK_MIN_PURCHASE_USD,
     fundsCycles: false,
   },
   [PayToken.ckusdc]: {
@@ -202,8 +162,6 @@ export const PAY_TOKENS: Record<PayToken, PayTokenDescriptor> = {
     ledgerCanisterId: CKUSDC_LEDGER_CANISTER_ID,
     decimals: 6,
     fee: 10_000n,
-    feeBps: CK_FEE_BPS,
-    minimumUsd: CK_MIN_PURCHASE_USD,
     fundsCycles: false,
   },
   [PayToken.ckusdt]: {
@@ -213,8 +171,6 @@ export const PAY_TOKENS: Record<PayToken, PayTokenDescriptor> = {
     ledgerCanisterId: CKUSDT_LEDGER_CANISTER_ID,
     decimals: 6,
     fee: 10_000n,
-    feeBps: CK_FEE_BPS,
-    minimumUsd: CK_MIN_PURCHASE_USD,
     fundsCycles: false,
   },
 };
@@ -240,27 +196,6 @@ export function payTokenSymbol(token: PayToken): string {
   return PAY_TOKENS[token].symbol;
 }
 
-/** Buyer price per whole TTTI-T in USD for a fee in bps (10 100 at 100 bps). */
-export function buyerPriceUsdFor(feeBps: bigint): bigint {
-  return (BigInt(TOKEN_PRICE_USD) * (10_000n + feeBps)) / 10_000n;
-}
-
-/** Fee label for a fee in bps, e.g. 100n -> "1%". */
-export function feeLabelFor(
-  feeBps: bigint,
-  lang: Lang = defaultNumberLang(),
-): string {
-  return formatBps(feeBps, lang);
-}
-
-/** Minimum purchase label for a pay token: "1.01 USD". */
-export function minimumUsdLabel(
-  token: PayToken,
-  lang: Lang = defaultNumberLang(),
-): string {
-  return `${formatDecimal(PAY_TOKENS[token].minimumUsd, 2, 2, lang)} USD`;
-}
-
 /** Amount of a pay token as "1,234.56 ckUSDC". */
 export function formatPayAmount(
   amount: bigint,
@@ -271,56 +206,6 @@ export function formatPayAmount(
   return `${formatUnits(amount, decimals, 2, lang)} ${symbol}`;
 }
 
-/**
- * TTTI-T base units bought with `payAmount` base units of a token with
- * `decimals`, at `usdE8` per whole token and a fee of `feeBps` (rounded down).
- */
-export function tttiFromPay(
-  payAmount: bigint,
-  decimals: number,
-  usdE8: bigint,
-  feeBps: bigint,
-): bigint {
-  const denominator =
-    10n ** BigInt(decimals) * buyerPriceUsdFor(feeBps) * PRICE_SCALE;
-  return (payAmount * usdE8 * TTTI_DIVISOR) / denominator;
-}
-
-/**
- * Pay-token base units needed (rounded up) to receive `tttiBase` units of
- * TTTI-T, for a token with `decimals` at `usdE8` and a fee of `feeBps`.
- */
-export function payForTtti(
-  tttiBase: bigint,
-  decimals: number,
-  usdE8: bigint,
-  feeBps: bigint,
-): bigint {
-  if (usdE8 <= 0n) return 0n;
-  const numerator =
-    tttiBase * buyerPriceUsdFor(feeBps) * PRICE_SCALE * 10n ** BigInt(decimals);
-  return ceilDiv(numerator, usdE8 * TTTI_DIVISOR);
-}
-
-/** tttiFromPay using a pay token's descriptor. */
-export function tttiFromToken(
-  payAmount: bigint,
-  token: PayToken,
-  usdE8: bigint,
-): bigint {
-  const { decimals, feeBps } = PAY_TOKENS[token];
-  return tttiFromPay(payAmount, decimals, usdE8, feeBps);
-}
-
-/** payForTtti using a pay token's descriptor. */
-export function tokenForTtti(
-  tttiBase: bigint,
-  token: PayToken,
-  usdE8: bigint,
-): bigint {
-  const { decimals, feeBps } = PAY_TOKENS[token];
-  return payForTtti(tttiBase, decimals, usdE8, feeBps);
-}
 // --- Bitcoin deposits (BTC -> ckBTC) ----------------------------------------
 
 export const CKBTC_MINTER_CANISTER_ID = "mqygn-kiaaa-aaaar-qaadq-cai";
@@ -336,7 +221,6 @@ export const BTC_PAY_OPTION = {
   symbol: "BTC",
   name: "Bitcoin",
   decimals: BTC_DECIMALS,
-  feeBps: CK_FEE_BPS,
   settlesAs: PayToken.ckbtc,
 } as const;
 
@@ -503,18 +387,6 @@ export function formatUsdE8(
   }).format(Number(usdE8) / Number(PRICE_SCALE));
 }
 
-/** TTTI-T base units bought with `icpE8s` at `usdE8`, buyer price (fee included). */
-export function tttiFromIcp(icpE8s: bigint, usdE8: bigint): bigint {
-  return (icpE8s * usdE8) / (BigInt(BUYER_PRICE_USD) * PRICE_SCALE);
-}
-
-/** ICP e8s needed (rounded up) to buy `tttiBase` units at `usdE8`, fee included. */
-export function icpForTtti(tttiBase: bigint, usdE8: bigint): bigint {
-  if (usdE8 <= 0n) return 0n;
-  const numerator = tttiBase * BigInt(BUYER_PRICE_USD) * PRICE_SCALE;
-  return (numerator + usdE8 - 1n) / usdE8;
-}
-
 /** ICP network fees kept out of a wallet percentage: approve + transfer_from. */
 export const WALLET_NETWORK_FEES_E8S = 2n * ICP_FEE_E8S;
 /** Wallet percentages the bar snaps to. */
@@ -672,12 +544,6 @@ export function percentForTypedSendAmount(
   return percentForSendAmount(amount, balance, ledgerFee);
 }
 
-/** Integer division rounded up (positive operands). */
-export function ceilDiv(numerator: bigint, denominator: bigint): bigint {
-  if (denominator <= 0n) return 0n;
-  return (numerator + denominator - 1n) / denominator;
-}
-
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -725,21 +591,6 @@ export function unitsInputValue(value: bigint, decimals: number): string {
   const divisor = 10n ** BigInt(decimals);
   const fraction = (value % divisor).toString().padStart(decimals, "0");
   return `${value / divisor}.${fraction}`.replace(/\.?0+$/, "");
-}
-
-/** USD value (usdE8) of a TTTI-T base-unit amount at the base price. */
-export function tttiToUsdE8(tttiBase: bigint): bigint {
-  return (tttiBase * BigInt(TOKEN_PRICE_USD) * PRICE_SCALE) / TTTI_DIVISOR;
-}
-
-/** USD paid (usdE8) for a TTTI-T base-unit amount at the buyer price (fee included). */
-export function tttiToBuyerUsdE8(tttiBase: bigint): bigint {
-  return (tttiBase * BigInt(BUYER_PRICE_USD) * PRICE_SCALE) / TTTI_DIVISOR;
-}
-
-/** Cycles fee part (usdE8) of the buyer price for a TTTI-T base-unit amount. */
-export function cyclesFeeUsdE8(tttiBase: bigint): bigint {
-  return tttiToBuyerUsdE8(tttiBase) - tttiToUsdE8(tttiBase);
 }
 
 /** Delivery-address messages in `lang` (default: the active language). */

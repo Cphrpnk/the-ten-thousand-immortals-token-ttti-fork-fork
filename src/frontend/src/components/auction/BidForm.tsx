@@ -1,14 +1,14 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import { useState } from "react";
-import { PayToken } from "../../backend";
+import { PayToken, RemainderChoice } from "../../backend";
 import type { AuctionView } from "../../backend";
 import {
-  localRequiredDeposit,
   useAuctionDepositQuote,
   usePlaceAuctionBid,
 } from "../../hooks/useAuction";
 import { useDict, useLanguage } from "../../i18n/core";
 import { AUCTION_TEXT } from "../../i18n/pages/auction";
+import { BUY_LIQUIDITY_TEXT } from "../../i18n/pages/buy";
 import {
   PAY_TOKENS,
   TTTI_DECIMALS,
@@ -16,12 +16,19 @@ import {
   parseUnits,
   unitsInputValue,
 } from "../../lib/token";
+import { cn } from "../../lib/utils";
 import { FiatAmount } from "../FiatAmount";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { DepositSplit } from "./DepositSplit";
 import { TokenChoice } from "./TokenChoice";
-import { failureText, formatTttiE8, formatUsdPerTtti } from "./auctionFormat";
+import {
+  bidErrorText,
+  failureText,
+  formatTttiE8,
+  formatUsdPerTtti,
+} from "./auctionFormat";
 
 function parsePositive(text: string, decimals: number): bigint | null {
   return text.trim() === "" ? null : parseUnits(text, decimals);
@@ -32,8 +39,18 @@ export function BidForm({
   view,
   owner,
   closed,
-}: { view: AuctionView; owner: Principal; closed: boolean }) {
+  choice,
+  onChoiceChange,
+}: {
+  view: AuctionView;
+  owner: Principal;
+  closed: boolean;
+  /** Remainder choice: A pool, B keep the TTTI-T in the wallet. */
+  choice: RemainderChoice;
+  onChoiceChange: (choice: RemainderChoice) => void;
+}) {
   const t = useDict(AUCTION_TEXT);
+  const tl = useDict(BUY_LIQUIDITY_TEXT);
   const { lang } = useLanguage();
   const bid = usePlaceAuctionBid(owner);
   const [token, setToken] = useState<PayToken>(PayToken.icp);
@@ -59,12 +76,15 @@ export function BidForm({
       : null;
   const validPrice = price !== null && price > 0n ? price : null;
 
-  const quote = useAuctionDepositQuote(token, validPrice, validQuantity);
-  const local =
-    validQuantity !== null && validPrice !== null
-      ? localRequiredDeposit(validPrice, validQuantity)
-      : null;
-  const required = quote.data ?? local;
+  const quoteResult = useAuctionDepositQuote(
+    token,
+    validPrice,
+    validQuantity,
+    choice,
+  );
+  const depositQuote = quoteResult.data?.quote ?? null;
+  const quoteError = quoteResult.data?.error ?? null;
+  const required = depositQuote?.required ?? null;
   const depositEmpty = depositText.trim() === "";
   const deposit = depositEmpty
     ? required
@@ -114,6 +134,7 @@ export function BidForm({
       quantityE8s: validQuantity,
       priceB: validPrice,
       deposit,
+      choice,
     });
     if (ok) {
       setQuantityText("");
@@ -152,6 +173,59 @@ export function BidForm({
 
       <TokenChoice value={token} onChange={chooseToken} disabled={busy} />
 
+      <fieldset
+        className="flex flex-col gap-2"
+        disabled={busy}
+        data-ocid="auction.remainder_choice"
+      >
+        <legend className="text-sm font-medium">{tl.choiceLegend}</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              [
+                RemainderChoice.pool,
+                "pool",
+                tl.choicePoolTitle,
+                tl.choicePoolText,
+              ],
+              [
+                RemainderChoice.wallet,
+                "wallet",
+                tl.choiceWalletTitle,
+                tl.choiceWalletText,
+              ],
+            ] as const
+          ).map(([value, key, title, text]) => (
+            <label
+              key={key}
+              htmlFor={`auction-choice-${key}`}
+              className={cn(
+                "flex min-w-0 cursor-pointer flex-col gap-1 rounded-md border px-3 py-2 text-sm transition-smooth focus-within:ring-2 focus-within:ring-ring",
+                choice === value
+                  ? "border-gold bg-primary/10"
+                  : "border-border hover:border-gold",
+                busy && "cursor-not-allowed opacity-60",
+              )}
+              data-ocid={`auction.remainder_choice.${key}`}
+            >
+              <span className="flex items-start gap-2">
+                <input
+                  id={`auction-choice-${key}`}
+                  type="radio"
+                  name="auction-remainder-choice"
+                  checked={choice === value}
+                  onChange={() => onChoiceChange(value)}
+                  disabled={busy}
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-primary focus-visible:outline-none"
+                  data-ocid={`auction.remainder_choice_radio.${key}`}
+                />
+                <span className="min-w-0 font-medium">{title}</span>
+              </span>
+              <span className="text-xs text-muted-foreground">{text}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div className="grid gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label htmlFor="auction-quantity">
@@ -246,6 +320,18 @@ export function BidForm({
           {t.requiredDepositFormula}
         </p>
       </dl>
+
+      {quoteError && (
+        <p
+          className="callout-danger px-3 py-2 text-sm"
+          data-ocid="auction.quote_error_state"
+        >
+          {bidErrorText(t, quoteError, token, lang)}
+        </p>
+      )}
+      {depositQuote && validQuantity !== null && (
+        <DepositSplit quote={depositQuote} quantityE8s={validQuantity} />
+      )}
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="auction-deposit">{t.depositLabel(symbol)}</Label>

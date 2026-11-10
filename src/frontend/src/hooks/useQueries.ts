@@ -34,6 +34,7 @@ import type {
   DataCertificate,
   DeliveryAddressResult,
   DepositEntry,
+  DepositMintParams,
   DepositTracking,
   DexToken,
   FeeBounds,
@@ -55,6 +56,7 @@ import type {
   PublicTreasuryInfo,
   PurchaseAcknowledgement,
   PurchaseResult,
+  RemainderChoice,
   SaleStatus,
   SupportedBlockType,
   SupportedStandard,
@@ -80,6 +82,7 @@ import {
 import { useActor } from "./useActor";
 import { useConnectedWallet } from "./useConnectedWallet";
 import { useInternetIdentity } from "./useInternetIdentity";
+import { poolKey } from "./useMintPreview";
 
 export {
   useListTokens,
@@ -88,36 +91,42 @@ export {
   useWalletBalance,
 } from "./useWallet";
 
-/** Refresh everything a purchase or admin switch can change. */
+/**
+ * Queries a purchase really changes: balances, history, sale status, supply
+ * and reserve. Static data (prices, metadata, acknowledgements, switches)
+ * is not refetched here.
+ */
+const PURCHASE_QUERY_KEYS = [
+  "saleStatus",
+  "technicalDetails",
+  "conversions",
+  "myConversions",
+  "icrc1BalanceOf",
+  "walletBalance",
+  "tokenInfo",
+  "feeCollector",
+  "cyclesStatus",
+  "publicBoard",
+  "icrc3GetBlocks",
+  "setAsideAmounts",
+  "liquidityInjections",
+  "myMintFees",
+  "liquidityMints",
+  "myGuarantees",
+  "dexPositionsOf",
+  "tttiAccountTransactions",
+] as const;
+
+/** Refresh what a purchase can change. */
 function invalidateSale(queryClient: QueryClient) {
-  for (const key of [
-    "saleStatus",
-    "technicalDetails",
-    "adminSwitches",
-    "conversions",
-    "myConversions",
-    "failedForwards",
-    "icrc1BalanceOf",
-    "walletBalance",
-    "tokenInfo",
-    "feeCollector",
-    "icpPrice",
-    "tokenPrices",
-    "cyclesStatus",
-    "publicBoard",
-    "icrc3GetBlocks",
-    "purchaseAcknowledgement",
-    "ownerSends",
-    "ownerAccumulated",
-    "treasuryBalances",
-    "treasuryWithdrawals",
-    "setAsideAmounts",
-    "liquidityInjections",
-    "myMintFees",
-    "liquidityMints",
-    "myGuarantees",
-    "dexPositionsOf",
-  ]) {
+  for (const key of PURCHASE_QUERY_KEYS) {
+    void queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+/** Refresh what an admin switch can change. */
+function invalidateSwitch(queryClient: QueryClient) {
+  for (const key of ["saleStatus", "technicalDetails", "adminSwitches"]) {
     void queryClient.invalidateQueries({ queryKey: [key] });
   }
 }
@@ -132,36 +141,45 @@ export interface TokenInfo {
   standards: Array<SupportedStandard>;
 }
 
+/** Near-static token fields: refetched at most every 10 minutes. */
+const TOKEN_INFO_STATIC_STALE_MS = 10 * 60_000;
+/** Total supply and fee: fresh through invalidation after transfers and purchases. */
+const TOKEN_INFO_STALE_MS = 5 * 60_000;
+
 export function useTokenInfo() {
   const { actor, isFetching } = useActor();
+  const queryClient = useQueryClient();
 
   return useQuery<TokenInfo>({
     queryKey: ["tokenInfo"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not initialized");
 
-      const [name, symbol, decimals, maxSupply, totalSupply, fee, standards] =
-        await Promise.all([
-          actor.icrc1_name(),
-          actor.icrc1_symbol(),
-          actor.icrc1_decimals(),
-          actor.get_max_supply(),
-          actor.icrc1_total_supply(),
-          actor.icrc1_fee(),
-          actor.icrc1_supported_standards(),
-        ]);
+      const staticFields = await queryClient.fetchQuery({
+        queryKey: ["tokenInfoStatic"],
+        queryFn: async () => {
+          const [name, symbol, decimals, maxSupply, standards] =
+            await Promise.all([
+              actor.icrc1_name(),
+              actor.icrc1_symbol(),
+              actor.icrc1_decimals(),
+              actor.get_max_supply(),
+              actor.icrc1_supported_standards(),
+            ]);
+          return { name, symbol, decimals, maxSupply, standards };
+        },
+        staleTime: TOKEN_INFO_STATIC_STALE_MS,
+      });
+      const [totalSupply, fee] = await Promise.all([
+        actor.icrc1_total_supply(),
+        actor.icrc1_fee(),
+      ]);
 
-      return {
-        name,
-        symbol,
-        decimals,
-        maxSupply,
-        totalSupply,
-        fee,
-        standards,
-      };
+      return { ...staticFields, totalSupply, fee };
     },
     enabled: !!actor && !isFetching,
+    staleTime: TOKEN_INFO_STALE_MS,
+    refetchOnMount: "always",
   });
 }
 
@@ -175,6 +193,7 @@ export function useIcrc1Fee() {
       return actor.icrc1_fee();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -188,6 +207,7 @@ export function useGetFee() {
       return actor.get_fee();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -201,6 +221,7 @@ export function useGetMaxSupply() {
       return actor.get_max_supply();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -335,6 +356,7 @@ export function useIcrc3SupportedBlockTypes() {
       return actor.icrc3_supported_block_types();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -617,6 +639,7 @@ export function useGetCanisterPrincipal() {
       return actor.getCanisterPrincipal();
     },
     enabled: !!actor && !isFetching,
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 
@@ -861,6 +884,7 @@ export function useRefreshOnDepositProgress(
       "walletBalance",
       "icrc1BalanceOf",
       "myConversions",
+      "icrc3GetBlocks",
       "conversions",
       "saleStatus",
     ]) {
@@ -913,20 +937,86 @@ function mintAmountKey(amount: MintAmount | null): string {
     : `base:${amount.ttti.baseUnits}`;
 }
 
-/** Preview of a liquidity mint (public query); disabled without an amount. */
+/**
+ * Preview of a liquidity mint for a remainder choice (public query); disabled
+ * without an amount. Changing only the choice keeps the previous answer on
+ * screen until the new one arrives: every answer carries both choices.
+ */
 export function useLiquidityMintQuote(
   token: PayToken,
   amount: MintAmount | null,
+  choice: RemainderChoice,
+  poolId: bigint | null,
 ) {
   const { actor, isFetching } = useActor();
+  const amountKey = mintAmountKey(amount);
+  const pool = poolKey(poolId);
 
   return useQuery<LiquidityMintQuoteResult>({
-    queryKey: ["liquidityMintQuote", token, mintAmountKey(amount)],
+    queryKey: ["liquidityMintQuote", token, amountKey, choice, pool],
     queryFn: async () => {
-      if (!actor || !amount) throw new Error("Actor not available");
-      return actor.quoteLiquidityMint({ token, amount });
+      if (!actor || !amount || poolId === null) {
+        throw new Error("Actor not available");
+      }
+      return actor.quoteLiquidityMint({
+        token,
+        amount,
+        choice,
+        targetPoolId: poolId,
+      });
     },
-    enabled: !!actor && !isFetching && amount !== null,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === token &&
+      previousQuery.queryKey[2] === amountKey &&
+      previousQuery.queryKey[4] === pool
+        ? previous
+        : undefined,
+    enabled: !!actor && !isFetching && amount !== null && poolId !== null,
+    staleTime: 10_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+}
+
+export type MintPoolPreviewResult = Awaited<
+  ReturnType<Backend["getMintPoolPreview"]>
+>;
+
+/**
+ * Pool preview of a liquidity mint in the chosen pool (public query): pool
+ * price before and after and the gaps with the consolidated price. Disabled
+ * without an amount and a pool.
+ */
+export function useMintPoolPreview(
+  token: PayToken,
+  amount: MintAmount | null,
+  choice: RemainderChoice,
+  poolId: bigint | null,
+) {
+  const { actor, isFetching } = useActor();
+  const amountKey = mintAmountKey(amount);
+  const pool = poolKey(poolId);
+
+  return useQuery<MintPoolPreviewResult>({
+    queryKey: ["mintPoolPreview", token, amountKey, choice, pool],
+    queryFn: async () => {
+      if (!actor || !amount || poolId === null) {
+        throw new Error("Actor not available");
+      }
+      return actor.getMintPoolPreview({
+        token,
+        amount,
+        choice,
+        targetPoolId: poolId,
+      });
+    },
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === token &&
+      previousQuery.queryKey[2] === amountKey &&
+      previousQuery.queryKey[4] === pool
+        ? previous
+        : undefined,
+    enabled: !!actor && !isFetching && amount !== null && poolId !== null,
     staleTime: 10_000,
     refetchInterval: 60_000,
     retry: 1,
@@ -1072,6 +1162,7 @@ function invalidateBtcDeposits(queryClient: QueryClient) {
     "saleStatus",
     "conversions",
     "myConversions",
+    "icrc3GetBlocks",
     "walletBalance",
     "icrc1BalanceOf",
   ]) {
@@ -1079,19 +1170,20 @@ function invalidateBtcDeposits(queryClient: QueryClient) {
   }
 }
 
-function useBtcDepositMutation(
+function useBtcDepositMutation<V = void>(
   call: (
     actor: NonNullable<ReturnType<typeof useActor>["actor"]>,
+    variables: V,
   ) => Promise<BtcDepositResult>,
   invalidate: (queryClient: QueryClient) => void,
 ) {
   const { actor } = useActor();
   const queryClient = useQueryClient();
 
-  return useMutation<DepositTracking, Error, void>({
-    mutationFn: async () => {
+  return useMutation<DepositTracking, Error, V>({
+    mutationFn: async (variables: V) => {
       if (!actor) throw new Error("Actor not available");
-      return unwrapBtcDeposit(await call(actor));
+      return unwrapBtcDeposit(await call(actor, variables));
     },
     onSettled: () => {
       invalidate(queryClient);
@@ -1153,6 +1245,17 @@ export function useGetBtcPurchaseAddress() {
 export function useCheckBtcPurchaseDeposit() {
   return useBtcDepositMutation(
     (actor) => actor.checkBtcPurchaseDeposit(),
+    invalidateBtcDeposits,
+  );
+}
+
+/**
+ * Converts the ckBTC the contract holds for the caller into TTTI-T (or opens
+ * the automatic refund). Acts only on the caller's own purchase deposits.
+ */
+export function useConvertMyHeldBtc() {
+  return useBtcDepositMutation<DepositMintParams>(
+    (actor, params) => actor.convertMyHeldBtc(params),
     invalidateBtcDeposits,
   );
 }
@@ -1230,18 +1333,18 @@ export function useCheckBtcWalletDepositFor(owner: Principal | undefined) {
 }
 
 /** get/check on the purchase path, signed by the connected external wallet. */
-function useWalletBtcPurchaseMutation(
-  call: (backend: Backend) => Promise<BtcDepositResult>,
+function useWalletBtcPurchaseMutation<V = void>(
+  call: (backend: Backend, variables: V) => Promise<BtcDepositResult>,
   refreshBalances: boolean,
 ) {
   const { kind, principal, getBackend } = useConnectedWallet();
   const queryClient = useQueryClient();
   const principalText = principal?.toText();
 
-  return useMutation<DepositTracking, Error, void>({
-    mutationFn: async () => {
+  return useMutation<DepositTracking, Error, V>({
+    mutationFn: async (variables: V) => {
       const backend = await getBackend();
-      return unwrapBtcDeposit(await call(backend));
+      return unwrapBtcDeposit(await call(backend, variables));
     },
     onSuccess: (tracking) => {
       // Only a tracking with deposits is stored; an unsaved one stays local.
@@ -1274,6 +1377,14 @@ export function useWalletGetBtcPurchaseAddress() {
 export function useWalletCheckBtcPurchaseDeposit() {
   return useWalletBtcPurchaseMutation(
     (backend) => backend.checkBtcPurchaseDeposit(),
+    true,
+  );
+}
+
+/** convertMyHeldBtc signed by the connected external wallet. */
+export function useWalletConvertMyHeldBtc() {
+  return useWalletBtcPurchaseMutation<DepositMintParams>(
+    (backend, params) => backend.convertMyHeldBtc(params),
     true,
   );
 }
@@ -1665,7 +1776,7 @@ function useSwitchMutation(
       await call(actor, value);
     },
     onSuccess: () => {
-      invalidateSale(queryClient);
+      invalidateSwitch(queryClient);
     },
   });
 }
@@ -1756,6 +1867,7 @@ export function useGetBurnAccount() {
       return actor.getBurnAccount();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 10 * 60_000,
   });
 }
 

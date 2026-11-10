@@ -1,5 +1,6 @@
 import Map "mo:core/Map";
 import Set "mo:core/Set";
+import LiquidityMint "liquidity-mint";
 import Pay "pay-token";
 import Retry "retry";
 
@@ -12,6 +13,8 @@ import Retry "retry";
 // the refund of the excess deposit are not part of this lot.
 module {
   public type PayToken = Pay.PayToken;
+  // PTM-10b: A (#pool) or B (#wallet), chosen with the bid for the share (1 - m).
+  public type RemainderChoice = LiquidityMint.RemainderChoice;
   public type Timestamp = Int; // ns (Time.now())
   public type AuctionId = Nat;
   public type BidId = Nat;
@@ -41,9 +44,14 @@ module {
   };
 
   // One firm bid. priceB is in the token's smallest unit per whole TTTI-T.
-  // requiredDeposit = ceil(2 x priceB x quantityE8s / (10^8 x 0.99)) in the
+  // PTM-11: requiredDeposit = ceil((priceB + 10 000 USD in the token) x
+  // quantityE8s / (10^8 x 0.99)) plus the conversion buffer, in the
   // token's smallest unit; deposited >= requiredDeposit (the excess is refunded
-  // at the closing, a later lot). memo is the deposit memo TTTI-AB-<n> and
+  // at the closing, a later lot). PTM-10b: requiredDeposit is always the amount
+  // of choice #pool (A), the maximum: choice #wallet (B) is charged less at
+  // settlement ((10 000 USD + m x B) x q / 0.99) and the rest of the deposit
+  // returns to the bidder's withdrawable balance. `choice` is the bidder's
+  // choice for the share (1 - m), used at settlement. memo is the deposit memo TTTI-AB-<n> and
   // block the ledger block of the deposit pull.
   public type Bid = {
     id : BidId;
@@ -55,6 +63,7 @@ module {
     requiredDeposit : Nat;
     deposited : Nat;
     createdAt : Timestamp;
+    choice : RemainderChoice; // PTM-10b
     memo : Blob;
     block : Nat;
   };
@@ -73,6 +82,7 @@ module {
     requiredDeposit : Nat;
     deposited : Nat;
     createdAt : Timestamp;
+    choice : RemainderChoice; // PTM-10b
   };
 
   // Stable state. current is the open auction (null when none). The returned
@@ -174,6 +184,39 @@ module {
     // PTM-9d: the deposit does not cover at least the ledger fee of the bid
     // token (smallest unit), so it could not be moved back.
     #depositBelowLedgerFee : { fee : Nat; deposited : Nat };
+    // PTM-11: the rate of the bid token is absent or expired; the reserve part
+    // (10 000 USD per TTTI-T) cannot be priced. Nothing was taken.
+    #rateUnavailable : { token : PayToken };
+  };
+
+  // PTM-11: deposit quote of a bid. The winner at price B for q TTTI-T pays
+  // payment = (B + 10 000 USD) x q / 0.99; reserveAmount (10 000 USD x q) goes
+  // to the common reserve, positionAmount (B x q) and the q TTTI-T to the
+  // winner position (zap), creatorAmount (1 % of payment) to the creator. For
+  // every token the reserve part stays in the paid token (no conversion):
+  // conversionBuffer is always 0.
+  //
+  // PTM-10b: payment / positionAmount above are the deposit basis (choice #pool,
+  // the maximum). choicePayment, choicePooledAmount, lockedAmount and handE8s are
+  // the figures of the asked choice at the current m (mShareE6, scale 10^6);
+  // settlement uses m at settlement time.
+  public type DepositQuote = {
+    token : PayToken;
+    choice : RemainderChoice;
+    mShareE6 : Nat;
+    choicePayment : Nat; // (10 000 USD + liquidity) x q / 0.99 for the choice at the current m
+    choicePooledAmount : Nat; // token amount pooled for the choice (locked + free)
+    lockedAmount : Nat; // m x B x q, pooled and locked for 3 months
+    handE8s : Nat; // TTTI-T delivered to the wallet by choice #wallet, 0 for #pool
+    required : Nat; // deposit to send: payment + conversionBuffer, token base units
+    payment : Nat; // (B + 10 000 USD) x q / 0.99, rounded up
+    positionAmount : Nat; // B x q
+    reserveAmount : Nat; // 10 000 USD x q, token base units, rounded down
+    creatorAmount : Nat; // 1 % of payment
+    reserveToken : PayToken; // the token the reserve part is held in (the paid token)
+    conversionApplies : Bool; // true for ICP and ckBTC
+    conversionBuffer : Nat; // 0 without conversion
+    rateUsdE8 : Nat; // rate of the bid token used for the 10 000 USD
   };
 
   public type OpenAuctionError = {
@@ -244,6 +287,7 @@ module {
     requiredDeposit : Nat;
     deposited : Nat;
     createdAt : Timestamp;
+    choice : RemainderChoice; // PTM-10b
     outcome : BidOutcome;
     servedE8s : Nat;
     pricePaidB : Nat;
@@ -367,10 +411,19 @@ module {
   // Settlement of one served bid. Amounts are in the bid's token (smallest
   // unit), quantities in TTTI-T e8s.
   //   settledE8s      quantity pooled (q); 0 unless #settled
-  //   takenAmount     2 x B x q / 0.99 taken from the deposit; 0 unless #settled
+  //   takenAmount     (10 000 USD + liquidity) x q / 0.99 taken from the deposit; 0 unless #settled
+  //                   (liquidity = B for choice #pool, m x B for #wallet)
   //   creatorShare    1 % of takenAmount, for the creator
-  //   positionAmount  half of the rest, formed with q TTTI-T in the pool (zap)
-  //   guaranteeAmount the other half: B per TTTI-T, kept in the paid token
+  //   positionAmount  token amount pooled with its TTTI-T (zap): B x q for choice
+  //                   #pool, m x B x q for #wallet; includes lockedAmount
+  //   mShareE6        PTM-10b: locked share m used at settlement (scale 10^6); 0 before PTM-10b
+  //   choice          PTM-10b: the bid's choice for the share (1 - m); #pool before PTM-10b
+  //   lockedAmount    PTM-10b: m x B x q of the token, pooled and locked 3 months
+  //   lockedPositionId PTM-10b: the locked 3-month position; null when m = 0 or not settled
+  //   handE8s         PTM-10b: (1 - m) x q TTTI-T delivered to the wallet by choice #wallet
+  //                   (positionId is the free position, else the locked one)
+  //   guaranteeAmount PTM-11: 10 000 USD x q paid into the common reserve, in the
+  //                   paid token (never converted)
   //   surplusReturned credited to the bidder's DEX balance by the settlement:
   //                   the deposit left after takenAmount when #settled, the whole
   //                   served deposit when #failed
@@ -390,6 +443,11 @@ module {
     surplusReturned : Nat;
     carriedE8s : Nat;
     positionId : ?Nat;
+    mShareE6 : Nat;
+    choice : RemainderChoice;
+    lockedAmount : Nat;
+    lockedPositionId : ?Nat;
+    handE8s : Nat;
     failureReason : ?Text;
     attemptedAt : ?Timestamp;
     settledAt : ?Timestamp;
@@ -423,6 +481,7 @@ module {
     quantityE8s : Nat; // served quantity q
     mintE8s : Nat; // PTM-9b: part of q minted fresh now (remainder), pooled with the winner's mass; <= q
     priceB : Nat; // price B per whole TTTI-T, in the paid token
+    choice : RemainderChoice; // PTM-10b: the bid's choice for the share (1 - m)
   };
 
   // What the isolated call did for one winner.
@@ -431,8 +490,14 @@ module {
     takenAmount : Nat;
     creatorShare : Nat;
     positionAmount : Nat;
-    guaranteeAmount : Nat;
+    guaranteeAmount : Nat; // PTM-11: 10 000 USD x q paid into the common reserve
+    reserveToken : PayToken; // PTM-11: token the reserve part was credited in
+    conversionCost : Nat; // PTM-11: cost of converting the reserve part, 0 without conversion
     positionId : ?Nat;
+    mShareE6 : Nat; // PTM-10b: locked share m used (read at settlement time)
+    lockedAmount : Nat; // PTM-10b: m x B x q pooled and locked 3 months
+    lockedPositionId : ?Nat;
+    handE8s : Nat; // PTM-10b: TTTI-T delivered to the wallet (choice #wallet)
     shares : Nat;
   };
 

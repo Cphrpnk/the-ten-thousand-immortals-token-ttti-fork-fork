@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import type {
   ComputationResult,
+  DexBalanceBreakdownSnapshot,
   DexIndicatorsSnapshot,
   FeeSharing,
   FeeTotals,
   IndicatorsStatus,
   PoolIndicators,
+  TokenBalanceBreakdown,
   TokenProof,
 } from "../backend";
 import { DexIndicatorsError } from "../backend";
@@ -14,17 +16,20 @@ import { useIsCallerAdmin } from "./useQueries";
 
 export type {
   ComputationResult,
+  DexBalanceBreakdownSnapshot,
   DexIndicatorsSnapshot,
   FeeSharing,
   FeeTotals,
   IndicatorsStatus,
   PoolIndicators,
+  TokenBalanceBreakdown,
   TokenProof,
 };
 
 export const DEX_INDICATORS_KEYS = {
   snapshot: ["dexIndicators"],
   status: ["dexIndicatorsStatus"],
+  balanceBreakdown: ["dexBalanceBreakdown"],
 } as const;
 
 const REFETCH_MS = 60_000;
@@ -37,6 +42,20 @@ export function useDexIndicators() {
     queryFn: async () => {
       if (!actor) throw new Error("Actor not available");
       return actor.getDexIndicators();
+    },
+    enabled: !!actor && !isFetching,
+    refetchInterval: REFETCH_MS,
+  });
+}
+
+/** Public: balance breakdown per token behind the proof of reserves. */
+export function useDexBalanceBreakdown() {
+  const { actor, isFetching } = useActor();
+  return useQuery<DexBalanceBreakdownSnapshot>({
+    queryKey: DEX_INDICATORS_KEYS.balanceBreakdown,
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getDexBalanceBreakdown();
     },
     enabled: !!actor && !isFetching,
     refetchInterval: REFETCH_MS,

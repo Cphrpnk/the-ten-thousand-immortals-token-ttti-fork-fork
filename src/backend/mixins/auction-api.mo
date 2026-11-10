@@ -4,6 +4,7 @@ import Runtime "mo:core/Runtime";
 import Time "mo:core/Time";
 import AuctionLib "../lib/auction";
 import IcrcLib "../lib/icrc";
+import LiquidityMintLib "../lib/liquidity-mint";
 import OracleLib "../lib/oracle";
 import RetryLib "../lib/retry";
 import Types "../types/auction";
@@ -41,13 +42,24 @@ mixin (
     AuctionLib.bidsOf(auction, caller);
   };
 
-  // Required deposit for a bid: ceil(2 x priceB x quantityE8s / (10^8 x 0.99)),
-  // in the token's smallest unit. #invalidPrice for a zero price and
-  // #quantityBelowMinimum under 100_000 e8s.
-  public query func quoteAuctionDeposit(token : Types.PayToken, priceB : Nat, quantityE8s : Nat) : async Result.Result<Nat, Types.BidError> {
-    ignore token;
+  // PTM-11: deposit quote of a bid. The winner at price B for q TTTI-T pays
+  // (B + 10 000 USD) x q / 0.99 (token smallest unit, priceB per whole TTTI-T,
+  // quantityE8s in e8s): 10 000 USD x q goes to the common reserve (converted
+  // to ckUSDC for ICP / ckBTC), B x q and the q TTTI-T to the winner position,
+  // 1 % to the creator. `required` is the deposit to send (payment plus the
+  // conversion buffer of an ICP / ckBTC bid). #invalidPrice for a zero price,
+  // #quantityBelowMinimum under 100_000 e8s, #rateUnavailable without a usable
+  // rate of the token.
+  // PTM-10b: `choice` is the winner's choice for the share (1 - m) of the
+  // position: #pool (A) pools it too, #wallet (B) keeps its TTTI-T in the
+  // wallet and does not pay the matching liquidity. `required` is always the
+  // choice #pool amount (the maximum): the excess of a #wallet bid returns to
+  // the bidder's withdrawable balance at settlement. The result carries m, the
+  // payment, the pooled and locked amounts and the TTTI-T in hand of the choice.
+  public query func quoteAuctionDeposit(token : Types.PayToken, priceB : Nat, quantityE8s : Nat, choice : Types.RemainderChoice) : async Result.Result<Types.DepositQuote, Types.BidError> {
     // PTM-9b: a lot sold in block takes only bids for the entire lot.
-    AuctionLib.quoteDepositIn(auction, priceB, quantityE8s);
+    let now = Time.now();
+    AuctionLib.depositQuote(auction, oracle, tokenRates, token, priceB, quantityE8s, choice, LiquidityMintLib.shareNow(settle.mint, now), now);
   };
 
   // Places a firm bid. The full deposit (depositAmount >= required deposit) is
@@ -55,8 +67,8 @@ mixin (
   // PTM-9d: refused with #priceBelowMinimum when the bid price is under 10_000
   // USD per whole TTTI-T, and with #depositBelowLedgerFee when the deposit does
   // not cover at least the ledger fee of the token (both before any ledger call).
-  public shared ({ caller }) func placeAuctionBid(token : Types.PayToken, quantityE8s : Nat, priceB : Nat, depositAmount : Nat) : async Result.Result<Types.Bid, Types.BidError> {
-    await AuctionLib.placeBid(auction, closing, ledger, oracle, tokenRates, dexContext, canister, caller, token, quantityE8s, priceB, depositAmount);
+  public shared ({ caller }) func placeAuctionBid(token : Types.PayToken, quantityE8s : Nat, priceB : Nat, depositAmount : Nat, choice : Types.RemainderChoice) : async Result.Result<Types.Bid, Types.BidError> {
+    await AuctionLib.placeBid(auction, closing, ledger, oracle, tokenRates, dexContext, canister, caller, token, quantityE8s, priceB, depositAmount, choice);
   };
 
   // Anyone may call: opens an auction when none is open and a non-empty lot
@@ -87,6 +99,11 @@ mixin (
           surplusReturned = 0;
           carriedE8s = 0;
           positionId = null;
+          mShareE6 = 0;
+          choice = b.choice;
+          lockedAmount = 0;
+          lockedPositionId = null;
+          handE8s = 0;
           failureReason = null;
           attemptedAt = null;
           settledAt = null;
@@ -151,9 +168,9 @@ mixin (
   // PTM-6c. Isolated core settling ONE winner (auction id, bid id, owner, paid
   // token, served quantity q, price B). Reserved to the canister itself,
   // reached only through the self-call of settleAuctionWinners. It re-verifies
-  // everything, pools the winner like the mint (taken 2 x B x q / 0.99, 1 % to
-  // the creator, half in the pool with the q TTTI-T, half as guarantee of B per
-  // TTTI-T) and returns the amounts. Every refusal is a trap.
+  // everything, pools the winner (taken (B + 10 000 USD) x q / 0.99, 1 % to the
+  // creator, B x q in the pool with the q TTTI-T, 10 000 USD x q to the common
+  // reserve) and returns the amounts. Every refusal is a trap.
   public shared ({ caller }) func auctionSettleCore(args : Types.SettleCoreArgs) : async Types.SettleCoreResult {
     if (caller != canister) { Runtime.trap("Reserved to the canister itself") };
     AuctionLib.settleCore(settle, args);

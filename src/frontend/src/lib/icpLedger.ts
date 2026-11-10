@@ -277,16 +277,83 @@ export function describeCallFailure(error: unknown, symbol = "ICP"): string {
   return t.approveFailed(symbol);
 }
 
-/** Agent for direct ledger calls; anonymous when no identity is given. */
+/**
+ * Agents are cached by host: one anonymous agent per host, and one agent per
+ * identity object (weakly held) per host, so a signing identity is never
+ * served by an anonymous agent or by another identity's agent.
+ */
+const anonymousAgents = new Map<string, Promise<HttpAgent>>();
+const identityAgents = new WeakMap<Identity, Map<string, Promise<HttpAgent>>>();
+
+async function buildAgent(
+  identity: Identity | undefined,
+  host: string | undefined,
+): Promise<HttpAgent> {
+  const agent = new HttpAgent({ identity, host });
+  if (host?.includes("localhost")) {
+    await agent.fetchRootKey().catch(() => undefined);
+  }
+  return agent;
+}
+
+/**
+ * Agent for direct ledger calls; anonymous when no identity is given.
+ * Reused across calls for the same host and identity.
+ */
 export async function createLedgerAgent(
   identity?: Identity,
 ): Promise<HttpAgent> {
   const config = await loadConfig();
-  const agent = new HttpAgent({ identity, host: config.backend_host });
-  if (config.backend_host?.includes("localhost")) {
-    await agent.fetchRootKey().catch(() => undefined);
+  const host = config.backend_host ?? "";
+  let cache: Map<string, Promise<HttpAgent>>;
+  if (identity) {
+    let perIdentity = identityAgents.get(identity);
+    if (!perIdentity) {
+      perIdentity = new Map();
+      identityAgents.set(identity, perIdentity);
+    }
+    cache = perIdentity;
+  } else {
+    cache = anonymousAgents;
+  }
+  let agent = cache.get(host);
+  if (!agent) {
+    agent = buildAgent(identity, config.backend_host);
+    cache.set(host, agent);
+    agent.catch(() => {
+      if (cache.get(host) === agent) cache.delete(host);
+    });
   }
   return agent;
+}
+
+const actorCache = new WeakMap<
+  HttpAgent,
+  WeakMap<IDL.InterfaceFactory, Map<string, unknown>>
+>();
+
+/** Actor for `canisterId`, reused for the same agent and interface. */
+export function getCachedActor<T>(
+  agent: HttpAgent,
+  idlFactory: IDL.InterfaceFactory,
+  canisterId: string,
+): T {
+  let perAgent = actorCache.get(agent);
+  if (!perAgent) {
+    perAgent = new WeakMap();
+    actorCache.set(agent, perAgent);
+  }
+  let perIdl = perAgent.get(idlFactory);
+  if (!perIdl) {
+    perIdl = new Map();
+    perAgent.set(idlFactory, perIdl);
+  }
+  let actor = perIdl.get(canisterId) as T | undefined;
+  if (!actor) {
+    actor = Actor.createActor<T>(idlFactory, { agent, canisterId });
+    perIdl.set(canisterId, actor);
+  }
+  return actor;
 }
 
 /** Raw ICRC actor for any ledger canister. */
@@ -295,10 +362,7 @@ export async function createLedgerActor(
   identity?: Identity,
 ): Promise<IcpLedgerActor> {
   const agent = await createLedgerAgent(identity);
-  return Actor.createActor<IcpLedgerActor>(icpLedgerIdlFactory, {
-    agent,
-    canisterId,
-  });
+  return getCachedActor<IcpLedgerActor>(agent, icpLedgerIdlFactory, canisterId);
 }
 
 /**

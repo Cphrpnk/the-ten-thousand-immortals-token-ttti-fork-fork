@@ -1,12 +1,7 @@
 import type { PayToken } from "../../backend";
 import { useDict } from "../../i18n/core/dict";
 import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
-import {
-  BTC_PAY_OPTION,
-  PAY_TOKENS,
-  PAY_TOKEN_ORDER,
-  feeLabelFor,
-} from "../../lib/token";
+import { BTC_PAY_OPTION, PAY_TOKENS, PAY_TOKEN_ORDER } from "../../lib/token";
 
 /** Optional BTC choice; it does not change the PayToken value. */
 interface BtcChoice {
@@ -76,11 +71,11 @@ export function PayTokenSelector({
             />
             <span className={OPTION_CLASS}>
               <span className={symbolClass(checked)}>{descriptor.symbol}</span>
-              <span className="text-xs text-muted-foreground">
-                {open
-                  ? t.feeShort(feeLabelFor(descriptor.feeBps))
-                  : t.unavailable}
-              </span>
+              {open ? null : (
+                <span className="text-xs text-muted-foreground">
+                  {t.unavailable}
+                </span>
+              )}
             </span>
           </label>
         );
@@ -101,11 +96,11 @@ export function PayTokenSelector({
             <span className={symbolClass(btcSelected)}>
               {BTC_PAY_OPTION.symbol}
             </span>
-            <span className="text-xs text-muted-foreground">
-              {btcOpen
-                ? t.feeShort(feeLabelFor(BTC_PAY_OPTION.feeBps))
-                : t.unavailable}
-            </span>
+            {btcOpen ? null : (
+              <span className="text-xs text-muted-foreground">
+                {t.unavailable}
+              </span>
+            )}
           </span>
         </label>
       ) : null}

@@ -1,28 +1,26 @@
 import { RefreshCw } from "lucide-react";
+import {
+  formatMintUsdE8,
+  useMintPriceDisplay,
+} from "../../hooks/useMintPriceDisplay";
 import { useGetSaleStatus } from "../../hooks/useQueries";
 import { MINT_REVENUE_TEXT } from "../../i18n/common";
 import { useDict } from "../../i18n/core";
 import { AUCTION_TEXT } from "../../i18n/pages/auction";
 import { CAP_TEXT, PRESALE_TEXT } from "../../i18n/pages/landing";
-import {
-  TOKEN_PRICE_USD,
-  TTTI_SYMBOL,
-  formatDecimal,
-  formatInteger,
-  formatTtti,
-  usePriceText,
-} from "../../lib/token";
+import { TTTI_SYMBOL, formatDecimal, formatTtti } from "../../lib/token";
 import { FiatAmount } from "../FiatAmount";
 import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
 import { Skeleton } from "../ui/skeleton";
+import { NO_VALUE } from "../wallet/valuation";
 
 export function PresaleSection() {
   const { data: status, isLoading, isError, refetch } = useGetSaleStatus();
+  const { data: mintPreview } = useMintPriceDisplay();
   const t = useDict(PRESALE_TEXT);
   const cap = useDict(CAP_TEXT);
   const auction = useDict(AUCTION_TEXT);
-  const priceText = usePriceText();
   const mintRevenue = useDict(MINT_REVENUE_TEXT);
   const percent =
     status && status.maxSupply > 0n
@@ -114,7 +112,9 @@ export function PresaleSection() {
                     {t.pricePerToken}
                   </dt>
                   <dd className="mt-2 font-display text-2xl tabular-nums text-foreground">
-                    {formatInteger(TOKEN_PRICE_USD)}{" "}
+                    {mintPreview
+                      ? formatMintUsdE8(mintPreview.pricePerTttiUsdE8)
+                      : NO_VALUE}{" "}
                     <span className="font-body text-xs">USD</span>
                   </dd>
                 </div>
@@ -146,9 +146,8 @@ export function PresaleSection() {
                 className="mt-5 max-w-2xl text-xs leading-relaxed text-muted-foreground"
                 data-ocid="landing.snapshot.fee_note"
               >
-                {priceText} {mintRevenue.priceRule} {mintRevenue.ownerShare}{" "}
-                {mintRevenue.feeShare} {mintRevenue.halfLp}{" "}
-                {mintRevenue.halfPermanent} {mintRevenue.noTttiCreated}
+                {mintRevenue.priceRule} {mintRevenue.ownerShare}{" "}
+                {mintRevenue.feeShare} {mintRevenue.noTttiCreated}
               </p>
               <div className="mt-8 max-w-xl">
                 <Progress

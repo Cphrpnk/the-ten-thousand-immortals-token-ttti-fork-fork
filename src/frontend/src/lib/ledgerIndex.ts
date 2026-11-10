@@ -1,8 +1,7 @@
-import { Actor } from "@icp-sdk/core/agent";
 import type { IDL } from "@icp-sdk/core/candid";
 import { Principal } from "@icp-sdk/core/principal";
 import type { Account, Backend, IndexTransaction } from "../backend";
-import { createLedgerAgent } from "./icpLedger";
+import { createLedgerAgent, getCachedActor } from "./icpLedger";
 import { ICP_LEDGER_ID } from "./token";
 import {
   CKBTC_LEDGER_CANISTER_ID,
@@ -339,10 +338,11 @@ async function mintingOwner(
   agent: Awaited<ReturnType<typeof createLedgerAgent>>,
 ): Promise<string | undefined> {
   try {
-    const ledger = Actor.createActor<MintingLedgerActor>(mintingIdl, {
+    const ledger = getCachedActor<MintingLedgerActor>(
       agent,
-      canisterId: agentLedgerId,
-    });
+      mintingIdl,
+      agentLedgerId,
+    );
     return fromOpt(await ledger.icrc1_minting_account())?.owner.toText();
   } catch {
     return undefined;
@@ -357,10 +357,7 @@ export async function readIcrcIndexCounterparties(
   const indexId = INDEX_BY_LEDGER[ledgerId];
   if (!indexId) throw new Error(`No index for ${ledgerId}`);
   const agent = await createLedgerAgent();
-  const index = Actor.createActor<IcrcIndexActor>(icrcIndexIdl, {
-    agent,
-    canisterId: indexId,
-  });
+  const index = getCachedActor<IcrcIndexActor>(agent, icrcIndexIdl, indexId);
   const [result, minting] = await Promise.all([
     index.get_account_transactions({
       account: { owner, subaccount: [] },
@@ -432,10 +429,11 @@ export async function readIcpCounterparties(
   known: Array<Principal>,
 ): Promise<Array<LedgerCounterparty>> {
   const agent = await createLedgerAgent();
-  const index = Actor.createActor<IcpIndexActor>(icpIndexIdl, {
+  const index = getCachedActor<IcpIndexActor>(
     agent,
-    canisterId: ICP_INDEX_CANISTER_ID,
-  });
+    icpIndexIdl,
+    ICP_INDEX_CANISTER_ID,
+  );
   const result = await index.get_account_transactions({
     account: toRaw({ owner }),
     start: [],

@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { PoolView } from "../backend";
 import { AddLiquidityDialog } from "../components/dex/AddLiquidityDialog";
 import { ConsolidatedPrice } from "../components/dex/ConsolidatedPrice";
@@ -17,7 +17,11 @@ import { HowPoolsWork } from "../components/dex/HowPoolsWork";
 import { MyPositions } from "../components/dex/MyPositions";
 import { PairRequestsSection } from "../components/dex/PairRequestsSection";
 import { PoolPositionsDialog } from "../components/dex/PoolPositionsDialog";
-import { type PoolAction, PoolRow } from "../components/dex/PoolRow";
+import {
+  type PoolAction,
+  PoolRow,
+  removalBlocksLiquidity,
+} from "../components/dex/PoolRow";
 import { PoolsNav } from "../components/dex/PoolsNav";
 import { RewardsPanel } from "../components/dex/RewardsPanel";
 import { SetAsideInjections } from "../components/dex/SetAsideInjections";
@@ -25,7 +29,12 @@ import { SwapDialog } from "../components/dex/SwapDialog";
 import { dexTokenOf } from "../components/dex/liquidityFormat";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
-import { useDexConfig, useDexPools, useDexTokens } from "../hooks/useDex";
+import {
+  useDexConfig,
+  useDexPools,
+  useDexTokens,
+  usePoolReferencePrices,
+} from "../hooks/useDex";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { LAYOUT_TEXT } from "../i18n/common/layout";
 import { useDict } from "../i18n/core";
@@ -61,6 +70,29 @@ export function PoolsPage() {
   const openPool = open
     ? sortedPools.find((p) => p.id === open.poolId)
     : undefined;
+
+  // One shared read for the empty pools whose details are open, by distinct pair.
+  const [detailsOpen, setDetailsOpen] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const onDetailsOpenChange = useCallback((poolId: bigint, isOpen: boolean) => {
+    setDetailsOpen((prev) => {
+      const key = poolId.toString();
+      if (prev.has(key) === isOpen) return prev;
+      const next = new Set(prev);
+      if (isOpen) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+  const references = usePoolReferencePrices(
+    sortedPools.filter(
+      (p) =>
+        detailsOpen.has(p.id.toString()) &&
+        p.totalShares === 0n &&
+        !removalBlocksLiquidity(p),
+    ),
+  );
 
   const pairInfo = (pool: PoolView) => {
     const info0 = dexTokenOf(tokens, pool.token0);
@@ -137,6 +169,8 @@ export function PoolsPage() {
                 onAction={(action) => setOpen({ poolId: pool.id, action })}
                 canTrade={!!caller && !!pairInfo(pool)}
                 tradeNote={tradeNoteOf(pool)}
+                reference={references.forPool(pool)}
+                onDetailsOpenChange={onDetailsOpenChange}
               />
             ))}
           </ul>

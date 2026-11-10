@@ -48,6 +48,17 @@ module {
     sat(creditedOf(t), t.paidOut + t.inFlight);
   };
 
+  // PTM-11: the creator share bears the ledger fee of a reserve payout. The fee
+  // counts as paid out (the funds leave the held amount to cover the payout).
+  // False (nothing changed) when the held amount cannot cover it.
+  public func bearLedgerFee(store : Types.CreatorFeeStore, token : Types.DexToken, fee : Nat) : Bool {
+    if (fee == 0) return true;
+    if (held(store, token) < fee) return false;
+    let t = totalsOf(store, token);
+    store.totals.add(DexLib.tokenKey(token), { t with paidOut = t.paidOut + fee });
+    true;
+  };
+
   // Credits `amount` of `token` to the creator's holdings with its source.
   // Synchronous accounting only: the funds already sit in DEX custody.
   public func credit(store : Types.CreatorFeeStore, token : Types.DexToken, amount : Nat, source : Types.CreatorFeeSource, now : Int) {

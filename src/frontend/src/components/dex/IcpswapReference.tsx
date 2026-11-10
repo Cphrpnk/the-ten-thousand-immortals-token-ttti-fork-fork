@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PoolKind, ReferenceSourceKind } from "../../backend";
 import type { PoolTokenView, PoolView } from "../../backend";
 import {
+  type PoolReferenceState,
   useConsolidatedTttiPrice,
   useReferencePrice,
 } from "../../hooks/useDex";
@@ -104,9 +105,17 @@ const priceText = (value: bigint) =>
  * with its weight, the tolerance band and the unavailable case. Information
  * only, never a recommendation.
  */
-export function ReferencePriceBlock({ pool }: { pool: PoolView }) {
+export function ReferencePriceBlock({
+  pool,
+  shared,
+}: {
+  pool: PoolView;
+  /** Reading from the page's shared query; without it the pool is read alone. */
+  shared?: PoolReferenceState;
+}) {
   const t = useDict(DEX_TEXT);
-  const reference = useReferencePrice(pool.id);
+  const single = useReferencePrice(shared ? undefined : pool.id);
+  const reference = shared ?? single;
   const consolidated = useConsolidatedTttiPrice();
   const data = reference.data;
 

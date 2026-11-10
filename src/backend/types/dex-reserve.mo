@@ -28,6 +28,37 @@ module {
     status : ReserveStatus;
   };
 
+  // PTM-10d: per-token balance breakdown. `total` is the guard: what the
+  // contract must hold of the token. total = poolReserves + guarantees +
+  // creatorHoldings + dexBalances + permanentLiquidity + requestDeposits +
+  // auctionDeposits + inFlight. All amounts are base units of `token`.
+  // `guarantees` is the common reserve (ckUSDC / ckUSDT) plus the legacy
+  // guarantee amounts of earlier mints, which are read-only history.
+  public type TokenBalanceBreakdown = {
+    token : DexToken;
+    poolReserves : Nat; // reserves of the native pools
+    guarantees : Nat; // common reserve plus read-only legacy guarantee amounts
+    creatorHoldings : Nat; // declared creator holdings and set-aside fees
+    dexBalances : Nat; // user DEX balances (available + reserved)
+    permanentLiquidity : Nat; // set aside, not yet injected into a pool
+    requestDeposits : Nat; // pair-request deposits
+    auctionDeposits : Nat; // auction bid deposits
+    inFlight : Nat; // operations started and not settled
+    total : Nat; // sum of the eight parts above
+    ledgerBalance : Nat; // balance read on the token's ledger
+    difference : Int; // ledgerBalance - total
+    status : ReserveStatus;
+  };
+
+  // Public snapshot of the breakdowns, one per token. checkedAt = time of the
+  // check it comes from (0 before any check). complete = every account of the
+  // check was read (false while a batched run is in progress or before a check).
+  public type DexBalanceBreakdownSnapshot = {
+    tokens : [TokenBalanceBreakdown];
+    checkedAt : Timestamp;
+    complete : Bool;
+  };
+
   // Accounts compared separately, each against its own obligations only.
   // #dexHoldings = custody + legacy DEX subaccounts per token; #requestDeposits
   // = pair-request deposit account (TTTI-T); #mintFee = MINT_FEE account per

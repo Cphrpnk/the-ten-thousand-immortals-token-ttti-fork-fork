@@ -41,7 +41,9 @@ mixin (
     await ProtocolFeesLib.claimBonus(protocolFeeContext, caller);
   };
 
-  // --- Mint fee (1/101): LP balances, set-aside amounts, injections ---------
+  // --- Mint fees: 1 % of the amount paid goes to the creator after the cycles
+  // reserve; the routing fee is split 70 % LP / 30 % protocol. LP balances,
+  // set-aside amounts, injections ---------
 
   // Signed-in caller: claimable and claimed mint-fee balances per pay token
   // and claims. Anonymous: empty view.

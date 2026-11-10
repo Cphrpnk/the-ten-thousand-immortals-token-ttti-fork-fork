@@ -1,0 +1,90 @@
+import type en from "./en";
+
+const ptBR: typeof en = {
+  dateLocale: "pt-BR",
+  title: "Histórico de transações",
+  subtitle:
+    "Atividade do ledger em ordem cronológica, as mais recentes primeiro.",
+  totalBlocks: (count: string) => `${count} blocos`,
+  errorTitle: "Não foi possível carregar o registro de blocos",
+  errorDescription:
+    "O ledger não respondeu. Verifique sua conexão e tente novamente.",
+  retry: "Tentar novamente",
+  tipTitle: "Certificado do tip",
+  tipCertified: "Certificado",
+  tipNoCertificate: "Sem certificado",
+  tipDescription:
+    "Dados do tip retornados pelo ledger. São exibidos como referência e não são verificados criptograficamente neste navegador.",
+  tipEmptyLog:
+    "O registro de blocos está vazio, portanto ainda não há tip para certificar. Um certificado aparece após a primeira transação.",
+  tipMissing: "O ledger não retornou um certificado do tip.",
+  tipIndex: "Índice do tip",
+  tipCertificateSize: "Tamanho do certificado",
+  tipBytes: (size: string) => `${size} bytes`,
+  tipLastBlockHash: "Hash do último bloco",
+  tipDecodeError: "Não foi possível decodificar o hash tree",
+  tipReturnedBy: "Retornado pelo ledger.",
+  kindTransfer: "Transferência",
+  kindMint: "Mint",
+  kindBurn: "Ajuste do ledger",
+  kindApprove: "Aprovação",
+  kindLegacyUnknown: "Bloco",
+  transferFromTitle: "Transferência feita por um spender aprovado",
+  noFee: "Sem taxa",
+  feeCollectorTitle: (account: string) =>
+    `Creditado ao coletor de taxas ${account}`,
+  toFeeCollector: "para o coletor de taxas",
+  detailSpender: "Spender",
+  detailMemo: "Memo",
+  detailCreated: "Criado",
+  detailExpires: "Expira",
+  detailExpectedAllowance: "Allowance esperada",
+  legacyBadge: "antigo",
+  legacyBadgeTitle: (decimals: string) =>
+    `Registrado antes da atualização com ${decimals} casas decimais`,
+  parentHashTitle: (hash: string) => `Hash pai ${hash}`,
+  parentHashAria: (hash: string, block: string) =>
+    `Hash pai ${hash}, ir para o bloco ${block}`,
+  blockHash: "Hash do bloco",
+  blockHashCopy: "Copiar o hash do bloco",
+  blockHashCopied: "Copiado",
+  minted: "Mintado",
+  ledger: "Ledger",
+  spenderNote: "spender",
+  via: (account: string) => `via ${account}`,
+  allowance: "Allowance",
+  amount: "Valor",
+  from: "De",
+  to: "Para",
+  spender: "Spender",
+  fee: "Taxa",
+  feeCollector: "Coletor de taxas",
+  time: "Data",
+  emptyTitle: "Ainda não há transações",
+  emptyDescription:
+    "A atividade registrada do ledger aparecerá aqui assim que o primeiro bloco for registrado.",
+  emptyBack: "Voltar à visão geral do token",
+  pageLatest: "Blocos mais recentes",
+  pageNewerBlocks: "Blocos mais novos",
+  pageOlderBlocks: "Blocos mais antigos",
+  pageOldest: "Primeiros blocos",
+  pageNewer: "Mais novos",
+  pageOlder: "Mais antigos",
+  paginationAria: "Páginas do histórico de blocos",
+  pageOf: (range: string, page: string, total: string) =>
+    `${range} · Página ${page} de ${total}`,
+  rangeBlocks: (newest: string, oldest: string, total: string) =>
+    `Blocos #${newest}–#${oldest} de ${total}`,
+  rangeEmpty: (total: string) => `0 de ${total} blocos`,
+  colBlock: "Bloco",
+  colType: "Tipo",
+  colFrom: "De",
+  colTo: "Para",
+  colAmount: (symbol: string) => `Valor (${symbol})`,
+  colFee: "Taxa",
+  colTime: "Data",
+  legacyNote: (boundary: string, legacy: string, current: string) =>
+    `Os blocos anteriores ao #${boundary} usam ${legacy} casas decimais; os posteriores, ${current}.`,
+};
+
+export default ptBR;

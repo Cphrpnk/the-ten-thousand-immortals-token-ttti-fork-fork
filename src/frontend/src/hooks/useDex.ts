@@ -9,7 +9,6 @@ import { DexToken, PayToken, PoolSide } from "../backend";
 import type {
   AddLiquidityArgs,
   AddLiquidityQuoteArgs,
-  ApproveError,
   ConsolidatedPrice,
   DexAccount,
   DexAmountArgs,
@@ -34,6 +33,7 @@ import type {
   PositionView,
   ProtocolLiquidityView,
   ReferencePrice,
+  ReferenceReadingEntry,
   RequestPairArgs,
   SetAsideView,
   TokenMinimums,
@@ -119,6 +119,7 @@ export const DEX_KEYS = {
   myPoolSpreadAlerts: (owner: string) => ["myPoolSpreadAlerts", owner],
   pool: (poolId: bigint) => ["dexPool", poolId.toString()],
   referencePrice: (poolId: bigint) => ["dexReferencePrice", poolId.toString()],
+  referenceReadings: ["dexReferenceReadings"],
   config: ["dexConfig"],
   requests: ["pairRequests"],
   myRequests: ["myPairRequests"],
@@ -196,10 +197,15 @@ export interface SwapInput {
   deadline: bigint;
 }
 
-/** requestPair outcome, or the TTTI-T approval error that stopped it first. */
+/** requestPair outcome, or the approval message that stopped it first. */
 export type RequestPairOutcome =
   | RequestPairResult
-  | { __kind__: "approvalFailed"; approvalFailed: ApproveError };
+  | { __kind__: "approvalFailed"; approvalFailed: string };
+
+/** requestPair arguments plus the allowance to approve first, in base units. */
+export interface RequestPairInput extends RequestPairArgs {
+  allowance: bigint;
+}
 
 /** depositToDex outcome, or the approval message that stopped it first. */
 export type DexDepositOutcome =
@@ -459,30 +465,41 @@ export function useDexTransfers(
 }
 
 /**
- * Approve the request deposit plus the TTTI-T ledger fee to the contract
- * (expiring after 15 minutes), then call requestPair.
+ * Approve `allowance` (plus the paid token's ledger fee) to the contract on
+ * the ledger of the paid token (15-minute expiry), signed by the wallet that
+ * holds `owner`, then call requestPair. `allowance` covers the deposit and a
+ * margin for rate changes; the contract takes only the exact deposit.
  */
-export function useRequestPair() {
+export function useRequestPair(owner: Principal | null | undefined) {
   const { actor } = useActor();
-  const queryClient = useQueryClient();
+  const signer = useAccountSigner(owner);
   const invalidate = useInvalidateDex();
-  return useMutation<RequestPairOutcome, Error, RequestPairArgs>({
-    mutationFn: async (args) => {
+  const queryClient = useQueryClient();
+  return useMutation<RequestPairOutcome, Error, RequestPairInput>({
+    mutationFn: async ({ allowance, ...args }) => {
       if (!actor) throw new Error("Actor not available");
-      const config = await queryClient.fetchQuery({
-        queryKey: DEX_KEYS.config,
-        queryFn: () => actor.getDexConfig(),
-      });
-      const fee = await actor.icrc1_fee();
-      const approval = await actor.icrc2_approve({
-        amount: config.requestDeposit + fee,
-        spender: { owner: config.depositAccount.owner },
-        expires_at: nowNs() + APPROVAL_TTL_NS,
-      });
-      if (approval.__kind__ === "Err") {
-        return { __kind__: "approvalFailed", approvalFailed: approval.Err };
+      const release = signer.begin();
+      try {
+        const [spender, tokens] = await Promise.all([
+          actor.getCanisterPrincipal(),
+          actor.getDexTokens(),
+        ]);
+        const info = tokens.find((tk) => tk.token === args.payToken);
+        if (!info) throw new Error("Payment token not available");
+        const failure = await approveOnLedger(
+          actor,
+          signer,
+          info,
+          spender,
+          allowance,
+        );
+        if (failure !== null) {
+          return { __kind__: "approvalFailed", approvalFailed: failure };
+        }
+        return await actor.requestPair(args);
+      } finally {
+        release();
       }
-      return actor.requestPair(args);
     },
     onSettled: () => {
       invalidate();
@@ -602,6 +619,7 @@ export function useDexPullApproval(owner: Principal | null | undefined) {
   const ensureApproved = async (
     backend: backendInterface,
     needs: ReadonlyArray<DexFundsNeed>,
+    approver?: backendInterface,
   ): Promise<void> => {
     const [spender, tokens, balances] = await Promise.all([
       backend.getCanisterPrincipal(),
@@ -616,7 +634,7 @@ export function useDexPullApproval(owner: Principal | null | undefined) {
       const pull = need.amount > held ? need.amount - held : 0n;
       if (pull === 0n) continue;
       const failure = await approveOnLedger(
-        backend,
+        approver ?? backend,
         signer,
         info,
         spender,
@@ -690,6 +708,105 @@ export function useReferencePrice(poolId: bigint | undefined) {
     },
     enabled: !!actor && !isFetching && poolId !== undefined,
     refetchInterval: DEX_POOLS_REFRESH_MS,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Loading, error and data of one pool's reference price, read from the shared query. */
+export interface PoolReferenceState {
+  data: ReferencePrice | null | undefined;
+  isPending: boolean;
+  isError: boolean;
+}
+
+type PairReading = { ok: true; data: ReferencePrice | null } | { ok: false };
+
+/** Token pair of a pool, in the pool's own order: pools of one pair share a reading. */
+function referencePairKey(pool: PoolView): string {
+  return `${pool.token0.ledgerId.toText()}/${pool.token1.ledgerId.toText()}`;
+}
+
+/**
+ * Reference prices of several pools in one shared query: one backend read per
+ * distinct token pair (the lowest pool id of the pair), so the number of calls
+ * per refresh follows the pairs, not the pools. Polling pauses with the tab.
+ */
+export function usePoolReferencePrices(pools: PoolView[]) {
+  const { actor, isFetching } = useActor();
+  const queryClient = useQueryClient();
+  const representatives = new Map<string, bigint>();
+  for (const pool of pools) {
+    const key = referencePairKey(pool);
+    const current = representatives.get(key);
+    if (current === undefined || pool.id < current) {
+      representatives.set(key, pool.id);
+    }
+  }
+  const ids = [...representatives.values()].sort((a, b) =>
+    a === b ? 0 : a < b ? -1 : 1,
+  );
+  const query = useQuery<Record<string, PairReading>>({
+    queryKey: ["dexReferencePrice", "pools", ...ids.map((id) => id.toString())],
+    queryFn: async () => {
+      if (!actor) return {};
+      const entries = [...representatives.entries()];
+      const settled = await Promise.allSettled(
+        entries.map(([, id]) => actor.getReferencePrice(id)),
+      );
+      if (settled.length > 0 && settled.every((s) => s.status === "rejected")) {
+        throw settled[0].status === "rejected"
+          ? settled[0].reason
+          : new Error("Reference price unavailable");
+      }
+      const readings: Record<string, PairReading> = {};
+      entries.forEach(([key], i) => {
+        const result = settled[i];
+        readings[key] =
+          result.status === "fulfilled"
+            ? { ok: true, data: result.value ?? null }
+            : { ok: false };
+      });
+      // Single-pool readers of the same pools start from the same values.
+      for (const pool of pools) {
+        const reading = readings[referencePairKey(pool)];
+        if (reading?.ok) {
+          queryClient.setQueryData(
+            DEX_KEYS.referencePrice(pool.id),
+            reading.data,
+          );
+        }
+      }
+      return readings;
+    },
+    enabled: !!actor && !isFetching && ids.length > 0,
+    refetchInterval: DEX_POOLS_REFRESH_MS,
+    refetchIntervalInBackground: false,
+    placeholderData: (previous) => previous,
+  });
+
+  const forPool = (pool: PoolView): PoolReferenceState => {
+    const reading = query.data?.[referencePairKey(pool)];
+    if (reading?.ok) {
+      return { data: reading.data, isPending: false, isError: false };
+    }
+    if (reading || query.isError) {
+      return { data: undefined, isPending: false, isError: true };
+    }
+    return { data: undefined, isPending: true, isError: false };
+  };
+  return { forPool };
+}
+
+/** Admin: last reading of each ICPSwap TTTI-T pair (price, or failed step, or not read yet). */
+export function useReferenceReadings() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Array<ReferenceReadingEntry>>({
+    queryKey: DEX_KEYS.referenceReadings,
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getReferenceReadings();
+    },
+    enabled: !!actor && !isFetching,
   });
 }
 
@@ -704,6 +821,9 @@ export function useRefreshReferenceSources() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["dexReferencePrice"] });
+      void queryClient.invalidateQueries({
+        queryKey: DEX_KEYS.referenceReadings,
+      });
       void queryClient.invalidateQueries({ queryKey: ["quoteAddLiquidity"] });
     },
   });
@@ -1130,7 +1250,7 @@ export function useClaimLpBonus() {
   });
 }
 
-// Mint fee halves: LP claimable shares (MF), set-aside amounts and injections.
+// Mint fee payouts: LP claimable shares (MF), set-aside amounts and injections.
 
 /** The caller's mint fee shares per paid token and their claims (MF). */
 export function useMyMintFees(principalText: string | undefined) {
@@ -1163,7 +1283,7 @@ export function useClaimMintFee() {
   });
 }
 
-/** Public: mint fee halves set aside per paid token, awaiting injection. */
+/** Public: amounts set aside per paid token, awaiting injection. */
 export function useSetAsideAmounts() {
   const { actor, isFetching } = useActor();
   return useQuery<Array<SetAsideView>>({

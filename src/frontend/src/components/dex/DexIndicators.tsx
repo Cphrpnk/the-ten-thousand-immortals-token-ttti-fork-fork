@@ -14,6 +14,7 @@ import { formatNumber } from "../../i18n/core/lang";
 import { DEX_INDICATORS_TEXT } from "../../i18n/pages/dexIndicators";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { BalanceBreakdownAccordion } from "./BalanceBreakdown";
 import { DexAccordion, DexAccordionGroup } from "./DexAccordion";
 import { dexFiatToken, fiatTokenOfDex } from "./DexFiat";
 import { IndicatorsWidget } from "./IndicatorsWidget";
@@ -31,19 +32,9 @@ import {
   Table,
   type Text,
   type Tok,
+  proofStatusLabel,
   usdText,
 } from "./indicatorParts";
-
-function proofStatusLabel(t: Text, status: ReserveStatus): string {
-  switch (status) {
-    case ReserveStatus.ok:
-      return t.statusMatch;
-    case ReserveStatus.surplus:
-      return t.statusSurplus;
-    case ReserveStatus.shortfall:
-      return t.statusShortfall;
-  }
-}
 
 function ProofTable({
   t,
@@ -294,6 +285,7 @@ export function DexIndicators() {
             >
               <ProofTable t={t} proofs={snapshot.proofs} tokens={tokens} />
             </DexAccordion>
+            <BalanceBreakdownAccordion t={t} lang={lang} tokens={tokens} />
           </DexAccordionGroup>
         </>
       )}

@@ -1,12 +1,14 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import { useState } from "react";
-import type { GuaranteeMassView } from "../../backend";
-import { useGuaranteeQuote } from "../../hooks/useGuarantee";
+import { useGuaranteeQuote, useReserveView } from "../../hooks/useGuarantee";
 import { useDict, useLanguage } from "../../i18n/core";
 import { GUARANTEE_TEXT } from "../../i18n/pages/guarantee";
-import { formatTttiQuantity, parseTttiAmount } from "../../lib/guarantee";
 import {
-  PAY_TOKENS,
+  formatTttiQuantity,
+  parseTttiAmount,
+  redeemableAmount,
+} from "../../lib/guarantee";
+import {
   TTTI_DECIMALS,
   TTTI_SYMBOL,
   amountForPercentWithFees,
@@ -22,14 +24,11 @@ import { RedeemPreview } from "./RedeemPreview";
 import { useTttiAllowance, useTttiHolding } from "./useGuaranteeRedeem";
 
 interface RedeemPanelProps {
-  mass: GuaranteeMassView;
   owner: Principal | undefined;
-  /** 1-based position of the mass, used in data-ocid markers. */
-  index: number;
 }
 
-/** Redeem control of one mass: amount, percentage bar, live preview, confirm. */
-export function RedeemPanel({ mass, owner, index }: RedeemPanelProps) {
+/** Redeem control open to any holder: amount, percentage bar, live preview, confirm. */
+export function RedeemPanel({ owner }: RedeemPanelProps) {
   const t = useDict(GUARANTEE_TEXT);
   const { lang } = useLanguage();
   const holding = useTttiHolding(owner);
@@ -38,32 +37,37 @@ export function RedeemPanel({ mass, owner, index }: RedeemPanelProps) {
   const [percent, setPercent] = useState<number | null>(null);
   const [confirming, setConfirming] = useState(false);
 
-  const ocid = `guarantee.redeem.${index}`;
-  const inputId = `guarantee-amount-${mass.token}`;
+  const reserve = useReserveView();
+
+  const ocid = "guarantee.redeem";
+  const inputId = "guarantee-amount";
   const usable = holding.usable;
-  const redeemable =
-    usable === undefined
-      ? undefined
-      : usable < mass.remainingTtti
-        ? usable
-        : mass.remainingTtti;
-  const limitedByBalance = usable !== undefined && usable < mass.remainingTtti;
+  const circulation = reserve.data?.circulationOutside;
+  const redeemable = redeemableAmount(usable, circulation);
+  const limitedByBalance =
+    usable !== undefined && circulation !== undefined && usable < circulation;
+  const limitedByCirculation =
+    usable !== undefined && circulation !== undefined && circulation < usable;
 
   const parsed = parseTttiAmount(text);
   const withinLimits =
     parsed !== null &&
-    parsed <= mass.remainingTtti &&
+    (circulation === undefined || parsed <= circulation) &&
     (usable === undefined || parsed <= usable);
   const quoteAmount = withinLimits ? parsed : null;
-  const quote = useGuaranteeQuote(mass.token, quoteAmount);
+  const quote = useGuaranteeQuote(quoteAmount);
 
   let inputError: string | null = null;
   if (text.trim() !== "" && parsed === null) {
     inputError = t.errInvalidAmount;
-  } else if (parsed !== null && parsed > mass.remainingTtti) {
-    inputError = t.errAmountExceedsMass(
+  } else if (
+    parsed !== null &&
+    circulation !== undefined &&
+    parsed > circulation
+  ) {
+    inputError = t.errAmountExceedsCirculation(
       formatTttiQuantity(parsed, lang),
-      formatTttiQuantity(mass.remainingTtti, lang),
+      formatTttiQuantity(circulation, lang),
     );
   } else if (parsed !== null && usable !== undefined && parsed > usable) {
     inputError = t.errTttiBalance(
@@ -89,7 +93,6 @@ export function RedeemPanel({ mass, owner, index }: RedeemPanelProps) {
     percentComputedOn: () => t.percentComputedOn,
   };
 
-  const symbol = PAY_TOKENS[mass.token].symbol;
   const canConfirm = quote.isSuccess && withinLimits;
 
   return (
@@ -97,6 +100,12 @@ export function RedeemPanel({ mass, owner, index }: RedeemPanelProps) {
       <div className="flex flex-col gap-1">
         <h3 className="text-sm font-medium">{t.redeemTitle}</h3>
         <p className="text-sm text-muted-foreground">{t.redeemIntro}</p>
+        <p
+          className="text-sm text-muted-foreground"
+          data-ocid={`${ocid}.held_note`}
+        >
+          {t.redeemHeldNote}
+        </p>
       </div>
 
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
@@ -116,6 +125,19 @@ export function RedeemPanel({ mass, owner, index }: RedeemPanelProps) {
         </div>
       </dl>
 
+      {limitedByCirculation &&
+        circulation !== undefined &&
+        redeemable !== undefined && (
+          <p
+            className="callout-info px-3 py-2 text-sm"
+            data-ocid={`${ocid}.circulation_notice`}
+          >
+            {t.limitedByCirculation(
+              formatTttiQuantity(circulation, lang),
+              formatTttiQuantity(redeemable, lang),
+            )}
+          </p>
+        )}
       {limitedByBalance && usable !== undefined && redeemable !== undefined && (
         <p
           className="callout-info px-3 py-2 text-sm"
@@ -125,14 +147,6 @@ export function RedeemPanel({ mass, owner, index }: RedeemPanelProps) {
             formatTttiQuantity(usable, lang),
             formatTttiQuantity(redeemable, lang),
           )}
-        </p>
-      )}
-      {mass.rateUsdE8 === undefined && !mass.mintEnded && (
-        <p
-          className="callout-warning px-3 py-2 text-sm"
-          data-ocid={`${ocid}.rate_notice`}
-        >
-          {t.errRateUnavailable(symbol)}
         </p>
       )}
 

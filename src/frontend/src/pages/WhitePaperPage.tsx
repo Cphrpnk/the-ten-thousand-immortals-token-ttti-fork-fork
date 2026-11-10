@@ -8,7 +8,7 @@ import {
   useTechnicalDetails,
 } from "../hooks/useQueries";
 import { MINT_REVENUE_TEXT, SITE_TEXT } from "../i18n/common";
-import { useDict } from "../i18n/core";
+import { pickDict, useDict } from "../i18n/core";
 import { MINT_INFO_EN } from "../i18n/pages/buy";
 import { DEX_TEXT, PLAIN_RULES_TEXT } from "../i18n/pages/dex";
 import { FAQ_TEXT } from "../i18n/pages/landing";
@@ -26,9 +26,6 @@ const RATE_TEXT =
 
 /** English mint revenue sentences; sections 02 to 08 stay in English. */
 const REVENUE_EN = MINT_REVENUE_TEXT.en;
-/** English plain-language rules (lot PTM-7) and pool rules. */
-const PLAIN_EN = PLAIN_RULES_TEXT.en;
-const DEX_EN = DEX_TEXT.en;
 
 /** Maximum supply of the future TTTI version. */
 const FUTURE_MAX_SUPPLY = 10_000;
@@ -43,6 +40,9 @@ function formatFetchedAt(timestamp: bigint | undefined): string {
 
 export function WhitePaperPage() {
   const t = useDict(WHITE_PAPER_TEXT);
+  /** English plain-language rules (lot PTM-7) and pool rules, read at render. */
+  const PLAIN_EN = pickDict(PLAIN_RULES_TEXT, "en");
+  const DEX_EN = pickDict(DEX_TEXT, "en");
   const site = useDict(SITE_TEXT);
   const revenue = useDict(MINT_REVENUE_TEXT);
   const contents = [
@@ -340,7 +340,8 @@ export function WhitePaperPage() {
                   04 / {revenue.wpRevenueHeading}
                 </h2>
                 <p data-ocid="white_paper.mint_price.text">
-                  {REVENUE_EN.ownerShare} {REVENUE_EN.ownerAccumulates}
+                  {REVENUE_EN.priceRule} {REVENUE_EN.ownerShare}{" "}
+                  {REVENUE_EN.ownerAccumulates}
                 </p>
                 <p data-ocid="white_paper.treasury_return.text">
                   Funds held in the internal mint treasuries stay in the
@@ -348,9 +349,7 @@ export function WhitePaperPage() {
                   has topped the cycles reserve up to 2 ICP.
                 </p>
                 <p data-ocid="white_paper.mint_fee.text">
-                  The rest of the amount paid forms the minter's position and
-                  guarantee, held in the minter's name. The minter withdraws the
-                  position under the lock rules.
+                  {PLAIN_EN.refusedDeposits}
                 </p>
                 <p data-ocid="white_paper.swap_fee.text">
                   {REVENUE_EN.swapFeeSplit} {REVENUE_EN.routerFeeRule} Nothing
@@ -422,27 +421,21 @@ export function WhitePaperPage() {
                   reserve cannot be withdrawn. The code also lets administrators
                   pause or resume sales, and export a balance snapshot. The
                   creator receives only 1 % of the amount paid, after the cycles
-                  reserve; the rest forms the minter's position and guarantee.
-                  The ledger transfer fee can be changed within fixed bounds
-                  only in this test (TTTI-T) version. Ledger transactions carry
-                  the current transfer fee.
+                  reserve. The ledger transfer fee can be changed within fixed
+                  bounds only in this test (TTTI-T) version. Ledger transactions
+                  carry the current transfer fee.
                 </p>
                 <p data-ocid="white_paper.upgrade.text">
-                  This canister can be upgraded by its controllers. The
-                  guarantees on this page describe the current code, identified
-                  by its module hash.
+                  This canister can be upgraded by its controllers. The rules on
+                  this page describe the current code, identified by its module
+                  hash.
                 </p>
                 <p data-ocid="white_paper.guarantee.text">
                   Holding the token grants no voting or revenue rights.{" "}
-                  {PLAIN_EN.guarantee} The amount returned is the lower of the
-                  guarantee deposited with the minted quantity and the quantity
-                  worth 10,000 USD at the stored rate while the mint is ongoing,
-                  then pro rata to the mass remaining; a redemption fee and the
-                  ledger fee are deducted, and returned TTTI-T are held by the
-                  contract and never burned. A listing, secondary market or
-                  later full release is{" "}
-                  <strong>not a present entitlement</strong>. A secondary
-                  market, if one appears, may be illiquid and highly volatile.
+                  {PLAIN_EN.guarantee} A listing, secondary market or later full
+                  release is <strong>not a present entitlement</strong>. A
+                  secondary market, if one appears, may be illiquid and highly
+                  volatile.
                 </p>
               </section>
               <section

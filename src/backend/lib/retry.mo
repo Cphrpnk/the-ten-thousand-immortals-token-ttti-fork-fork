@@ -1,5 +1,6 @@
 import Array "mo:core/Array";
 import List "mo:core/List";
+import Map "mo:core/Map";
 import Blob "mo:core/Blob";
 import Int "mo:core/Int";
 import Principal "mo:core/Principal";
@@ -78,6 +79,8 @@ module {
       case (#CF) { "CF" };
       case (#CY) { "CY" };
       case (#AB) { "AB" };
+      case (#PQ) { "PQ" };
+      case (#RD) { "RD" };
     };
   };
 
@@ -1176,6 +1179,8 @@ module {
     transfers : Types.DexTransferStore;
     balances : DexTypes.DexBalances;
     dex : DexTypes.DexStore;
+    // PTM-10c: how each pair request deposit was paid (no entry = TTTI-T).
+    payments : Map.Map<Nat, Types.PairPayDeposit>;
     ledger : IcrcLib.Ledger; // TTTI-T in-process ledger
     locks : Set.Set<Text>; // transient: "<owner>/<token>" and "DQ/<request id>"
     canister : Principal;
@@ -1207,6 +1212,15 @@ module {
 
   public func dexRequestLockKey(requestId : Nat) : Text {
     "DQ/" # requestId.toText();
+  };
+
+  // PTM-10c: token a pair request deposit was paid in; requests without a
+  // record were deposited in TTTI-T.
+  public func depositTokenOf(payments : Map.Map<Nat, Types.PairPayDeposit>, requestId : Nat) : DexTypes.DexToken {
+    switch (payments.get(requestId)) {
+      case (?p) p.token;
+      case null #tttiT;
+    };
   };
 
   // Pay token of an external DEX token; null for TTTI-T.
@@ -1263,6 +1277,26 @@ module {
       n = requestId;
       attempt = m;
       memo = memoBlob(#DQ, requestId, m);
+      created_at_time = now;
+      request;
+      sends = 0;
+      lastError = null;
+      outcome = #pending;
+    };
+  };
+
+  // PTM-10c, RD: attempt moving the deposit of a refused request from its
+  // request deposit account to the DEX custody account of its token; memo
+  // TTTI-RD-<request number>[-<m>].
+  public func newDepositMoveAttempt(requestId : Nat, previous : ?Types.DexTransferAttempt, request : Types.DexTransferRequest, now : Nat64) : Types.DexTransferAttempt {
+    let m = switch (previous) {
+      case (?p) { p.attempt + 1 };
+      case null { 1 };
+    };
+    {
+      n = requestId;
+      attempt = m;
+      memo = memoBlob(#RD, requestId, m);
       created_at_time = now;
       request;
       sends = 0;
@@ -1630,7 +1664,8 @@ module {
   };
 
   // DQ: records the refund attempt of an approved request (deposit minus one
-  // TTTI-T fee, from the request deposit subaccount to the requester).
+  // ledger fee of the token it was paid in, from the request deposit account
+  // of that token to the requester; TTTI-T for earlier requests).
   public func openPairRefund(ctx : DexContext, requestId : Nat) : ?Types.DexTransferAttempt {
     let request = ctx.dex.requests.get(requestId) ?? (return null);
     if (request.refundStatus != #inProgress or request.refundBlock != null) {
@@ -1640,7 +1675,8 @@ module {
       case (?existing) { return ?existing };
       case null {};
     };
-    let fee = IcrcLib.fee(ctx.ledger);
+    let token = depositTokenOf(ctx.payments, requestId);
+    let fee = dexFee(ctx, token);
     if (request.depositAmount <= fee) {
       return null;
     };
@@ -1648,8 +1684,8 @@ module {
       requestId,
       null,
       {
-        token = #tttiT;
-        from = DexLib.requestDepositAccount(ctx.canister);
+        token;
+        from = DexLib.requestDepositAccountOf(ctx.canister, token);
         to = { owner = request.requester; subaccount = null };
         amount = Nat.sub(request.depositAmount, fee);
         fee = ?fee;
@@ -1660,9 +1696,10 @@ module {
     ?attempt;
   };
 
-  // DQ: sends the recorded refund on the in-process TTTI-T ledger and keeps
-  // the request refundStatus up to date. Caller holds the request lock.
-  public func sendPairRefund(ctx : DexContext, requestId : Nat) {
+  // DQ: sends the recorded refund (in-process TTTI-T ledger or the ledger of
+  // the token the deposit was paid in) and keeps the request refundStatus up
+  // to date. Caller holds the request lock.
+  public func sendPairRefund(ctx : DexContext, requestId : Nat) : async () {
     let request = ctx.dex.requests.get(requestId) ?? (return);
     if (request.refundStatus != #inProgress) {
       return;
@@ -1689,26 +1726,7 @@ module {
     };
     let sending = { attempt with sends = attempt.sends + 1 };
     ctx.transfers.pairRefunds.add(requestId, sending);
-    let fee = sending.request.fee ?? IcrcLib.fee(ctx.ledger);
-    let result : DexSendResult = switch (
-      IcrcLib.transfer(
-        ctx.ledger,
-        ctx.canister,
-        ctx.canister,
-        {
-          from_subaccount = sending.request.from.subaccount;
-          to = sending.request.to;
-          amount = sending.request.amount;
-          fee = ?fee;
-          memo = ?sending.memo;
-          created_at_time = ?sending.created_at_time;
-        },
-      )
-    ) {
-      case (#Ok(block)) { #ok(block) };
-      case (#Err(#Duplicate({ duplicate_of }))) { #ok(duplicate_of) };
-      case (#Err(err)) { #err(err) };
-    };
+    let result = await dexTransferSend(ctx, sending);
     let classified = applyDexResult(sending, result);
     ctx.transfers.pairRefunds.add(requestId, classified);
     switch (classified.outcome) {
@@ -1771,7 +1789,7 @@ module {
       let key = dexRequestLockKey(id);
       if (tryLock(ctx.locks, key)) {
         try {
-          sendPairRefund(ctx, id);
+          await sendPairRefund(ctx, id);
         } catch (_) {} finally {
           unlock(ctx.locks, key);
         };

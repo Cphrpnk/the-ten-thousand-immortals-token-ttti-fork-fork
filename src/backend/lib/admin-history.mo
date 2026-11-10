@@ -88,7 +88,7 @@ module {
 
   func ownerSourceText(s : OwnerTypes.OwnerSendSource) : Text {
     switch (s) {
-      case (#mint(id)) { "Mint revenue 100/101, conversion " # id.toText() };
+      case (#mint(id)) { "Mint revenue, conversion " # id.toText() };
       case (#accumulated) { "Accumulated share send" };
       case (#treasurySweep) { "Treasury sweep send" };
       case (#withdrawal(w)) { "Withdrawal from " # sourceText(w.from) # " by " # w.by.toText() };
@@ -292,10 +292,7 @@ module {
         case (#completed(b)) { ?b };
         case (_) { null };
       };
-      let what = switch (r.kind) {
-        case (#redeem) { "Guarantee redemption: " # r.tttiAmount.toText() # " TTTI-T base units returned" };
-        case (#excessWithdrawal) { "Guarantee excess withdrawal" };
-      };
+      let what = "Reserve redemption: " # r.tttiAmount.toText() # " TTTI-T base units returned";
       out.add({
         row = row(
           "GR-" # r.id.toText(),
@@ -425,10 +422,38 @@ module {
         tokens = [#tttiT];
       });
     };
+    // PTM-10c: refused pair-request deposits paid in an accepted token, moved
+    // to the permanent liquidity set-aside.
+    for (payment in ctx.fees.payments.values()) {
+      switch (payment.setAside, payment.setAsideAt) {
+        case (?attempt, ?at) {
+          let block = switch (attempt.outcome) {
+            case (#succeeded(b)) ?b;
+            case (_) null;
+          };
+          out.add({
+            row = row(
+              "RD-" # payment.requestId.toText(),
+              #liquidity,
+              ?payment.token,
+              ?attempt.request.amount,
+              null,
+              "completed",
+              ?("TTTI-RD-" # payment.requestId.toText()),
+              block,
+              at,
+              "Refused pair request " # payment.requestId.toText() # " deposit set aside as permanent liquidity",
+            );
+            tokens = [payment.token];
+          });
+        };
+        case (_) {};
+      };
+    };
     // Fee-account moves (ST).
     for (m in ctx.transfers.mintRevenue.feeMoves.values()) {
       let purpose = switch (m.purpose) {
-        case (#mintFee(id)) { "Mint fee 1/101, conversion " # id.toText() };
+        case (#mintFee(id)) { "Mint fee, conversion " # id.toText() };
         case (#settlement(p)) { "Settlement: " # legPurposeText(p) };
       };
       out.add({

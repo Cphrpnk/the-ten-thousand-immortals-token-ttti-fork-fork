@@ -20,10 +20,12 @@ import BtcTypes "types/btc-deposit";
 import IcrcLib "lib/icrc";
 import TreasuryLib "lib/treasury";
 import OracleLib "lib/oracle";
+import OracleTypes "types/oracle";
 import SaleLib "lib/presale";
 
 import IcrcApi "mixins/icrc-api";
 import IndexApi "mixins/index-api";
+import IndexLib "lib/index";
 import ManagementApi "mixins/management-api";
 import TreasuryApi "mixins/treasury-api";
 import SaleApi "mixins/presale-api";
@@ -35,6 +37,7 @@ import CyclesReserveApi "mixins/cycles-reserve-api";
 import CanisterInfoLib "lib/canister-info";
 import BtcDepositLib "lib/btc-deposit";
 import BtcDepositApi "mixins/btc-deposit-api";
+import BtcRecoveryApi "mixins/btc-recovery-api";
 import AddressBookTypes "types/address-book";
 import AddressBookApi "mixins/address-book-api";
 import AddressBookLib "lib/address-book";
@@ -94,6 +97,7 @@ import Nat "mo:core/Nat";
 import Int "mo:core/Int";
 import Blob "mo:core/Blob";
 import Runtime "mo:core/Runtime";
+import Result "mo:core/Result";
 
 actor TTTIToken {
   // --- Stable state (initialized by the migration chain) ---------------------
@@ -103,6 +107,9 @@ actor TTTIToken {
   let oracle : OracleLib.OracleStore;
   // USD rates of the ck pay tokens (BTC, USDC, USDT); ICP stays in `oracle`.
   let tokenRates : OracleLib.TokenRateStore;
+  // PTM-10d: the other source's latest rate per pay token, kept beside the
+  // main rate above (which is left untouched) so the mint can compare them.
+  let secondRates : OracleTypes.SecondRateStore;
   let sale : SaleLib.SaleStore;
   let accessControlState : AccessControl.AccessControlState;
   // Per principal: when and which version of the purchase acknowledgements was accepted.
@@ -117,9 +124,7 @@ actor TTTIToken {
   let btcDeposits : BtcDepositLib.BtcDepositStore;
   // Private address book per caller principal.
   let addressBook : AddressBookTypes.AddressBookStore;
-  // PTM-2: personal guarantee masses (owner -> token key -> mass), never shared.
-  let guaranteeMasses : GuaranteeTypes.GuaranteeMassStore;
-  // PTM-2: guarantee redemption payouts and the 1 % fees set aside for the creator.
+  // Redemption payouts (one record per reserve-token leg).
   let redemptions : GuaranteeTypes.RedemptionStore;
   // Common transfer retry: global memo counter, the recorded forward (FW),
   // reserve share (SH) and purchase refund (RF) attempts keyed by purchase id,
@@ -143,15 +148,20 @@ actor TTTIToken {
   // earlier withdrawals), the legacy accumulated counter and the one-time
   // treasury sweep (history).
   let ownerRevenue : OwnerRevenueTypes.OwnerRevenueStore;
-  // Mint revenue correction: 1/101 mint fee routing, LP claimable balances,
-  // set-aside amounts and liquidity injections.
+  // Read-only mint fee history (routings recorded before PTM-10c; no new entry): routings,
+  // LP claimable balances, MF claims, set-aside amounts and liquidity injections.
   let mintFees : MintFeeTypes.MintFeeStore;
   // DEX lot 5: ICPSwap router (routed swaps, 0.1 % totals, set-aside LP share
   // and 70 % LP share redirected to the least liquid TTTI-T pool).
   let router : RouterTypes.RouterStore;
-  // Refused pair-request deposits already fed to the protocol liquidity (one
-  // record per pair request id, so each deposit counts exactly once).
+  // Refused TTTI-T pair-request deposits fed to the protocol liquidity before
+  // PTM-10c (one record per pair request id). History only: nothing is fed to
+  // a pool any more.
   let refusedDepositFeeds : Map.Map<Nat, DexTypes.RefusedDepositFeed>;
+  // PTM-10c: how each pair request deposit was paid (accepted token) and, after
+  // a refusal, its move into the permanent liquidity set-aside. No record =
+  // deposited in TTTI-T (earlier requests).
+  let requestPayments : Map.Map<Nat, RetryTypes.PairPayDeposit>;
   // DEX lot 6: last reserve check, mismatch history and the DEX-specific pause.
   let dexReserve : DexReserveTypes.DexReserveStore;
   // DEX lot 7: stored public indicators snapshot, its status and the hourly
@@ -163,16 +173,17 @@ actor TTTIToken {
   // DEX-1: recorded sweep transfers (SW) of the legacy DEX ledger accounts into
   // the per-token custody accounts and the last report per token.
   let dexSweep : DexSweepLib.SweepStore;
-  // PTM-1: liquidity-forming mints (mint -> position link), personal
-  // guarantees and creator set-asides (amounts only).
+  // PTM-1: liquidity-forming mints (mint -> position link), read-only
+  // history of the guarantees recorded before PTM-11, and creator set-asides (amounts only).
   let liquidityMints : LiquidityMintTypes.LiquidityMintStore;
   // PTM-4: creator holdings per token (credits by source, payouts).
   let creatorFees : CreatorFeesLib.CreatorFeeStore;
   // PTM-4: permanent liquidity set-aside (one third of the 30 % protocol share)
   // and its public journal.
   let permanentLiquidity : ProtocolFeeTypes.PermanentLiquidityStore;
-  // PTM-4: cycles share of the 1 % mint and buyback fees (pending, in flight,
-  // settled), its settlements and the split recorded with each fee.
+  // PTM-4: cycles share of the 1 % mint fees (pending, in flight,
+  // settled), its settlements and the split recorded with each fee (buyback
+  // splits: history of fees booked before PTM-11).
   let cyclesFees : CyclesTypes.CyclesFeeStore;
   // PTM-5: 24 h of consolidated TTTI-T price samples (USD x 1e8), taken by the
   // 5-minute price sampling timer.
@@ -215,7 +226,7 @@ actor TTTIToken {
   // PTM-6c: one running winners' settlement per auction. Transient.
   transient let auctionSettleLocks = Set.empty<Text>();
 
-  // One redemption in progress per (owner, mass token). Transient.
+  // One redemption in progress per (owner, reserve token). Transient.
   transient let redemptionsInFlight = Set.empty<Text>();
 
   // Shared lock of the cycles top-up timer. Transient.
@@ -260,6 +271,7 @@ actor TTTIToken {
     oracle;
     tokenRates;
     refusedFeeds = refusedDepositFeeds;
+    payments = requestPayments;
     pause = dexReserve.pause;
     creator = creatorFees;
     permanent = permanentLiquidity;
@@ -280,7 +292,6 @@ actor TTTIToken {
     canister = canisterPrincipal;
     cyclesReserve;
     transfers = transferContext;
-    protocolFees = protocolFeeContext;
   };
 
   // DEX DD / DW / DQ retry context (references the stable stores). Transient.
@@ -289,6 +300,7 @@ actor TTTIToken {
     transfers = dexTransfers;
     balances = dexBalances;
     dex;
+    payments = requestPayments;
     ledger;
     locks = dexInFlight;
     canister = canisterPrincipal;
@@ -299,7 +311,7 @@ actor TTTIToken {
     onWithdrawal = func(n, status) = LiquidityMintLib.followWithdrawal(liquidityMints, n, status);
   };
 
-  // PTM-4: cycles share of the 1 % fees: routing (references) and settlement
+  // PTM-4: cycles share of the 1 % mint fees: routing (references) and settlement
   // context. Transient.
   transient let cyclesFeeRouting : CyclesReserveLib.CyclesFeeRouting = {
     reserve = cyclesReserve;
@@ -326,12 +338,12 @@ actor TTTIToken {
   // PTM-1: liquidity mint context (references the stable stores). Transient.
   transient let liquidityMintContext : LiquidityMintLib.MintContext = {
     store = liquidityMints;
-    masses = guaranteeMasses;
     guaranteeAccount;
     sale;
     ledger;
     oracle;
     tokenRates;
+    secondRates;
     acknowledgements = purchaseAcknowledgements;
     dex = dexContext;
     transfers = transferContext;
@@ -342,6 +354,8 @@ actor TTTIToken {
       await mintCoreSelf.liquidityMintCore(args);
     };
     lockTimes = mintLockTimes;
+    // PTM-10b: the locked share m of PTM-10a, computed when the mint or the settlement runs.
+    lockedShareE6 = func(now : Int) : Nat = ProtocolFeesLib.poolCapRatioView(protocolFeeContext, now).lockedShare;
   };
 
   // The canister's own reference, used only for the isolated mint self-call. Transient.
@@ -352,7 +366,7 @@ actor TTTIToken {
   // Isolated core of the liquidity mint. Reserved to the canister itself: it is
   // reached only through a self-call from LiquidityMintLib.settle. Every
   // refusal inside is a trap, so the whole message (mint of TTTI-T, credit,
-  // swap, deposit, guarantee, masses, fees) is rolled back as one.
+  // swap, deposit, reserve, fees) is rolled back as one.
   public shared ({ caller }) func liquidityMintCore(args : LiquidityMintLib.CoreArgs) : async LiquidityMintTypes.LiquidityMintResult {
     if (caller != canisterPrincipal) {
       Runtime.trap("Unauthorized: reserved to the canister itself");
@@ -376,10 +390,10 @@ actor TTTIToken {
     auctionSettleCore : shared AuctionTypes.SettleCoreArgs -> async AuctionTypes.SettleCoreResult;
   } = actor (canisterPrincipal.toText());
 
-  // PTM-2: personal guarantee and redemption context (references). Transient.
+  // Common reserve redemption context (references). Transient.
   transient let guaranteeContext : GuaranteeLib.GuaranteeContext = {
-    masses = guaranteeMasses;
     guaranteeAccount;
+    acknowledgements = purchaseAcknowledgements;
     store = redemptions;
     sale;
     ledger;
@@ -423,6 +437,8 @@ actor TTTIToken {
     closing = auctionClosing;
     inflight;
     batch = dexBatch;
+    guaranteeAccount;
+    breakdown = DexReserveLib.emptyBreakdownCache();
   };
 
   // DEX-1: one lock per sweep transfer ("SW:<n>") and one for a running sweep. Transient.
@@ -509,12 +525,16 @@ actor TTTIToken {
       for (token in DexLib.DEX_TOKENS.values()) {
         if (token != #tttiT) {
           let info = DexLib.tokenInfo(token, canisterPrincipal, RetryLib.dexFee(dexContext, token));
-          let sample = try {
+          let result : IcpSwapLib.Reading = try {
             await IcpSwapLib.readTttiSample(token, info.ledgerId, info.decimals, tttiLedger, Time.now());
-          } catch (_) {
-            null;
+          } catch (e) {
+            {
+              reading = IcpSwapLib.failedReading(token, null, #poolLookup, ?("Reading rejected before a step could be identified: " # e.message()), Time.now());
+              sample = null;
+            };
           };
-          switch (sample) {
+          DexLib.recordReferenceReading(dex, result.reading);
+          switch (result.sample) {
             case (?s) {
               DexLib.recordIcpSwapSample(dex, s);
               readable += 1;
@@ -547,25 +567,56 @@ actor TTTIToken {
   include MixinAuthorization(accessControlState, null);
 
   include IcrcApi(ledger, canisterPrincipal);
-  include IndexApi(ledger, canisterPrincipal);
+  // The mixin keeps a transient per-account index and re-arms its 5-second
+  // extension timer every time the actor starts (install and upgrade); after an
+  // upgrade the index is rebuilt from the existing ledger blocks.
+  transient let ixCache = IndexLib.newCache();
+  ignore Timer.recurringTimer<system>(
+    #seconds 5,
+    func() : async () {
+      IndexLib.extend(ledger, ixCache, IndexLib.BLOCKS_PER_SLICE);
+    },
+  );
+  include IndexApi(ledger, canisterPrincipal, ixCache);
   include ManagementApi(ledger);
-  include TreasuryApi(treasury, sale, ledger, accessControlState, canisterPrincipal, oracle, purchaseAcknowledgements, cyclesReserve, tokenRates, purchasesInFlight, transferContext, treasuryAllocation, protocolFeeContext, settlementContext);
+  include TreasuryApi(treasury, sale, ledger, accessControlState, canisterPrincipal, oracle, purchaseAcknowledgements, cyclesReserve, tokenRates, purchasesInFlight, transferContext, treasuryAllocation, settlementContext);
   include SaleApi(sale, treasury, ledger, oracle, accessControlState, canisterPrincipal, purchaseAcknowledgements, canisterInfo, tokenRates);
-  include OracleApi(oracle, accessControlState, transform, tokenRates);
+  include OracleApi(oracle, accessControlState, transform, tokenRates, secondRates);
   include CyclesReserveApi(cyclesReserve, cyclesAutonomy, reserveLock, cyclesFeeContext, accessControlState, canisterPrincipal);
   include BtcDepositApi(btcDeposits, btcPurchaseContext, liquidityMintContext, purchasesInFlight, canisterPrincipal);
+  include BtcRecoveryApi(btcDeposits, btcPurchaseContext, liquidityMintContext, purchasesInFlight, accessControlState, canisterPrincipal);
   include AddressBookApi(addressBook, canisterPrincipal);
-  include GuaranteeApi(guaranteeContext, guaranteeAccount, accessControlState);
+  include GuaranteeApi(guaranteeContext, guaranteeAccount, accessControlState, routerContext, oracle, tokenRates);
   include TransferReviewApi(transferContext, btcDeposits, accessControlState, redemptions, ledger, dexContext, protocolFeeContext, routerContext, settlementContext, sweepContext, liquidityMintContext);
   include UpgradeReadinessApi(sale, purchasesInFlight, redemptionsInFlight, reserveLock, cyclesReserve, retry, reservedReconciliations, accessControlState, protocolFeeContext, ownerRevenue, mintRevenue, dexReserve, dexInFlight, routerInFlight);
   include AdminHistoryApi(historyContext, accessControlState);
   include DexApi(dex, ledger, accessControlState, canisterPrincipal, dexContext, oracle, tokenRates, refreshReferenceSamples, consolidatedPrices);
   include DexReserveApi(dexReserveContext, accessControlState);
-  include DexIndicatorsApi(dexIndicators, accessControlState, protocolFeeContext);
+  include DexIndicatorsApi(dexIndicators, accessControlState, protocolFeeContext, dexReserveContext);
   include ProtocolFeesApi(protocolFeeContext, accessControlState);
   include RouterApi(routerContext, accessControlState, oracle, tokenRates);
   include DexSweepApi(sweepContext, accessControlState);
   include LiquidityMintApi(liquidityMintContext, accessControlState, purchasesInFlight);
+
+  // PTM-11c: mint price figures, query results only, nothing stored. Every
+  // amount the screens show about the mint price comes from these queries.
+  // Mint price figures: 101.01 USD for 100 USD (mint and prepaid redemption),
+  // (10 000 + L) / 0.99 USD per whole TTTI-T (L = 10 000 for choice #pool, m x
+  // 10 000 for choice #wallet), the minimum, m, and every pay token.
+  public query func getMintPricePreview() : async LiquidityMintTypes.MintPricePreview {
+    LiquidityMintLib.mintPricePreview(liquidityMintContext, Time.now());
+  };
+
+  // TTTI-T minted by a total payment in a pay token ((10 000 + L) USD x q / 0.99, per choice).
+  public query func getMintAmountForPayment(args : LiquidityMintTypes.PaymentToMintArgs) : async Result.Result<LiquidityMintTypes.PaymentToMint, LiquidityMintTypes.LiquidityMintError> {
+    LiquidityMintLib.mintAmountForPayment(liquidityMintContext, args, Time.now());
+  };
+
+  // Pay-token amount (conversion cost included) for a TTTI-T amount.
+  public query func getPayAmountForTtti(args : LiquidityMintTypes.TttiToPayArgs) : async Result.Result<LiquidityMintTypes.TttiToPay, LiquidityMintTypes.LiquidityMintError> {
+    LiquidityMintLib.payAmountForTtti(liquidityMintContext, args, Time.now());
+  };
+
   include CreatorFeesApi(creatorFeeContext, accessControlState);
   include PublicBoardApi(publicBoardContext);
   include AuctionApi(auction, auctionClosing, ledger, oracle, tokenRates, dexContext, canisterPrincipal, dex, consolidatedPrices, auctionSettleContext);
@@ -622,6 +673,12 @@ actor TTTIToken {
     createdAt = 0;
     refundWithdrawalN = null;
     refusalCause = null;
+    mShareE6 = 0;
+    choice = #pool;
+    lockedPositionId = null;
+    lockedTokenAmount = 0;
+    lockedTttiAmount = 0;
+    handTttiAmount = 0;
   };
   transient let guaranteeSample : LiquidityMintTypes.Guarantee = {
     mintId = 0;
@@ -650,17 +707,10 @@ actor TTTIToken {
     id = 0;
     owner = canisterPrincipal;
     account = { owner = canisterPrincipal; subaccount = null };
-    kind = #redeem;
     token = #icp;
-    phase = #duringMint;
-    rule = #depositedGuarantee;
     tttiAmount = 0;
     tttiPullBlock = ?0;
-    depositedGuarantee = 0;
     rateUsdE8 = ?0;
-    returnedAmount = 0;
-    excessKept = 0;
-    redemptionFee = 0;
     thirdPartyFee = 0;
     netAmount = 0;
     createdAt = 0;
@@ -682,29 +732,10 @@ actor TTTIToken {
     };
     status = #inProgress;
   };
-  transient let redemptionFeeSample : GuaranteeTypes.RedemptionFee = {
-    redemptionId = 0;
-    token = #icp;
-    amount = 0;
-    createdAt = 0;
-  };
-  transient let guaranteeMassSample : (Principal, GuaranteeTypes.GuaranteeMass) = (
-    canisterPrincipal,
-    {
-      token = #icp;
-      totalTtti = 0;
-      totalGuarantee = 0;
-      remainingTtti = 0;
-      remainingGuarantee = 0;
-      excess = 0;
-    },
-  );
   // PTM-9b: sample of the dedicated guarantee account view (public entity).
   transient let guaranteeAccountSample : GuaranteeTypes.GuaranteeAccountView = {
     token = #tttiT;
-    massTotal = 0;
     accountBalance = 0;
-    equal = true;
   };
   // PTM-6a: sample of an auction bid (owner-only entity).
   transient let auctionBidSample : AuctionTypes.Bid = {
@@ -719,6 +750,7 @@ actor TTTIToken {
     createdAt = 0;
     memo = "" : Blob;
     block = 0;
+    choice = #pool;
   };
   // PTM-6b: samples of a closed auction, a closed bid and a bidder balance.
   transient let closedAuctionSample : AuctionTypes.ClosedAuction = {
@@ -757,6 +789,7 @@ actor TTTIToken {
     pricePaidB = 0;
     servedDeposit = 0;
     returned = 0;
+    choice = #pool;
   };
   transient let bidderBalanceSample : AuctionTypes.BidderBalance = {
     owner = canisterPrincipal;
@@ -842,6 +875,11 @@ actor TTTIToken {
     surplusReturned = 0;
     carriedE8s = 0;
     positionId = ?0;
+    mShareE6 = 0;
+    choice = #pool;
+    lockedAmount = 0;
+    lockedPositionId = ?0;
+    handE8s = 0;
     failureReason = ?"";
     attemptedAt = ?0;
     settledAt = ?0;
@@ -862,13 +900,6 @@ actor TTTIToken {
     let rows = List.empty<AuctionTypes.ClosedBid>();
     for (bids in auctionClosing.closedBids.values()) {
       for (b in bids.values()) { rows.add(b) };
-    };
-    rows.values();
-  };
-  func guaranteeMassRows() : Iter.Iter<(Principal, GuaranteeTypes.GuaranteeMass)> {
-    let rows = List.empty<(Principal, GuaranteeTypes.GuaranteeMass)>();
-    for ((owner, perToken) in guaranteeMasses.entries()) {
-      for ((_, mass) in perToken.entries()) { rows.add((owner, mass)) };
     };
     rows.values();
   };
@@ -965,6 +996,36 @@ actor TTTIToken {
   };
   transient let dexRemovalSample : DexTypes.PairRemoval = { poolId = 0; reason = ""; announcedAt = 0; effectiveAt = 0; state = #announced };
   transient let dexIcpSwapSampleSample : DexTypes.IcpSwapSample = { poolCanister = canisterPrincipal; counter = #icp; counterPerTttiE8 = 0; counterReserve = 0; readAt = 0 };
+  transient let dexReferenceReadingSample : DexTypes.ReferenceReading = { counter = #icp; poolCanister = ?canisterPrincipal; readAt = 0; outcome = #ok({ counterPerTttiE8 = 0; method = #spot }) };
+  func readingStatus(r : DexTypes.ReferenceReading) : Text = switch (r.outcome) {
+    case (#ok(_)) "ok";
+    case (#failed(_)) "failed";
+  };
+  func readingMethodText(r : DexTypes.ReferenceReading) : Text = switch (r.outcome) {
+    case (#ok(o)) switch (o.method) {
+      case (#spot) "spot";
+      case (#quote) "quote";
+    };
+    case (#failed(_)) "";
+  };
+  func readingPrice(r : DexTypes.ReferenceReading) : Nat = switch (r.outcome) {
+    case (#ok(o)) o.counterPerTttiE8;
+    case (#failed(_)) 0;
+  };
+  func readingFailedStep(r : DexTypes.ReferenceReading) : Text = switch (r.outcome) {
+    case (#ok(_)) "";
+    case (#failed(f)) switch (f.step) {
+      case (#poolLookup) "poolLookup";
+      case (#metadata) "metadata";
+      case (#spotPrice) "spotPrice";
+      case (#quote) "quote";
+      case (#reserve) "reserve";
+    };
+  };
+  func readingDetail(r : DexTypes.ReferenceReading) : Text = switch (r.outcome) {
+    case (#ok(_)) "";
+    case (#failed(f)) f.detail ?? "";
+  };
   func dexRemovalStateText(s : DexTypes.RemovalState) : Text = switch (s) {
     case (#announced) "announced";
     case (#cancelled(_)) "cancelled";
@@ -990,7 +1051,9 @@ actor TTTIToken {
     relayReceivedNs = 0;
     feesCollected0 = 0;
     feesCollected1 = 0;
+    mintShareE6 = 0;
   };
+  transient let pairPayDepositSample : RetryTypes.PairPayDeposit = { requestId = 0; token = #icp; setAside = null; setAsideAt = ?0 };
   transient let refusedDepositFeedSample : DexTypes.RefusedDepositFeed = { requestId = 0; poolId = 0; amount = 0; fee = 0; block = 0; at = 0 };
   transient let dexReserveMismatchSample : DexReserveTypes.Mismatch = { id = 0; at = 0; token = #tttiT; internalTotal = 0; ledgerTotal = 0 };
   type DexPauseRow = { key : Text; paused : Bool; reasonToken : ?Text; reasonInternalTotal : ?Nat; reasonLedgerTotal : ?Nat; pausedAt : ?Int; resumedBy : ?Text; resumedAt : ?Int };
@@ -1995,17 +2058,10 @@ actor TTTIToken {
         .sample(redemptionSample)
         .payload("id", func r = r.id)
         .payload("owner", func r = r.owner)
-        .payload("kind", func r = switch (r.kind) { case (#redeem) "redeem"; case (#excessWithdrawal) "excessWithdrawal" })
         .payload("token", func r = switch (r.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
-        .payload("phase", func r = switch (r.phase) { case (#duringMint) "duringMint"; case (#afterMint) "afterMint" })
-        .payload("rule", func r = switch (r.rule) { case (#depositedGuarantee) "depositedGuarantee"; case (#dayRate) "dayRate"; case (#proRata) "proRata" })
         .payload("tttiAmount", func r = r.tttiAmount)
         .payload("tttiPullBlock", func r = r.tttiPullBlock)
-        .payload("depositedGuarantee", func r = r.depositedGuarantee)
         .payload("rateUsdE8", func r = r.rateUsdE8)
-        .payload("returnedAmount", func r = r.returnedAmount)
-        .payload("excessKept", func r = r.excessKept)
-        .payload("redemptionFee", func r = r.redemptionFee)
         .payload("thirdPartyFee", func r = r.thirdPartyFee)
         .payload("netAmount", func r = r.netAmount)
         .payload("createdAt", func r = r.createdAt)
@@ -2013,34 +2069,10 @@ actor TTTIToken {
         .ownedByWith("owner", func(caller, owner) = accessControlState.userRoles.get(caller) == ?#admin or owner == #text(caller.toText()))
         .controllerOrScoped()
         .build(),
-      OQL.Entity.manual<GuaranteeTypes.RedemptionFee>("redemptionFee", func() = redemptions.fees.values(), "RedemptionFee", "redemptionId")
-        .sample(redemptionFeeSample)
-        .payload("redemptionId", func f = f.redemptionId)
-        .payload("token", func f = switch (f.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
-        .payload("amount", func f = f.amount)
-        .payload("createdAt", func f = f.createdAt)
-        .ownedByWith("redemptionId", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
-        .controllerOrScoped()
-        .build(),
-      OQL.Entity.manual<(Principal, GuaranteeTypes.GuaranteeMass)>("guaranteeMass", guaranteeMassRows, "GuaranteeMass", "key")
-        .sample(guaranteeMassSample)
-        .payload("key", func((o, m)) = GuaranteeLib.lockKey(o, m.token))
-        .payload("owner", func((o, _)) = o)
-        .payload("token", func((_, m)) = switch (m.token) { case (#icp) "icp"; case (#ckbtc) "ckbtc"; case (#ckusdc) "ckusdc"; case (#ckusdt) "ckusdt" })
-        .payload("totalTtti", func((_, m)) = m.totalTtti)
-        .payload("totalGuarantee", func((_, m)) = m.totalGuarantee)
-        .payload("remainingTtti", func((_, m)) = m.remainingTtti)
-        .payload("remainingGuarantee", func((_, m)) = m.remainingGuarantee)
-        .payload("excess", func((_, m)) = m.excess)
-        .ownedByWith("owner", func(caller, owner) = accessControlState.userRoles.get(caller) == ?#admin or owner == #text(caller.toText()))
-        .controllerOrScoped()
-        .build(),
-      OQL.Entity.manual<GuaranteeTypes.GuaranteeAccountView>("guaranteeAccount", func() = GuaranteeLib.accountViews(guaranteeMasses, guaranteeAccount).values(), "GuaranteeAccount", "symbol")
+      OQL.Entity.manual<GuaranteeTypes.GuaranteeAccountView>("guaranteeAccount", func() = GuaranteeLib.accountViews(guaranteeAccount).values(), "GuaranteeAccount", "symbol")
         .sample(guaranteeAccountSample)
         .payload("symbol", func v = DexLib.tokenSymbol(v.token))
-        .payload("massTotal", func v = v.massTotal)
         .payload("accountBalance", func v = v.accountBalance)
-        .payload("equal", func v = v.equal)
         .public_()
         .build(),
       OQL.Entity.manual<UpgradeTypes.ReservedReconciliation>("reservedReconciliation", func() = reservedReconciliations.history.values(), "ReservedReconciliation", "reconciledAt")
@@ -2109,6 +2141,8 @@ actor TTTIToken {
         .payload("lastCheckedAt", func((_, t)) = t.lastCheckedAt)
         .payload("errorKind", func((_, t)) = BtcDepositLib.errorKindText(t.errorKind))
         .payload("errorMessage", func((_, t)) = t.errorMessage)
+        .payload("conversionCause", func((_, t)) = BtcDepositLib.trackingCause(t))
+        .payload("causePermanent", func((_, t)) = BtcDepositLib.trackingCausePermanent(t))
         .ownedByWith("principal", func(caller, _) = accessControlState.userRoles.get(caller) == ?#admin)
         .controllerOrScoped()
         .build(),
@@ -2140,6 +2174,12 @@ actor TTTIToken {
         .payload("createdAt", func m = m.createdAt)
         .payload("refundWithdrawalN", func m = m.refundWithdrawalN)
         .payload("refusalCause", func m = m.refusalCause)
+        .payload("mShareE6", func m = m.mShareE6)
+        .payload("choice", func m = switch (m.choice) { case (#pool) "pool"; case (#wallet) "wallet" })
+        .payload("lockedPositionId", func m = m.lockedPositionId)
+        .payload("lockedTokenAmount", func m = m.lockedTokenAmount)
+        .payload("lockedTttiAmount", func m = m.lockedTttiAmount)
+        .payload("handTttiAmount", func m = m.handTttiAmount)
         .ownedByWith("owner", func(caller, owner) = owner == #text(caller.toText()) or accessControlState.userRoles.get(caller) == ?#admin)
         .controllerOrScoped()
         .build(),
@@ -2202,6 +2242,7 @@ actor TTTIToken {
         .payload("isCreator", func p = p.isCreator)
         .payload("lockStartedAt", func p = p.lockStartedAt)
         .payload("relayReceivedNs", func p = p.relayReceivedNs)
+        .payload("mintShareE6", func p = p.mintShareE6)
         .payload("feesCollected0", func p = p.feesCollected0)
         .payload("feesCollected1", func p = p.feesCollected1)
         .public_()
@@ -2227,6 +2268,7 @@ actor TTTIToken {
         .payload("metadataRead", func r = r.checks.metadataRead)
         .payload("pairUnique", func r = r.checks.pairUnique)
         .payload("copiedSymbolOf", func r = r.checks.copiedSymbolOf)
+        .payload("depositToken", func r = DexLib.tokenSymbol(RetryLib.depositTokenOf(requestPayments, r.id)))
         .payload("depositAmount", func r = r.depositAmount)
         .payload("depositBlock", func r = r.depositBlock)
         .payload("status", func r = DexLib.requestStatusText(r.status))
@@ -2255,6 +2297,18 @@ actor TTTIToken {
         .payload("counterReserve", func r = r.counterReserve)
         .payload("readAt", func r = r.readAt)
         .public_()
+        .build(),
+      OQL.Entity.manual<DexTypes.ReferenceReading>("dexReferenceReading", func() = dex.referenceReadings.values(), "DexReferenceReading", "counter")
+        .sample(dexReferenceReadingSample)
+        .payload("counter", func r = DexLib.tokenSymbol(r.counter))
+        .payload("poolCanister", func r = switch (r.poolCanister) { case (?p) p.toText(); case null "" })
+        .payload("readAt", func r = r.readAt)
+        .payload("status", func r = readingStatus(r))
+        .payload("method", func r = readingMethodText(r))
+        .payload("counterPerTttiE8", func r = readingPrice(r))
+        .payload("failedStep", func r = readingFailedStep(r))
+        .payload("detail", func r = readingDetail(r))
+        .controllerOnly()
         .build(),
       OQL.Entity.manual<DexBalanceRow>("dexBalance", func() = dexBalanceRows().values(), "DexBalance", "key")
         .sample(dexBalanceSample)
@@ -2682,6 +2736,16 @@ actor TTTIToken {
         .ownedByWith("requestId", func(caller, _) = isAppAdmin(caller))
         .controllerOrScoped()
         .build(),
+      OQL.Entity.manual<RetryTypes.PairPayDeposit>("pairPayDeposit", func() = requestPayments.values(), "PairPayDeposit", "requestId")
+        .sample(pairPayDepositSample)
+        .payload("requestId", func r = r.requestId)
+        .payload("token", func r = DexLib.tokenSymbol(r.token))
+        .payload("setAsideAmount", func r = switch (r.setAside) { case (?a) a.request.amount; case null 0 })
+        .payload("moveSends", func r = switch (r.setAside) { case (?a) a.sends; case null 0 })
+        .payload("setAsideAt", func r = r.setAsideAt)
+        .ownedByWith("requestId", func(caller, _) = isAppAdmin(caller))
+        .controllerOrScoped()
+        .build(),
       OQL.Entity.manual<RouterTypes.RouterRedirect>("routerRedirect", func() = router.redirected.values(), "RouterRedirect", "poolId")
         .sample(routerRedirectSample)
         .payload("poolId", func r = r.poolId)
@@ -3015,6 +3079,7 @@ actor TTTIToken {
         .payload("createdAt", func b = b.createdAt)
         .payload("memo", func b = b.memo.decodeUtf8())
         .payload("block", func b = b.block)
+        .payload("choice", func b = switch (b.choice) { case (#pool) "pool"; case (#wallet) "wallet" })
         .ownedBy("bidder")
         .scopedPerUser()
         .build(),
@@ -3060,6 +3125,7 @@ actor TTTIToken {
         .payload("pricePaidB", func b = b.pricePaidB)
         .payload("servedDeposit", func b = b.servedDeposit)
         .payload("returned", func b = b.returned)
+        .payload("choice", func b = switch (b.choice) { case (#pool) "pool"; case (#wallet) "wallet" })
         .payload("settlementStatus", func b = switch (auctionClosing.settlements.get(b.id)) { case (?s) auctionSettlementStatusText(s.status); case null (if (b.servedE8s == 0) "notRequired" else "pending") })
         .public_()
         .build(),
@@ -3079,6 +3145,11 @@ actor TTTIToken {
         .payload("surplusReturned", func s = s.surplusReturned)
         .payload("carriedE8s", func s = s.carriedE8s)
         .payload("positionId", func s = s.positionId)
+        .payload("mShareE6", func s = s.mShareE6)
+        .payload("choice", func s = switch (s.choice) { case (#pool) "pool"; case (#wallet) "wallet" })
+        .payload("lockedAmount", func s = s.lockedAmount)
+        .payload("lockedPositionId", func s = s.lockedPositionId)
+        .payload("handE8s", func s = s.handE8s)
         .payload("failureReason", func s = s.failureReason)
         .payload("attemptedAt", func s = s.attemptedAt)
         .payload("settledAt", func s = s.settledAt)
@@ -3193,11 +3264,15 @@ actor TTTIToken {
       #clearDeliveryAddress : Any;
       #convertDeposit : Any;
       #convertDepositWith : Any;
+      #convertLegacyGuarantees : Any;
+      #convertMyHeldBtc : Any;
       #deleteContact : Any;
       #depositToDex : Any;
+      #diagnoseBtcMint : Any;
       #execute : Any;
       #exportBalanceSnapshot : Any;
       #extendLock : Any;
+      #finishBtcMint : Any;
       #getApiDoc : Any;
       #getAuctionResult : Any;
       #getAuctionView : Any;
@@ -3227,6 +3302,7 @@ actor TTTIToken {
       #getDexEstimatedShare : Any;
       #getDexIndicators : Any;
       #getDexIndicatorsStatus : Any;
+      #getDexBalanceBreakdown : Any;
       #getDexPauseStatus : Any;
       #getDexPendingPot : Any;
       #getDexPendingPots : Any;
@@ -3244,13 +3320,15 @@ actor TTTIToken {
       #getIcpPrice : Any;
       #getLastWeeklyAllocation : Any;
       #getLegacyBlockInfo : Any;
+      #getMintAmountForPayment : Any;
+      #getMintPoolPreview : Any;
       #getMintFeeAccount : Any;
+      #getMintPricePreview : Any;
       #getMintTreasuryAccounts : Any;
       #getMyAuctionBids : Any;
       #getMyBtcDeposits : Any;
       #getMyConversions : Any;
       #getMyDexEstimatedShares : Any;
-      #getMyGuaranteeMasses : Any;
       #getMyGuarantees : Any;
       #getMyLiquidityMints : Any;
       #getMyLpBonus : Any;
@@ -3261,6 +3339,7 @@ actor TTTIToken {
       #getMyRoutedSwaps : Any;
       #getMyWithdrawable : Any;
       #getOwnerAccumulated : Any;
+      #getPayAmountForTtti : Any;
       #getPermanentLiquiditySummary : Any;
       #getPoolCapRatio : Any;
       #getPoolSpreads : Any;
@@ -3269,6 +3348,8 @@ actor TTTIToken {
       #getPublicTreasuryInfo : Any;
       #getReceivingWallets : Any;
       #getReferencePrice : Any;
+      #getReferenceReadings : Any;
+      #getReserveView : Any;
       #getSaleStatus : Any;
       #getSetAsideAmounts : Any;
       #getSettlementStatus : Any;
@@ -3276,7 +3357,6 @@ actor TTTIToken {
       #getTokenPrices : Any;
       #getTreasuryConfig : Any;
       #getTreasurySweepStatus : Any;
-      #getUnclaimedMassTotal : Any;
       #getUpgradeReadiness : Any;
       #get_account_transactions : Any;
       #get_fee : Any;
@@ -3315,13 +3395,13 @@ actor TTTIToken {
       #listDexSweepTransfers : Any;
       #listGuarantees : Any;
       #listLiquidityInjections : Any;
+      #listMintPools : Any;
       #listMyContacts : Any;
       #listMyRedemptions : Any;
       #listOwnerSends : Any;
       #listPairRequests : Any;
       #listPermanentLiquidityLog : Any;
       #listPoolPositions : Any;
-      #listRedemptionFees : Any;
       #listTransfersToReview : Any;
       #listTransfersToReviewFiltered : Any;
       #listTreasuryWithdrawals : Any;
@@ -3371,8 +3451,7 @@ actor TTTIToken {
       #topUpCycles : Any;
       #transform : Any;
       #updateContact : Any;
-      #withdrawFromDex : Any;
-      #withdrawGuaranteeExcess : Any
+      #withdrawFromDex : Any
     }
   }) : Bool {
     switch (msg) {
@@ -3394,10 +3473,10 @@ actor TTTIToken {
   IcrcLib.certifyTip(ledger);
 
   // Runs on every install and upgrade: re-arm the hourly ICP/USD rate timer.
-  OracleLib.startTimer<system>(oracle, transform, openReadyPools);
+  OracleLib.startTimer<system>(oracle, secondRates, transform, openReadyPools);
 
   // Runs on every install and upgrade: re-arm the BTC/USDC/USDT rate timers.
-  OracleLib.startTokenTimers<system>(tokenRates, transform, openReadyPools);
+  OracleLib.startTokenTimers<system>(tokenRates, secondRates, transform, openReadyPools);
 
   // Runs on every install and upgrade: a 1-minute sweep persists the opening
   // of filling pools after a rate stored outside the timers (admin refresh).
@@ -3408,7 +3487,7 @@ actor TTTIToken {
   CyclesReserveLib.startTimer<system>(cyclesReserve, cyclesAutonomy, reserveLock, canisterPrincipal);
 
   // Runs on every install and upgrade: price samples (5 min), 10-minute DL / MF
-  // retries and the 10-minute pass that feeds refused deposits, splits pool fees
+  // retries and the 10-minute pass that sets refused deposits aside as permanent liquidity, splits pool fees
   // and marks interrupted injections. No DC batch and no weekly allocation timer
   // (DC, dynamic cycles share and weekly allocation stay as read-only history).
   ProtocolFeesLib.startTimers<system>(weeklyContext);
@@ -3486,7 +3565,7 @@ actor TTTIToken {
   );
 
   // Runs on every install and upgrade (PTM-4): 10-minute settlement of the
-  // cycles share of the 1 % mint and buyback fees to the cycles reserve.
+  // cycles share of the 1 % mint fees to the cycles reserve.
   RetryLib.startCyclesFeeTimer<system>(cyclesFeeContext);
 
   // PTM-9d: daily sharing of the LP fee pots (checked hourly). Each message does one step:

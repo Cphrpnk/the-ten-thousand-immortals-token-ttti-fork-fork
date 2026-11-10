@@ -35,9 +35,10 @@ import PayTypes "../types/pay-token";
 // into contract-locked shares of the least liquid TTTI-T pool (public
 // journal). Nothing is recycled into the same pool and nothing goes to cycles
 // from swap fees. DC batches stay as read-only history, already-earned DL
-// bonuses stay claimable, ICP held in cyclesHeldE8s stays recorded. Mint fee
-// (1/101) routing and LP mint-fee claims (memo TTTI-MF-<n>) and set-aside
-// amounts stay; the old set-aside injection no longer runs. Transfers use
+// bonuses stay claimable, ICP held in cyclesHeldE8s stays recorded. The
+// retired mint fee (1/101) is no longer routed; its stored routings, LP
+// mint-fee claims (memo TTTI-MF-<n>) and set-aside amounts stay; the old
+// set-aside injection no longer runs. Transfers use
 // lib/retry.mo (created_at_time, identical resend for 23 h, then To review).
 module {
   public type ProtocolFeeStore = Types.ProtocolFeeStore;
@@ -89,9 +90,12 @@ module {
     mintFees : MintFeeTypes.MintFeeStore;
     oracle : OracleLib.OracleStore;
     tokenRates : OracleLib.TokenRateStore;
-    // Refused pair-request deposits already fed to the protocol liquidity
-    // (keyed by pair request id; stable, so each deposit counts exactly once).
+    // Legacy feeds of refused TTTI-T deposits (history only; nothing is fed to
+    // a pool any more).
     refusedFeeds : Map.Map<DexTypes.RequestId, DexTypes.RefusedDepositFeed>;
+    // PTM-10c: how each pair request deposit was paid and, after a refusal,
+    // its move into the permanent liquidity set-aside.
+    payments : Map.Map<Nat, RetryTypes.PairPayDeposit>;
     // DEX lot 6 pause: automatic fee, injection and recycling processing skips while paused.
     pause : DexReserveTypes.PauseState;
     // PTM-4: creator holdings (two thirds of every protocol share) and the
@@ -253,8 +257,9 @@ module {
   };
 
   // PTM-10a: public indicators (pools value, capitalisation, ratios, m). The
-  // capitalisation uses the instantaneous consolidated price, measured at the
-  // same moment as the pools value; nothing is stored.
+  // capitalisation uses the fixed reference of 10 000 USD per TTTI-T, not a
+  // price derived from the pools; the consolidated price is shown for
+  // information only. Nothing is stored.
   public func poolCapRatioView(ctx : ProtocolFeeContext, now : Int) : Types.PoolCapRatioView {
     DexLib.poolCapRatioReport(ctx.dex, rateOf(ctx, now), circulatingTttiT(ctx), DexLib.consolidatedNow(ctx.dex, rateOf(ctx, now), now).price, ctx.ratioSamples.samples, now);
   };
@@ -584,7 +589,9 @@ module {
     if (shares == 0) return #err("Amounts too small at the pool ratio");
     let used0 = ceilDiv(shares * pool.reserve0, pool.totalShares);
     let used1 = ceilDiv(shares * pool.reserve1, pool.totalShares);
-    ctx.dex.pools.add(poolId, { pool with reserve0 = pool.reserve0 + used0; reserve1 = pool.reserve1 + used1; totalShares = pool.totalShares + shares });
+    // PTM-10d: reserves change through DexLib.depositAtRatio (ratio-checked).
+    let deposited = DexLib.depositAtRatio(ctx.dex, poolId, used0, used1);
+    ctx.dex.pools.add(poolId, { deposited with totalShares = pool.totalShares + shares });
     let current : Types.ProtocolLiquidity = switch (ctx.store.protocolLiquidity.get(poolId)) {
       case (?l) l;
       case null { { poolId; shares = 0; fromFees0 = 0; fromFees1 = 0; fromTreasury0 = 0; fromTreasury1 = 0; lastAddedAt = null } };
@@ -761,7 +768,7 @@ module {
       #seconds INJECTION_SECONDS,
       func() : async () {
         let now = Time.now();
-        feedRefusedDeposits(ctx.fees, now);
+        await setAsideRefusedDeposits(ctx.fees, now);
         for (poolId in ctx.fees.dex.pools.keys().toArray().values()) {
           splitPoolFees(ctx.fees, poolId, now);
         };
@@ -770,7 +777,7 @@ module {
     );
   };
 
-  // --- Mint fee routing (1/101), LP claims, set-aside and injections ---------
+  // --- Legacy mint fee (1/101): LP claims, set-aside and injections -----------
 
   // Set-aside threshold: 0.001 TTTI-T = 10 USD (USD e8).
   public let SET_ASIDE_THRESHOLD_USD_E8 : Nat = 1_000_000_000;
@@ -779,7 +786,7 @@ module {
   // account of this canister is the TTTI-T minting account): canister +
   // 32-byte ASCII subaccount, distinct from every other subaccount.
   public let INJECTION_SUBACCOUNT : Blob = "DEX-INJECTION-TTTI-T-00000000001";
-  // Dedicated mint fee account (1/101 of every mint, all pay tokens): canister
+  // Dedicated legacy mint fee account (1/101 of earlier mints, all pay tokens): canister
   // + 32-byte ASCII subaccount, distinct from every other subaccount. Read-only:
   // no endpoint withdraws from it; MF claims and injections are paid from it.
   public let MINT_FEE_ACCOUNT_SUBACCOUNT : Blob = "MINT-FEE-ACCOUNT-TTTI-T-00000001";
@@ -880,13 +887,6 @@ module {
     ctx.mintFees.setAside.get(tokenKey(p)) ?? { token = p; amount = 0; totalReceived = 0; totalInjected = 0; lastInjectionAt = null };
   };
 
-  // Adds to the waiting set-aside amount (`received`: new mint-fee income).
-  func addSetAside(ctx : ProtocolFeeContext, p : PayTypes.PayToken, amount : Nat, received : Bool) {
-    if (amount == 0) return;
-    let sa = setAsideOf(ctx, p);
-    ctx.mintFees.setAside.add(tokenKey(p), { sa with amount = sa.amount + amount; totalReceived = sa.totalReceived + (if (received) amount else 0) });
-  };
-
   func setAsideValue(ctx : ProtocolFeeContext, p : PayTypes.PayToken, amount : Nat, now : Int) : ?Nat {
     switch (payRate(ctx, p, now)) {
       case (?rate) { ?(amount * rate / 10 ** PayTokenLib.expectedDecimals(p).toNat()) };
@@ -922,63 +922,6 @@ module {
       case (?(id, _)) ?id;
       case null null;
     };
-  };
-
-  // Called by lib/presale.mo once a mint is delivered, with the paid token
-  // and the 1/101 fee (held in the canister default account of that token).
-  // Synchronous accounting only: half A to LP claimable balances pro rata to
-  // position shares (set-aside when no LP), half B to set-aside.
-  public func routeMintFee(ctx : ProtocolFeeContext, token : PayTypes.PayToken, feeAmount : Nat, conversionId : Nat, now : Int) : MintFeeTypes.MintFeeRouting {
-    let halfA = feeAmount / 2;
-    let halfB = sat(feeAmount, halfA);
-    let poolId = mintFeePool(ctx, token);
-    let k = tokenKey(token);
-    var toLps = 0;
-    let owners = Set.empty<Principal>();
-    switch (poolId) {
-      case (?id) {
-        // Position shares only: the contract-held locked shares have no position.
-        // PTM-9d: positions of this pool only, through the per-pool index.
-        let poolPositions = DexLib.positionsInPool(ctx.dex, id);
-        var total = 0;
-        for (pos in poolPositions.values()) {
-          total += pos.shares;
-        };
-        if (total > 0 and halfA > 0) {
-          for (pos in poolPositions.values()) {
-            if (pos.shares > 0) {
-              let share = halfA * pos.shares / total;
-              if (share > 0) {
-                setBalance(ctx.mintFees.claimable, pos.owner, k, balanceIn(ctx.mintFees.claimable, pos.owner, k) + share);
-                toLps += share;
-                owners.add(pos.owner);
-              };
-            };
-          };
-        };
-      };
-      case null {};
-    };
-    // Half B, half A without LP and rounding remainders.
-    let toSetAside = sat(feeAmount, toLps);
-    addSetAside(ctx, token, toSetAside, true);
-    let id = if (ctx.mintFees.nextRoutingId == 0) 1 else ctx.mintFees.nextRoutingId;
-    ctx.mintFees.nextRoutingId := id + 1;
-    let routing : MintFeeTypes.MintFeeRouting = {
-      id;
-      at = now;
-      conversionId;
-      token;
-      poolId;
-      feeAmount;
-      halfA;
-      halfB;
-      toLps;
-      toSetAside;
-      lpCount = owners.size();
-    };
-    ctx.mintFees.routings.add(routing);
-    routing;
   };
 
   func mintClaimView(c : MintFeeTypes.MintFeeClaim) : MintFeeTypes.MintFeeClaimView {
@@ -1197,39 +1140,6 @@ module {
     };
   };
 
-  // Shares minted by adding a0 / a1 to a pool on the growth of
-  // sqrt(reserve0 x reserve1) (LP share value unchanged); 0 when not possible.
-  func growthShares(pool : DexTypes.Pool, a0 : Nat, a1 : Nat) : Nat {
-    if (pool.status == #removed or pool.removedAt != null) return 0;
-    if (pool.reserve0 == 0 or pool.reserve1 == 0 or pool.totalShares == 0) return 0;
-    let rootK = DexLib.isqrt(pool.reserve0 * pool.reserve1);
-    let rootK2 = DexLib.isqrt((pool.reserve0 + a0) * (pool.reserve1 + a1));
-    if (rootK == 0 or rootK2 <= rootK) return 0;
-    pool.totalShares * (rootK2 - rootK) / rootK;
-  };
-
-  // Adds amounts already in the DEX custody as contract-held locked shares
-  // at the sqrt growth (one-sided amounts allowed).
-  func lockGrowth(ctx : ProtocolFeeContext, poolId : Nat, a0 : Nat, a1 : Nat, now : Int) {
-    let pool = switch (ctx.dex.pools.get(poolId)) {
-      case (?p) p;
-      case null return;
-    };
-    let shares = growthShares(pool, a0, a1);
-    if (shares == 0) return;
-    ctx.dex.pools.add(
-      poolId,
-      {
-        pool with
-        reserve0 = pool.reserve0 + a0;
-        reserve1 = pool.reserve1 + a1;
-        totalShares = pool.totalShares + shares;
-        lockedShares = pool.lockedShares + shares;
-      },
-    );
-    recordLiquidity(ctx, poolId, a0, a1, shares, now);
-  };
-
   // Adds a0 / a1 (already in the DEX custody) to the pool as contract-held
   // locked shares at the pool ratio. Shares rounded down, used amounts
   // rounded up; the part beyond the ratio is not used (the caller keeps it
@@ -1245,12 +1155,12 @@ module {
     if (shares == 0) return none;
     let used0 = Nat.min(a0, ceilDiv(shares * pool.reserve0, pool.totalShares));
     let used1 = Nat.min(a1, ceilDiv(shares * pool.reserve1, pool.totalShares));
+    // PTM-10d: reserves change through DexLib.depositAtRatio (ratio-checked).
+    let deposited = DexLib.depositAtRatio(ctx.dex, poolId, used0, used1);
     ctx.dex.pools.add(
       poolId,
       {
-        pool with
-        reserve0 = pool.reserve0 + used0;
-        reserve1 = pool.reserve1 + used1;
+        deposited with
         totalShares = pool.totalShares + shares;
         lockedShares = pool.lockedShares + shares;
       },
@@ -1451,57 +1361,169 @@ module {
     };
   };
 
-  // Refused pair-request deposits feed the protocol liquidity. The 0.0005
-  // TTTI-T kept in DEX-REQUEST-DEPOSIT-TTTI-T-00001 for a refused request is
-  // moved (in-process ledger, synchronous) to the subaccount of the least
-  // liquid open TTTI-T pair, minus one ledger fee, and added to that pool's
-  // reserves as contract-held permanent locked shares (sqrt growth, locked
-  // forever). The transfer and the
-  // refusedFeeds record happen in the same message without an await, so each
-  // refused request is counted exactly once, across retries and upgrades.
-  // Nothing happens while no TTTI-T pair is open (the deposit waits). Pending
-  // and approved requests (deposit refunded) are never touched. No TTTI-T is
-  // created and no price-linked order is placed.
-  public func feedRefusedDeposits(ctx : ProtocolFeeContext, now : Int) {
+  // PTM-11b: a refused pair-request deposit, whatever token it was paid in
+  // (ICP, ckBTC, ckUSDC, ckUSDT, or TTTI-T for requests made before PTM-10c),
+  // never touches a pool: it is moved from the request deposit account of its
+  // token to the DEX custody account of that token (RD attempt, memo
+  // TTTI-RD-<request number>, minus one ledger fee) and counted in the
+  // permanent liquidity set-aside, with a public journal line. The router then
+  // rebalances it with the rest of the set-aside (best route, at most 2 %
+  // below the hourly average) and injectPermanent adds it at the pool ratio.
+  // The protocol creates no TTTI-T and places no price-linked order. The
+  // outcome of the move and the set-aside credit are recorded in the same
+  // step, and a request with `setAsideAt` is skipped, so each deposit is
+  // counted exactly once, across retries and upgrades. An unknown outcome of
+  // an external ledger is resent identically within 23 h (the ledger
+  // deduplicates it); later it stays in review and the amount stays held in
+  // the request deposit account. The TTTI-T ledger is in-process: its outcome
+  // is known at once. A request deposited in TTTI-T has no PairPayDeposit
+  // record: one is created (token #tttiT) when its move starts. Feeds already
+  // recorded in refusedFeeds are history and are not moved again.
+  public func setAsideRefusedDeposits(ctx : ProtocolFeeContext, now : Int) : async () {
     if (ctx.pause.paused) return;
-    let fee = IcrcLib.fee(ctx.ledger);
-    let rate = rateOf(ctx, now);
-    for (request in ctx.dex.requests.values().toArray().values()) {
-      let refused = switch (request.status) {
-        case (#refused(_)) true;
-        case (_) false;
-      };
-      if (refused and request.refundStatus == #none and request.refundBlock == null and request.depositAmount > fee and ctx.refusedFeeds.get(request.id) == null) {
-        switch (feedTarget(ctx.dex, rate)) {
-          case (?(pool, tttiIs0)) {
-            let amount = Nat.sub(request.depositAmount, fee);
-            let growth = if (tttiIs0) growthShares(pool, amount, 0) else growthShares(pool, 0, amount);
-            if (growth > 0) {
-            let result = IcrcLib.transfer(
-              ctx.ledger,
-              ctx.canister,
-              ctx.canister,
-              {
-                from_subaccount = DexLib.requestDepositAccount(ctx.canister).subaccount;
-                to = { owner = ctx.canister; subaccount = ?pool.subaccount };
-                amount;
-                fee = ?fee;
-                memo = ?("TTTI-RD-" # request.id.toText()).encodeUtf8();
-                created_at_time = null;
-              },
-            );
-            switch (result) {
-              case (#Ok(block)) {
-                ctx.refusedFeeds.add(request.id, { requestId = request.id; poolId = pool.id; amount; fee; block; at = now });
-                if (tttiIs0) lockGrowth(ctx, pool.id, amount, 0, now) else lockGrowth(ctx, pool.id, 0, amount, now);
-              };
-              case (#Err(_)) {};
-            };
-            };
-          };
+    let lockKey = "RD-SETASIDE";
+    if (not RetryLib.tryLock(ctx.locks, lockKey)) return;
+    try {
+      for (request in ctx.dex.requests.values().toArray().values()) {
+        switch (pendingSetAside(ctx, request)) {
+          case (?payment) { await moveRefusedDeposit(ctx, request, payment, now) };
           case null {};
         };
       };
+    } catch (_) {} finally {
+      RetryLib.unlock(ctx.locks, lockKey);
     };
+  };
+
+  // What setAsideRefusedDeposits needs to select a request (pure).
+  public type SetAsideSelection = {
+    payments : Map.Map<Nat, RetryTypes.PairPayDeposit>;
+    refusedFeeds : Map.Map<DexTypes.RequestId, DexTypes.RefusedDepositFeed>;
+  };
+
+  // The payment record to move for a refused request without refund that is
+  // not yet set aside, or null. A request without a record was deposited in
+  // TTTI-T: it gets a record unless a legacy feed already covers it.
+  public func pendingSetAside(ctx : SetAsideSelection, request : DexTypes.PairRequest) : ?RetryTypes.PairPayDeposit {
+    let refused = switch (request.status) {
+      case (#refused(_)) true;
+      case (_) false;
+    };
+    if (not refused or request.refundStatus != #none or request.refundBlock != null) return null;
+    switch (ctx.payments.get(request.id)) {
+      case (?payment) {
+        if (payment.setAsideAt == null) ?payment else null;
+      };
+      case null {
+        if (ctx.refusedFeeds.get(request.id) != null) null else ?{
+          requestId = request.id;
+          token = #tttiT;
+          setAside = null;
+          setAsideAt = null;
+        };
+      };
+    };
+  };
+
+  // One in-process TTTI-T move of a recorded attempt (sends already counted);
+  // returns the attempt with its outcome. Same request fields as the external
+  // ledgers: amount delivered, fee charged on top.
+  func sendTttiMove(ctx : ProtocolFeeContext, a : RetryTypes.DexTransferAttempt) : RetryTypes.DexTransferAttempt {
+    let r = a.request;
+    let fee = r.fee ?? IcrcLib.fee(ctx.ledger);
+    switch (
+      IcrcLib.transfer(
+        ctx.ledger,
+        ctx.canister,
+        ctx.canister,
+        {
+          from_subaccount = r.from.subaccount;
+          to = r.to;
+          amount = r.amount;
+          fee = ?fee;
+          memo = ?a.memo;
+          created_at_time = ?a.created_at_time;
+        },
+      )
+    ) {
+      case (#Ok(block)) { { a with outcome = #succeeded(block) } };
+      case (#Err(#Duplicate({ duplicate_of }))) { { a with outcome = #succeeded(duplicate_of) } };
+      case (#Err(err)) {
+        let text = "The TTTI-T ledger refused the move: " # debug_show (err);
+        { a with outcome = #failed(text); lastError = ?text };
+      };
+    };
+  };
+
+  func moveRefusedDeposit(ctx : ProtocolFeeContext, request : DexTypes.PairRequest, payment : RetryTypes.PairPayDeposit, now : Int) : async () {
+    let fee = switch (RetryLib.dexPayToken(payment.token)) {
+      case (?pay) PayTokenLib.expectedFee(pay);
+      case null IcrcLib.fee(ctx.ledger);
+    };
+    if (request.depositAmount <= fee) return;
+    let transferRequest : RetryTypes.DexTransferRequest = {
+      token = payment.token;
+      from = DexLib.requestDepositAccountOf(ctx.canister, payment.token);
+      to = DexLib.custodyAccount(ctx.canister, payment.token);
+      amount = Nat.sub(request.depositAmount, fee);
+      fee = ?fee;
+    };
+    let nowNat = RetryLib.dexNow();
+    let attempt = switch (payment.setAside) {
+      case null { RetryLib.newDepositMoveAttempt(request.id, null, transferRequest, nowNat) };
+      case (?existing) {
+        switch (RetryLib.dexAction(existing, nowNat)) {
+          case (#done) {
+            switch (existing.outcome) {
+              case (#succeeded(_)) {
+                creditSetAside(ctx, request.id, payment, existing, now);
+              };
+              case (_) {};
+            };
+            return;
+          };
+          case (#needsReview) {
+            logPermanentWaiting(ctx.permanent, "rd/" # request.id.toText(), #waiting, payment.token, existing.request.amount, "Refused pair-request deposit " # request.id.toText() # ": the move to the set-aside needs review", now);
+            return;
+          };
+          case (#resend) { existing };
+          case (#newAttempt) { RetryLib.newDepositMoveAttempt(request.id, ?existing, transferRequest, nowNat) };
+        };
+      };
+    };
+    let sending = { attempt with sends = attempt.sends + 1 };
+    ctx.payments.add(request.id, { payment with setAside = ?sending });
+    let sent = if (payment.token == #tttiT) { sendTttiMove(ctx, sending) } else {
+      await RetryLib.sendPayDexAttempt(sending);
+    };
+    switch (sent.outcome) {
+      case (#succeeded(_)) {
+        creditSetAside(ctx, request.id, payment, sent, now);
+      };
+      case (_) {
+        ctx.payments.add(request.id, { payment with setAside = ?sent });
+      };
+    };
+  };
+
+  public type SetAsideCredit = {
+    payments : Map.Map<Nat, RetryTypes.PairPayDeposit>;
+    permanent : Types.PermanentLiquidityStore;
+  };
+
+  // Records the successful move and counts the amount in the set-aside in one
+  // synchronous step. Does nothing when the request is already set aside (the
+  // passed or the stored record), so a retry or an unknown outcome resolved
+  // later never counts the amount twice.
+  public func creditSetAside(ctx : SetAsideCredit, requestId : Nat, payment : RetryTypes.PairPayDeposit, attempt : RetryTypes.DexTransferAttempt, now : Int) {
+    switch (ctx.payments.get(requestId)) {
+      case (?stored) { if (stored.setAsideAt != null) return };
+      case null {};
+    };
+    if (payment.setAsideAt != null) return;
+    ctx.payments.add(requestId, { payment with setAside = ?attempt; setAsideAt = ?now });
+    let amount = attempt.request.amount;
+    setPermanentAmount(ctx.permanent, payment.token, permanentAmount(ctx.permanent, payment.token) + amount);
+    logPermanent(ctx.permanent, #accrued, payment.token, amount, null, 0, null, null, 0, ?("Refused pair-request deposit " # requestId.toText() # " (kept deposit, paid in " # DexLib.tokenSymbol(payment.token) # ")"), now);
   };
 };

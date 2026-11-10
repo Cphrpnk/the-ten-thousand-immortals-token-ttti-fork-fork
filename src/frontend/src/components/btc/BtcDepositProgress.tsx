@@ -1,4 +1,11 @@
-import { AlertTriangle, Check, Clock, Loader2, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Clock,
+  Loader2,
+  RefreshCw,
+  Undo2,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { DepositErrorKind, DepositKind, PayToken } from "../../backend";
 import type {
@@ -33,6 +40,7 @@ import {
 import { ExplorerLink } from "../ExplorerLink";
 import { FiatAmount, type FiatToken } from "../FiatAmount";
 import { Button } from "../ui/button";
+import { RefundDetails } from "./RefundDetails";
 
 type StepState = "done" | "current" | "failed" | "pending";
 type BtcText = (typeof BUY_BTC_TEXT)["en"];
@@ -295,6 +303,15 @@ function DepositLinks({
   );
 }
 
+/** Cause of a conversion that has not completed, for minted and pending-rate entries. */
+function conversionCause(entry: DepositEntry | null): string | undefined {
+  if (entry === null) return undefined;
+  const kind = entry.stage.__kind__;
+  if (kind !== "minted" && kind !== "pendingRate") return undefined;
+  const cause = entry.conversionCause ?? entry.errorMessage;
+  return cause && cause.trim() !== "" ? cause : undefined;
+}
+
 const WAITING_STAGE: DepositStage = {
   __kind__: "addressShown",
   addressShown: null,
@@ -381,6 +398,7 @@ export function BtcDepositProgress({
   const failureText = trackingError
     ? errorText(tracking.errorKind, tracking.errorMessage, minSats, t)
     : errorText(entry?.errorKind, entry?.errorMessage, minSats, t);
+  const mainCause = trackingError ? undefined : conversionCause(entry);
   const { index, complete } = position(kind, stage, amounts);
   const showTttiMint = purchase && tttiMintBlock !== undefined;
 
@@ -469,6 +487,46 @@ export function BtcDepositProgress({
           <Clock className="mt-0.5 h-4 w-4 shrink-0" />
           {t.pendingRate}
         </output>
+      ) : null}
+      {mainCause !== undefined ? (
+        <p
+          className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+          data-ocid={`${ocidPrefix}.progress.conversion_cause`}
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="min-w-0 break-words">
+            {t.conversionCauseLine(mainCause)}
+          </span>
+        </p>
+      ) : null}
+      {entry !== null && purchase && stage.__kind__ === "refunded" ? (
+        <div
+          className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
+          data-ocid={`${ocidPrefix}.progress.refund_state`}
+        >
+          <p className="flex items-start gap-2 text-foreground">
+            <Undo2 className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <span className="tabular-nums">
+              {t.refunded(formatSats(entry.refundedSats, "ckBTC"))}
+            </span>
+          </p>
+          <RefundDetails
+            entry={entry}
+            ocid={`${ocidPrefix}.progress.refund_details`}
+          />
+        </div>
+      ) : null}
+      {entry !== null &&
+      purchase &&
+      entry.btcRefund === undefined &&
+      entry.ckbtcPendingSats > 0n &&
+      (stage.__kind__ === "minted" || stage.__kind__ === "pendingRate") ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-ocid={`${ocidPrefix}.progress.held_note`}
+        >
+          {t.heldNote(formatSats(entry.ckbtcPendingSats, "ckBTC"))}
+        </p>
       ) : null}
       {entry === null && !failed ? (
         <p
@@ -632,6 +690,14 @@ export function BtcDepositProgress({
                       </div>
                     ))}
                   </dl>
+                  {conversionCause(item) !== undefined ? (
+                    <p
+                      className="break-words text-xs text-warning"
+                      data-ocid={`${ocid}.conversion_cause`}
+                    >
+                      {t.conversionCauseLine(conversionCause(item) ?? "")}
+                    </p>
+                  ) : null}
                   {item.errorKind === DepositErrorKind.refundFailed ? (
                     <RefundFailedNote
                       entry={item}

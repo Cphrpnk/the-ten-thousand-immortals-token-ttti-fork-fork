@@ -175,6 +175,11 @@ interface UnusedBalanceProps {
   busy: boolean;
   message: string | null;
   onWithdraw: () => void;
+  /** Title and text; default to the ICPSwap pool wording. */
+  title?: string;
+  text?: string;
+  panelOcid?: string;
+  buttonOcid?: string;
 }
 
 /** Balance left in the pool after an incomplete swap, with a withdraw action. */
@@ -183,16 +188,22 @@ export function UnusedBalance({
   busy,
   message,
   onWithdraw,
+  title,
+  text,
+  panelOcid = "wallet.swap.unused.panel",
+  buttonOcid = "wallet.swap.withdraw_unused_button",
 }: UnusedBalanceProps) {
   const t = useDict(SWAP_TEXT);
   const withdrawable = entries.some((e) => e.amount > e.token.fee);
   return (
     <div
       className="flex flex-col gap-2 rounded-lg border border-gold px-3 py-3"
-      data-ocid="wallet.swap.unused.panel"
+      data-ocid={panelOcid}
     >
-      <p className="text-sm font-semibold text-foreground">{t.unusedTitle}</p>
-      <p className="text-xs text-muted-foreground">{t.unusedText}</p>
+      <p className="text-sm font-semibold text-foreground">
+        {title ?? t.unusedTitle}
+      </p>
+      <p className="text-xs text-muted-foreground">{text ?? t.unusedText}</p>
       <ul className="flex flex-col gap-1 font-mono text-sm tabular-nums">
         {entries.map(({ token, amount }) => (
           <li key={token.canisterId.toText()}>
@@ -208,7 +219,7 @@ export function UnusedBalance({
         className="self-start rounded-lg"
         onClick={onWithdraw}
         disabled={busy || !withdrawable}
-        data-ocid="wallet.swap.withdraw_unused_button"
+        data-ocid={buttonOcid}
       >
         {busy && <Loader2 className="h-4 w-4 animate-spin" />}
         {busy ? t.withdrawing : t.withdrawUnused}

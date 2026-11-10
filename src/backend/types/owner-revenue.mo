@@ -5,12 +5,17 @@ import Common "common";
 import Pay "pay-token";
 import Retry "retry";
 
-// Mint owner revenue: the 100/101 share of every mint stays in the contract,
-// in the paid token (BTC counts as ckBTC), on the internal mint treasury of
-// that token. No automatic send to any wallet exists any more and the per-token
-// owner destinations are gone. The admin manages the treasury: reads the
-// balance per token and withdraws an amount to a destination entered at each
-// withdrawal (ICRC account). A withdrawal is stored as an OwnerSend with
+// Mint owner revenue, LEGACY history. Earlier mints (fee of 1/101) kept the
+// 100/101 share in the contract, in the paid token (BTC counts as ckBTC), on
+// the internal mint treasury of that token; this module keeps those records
+// readable. The current rule is 1 % of the amount paid, which goes to the
+// cycles reserve first and then to the creator (lib/cycles-reserve.mo); the
+// router fee follows the swap split (70 % to LPs, the 30 % protocol share two
+// thirds to the creator and one third to permanent liquidity). No automatic
+// send to any wallet exists any more for the legacy treasury and the per-token
+// owner destinations are gone. The admin manages the legacy treasury: reads
+// the balance per token and withdraws an amount to a destination entered at
+// each withdrawal (ICRC account). A withdrawal is stored as an OwnerSend with
 // source #withdrawal and uses lib/retry.mo (memo TTTI-OW-<n>, created_at_time,
 // identical resend for 23 h, then To review). Earlier automatic sends (#mint,
 // #accumulated, #treasurySweep) finish under the same rules and stay readable.
@@ -214,9 +219,8 @@ module {
   };
 
   // --- Receiving wallets (admin-configured, one per pay token) ---------------
-  // The 100/101 share of every mint is sent directly to the wallet of the paid
-  // token (BTC mints use the ckBTC wallet). A mint with a token whose wallet is
-  // not configured is refused before any funds are taken.
+  // The creator's receiving wallet of a paid token (BTC follows ckBTC). The
+  // creator share of the 1 % mint fee, after the cycles reserve, is sent to it.
 
   public type ReceivingWallet = {
     token : PayToken;
@@ -245,7 +249,7 @@ module {
 
   // --- One-time settlement (per token) ---------------------------------------
   // When a token's wallet is first configured (then by the timer until done):
-  // the accumulated 100/101 share plus the legacy MINT-TREASURY owner share
+  // the accumulated legacy 100/101 share plus the legacy MINT-TREASURY owner share
   // minus amounts already withdrawn go once to the wallet (OwnerSend, source
   // #settlement); the legacy fee part and the not-yet-redistributed fee
   // amounts go once to the dedicated fee account (FeeMove, memo TTTI-ST-<n>).
@@ -285,7 +289,7 @@ module {
 
   // Why funds move into the dedicated fee account.
   public type FeeMovePurpose = {
-    #mintFee : Nat; // 1/101 of a mint (conversion id)
+    #mintFee : Nat; // legacy 1/101 fee of a mint (conversion id)
     #settlement : SettlementLegPurpose; // #feePending or #feeLegacy
   };
 
@@ -337,7 +341,7 @@ module {
   public type FeeAccountTokenView = {
     token : PayToken;
     balance : ?Nat; // ledger balance; null when the read failed
-    received : Nat; // total 1/101 routed to the fee account
+    received : Nat; // total legacy 1/101 routed to the fee account
     setAside : Nat; // waiting for LPs or for the 0.001 TTTI-T threshold
     redistributedToLps : Nat; // credited to LPs of the least liquid TTTI-T pool
     injected : Nat; // added to permanent liquidity

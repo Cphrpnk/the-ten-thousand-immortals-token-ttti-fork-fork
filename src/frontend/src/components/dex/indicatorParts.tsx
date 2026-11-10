@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ReserveStatus } from "../../backend";
 import type { PoolIndicators } from "../../backend";
 import { formatNumber } from "../../i18n/core/lang";
 import type { DEX_INDICATORS_TEXT } from "../../i18n/pages/dexIndicators";
@@ -373,4 +374,16 @@ export function FeesBody({
       </dl>
     </div>
   );
+}
+
+/** Label of a reserve status: match, surplus or shortfall. */
+export function proofStatusLabel(t: Text, status: ReserveStatus): string {
+  switch (status) {
+    case ReserveStatus.ok:
+      return t.statusMatch;
+    case ReserveStatus.surplus:
+      return t.statusSurplus;
+    case ReserveStatus.shortfall:
+      return t.statusShortfall;
+  }
 }

@@ -1,6 +1,7 @@
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
 import List "mo:core/List";
+import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Principal "mo:core/Principal";
 import Set "mo:core/Set";
@@ -390,27 +391,140 @@ module {
     };
   };
 
+  // --- Per-account index (transient, extended incrementally) ------------------
+
+  // Blocks indexed per timer slice.
+  public let BLOCKS_PER_SLICE : Nat = 5000;
+
+  // Transient read-side index over ledger.blocks (append-only): for every
+  // account, the ascending ids of the blocks that involve it. Covers blocks
+  // with id < cursor; queries decode only the (small) tail from cursor on, so
+  // results are identical to a full scan whatever the cache has caught up to.
+  // Nothing here is stored; it is rebuilt after every upgrade.
+  public type IndexCache = {
+    var cursor : Nat;
+    accounts : Map.Map<Principal, Map.Map<Blob, List.List<Nat>>>;
+  };
+
+  public func newCache() : IndexCache {
+    { var cursor = 0; accounts = Map.empty() };
+  };
+
+  // Indexes up to `maxBlocks` new blocks. Synchronous, so a query never sees a
+  // half-indexed block.
+  public func extend(ledger : IcrcLib.Ledger, cache : IndexCache, maxBlocks : Nat) {
+    let defaultSub = defaultSubaccount();
+    var done = 0;
+    for ((id, block) in ledger.blocks.entriesFrom(cache.cursor)) {
+      if (done >= maxBlocks) {
+        return;
+      };
+      switch (decode(ledger, id, block)) {
+        case (?d) {
+          for (p in d.parties.values()) {
+            let subs = switch (cache.accounts.get(p.owner)) {
+              case (?m) m;
+              case null {
+                let m = Map.empty<Blob, List.List<Nat>>();
+                cache.accounts.add(p.owner, m);
+                m;
+              };
+            };
+            let sub = p.subaccount ?? defaultSub;
+            let ids = switch (subs.get(sub)) {
+              case (?l) l;
+              case null {
+                let l = List.empty<Nat>();
+                subs.add(sub, l);
+                l;
+              };
+            };
+            // An account listed twice in one block is indexed once.
+            if (ids.last() != ?id) {
+              ids.add(id);
+            };
+          };
+        };
+        case null {};
+      };
+      cache.cursor := id + 1;
+      done += 1;
+    };
+  };
+
   // --- index-ng queries ------------------------------------------------------
 
-  // Newest first; `start` is an exclusive upper bound tx id. One pass over all
-  // blocks, so oldest_tx_id is exact.
-  public func getAccountTransactions(ledger : IcrcLib.Ledger, args : IndexTypes.GetAccountTransactionsArgs) : IndexTypes.GetTransactionsResult {
+  // Newest first; `start` is an exclusive upper bound tx id. oldest_tx_id is
+  // the oldest block involving the account. Only the requested page is decoded.
+  public func getAccountTransactions(ledger : IcrcLib.Ledger, cache : IndexCache, args : IndexTypes.GetAccountTransactionsArgs) : IndexTypes.GetTransactionsResult {
     let account = normalize(args.account);
     let limit = Nat.min(args.max_results, MAX_RESULTS);
-    let page = List.empty<IndexTypes.TransactionWithId>();
-    var oldest : ?Nat = null;
-    for ((id, block) in ledger.blocks.reverseEntries()) {
+    let sub = account.subaccount ?? defaultSubaccount();
+    let cached : ?List.List<Nat> = switch (cache.accounts.get(account.owner)) {
+      case (?m) m.get(sub);
+      case null null;
+    };
+    let cachedCount = switch (cached) {
+      case (?l) l.size();
+      case null 0;
+    };
+
+    // Blocks not indexed yet, ascending (all newer than every cached id).
+    let tail = List.empty<Nat>();
+    for ((id, block) in ledger.blocks.entriesFrom(cache.cursor)) {
       switch (decode(ledger, id, block)) {
         case (?d) {
           if (d.parties.any(func p = p == account)) {
-            oldest := ?id;
-            let beforeStart = switch (args.start) {
-              case (?s) id < s;
-              case null true;
-            };
-            if (beforeStart and page.size() < limit) {
-              page.add({ id; transaction = d.tx });
-            };
+            tail.add(id);
+          };
+        };
+        case null {};
+      };
+    };
+
+    let total = cachedCount + tail.size();
+    func idAt(i : Nat) : Nat {
+      if (i < cachedCount) {
+        switch (cached) {
+          case (?l) l.at(i);
+          case null 0;
+        };
+      } else {
+        tail.at(Nat.sub(i, cachedCount));
+      };
+    };
+
+    let oldest : ?Nat = if (total > 0) ?idAt(0) else null;
+
+    // First position whose id is >= start; everything before it is eligible.
+    var upper = total;
+    switch (args.start) {
+      case (?s) {
+        var lo = 0;
+        var hi = total;
+        while (lo < hi) {
+          let mid = (lo + hi) / 2;
+          if (idAt(mid) < s) {
+            lo := mid + 1;
+          } else {
+            hi := mid;
+          };
+        };
+        upper := lo;
+      };
+      case null {};
+    };
+
+    let page = List.empty<IndexTypes.TransactionWithId>();
+    var i = upper;
+    while (i > 0 and page.size() < limit) {
+      i := Nat.sub(i, 1);
+      let id = idAt(i);
+      switch (ledger.blocks.get(id)) {
+        case (?block) {
+          switch (decode(ledger, id, block)) {
+            case (?d) page.add({ id; transaction = d.tx });
+            case null {};
           };
         };
         case null {};
@@ -425,9 +539,18 @@ module {
 
   // Subaccounts the owner used in any block, ascending, strictly after
   // `start`. The default account is reported as 32 zero bytes.
-  public func listSubaccounts(ledger : IcrcLib.Ledger, args : IndexTypes.ListSubaccountsArgs) : [Blob] {
+  public func listSubaccounts(ledger : IcrcLib.Ledger, cache : IndexCache, args : IndexTypes.ListSubaccountsArgs) : [Blob] {
     let found = Set.empty<Blob>();
-    for ((id, block) in ledger.blocks.entries()) {
+    switch (cache.accounts.get(args.owner)) {
+      case (?subs) {
+        for (sub in subs.keys()) {
+          found.add(sub);
+        };
+      };
+      case null {};
+    };
+    // Blocks not indexed yet.
+    for ((id, block) in ledger.blocks.entriesFrom(cache.cursor)) {
       switch (decode(ledger, id, block)) {
         case (?d) {
           for (p in d.parties.values()) {
@@ -441,11 +564,14 @@ module {
     };
     let out = List.empty<Blob>();
     for (sub in found.values()) {
+      if (out.size() >= MAX_SUBACCOUNTS) {
+        break;
+      };
       let after = switch (args.start) {
         case (?s) sub > s;
         case null true;
       };
-      if (after and out.size() < MAX_SUBACCOUNTS) {
+      if (after) {
         out.add(sub);
       };
     };

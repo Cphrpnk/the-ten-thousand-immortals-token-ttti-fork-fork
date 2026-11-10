@@ -3,13 +3,7 @@ import type { SaleStatus } from "../../backend";
 import { useDict } from "../../i18n/core/dict";
 import { AUCTION_TEXT } from "../../i18n/pages/auction";
 import { BUY_PANELS_TEXT } from "../../i18n/pages/buy";
-import {
-  TTTI_SYMBOL,
-  formatDecimal,
-  formatTtti,
-  formatUsdE8,
-  tttiToUsdE8,
-} from "../../lib/token";
+import { TTTI_SYMBOL, formatDecimal, formatTtti } from "../../lib/token";
 import { cn } from "../../lib/utils";
 import { FiatAmount } from "../FiatAmount";
 import { Badge } from "../ui/badge";
@@ -159,11 +153,11 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
         )}
 
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className="font-mono tabular-nums text-primary">
               {t.totalSupplyPercent(percentLabel)}
             </span>
-            <span className="font-mono tabular-nums">
+            <span className="min-w-0 break-words font-mono tabular-nums">
               {formatTtti(totalSupply)} / {formatTtti(maxSupply)} {TTTI_SYMBOL}{" "}
               <FiatAmount token="ttti" amount={totalSupply} />
             </span>
@@ -182,18 +176,29 @@ export function PresaleProgress({ status, isLoading }: PresaleProgressProps) {
               key={stat.id}
               className="min-w-0 rounded-lg border border-border bg-background/60 p-2.5 transition-smooth hover:border-gold"
             >
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <dt className="break-words text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {stat.label}
               </dt>
-              <dd className="truncate font-mono text-sm font-semibold tabular-nums">
+              <dd className="break-all font-mono text-sm font-semibold tabular-nums">
                 {formatTtti(stat.value)}
               </dd>
-              <dd className="truncate font-mono text-[11px] tabular-nums text-muted-foreground">
-                {formatUsdE8(tttiToUsdE8(stat.value), 2)}
+              <dd className="font-mono tabular-nums">
+                <FiatAmount
+                  token="ttti"
+                  amount={stat.value}
+                  className="whitespace-normal break-all text-[11px]"
+                  ocid={`presale.${stat.id}_fiat`}
+                />
               </dd>
             </div>
           ))}
         </dl>
+        <p
+          className="text-[11px] leading-snug text-muted-foreground"
+          data-ocid="presale.consolidated_note"
+        >
+          {t.supplyValueNote}
+        </p>
         {reserved > 0n && (
           <p className="text-xs text-muted-foreground">
             {t.reserved(formatTtti(reserved), TTTI_SYMBOL)}

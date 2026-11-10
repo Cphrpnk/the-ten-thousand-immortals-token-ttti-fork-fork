@@ -8,7 +8,6 @@ import {
   formatTttiQuantity,
   payoutBlockTarget,
   pullBlockTarget,
-  redemptionKindLabel,
   redemptionStatusLabel,
   redemptionsOf,
 } from "../../lib/guarantee";
@@ -20,7 +19,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
 
-/** Redemptions and excess withdrawals of the person, in a closed accordion. */
+/** Redemptions of the person, in a closed accordion. */
 export function RedemptionHistory() {
   const t = useDict(GUARANTEE_TEXT);
   const tx = useDict(EXPLORER_TEXT);
@@ -84,7 +83,6 @@ export function RedemptionHistory() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium">
-                    {redemptionKindLabel(r.kind, t)} ·{" "}
                     {PAY_TOKENS[r.token].symbol}
                   </span>
                   <Badge

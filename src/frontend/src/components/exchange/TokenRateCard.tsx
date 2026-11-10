@@ -28,7 +28,6 @@ interface TokenRateCardProps {
   isLoading: boolean;
   /** TTTI-T bought with one whole token, null without a rate. */
   oneTokenBuys: bigint | null;
-  feeLabel: string;
   /** Smallest mint, e.g. "0.0001 TTTI-T". */
   minimumText: string;
   className: string;
@@ -48,7 +47,7 @@ function fetchedText(
   });
 }
 
-/** Rate, fee, minimum and treasury of the selected pay token. */
+/** Rate, minimum and treasury of the selected pay token. */
 export function TokenRateCard({
   token,
   rate,
@@ -56,7 +55,6 @@ export function TokenRateCard({
   priceAvailable,
   isLoading,
   oneTokenBuys,
-  feeLabel,
   minimumText,
   className,
 }: TokenRateCardProps) {
@@ -120,15 +118,6 @@ export function TokenRateCard({
             <dt className="text-muted-foreground">{t.fetched}</dt>
             <dd className="text-right">
               {fetchedText(rate?.fetchedAt, t.never, lang)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-muted-foreground">{t.feeFixed}</dt>
-            <dd
-              className="font-mono tabular-nums"
-              data-ocid="exchange.cycles_fee"
-            >
-              {t.inToken(feeLabel, symbol)}
             </dd>
           </div>
           <div className="flex justify-between gap-3">

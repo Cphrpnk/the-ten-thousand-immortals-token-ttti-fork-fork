@@ -3,6 +3,7 @@ import {
   AdminSection,
   type AdminSectionDef,
 } from "../components/admin/AdminUi";
+import { BtcRecoveryCard } from "../components/admin/BtcRecoveryCard";
 import { CyclesAutonomyCard } from "../components/admin/CyclesAutonomyCard";
 import { CyclesReserveCard } from "../components/admin/CyclesReserveCard";
 import { DexIndicatorsCard } from "../components/admin/DexIndicatorsCard";
@@ -12,7 +13,6 @@ import { HistoryCard } from "../components/admin/HistoryCard";
 import { LaunchControls } from "../components/admin/LaunchControls";
 import { OverviewCard } from "../components/admin/OverviewCard";
 import { ProtocolLiquidityCard } from "../components/admin/ProtocolLiquidityCard";
-import { RedemptionFeesCard } from "../components/admin/RedemptionFeesCard";
 import { RoutedSwapsCard } from "../components/admin/RoutedSwapsCard";
 import { SnapshotExport } from "../components/admin/SnapshotExport";
 import { ToReviewCard } from "../components/admin/ToReviewCard";
@@ -38,7 +38,6 @@ const SECTIONS: ReadonlyArray<AdminSectionDef> = [
   { id: "cycles", title: "Cycles" },
   { id: "review", title: "To review" },
   { id: "history", title: "History" },
-  { id: "redemption", title: "Redemption fees" },
   { id: "dex", title: "DEX" },
   { id: "snapshot", title: "Snapshot export" },
 ];
@@ -192,9 +191,17 @@ export function AdminPage() {
           index={n("review")}
           id="review"
           title={t("review")}
-          note="Transfers whose outcome stays unknown after 23 h and payments to refund."
+          note="Transfers whose outcome stays unknown after 23 h, payments to refund and stuck ckBTC mints."
         >
-          <ToReviewCard />
+          <div className="space-y-10">
+            <ToReviewCard />
+            <div className="space-y-4" data-ocid="admin.btc_recovery_section">
+              <h3 className="font-display text-lg font-semibold">
+                Stuck ckBTC mint
+              </h3>
+              <BtcRecoveryCard />
+            </div>
+          </div>
         </AdminSection>
 
         <AdminSection
@@ -204,14 +211,6 @@ export function AdminPage() {
           note="Every admin-relevant transfer, newest first, 25 per page."
         >
           <HistoryCard />
-        </AdminSection>
-
-        <AdminSection
-          index={n("redemption")}
-          id="redemption"
-          title={t("redemption")}
-        >
-          <RedemptionFeesCard />
         </AdminSection>
 
         <AdminSection

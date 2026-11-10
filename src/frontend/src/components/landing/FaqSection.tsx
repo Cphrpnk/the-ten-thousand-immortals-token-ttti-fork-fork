@@ -4,6 +4,7 @@ import { useDict } from "../../i18n/core";
 import {
   CAP_TEXT,
   FAQ_TEXT,
+  MINT_RULE_TEXT,
   TECH_BACKEND_TEXT,
 } from "../../i18n/pages/landing";
 import { useCyclesFeeText, usePriceText } from "../../lib/token";
@@ -20,6 +21,7 @@ const linkClass =
 
 function useFaqs(): { id: string; question: string; answer: ReactNode }[] {
   const t = useDict(FAQ_TEXT);
+  const rule = useDict(MINT_RULE_TEXT);
   const cap = useDict(CAP_TEXT);
   const rateText = useDict(TECH_BACKEND_TEXT).refreshPolicy;
   const priceText = usePriceText();
@@ -32,6 +34,15 @@ function useFaqs(): { id: string; question: string; answer: ReactNode }[] {
       answer: (
         <>
           {t.whatA} {priceText} {cyclesFeeText} {t.noReturns}
+        </>
+      ),
+    },
+    {
+      id: "mint-rule",
+      question: t.mintRuleQ,
+      answer: (
+        <>
+          {rule.share} {rule.remainder} {rule.payment}
         </>
       ),
     },

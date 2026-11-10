@@ -1,4 +1,6 @@
 import { RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { RemainderChoice } from "../backend";
 import { AuctionEmpty } from "../components/auction/AuctionEmpty";
 import { AuctionSummary } from "../components/auction/AuctionSummary";
 import { BidForm } from "../components/auction/BidForm";
@@ -22,6 +24,7 @@ export function AuctionPage() {
   const principal = identity?.getPrincipal();
   const owner = principal && !principal.isAnonymous() ? principal : undefined;
   const view = useAuctionView();
+  const [choice, setChoice] = useState<RemainderChoice>(RemainderChoice.pool);
   const countdown = useCountdown(view.data?.closesAt);
   useAuctionViewSync(view.data);
 
@@ -86,6 +89,8 @@ export function AuctionPage() {
                   view={view.data}
                   owner={owner}
                   closed={countdown.reached}
+                  choice={choice}
+                  onChoiceChange={setChoice}
                 />
               )}
               <MyBids view={view.data} />

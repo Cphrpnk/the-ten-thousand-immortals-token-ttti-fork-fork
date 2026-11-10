@@ -5,12 +5,14 @@ import type {
   LiquidityMintResult,
   PayToken,
 } from "../../backend";
+import { useMintPricePreview } from "../../hooks/useMintPreview";
 import { useDict, useLanguage } from "../../i18n/core/dict";
 import { BUY_LIQUIDITY_TEXT, BUY_PAGE_TEXT } from "../../i18n/pages/buy";
 import { PAY_TOKENS, formatPayAmount } from "../../lib/token";
 import { FiatAmount } from "../FiatAmount";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { describeMintError, formatMintTtti } from "./liquidityMint";
+import { MINT_RESERVE_TEXT } from "./mintReserveText";
 import { safePurchaseMessage } from "./purchaseOutcome";
 
 /** What the last mint attempt produced; turned into text in the active language. */
@@ -26,7 +28,9 @@ export function MintOutcomeAlerts({
 }: { source: MintOutcomeSource | null }) {
   const t = useDict(BUY_PAGE_TEXT);
   const tl = useDict(BUY_LIQUIDITY_TEXT);
+  const r = useDict(MINT_RESERVE_TEXT);
   const { lang } = useLanguage();
+  const mintPreview = useMintPricePreview().data;
   if (!source) return null;
 
   if (source.kind === "minted") {
@@ -49,26 +53,27 @@ export function MintOutcomeAlerts({
         <AlertDescription className="space-y-1 text-xs tabular-nums">
           <p>
             {tl.successPaid(
-              formatPayAmount(result.payAmount, token),
+              formatPayAmount(result.totalPaid, token),
               result.mintId.toString(),
             )}
             <FiatAmount
               token={token}
-              amount={result.payAmount}
+              amount={result.totalPaid}
               className="ml-1.5"
               ocid="exchange.success.paid_fiat"
             />
           </p>
           <p data-ocid="exchange.success.position">
-            {tl.successPosition(result.positionId.toString())}.{" "}
+            {result.positionId !== undefined &&
+              `${tl.successPosition(result.positionId.toString())}. `}
             {tl.successHoldings(
               formatPayAmount(result.positionTokenAmount, token),
               formatMintTtti(result.positionTttiAmount),
             )}
           </p>
           <p>
-            {tl.successGuarantee(
-              formatPayAmount(result.guaranteeAmount, token),
+            {r.successReserve(
+              formatPayAmount(result.reserveAmount, result.reserveToken),
             )}
           </p>
           <Link
@@ -86,7 +91,7 @@ export function MintOutcomeAlerts({
 
   const notice =
     source.kind === "refused"
-      ? describeMintError(source.error, source.token, "mint", lang)
+      ? describeMintError(source.error, source.token, "mint", lang, mintPreview)
       : source.kind === "approval"
         ? {
             title: t.approvalFailed(PAY_TOKENS[source.token].symbol),

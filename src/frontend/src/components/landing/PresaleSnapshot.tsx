@@ -1,22 +1,25 @@
 import { CheckCircle2, PauseCircle, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
-import { useGetIcpPrice, useGetSaleStatus } from "../../hooks/useQueries";
-import { useLanguage } from "../../i18n/core";
+import { PayToken } from "../../backend";
 import {
-  TOKEN_PRICE_USD,
-  TTTI_DIVISOR,
+  formatMintUsdE8,
+  useMintPriceDisplay,
+} from "../../hooks/useMintPriceDisplay";
+import { useGetSaleStatus } from "../../hooks/useQueries";
+import { useLanguage } from "../../i18n/core";
+import { useDict } from "../../i18n/core/dict";
+import { WALLET_TEXT } from "../../i18n/pages/wallet";
+import {
   TTTI_SYMBOL,
   formatDecimal,
   formatIcp,
-  formatInteger,
   formatTtti,
-  formatUsdE8,
-  icpForTtti,
-  tttiToUsdE8,
 } from "../../lib/token";
+import { FiatAmount } from "../FiatAmount";
 import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
 import { Skeleton } from "../ui/skeleton";
+import { NO_VALUE } from "../wallet/valuation";
 
 const skeletonIds = ["price", "sold", "remaining", "minimum"];
 
@@ -98,9 +101,10 @@ export function PresaleSnapshot() {
 
 function SnapshotBody() {
   const { data: status, isLoading, isError, refetch } = useGetSaleStatus();
-  const { data: icpPrice } = useGetIcpPrice();
+  const { data: preview } = useMintPriceDisplay();
   useLanguage();
-  const usdE8 = icpPrice && icpPrice.usdE8 > 0n ? icpPrice.usdE8 : null;
+  const wallet = useDict(WALLET_TEXT);
+  const icpPrice = preview?.tokens.find((p) => p.token === PayToken.icp);
 
   if (isLoading) {
     return (
@@ -128,10 +132,11 @@ function SnapshotBody() {
           <p className="font-display text-lg text-foreground">
             Live presale figures are unavailable right now
           </p>
-          <p className="text-sm text-muted-foreground">
-            The reference price stays fixed at {formatInteger(TOKEN_PRICE_USD)}{" "}
-            USD per {TTTI_SYMBOL}.
-          </p>
+          {preview && (
+            <p className="text-sm text-muted-foreground">
+              {`The mint cost is ${formatMintUsdE8(preview.pricePerTttiUsdE8)} USD per ${TTTI_SYMBOL}.`}
+            </p>
+          )}
         </div>
         <Button
           type="button"
@@ -157,8 +162,9 @@ function SnapshotBody() {
   } = status;
   const percent =
     allocation > 0n ? Number((sold * 10_000n) / allocation) / 100 : 0;
-  const priceIcp = usdE8 ? icpForTtti(TTTI_DIVISOR, usdE8) : null;
-  const minIcp = usdE8 ? icpForTtti(minPurchase, usdE8) : null;
+  const priceIcp = icpPrice?.totalPayAmountPerTtti ?? null;
+  const minIcp = icpPrice?.minimumTotalPayAmount ?? null;
+  const minimumTtti = preview ? preview.minimumTtti : minPurchase;
 
   return (
     <div className="space-y-8">
@@ -186,13 +192,13 @@ function SnapshotBody() {
       )}
       <div className="grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label={`Price per ${TTTI_SYMBOL}`}
-          value={formatInteger(TOKEN_PRICE_USD)}
+          label={`Mint cost per ${TTTI_SYMBOL}`}
+          value={
+            preview ? formatMintUsdE8(preview.pricePerTttiUsdE8) : NO_VALUE
+          }
           unit="USD"
           note={
-            priceIcp
-              ? `≈ ${formatIcp(priceIcp)} ICP at live rate`
-              : "Fixed reference price"
+            priceIcp ? `≈ ${formatIcp(priceIcp)} ICP at live rate` : undefined
           }
           ocid="landing.snapshot.price_card"
         />
@@ -219,19 +225,25 @@ function SnapshotBody() {
           label="Remaining"
           value={formatTtti(remaining)}
           unit={TTTI_SYMBOL}
-          note={`≈ ${formatUsdE8(tttiToUsdE8(remaining), 2)} at reference price`}
           ocid="landing.snapshot.remaining_card"
-        />
+        >
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            <FiatAmount
+              token="ttti"
+              amount={remaining}
+              ocid="landing.snapshot.remaining_fiat"
+            />{" "}
+            · {wallet.priceHourlyAverage}
+          </p>
+        </Stat>
         <Stat
           label="Minimum purchase"
-          value={formatUsdE8(tttiToUsdE8(minPurchase), 2)
-            .replace("$", "")
-            .trim()}
+          value={preview ? formatMintUsdE8(preview.minimumMintUsdE8) : NO_VALUE}
           unit="USD"
           note={
             minIcp
-              ? `≈ ${formatIcp(minIcp)} ICP · ${formatTtti(minPurchase)} ${TTTI_SYMBOL}`
-              : `${formatTtti(minPurchase)} ${TTTI_SYMBOL}`
+              ? `≈ ${formatIcp(minIcp)} ICP · ${formatTtti(minimumTtti)} ${TTTI_SYMBOL}`
+              : `${formatTtti(minimumTtti)} ${TTTI_SYMBOL}`
           }
           ocid="landing.snapshot.minimum_card"
         />

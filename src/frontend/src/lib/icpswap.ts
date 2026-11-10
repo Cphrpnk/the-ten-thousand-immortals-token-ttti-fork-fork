@@ -3,7 +3,6 @@ import type { IDL } from "@icp-sdk/core/candid";
 import type { Principal } from "@icp-sdk/core/principal";
 import { readyPlug } from "../hooks/usePlug";
 import { createLedgerAgent } from "./icpLedger";
-import { PAY_TOKENS, TTTI_DECIMALS } from "./token";
 
 /**
  * ICPSwap SwapFactory and SwapPool interfaces (ICPSwap-Labs/docs), written on
@@ -334,104 +333,4 @@ export async function preparePlugForSwap(
   ledgers: ReadonlyArray<string> = [],
 ): Promise<void> {
   await readyPlug([poolId, ICPSWAP_FACTORY_ID, ...ledgers]);
-}
-
-/** TTTI-T price read from ICPSwap (usdE8 per whole TTTI-T) and when it was read. */
-export interface TttiPriceReading {
-  usdE8: bigint;
-  readAt: number;
-}
-
-/** The cached ICPSwap price is re-read only when older than this (24 hours). */
-export const PRICE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const PRICE_CACHE_KEY = "ttti.icpswapTttiPrice.v1";
-/** Probe quoted to read the price: 0.0001 TTTI-T, small enough to keep impact negligible. */
-const PRICE_PROBE = 10_000n;
-const FEE_SCALE = 1_000_000n;
-
-/** Price stored in this browser, or null when absent or unreadable. */
-export function loadCachedTttiPrice(): TttiPriceReading | null {
-  try {
-    const raw = window.localStorage.getItem(PRICE_CACHE_KEY);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const { usdE8, readAt } = parsed as { usdE8?: unknown; readAt?: unknown };
-    if (typeof usdE8 !== "string" || typeof readAt !== "number") return null;
-    const value = BigInt(usdE8);
-    return value > 0n ? { usdE8: value, readAt } : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Store the price with its read timestamp; a blocked storage is ignored. */
-export function storeTttiPrice(reading: TttiPriceReading): void {
-  try {
-    window.localStorage.setItem(
-      PRICE_CACHE_KEY,
-      JSON.stringify({
-        usdE8: reading.usdE8.toString(),
-        readAt: reading.readAt,
-      }),
-    );
-  } catch {
-    // Storage unavailable: the price is simply read again next time.
-  }
-}
-
-/** True while a cached price is younger than 24 hours. */
-export function isPriceFresh(reading: TttiPriceReading | null): boolean {
-  return !!reading && Date.now() - reading.readAt < PRICE_CACHE_TTL_MS;
-}
-
-/** USD price of TTTI-T through one ICPSwap pair, quoted in `quoteLedger`; null when unavailable. */
-async function priceThroughPair(
-  tttiLedger: string,
-  quoteLedger: string,
-  quoteDecimals: number,
-  quoteUsdE8: bigint,
-): Promise<bigint | null> {
-  try {
-    const pool = await resolveSwapPool(tttiLedger, quoteLedger);
-    if (!pool) return null;
-    const out = await readSwapQuote(pool, tttiLedger, PRICE_PROBE);
-    if (out <= 0n) return null;
-    // The quote is net of the pool fee: gross it up to the mid price.
-    const gross = (out * FEE_SCALE) / (FEE_SCALE - pool.fee);
-    const usdE8 =
-      (gross * quoteUsdE8 * 10n ** BigInt(TTTI_DECIMALS)) /
-      (PRICE_PROBE * 10n ** BigInt(quoteDecimals));
-    return usdE8 > 0n ? usdE8 : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Live TTTI-T price from the ICPSwap TTTI-T/ICP pair (converted with the ICP
- * rate), else the TTTI-T/ckBTC pair. Never reads or writes the cache.
- */
-export async function readIcpswapTttiUsdE8(
-  tttiLedger: string,
-  icpUsdE8: bigint | null,
-  btcUsdE8: bigint | null,
-): Promise<bigint | null> {
-  const { icp, ckbtc } = PAY_TOKENS;
-  if (icpUsdE8 !== null) {
-    const viaIcp = await priceThroughPair(
-      tttiLedger,
-      icp.ledgerCanisterId,
-      icp.decimals,
-      icpUsdE8,
-    );
-    if (viaIcp !== null) return viaIcp;
-  }
-  if (btcUsdE8 === null) return null;
-  return priceThroughPair(
-    tttiLedger,
-    ckbtc.ledgerCanisterId,
-    ckbtc.decimals,
-    btcUsdE8,
-  );
 }

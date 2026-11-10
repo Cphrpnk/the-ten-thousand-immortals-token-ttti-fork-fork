@@ -117,21 +117,51 @@ function useInvalidateReserve() {
       queryKey: DEX_RESERVE_KEYS.publicPause,
     });
     void queryClient.invalidateQueries({ queryKey: UPGRADE_READINESS_KEY });
+    void queryClient.invalidateQueries({
+      queryKey: ["dexBalanceBreakdown"],
+    });
   };
 }
 
-/** Admin: compares the internal DEX totals with the ledgers; may pause the DEX. */
+/** Result of a manual run: the check, and the alert raised by that very run, if any. */
+export interface ReserveRunOutcome {
+  check: ReserveCheckView;
+  raisedAlert: ReserveAlert | undefined;
+}
+
+/**
+ * Admin: compares the internal DEX totals with the ledgers; may pause the DEX.
+ * Once the run has ended, the status query tells whether it raised an alert: only
+ * an alert whose runId matches the run counts.
+ */
 export function useRunDexReserveCheck() {
   const { actor } = useActor();
   const invalidate = useInvalidateReserve();
-  return useMutation<ReserveCheckView, Error>({
+  return useMutation<ReserveRunOutcome, Error>({
     mutationFn: async () => {
       if (!actor) throw new Error("Backend is not ready");
       const result = await actor.runDexReserveCheck();
       if (result.__kind__ === "err") {
         throw new Error(dexReserveErrorMessage(result.err));
       }
-      return result.ok;
+      const check = result.ok;
+      if (check.progress.phase === ReservePhase.inProgress) {
+        return { check, raisedAlert: undefined };
+      }
+      let raisedAlert: ReserveAlert | undefined;
+      try {
+        const status = await actor.getDexReserveStatus();
+        if (
+          status.__kind__ === "ok" &&
+          status.ok.alert !== undefined &&
+          status.ok.alert.runId === check.progress.runId
+        ) {
+          raisedAlert = status.ok.alert;
+        }
+      } catch {
+        raisedAlert = undefined;
+      }
+      return { check, raisedAlert };
     },
     onSettled: () => {
       invalidate();

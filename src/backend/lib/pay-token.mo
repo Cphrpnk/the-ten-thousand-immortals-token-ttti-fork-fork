@@ -52,8 +52,6 @@ module {
   public let ICP_FEE_BPS : Nat = 100;
   public let CK_FEE_BPS : Nat = 100;
 
-  // Base price of one whole TTTI-T in USD (fee excluded).
-  let TOKEN_PRICE_USD : Nat = 10_000;
   // Minimum purchase base, 1 USD * 10^8 (0.0001 TTTI-T), fee excluded.
   let MIN_BASE_USD_E8 : Nat = 100_000_000;
 
@@ -130,11 +128,6 @@ module {
   // Minimum purchase in USD * 10^8, fee included: 1.01 USD for every pay token.
   public func minimumUsdE8(token : PayToken) : Nat {
     MIN_BASE_USD_E8 * (10_000 + feeBps(token)) / 10_000;
-  };
-
-  // Buyer price per whole TTTI-T in USD: 10_100 for every pay token.
-  public func buyerPriceUsd(token : PayToken) : Nat {
-    TOKEN_PRICE_USD * (10_000 + feeBps(token)) / 10_000;
   };
 
   // --- Price math (token decimals generalised) -------------------------------

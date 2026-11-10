@@ -77,24 +77,45 @@ module {
 
   // --- Deposit ---------------------------------------------------------------
 
-  // ceil(2 x priceB x quantityE8s x 100 / (99 x 10^8)): 2 x B x quantity / 0.99
-  // in the token's smallest unit (priceB per whole TTTI-T, quantity in e8s).
-  public func depositFormula(priceB : Nat, quantityE8s : Nat) : Nat {
-    let numerator = 2 * priceB * quantityE8s * 100;
+  // PTM-11: ceil((priceB + reserveUnit) x quantityE8s x 100 / (99 x 10^8)):
+  // (B + 10 000 USD) x quantity / 0.99 in the token's smallest unit (priceB and
+  // reserveUnit per whole TTTI-T, quantity in e8s). reserveUnit is 10 000 USD
+  // in the token's smallest unit at the current rate (see reserveUnitOf).
+  // PTM-10b: this is the payment of choice #pool (A), the maximum; it is the
+  // deposit basis of every bid. The payment of the bid's choice at the
+  // locked share m is LiquidityMintLib.winnerTaken.
+  public func depositFormula(priceB : Nat, reserveUnit : Nat, quantityE8s : Nat) : Nat {
+    let numerator = (priceB + reserveUnit) * quantityE8s * 100;
     let denominator = 99 * TTTI_E8S;
     (numerator + denominator - 1) / denominator;
   };
 
+  // PTM-11: 10 000 USD per whole TTTI-T in the token's smallest unit at the
+  // usable rate of the token; null when the rate is absent or expired.
+  public func reserveUnitOf(oracle : OracleLib.OracleStore, tokenRates : OracleLib.TokenRateStore, token : Types.PayToken, now : Int) : ?Nat {
+    switch (OracleLib.usableRate(OracleLib.storeFor(oracle, tokenRates, token), now)) {
+      case (?rate) {
+        let unit = LiquidityMintLib.mintTargetTokenPerTtti(rate, 10 ** PayTokenLib.expectedDecimals(token).toNat());
+        if (unit == 0) null else ?unit;
+      };
+      case null null;
+    };
+  };
+
+  // PTM-11: the reserve part of a bid is held in the paid token itself, so no
+  // conversion cost is added to the deposit: the buffer is always 0.
+  public func conversionBuffer(_token : Types.PayToken, _reserveAmount : Nat) : Nat = 0;
+
   // Required deposit of a bid, or the reason it is refused. Shared by the quote
   // and by the bid placement.
-  public func quoteDeposit(priceB : Nat, quantityE8s : Nat) : Result.Result<Nat, Types.BidError> {
+  public func quoteDeposit(priceB : Nat, reserveUnit : Nat, quantityE8s : Nat) : Result.Result<Nat, Types.BidError> {
     if (quantityE8s < Types.MIN_QUANTITY_E8S) {
       return #err(#quantityBelowMinimum({ minimum = Types.MIN_QUANTITY_E8S }));
     };
     if (priceB == 0 or priceB > MAX_AMOUNT or quantityE8s > MAX_QUANTITY_E8S) {
       return #err(#invalidPrice);
     };
-    let required = depositFormula(priceB, quantityE8s);
+    let required = depositFormula(priceB, reserveUnit, quantityE8s);
     if (required > MAX_AMOUNT) {
       return #err(#invalidPrice);
     };
@@ -105,23 +126,55 @@ module {
   // minimum of one bid) takes only bids for the entire lot: quantityE8s must
   // equal the lot (#wholeLotRequired otherwise) and priceB is the price per
   // whole TTTI-T for all of it. Other lots follow quoteDeposit.
-  public func quoteDepositFor(auction : Types.Auction, priceB : Nat, quantityE8s : Nat) : Result.Result<Nat, Types.BidError> {
-    if (not auction.blockSale) { return quoteDeposit(priceB, quantityE8s) };
+  public func quoteDepositFor(auction : Types.Auction, priceB : Nat, reserveUnit : Nat, quantityE8s : Nat) : Result.Result<Nat, Types.BidError> {
+    if (not auction.blockSale) { return quoteDeposit(priceB, reserveUnit, quantityE8s) };
     if (quantityE8s != auction.lotSizeE8s) {
       return #err(#wholeLotRequired({ lotSizeE8s = auction.lotSizeE8s }));
     };
     if (priceB == 0 or priceB > MAX_AMOUNT) { return #err(#invalidPrice) };
-    let required = depositFormula(priceB, quantityE8s);
+    let required = depositFormula(priceB, reserveUnit, quantityE8s);
     if (required > MAX_AMOUNT) { return #err(#invalidPrice) };
     #ok(required);
   };
 
-  // Deposit quote against the open auction (block sale aware).
-  public func quoteDepositIn(store : Types.AuctionStore, priceB : Nat, quantityE8s : Nat) : Result.Result<Nat, Types.BidError> {
-    switch (store.current) {
-      case (?a) { quoteDepositFor(a, priceB, quantityE8s) };
-      case null { quoteDeposit(priceB, quantityE8s) };
+  // PTM-11: deposit quote against the open auction (block sale aware): payment
+  // (B + 10 000 USD) x q / 0.99, its split (position B x q, reserve 10 000 USD
+  // x q, creator 1 %) and the conversion buffer. #rateUnavailable without a
+  // usable rate of the token.
+  public func depositQuote(store : Types.AuctionStore, oracle : OracleLib.OracleStore, tokenRates : OracleLib.TokenRateStore, token : Types.PayToken, priceB : Nat, quantityE8s : Nat, choice : Types.RemainderChoice, mShareE6 : Nat, now : Int) : Result.Result<Types.DepositQuote, Types.BidError> {
+    let reserveUnit = switch (reserveUnitOf(oracle, tokenRates, token, now)) {
+      case (?u) u;
+      case null return #err(#rateUnavailable({ token }));
     };
+    let payment = switch (store.current) {
+      case (?auction) quoteDepositFor(auction, priceB, reserveUnit, quantityE8s);
+      case null quoteDeposit(priceB, reserveUnit, quantityE8s);
+    };
+    let paid = switch (payment) {
+      case (#ok(n)) n;
+      case (#err(e)) return #err(e);
+    };
+    let reserveAmount = reserveUnit * quantityE8s / TTTI_E8S;
+    let buffer = conversionBuffer(token, reserveAmount);
+    let split = LiquidityMintLib.splitOf(choice, mShareE6, quantityE8s, priceB * quantityE8s / TTTI_E8S);
+    #ok({
+      token;
+      choice;
+      mShareE6;
+      choicePayment = LiquidityMintLib.winnerTaken(priceB, reserveUnit, quantityE8s, mShareE6, choice);
+      choicePooledAmount = split.pooledToken;
+      lockedAmount = split.lockedToken;
+      handE8s = split.handTtti;
+      required = paid + buffer;
+      payment = paid;
+      positionAmount = priceB * quantityE8s / TTTI_E8S;
+      reserveAmount;
+      creatorAmount = paid * 100 / 10_000;
+      reserveToken = token;
+      conversionApplies = false;
+      conversionBuffer = buffer;
+      rateUsdE8 = OracleLib.usableRate(OracleLib.storeFor(oracle, tokenRates, token), now) ?? 0;
+    });
   };
 
   // --- Lot -------------------------------------------------------------------
@@ -230,8 +283,9 @@ module {
   };
 
   // The reserve at `now` from the consolidated price (PTM-5) and its 24 h
-  // average. Computed on every call; nothing is stored. The closing step reads
-  // the effective reserve through this function at closing time.
+  // average. Computed on every call; nothing is stored. This form counts every
+  // sample and the live price; the auction reads use
+  // reserveBreakdownOutsideSettlement below.
   public func reserveBreakdown(
     dex : DexTypes.DexStore,
     samples : List.List<ProtocolFeeTypes.ConsolidatedSample>,
@@ -240,6 +294,106 @@ module {
   ) : Types.ReserveBreakdown {
     let consolidated = DexLib.consolidatedNow(dex, rateOf, now).price;
     let day = DexLib.sampleWindow(samples, now, ProtocolFeeTypes.CONSOLIDATED_RETENTION_NS);
+    reserveFrom(consolidated, day.average);
+  };
+
+  // A period during which the winners of a closed auction are being pooled.
+  // It starts when the auction closes and ends at the last final settlement of
+  // its winners (`to` = null while one is still pending).
+  public type SettlementWindow = { from : Types.Timestamp; to : ?Types.Timestamp };
+
+  // Settlement periods that matter to the reserve, derived from the closed
+  // auctions and their settlements (nothing is stored). Auctions with no served
+  // bid have none; fully settled ones older than the 24 h sample retention are
+  // skipped.
+  public func settlementWindows(closing : Types.ClosingStore, now : Types.Timestamp) : [SettlementWindow] {
+    let out = List.empty<SettlementWindow>();
+    for (auction in closing.closed.values()) {
+      let bids = switch (closing.closedBids.get(auction.id)) {
+        case (?b) b;
+        case null [];
+      };
+      var hasServed = false;
+      var open = false;
+      var last = auction.closedAt;
+      for (b in bids.values()) {
+        if (b.servedE8s > 0) {
+          hasServed := true;
+          switch (closing.settlements.get(b.id)) {
+            case (?st) {
+              if (st.status == #pending) {
+                open := true;
+              } else {
+                let t = switch (st.settledAt, st.attemptedAt) {
+                  case (?t, _) t;
+                  case (null, ?t) t;
+                  case (null, null) last;
+                };
+                if (t > last) { last := t };
+              };
+            };
+            case null { open := true };
+          };
+        };
+      };
+      if (hasServed and (open or now - last <= ProtocolFeeTypes.CONSOLIDATED_RETENTION_NS)) {
+        out.add({ from = auction.closedAt; to = if (open) null else ?last });
+      };
+    };
+    out.toArray();
+  };
+
+  // The reserve at `now` where the pooling of winners at settlement does not
+  // raise the market part: samples taken during a settlement window are left
+  // out of the 24 h average, and while a settlement is still running the
+  // current price is the last sample taken before it started (the live price
+  // already contains the pooling). Outside any settlement it equals
+  // reserveBreakdown. Nothing is stored.
+  public func reserveBreakdownOutsideSettlement(
+    dex : DexTypes.DexStore,
+    samples : List.List<ProtocolFeeTypes.ConsolidatedSample>,
+    rateOf : DexLib.UsdRateOf,
+    windows : [SettlementWindow],
+    now : Types.Timestamp,
+  ) : Types.ReserveBreakdown {
+    if (windows.size() == 0) { return reserveBreakdown(dex, samples, rateOf, now) };
+    func inWindow(t : Types.Timestamp) : Bool {
+      windows.any(
+        func(w : SettlementWindow) : Bool {
+          t >= w.from and (switch (w.to) { case (?e) t <= e; case null true });
+        }
+      );
+    };
+    let outside = samples.filter(func(sm : ProtocolFeeTypes.ConsolidatedSample) : Bool { not inWindow(sm.at) });
+    let day = DexLib.sampleWindow(outside, now, ProtocolFeeTypes.CONSOLIDATED_RETENTION_NS);
+    // Start of the earliest settlement still running, if any.
+    var runningFrom : ?Types.Timestamp = null;
+    for (w in windows.values()) {
+      if (w.to == null) {
+        switch (runningFrom) {
+          case (?f) { if (w.from < f) { runningFrom := ?w.from } };
+          case null { runningFrom := ?w.from };
+        };
+      };
+    };
+    let consolidated : ?Nat = switch (runningFrom) {
+      case null { DexLib.consolidatedNow(dex, rateOf, now).price };
+      case (?from) {
+        var best : ?ProtocolFeeTypes.ConsolidatedSample = null;
+        for (sm in outside.values()) {
+          if (sm.at < from) {
+            switch (best) {
+              case (?b) { if (sm.at > b.at) { best := ?sm } };
+              case null { best := ?sm };
+            };
+          };
+        };
+        switch (best) {
+          case (?b) ?b.priceUsdE8;
+          case null null;
+        };
+      };
+    };
     reserveFrom(consolidated, day.average);
   };
 
@@ -329,7 +483,7 @@ module {
     samples : List.List<ProtocolFeeTypes.ConsolidatedSample>,
     now : Types.Timestamp,
   ) : Types.AuctionView {
-    let reserve = reserveBreakdown(dex, samples, usdRateOf(oracle, rates, now), now);
+    let reserve = reserveBreakdownOutsideSettlement(dex, samples, usdRateOf(oracle, rates, now), settlementWindows(closing, now), now);
     let base = buildViewWith(store, returnedBalance(ledger, canister), mintRemainder(ledger), reserve, reservePrices(oracle, rates, reserve.reserveUsdE8, now), now);
     { base with closingPending = switch (closing.closingSince) { case (?_) true; case null false } };
   };
@@ -427,6 +581,7 @@ module {
                   requiredDeposit = p.requiredDeposit;
                   deposited = p.deposited;
                   createdAt = p.createdAt;
+                  choice = p.choice;
                   memo = t.attempt.memo;
                   block;
                 };
@@ -496,6 +651,7 @@ module {
     quantityE8s : Nat,
     priceB : Nat,
     depositAmount : Nat,
+    choice : Types.RemainderChoice,
   ) : async Result.Result<Types.Bid, Types.BidError> {
     // 1. Validation: nothing below takes funds before it all passes.
     if (caller.isAnonymous()) { return #err(#anonymous) };
@@ -509,10 +665,17 @@ module {
       };
       case null { return #err(#noOpenAuction) };
     };
-    let required = switch (quoteDepositFor(auction, priceB, quantityE8s)) {
+    let reserveUnit = switch (reserveUnitOf(oracle, tokenRates, token, now)) {
+      case (?u) { u };
+      case null { return #err(#rateUnavailable({ token })) };
+    };
+    let payment = switch (quoteDepositFor(auction, priceB, reserveUnit, quantityE8s)) {
       case (#err(e)) { return #err(e) };
       case (#ok(r)) { r };
     };
+    // PTM-11: the reserve is not converted, so the buffer is 0.
+    let required = payment + conversionBuffer(token, reserveUnit * quantityE8s / TTTI_E8S);
+    if (required > MAX_AMOUNT) { return #err(#invalidPrice) };
     if (bidCount(store, caller, auction.id) >= Types.MAX_BIDS_PER_PERSON) {
       return #err(#tooManyBids({ maximum = Types.MAX_BIDS_PER_PERSON }));
     };
@@ -549,6 +712,7 @@ module {
           requiredDeposit = required;
           deposited = depositAmount;
           createdAt = now;
+          choice;
         },
       );
       let (transfer, err) = await RetryLib.sendDexDepositDetailed(dex, opened.n);
@@ -783,7 +947,7 @@ module {
         let outcome : Types.BidOutcome = if (q == 0) {
           if (discarded.contains(bid.id)) #discardedBelowReserve else #notServed;
         } else if (q == bid.quantityE8s) #served else #partiallyServed;
-        let servedDeposit = if (q == 0) 0 else Nat.min(depositFormula(bid.priceB, q), bid.deposited);
+        let servedDeposit = if (q == 0) 0 else Nat.min((bid.requiredDeposit * q + bid.quantityE8s - 1) / bid.quantityE8s, bid.deposited);
         {
           id = bid.id;
           auctionId = bid.auctionId;
@@ -794,6 +958,7 @@ module {
           requiredDeposit = bid.requiredDeposit;
           deposited = bid.deposited;
           createdAt = bid.createdAt;
+          choice = bid.choice;
           outcome;
           servedE8s = q;
           pricePaidB = if (q == 0) 0 else bid.priceB;
@@ -897,7 +1062,7 @@ module {
       if (closing.closingSince == null) { closing.closingSince := ?now };
       return false;
     };
-    let reserve = reserveBreakdown(dex.dex, samples, rateOfToken, now);
+    let reserve = reserveBreakdownOutsideSettlement(dex.dex, samples, rateOfToken, settlementWindows(closing, now), now);
     applyClosing(store, closing, computeClosing(auction, bids, reserve, rates, now));
     true;
   };
@@ -979,21 +1144,31 @@ module {
   };
 
   public type SettleAmounts = {
-    taken : Nat; // 2 x B x q / 0.99, rounded up (in favor of the pools)
+    taken : Nat; // PTM-10b: (10 000 USD + L) x q / 0.99, rounded up (in favor of the pools), L = B (choice #pool) or m x B (#wallet) per TTTI-T
     creator : Nat; // 1 % of taken
-    position : Nat; // B x q: with the q TTTI-T in the pool
-    guarantee : Nat; // B x q: B per TTTI-T in the paid token
+    position : Nat; // pooled token side: B x q (#pool) or m x B x q (#wallet), with its TTTI-T in the pool
+    locked : Nat; // PTM-10b: m x B x q, pooled and locked 3 months in the winner's name
+    handE8s : Nat; // PTM-10b: (1 - m) x q TTTI-T that stay in the winner's hand (choice #wallet)
+    guarantee : Nat; // PTM-11: 10 000 USD x q for the common reserve, in the paid token
     dust : Nat; // what the roundings leave, added to the pool deposit
   };
 
   // Amounts of the settlement of a winner served for q at price B (B per whole
   // TTTI-T in the paid token's smallest unit, q in e8s).
-  public func settleAmounts(priceB : Nat, quantityE8s : Nat) : SettleAmounts {
-    let taken = depositFormula(priceB, quantityE8s);
+  public func settleAmounts(priceB : Nat, reserveUnit : Nat, quantityE8s : Nat, mShareE6 : Nat, choice : Types.RemainderChoice) : SettleAmounts {
+    let taken = LiquidityMintLib.winnerTaken(priceB, reserveUnit, quantityE8s, mShareE6, choice);
     let creator = taken * 100 / 10_000;
-    let position = priceB * quantityE8s / TTTI_E8S;
-    let used = creator + 2 * position;
-    { taken; creator; position; guarantee = position; dust = Nat.sub(taken, Nat.min(taken, used)) };
+    let split = LiquidityMintLib.splitOf(choice, mShareE6, quantityE8s, priceB * quantityE8s / TTTI_E8S);
+    let reserve = reserveUnit * quantityE8s / TTTI_E8S;
+    let used = creator + split.pooledToken + reserve;
+    { taken; creator; position = split.pooledToken; locked = split.lockedToken; handE8s = split.handTtti; guarantee = reserve; dust = Nat.sub(taken, Nat.min(taken, used)) };
+  };
+
+  // PTM-11: 10 000 USD in the paid token's smallest unit per whole TTTI-T at the
+  // settlement rate; the settlement of a winner is refused when the rate is not
+  // usable.
+  func settleReserveUnit(mint : LiquidityMintLib.MintContext, token : Types.PayToken, now : Int) : ?Nat {
+    reserveUnitOf(mint.oracle, mint.tokenRates, token, now);
   };
 
   // The part of the ledger fee of the internal move (auction custody to DEX
@@ -1084,6 +1259,11 @@ module {
       surplusReturned = 0;
       carriedE8s = 0;
       positionId = null;
+      mShareE6 = 0;
+      choice = bid.choice;
+      lockedAmount = 0;
+      lockedPositionId = null;
+      handE8s = 0;
       failureReason = null;
       attemptedAt = ?now;
       settledAt = null;
@@ -1347,7 +1527,14 @@ module {
       };
       case null { Runtime.trap("No deposit move for this bid") };
     };
-    let amounts = settleAmounts(a.priceB, a.quantityE8s);
+    let reserveUnit = switch (settleReserveUnit(ctx.mint, a.token, Time.now())) {
+      case (?u) u;
+      case null { Runtime.trap("The rate of the paid token is not usable") };
+    };
+    // PTM-10b: m is read here, at settlement time; the bid's choice was stored with the bid.
+    if (bid.choice != a.choice) { Runtime.trap("The choice does not match the bid") };
+    let mShare = LiquidityMintLib.shareNow(ctx.mint, now);
+    let amounts = settleAmounts(a.priceB, reserveUnit, a.quantityE8s, mShare, bid.choice);
     let moveFee = switch (latestMove(closing, a.owner, a.token, a.bidId)) { case (?m) Nat.sub(m.gross, m.credited); case null 0 };
     let borne = feeBorneByCreator(amounts, moveFee);
     if (credited < requiredCredit(amounts, moveFee)) { Runtime.trap("The deposit is lower than the amount to take") };
@@ -1363,7 +1550,7 @@ module {
     let spare = Nat.sub(balance, Nat.min(balance, Nat.sub(committed, fromReturned)));
     let r = LiquidityMintLib.settleWinner(
       ctx.mint,
-      { bidId = a.bidId; owner = a.owner; token = a.token; q = a.quantityE8s; priceB = a.priceB; taken = amounts.taken; feeBorne = borne; spareTtti = spare; mintE8s },
+      { bidId = a.bidId; owner = a.owner; token = a.token; q = a.quantityE8s; priceB = a.priceB; reserveUnit; mShareE6 = mShare; choice = bid.choice; taken = amounts.taken; feeBorne = borne; spareTtti = spare; mintE8s; conversionAllowance = Nat.sub(credited, requiredCredit(amounts, moveFee)) },
     );
     ctx.store.committedReturnedE8s := Nat.sub(committed, fromReturned);
     ctx.store.remainderCommittedE8s := Nat.sub(ctx.store.remainderCommittedE8s, mintE8s);
@@ -1377,8 +1564,13 @@ module {
         positionAmount = r.position;
         guaranteeAmount = r.guarantee;
         mintedE8s = r.minted;
-        surplusReturned = Nat.sub(credited, r.charged);
-        positionId = ?r.positionId;
+        surplusReturned = Nat.sub(credited, Nat.min(credited, r.charged + r.conversionCost));
+        positionId = r.positionId;
+        mShareE6 = r.mShareE6;
+        choice = bid.choice;
+        lockedAmount = r.lockedAmount;
+        lockedPositionId = r.lockedPositionId;
+        handE8s = r.handE8s;
         settledAt = ?now;
       },
     );
@@ -1388,8 +1580,14 @@ module {
       creatorShare = r.creator;
       positionAmount = r.position;
       guaranteeAmount = r.guarantee;
+      reserveToken = r.reserveToken;
+      conversionCost = r.conversionCost;
       mintedE8s = r.minted;
-      positionId = ?r.positionId;
+      positionId = r.positionId;
+      mShareE6 = r.mShareE6;
+      lockedAmount = r.lockedAmount;
+      lockedPositionId = r.lockedPositionId;
+      handE8s = r.handE8s;
       shares = r.shares;
     };
   };
@@ -1434,8 +1632,13 @@ module {
       };
       // Step 2: the isolated, all-or-nothing settlement.
       if (dex.pause.paused) { return };
-      let amounts = settleAmounts(bid.priceB, bid.servedE8s);
       let now = Time.now();
+      // PTM-11: without a usable rate the settlement waits, nothing is decided.
+      let reserveUnit = switch (settleReserveUnit(ctx.mint, bid.token, now)) {
+        case (?u) u;
+        case null { return };
+      };
+      let amounts = settleAmounts(bid.priceB, reserveUnit, bid.servedE8s, LiquidityMintLib.shareNow(ctx.mint, now), bid.choice);
       let required = requiredCredit(amounts, Nat.sub(m1.gross, m1.credited));
       if (m1.credited < required) {
         recordFailure(
@@ -1449,7 +1652,7 @@ module {
         return;
       };
       try {
-        ignore await ctx.isolated({ auctionId = bid.auctionId; bidId = bid.id; owner = bid.bidder; token = bid.token; quantityE8s = bid.servedE8s; priceB = bid.priceB; mintE8s = mintAllocation(ctx.closing, bid) });
+        ignore await ctx.isolated({ auctionId = bid.auctionId; bidId = bid.id; owner = bid.bidder; token = bid.token; quantityE8s = bid.servedE8s; priceB = bid.priceB; choice = bid.choice; mintE8s = mintAllocation(ctx.closing, bid) });
       } catch (e) {
         // The core may have run to the end with only its reply lost: keep that settlement.
         if (not isFinal(ctx.closing, bid.id)) {
@@ -1475,8 +1678,12 @@ module {
     // amount taken) bears the fee first; only a shortfall is covered by the
     // winner's own bid excess, moved with the deposit. Neither covering it, the
     // settlement refuses with the credited deposit left in the DEX balance.
+    let reserveUnit = switch (settleReserveUnit(ctx.mint, bid.token, Time.now())) {
+      case (?u) u;
+      case null { return null };
+    };
     let fee = RetryLib.dexFee(ctx.mint.dex, dexToken(bid.token));
-    let shortfall = Nat.sub(fee, feeBorneByCreator(settleAmounts(bid.priceB, bid.servedE8s), fee));
+    let shortfall = Nat.sub(fee, feeBorneByCreator(settleAmounts(bid.priceB, reserveUnit, bid.servedE8s, LiquidityMintLib.shareNow(ctx.mint, Time.now()), bid.choice), fee));
     let spare = switch (ctx.closing.balances.get(balanceKey(bid.bidder, bid.token))) {
       case (?b) b.withdrawable;
       case null 0;

@@ -1,0 +1,102 @@
+import type en from "./en";
+
+const zhHans: typeof en = {
+  requestFailed: "无法完成请求。请重试。",
+  errorTitle: "比特币购买",
+  intro:
+    "将 BTC 发送到您自己的比特币地址。它会先转为 ckBTC，再按每小时汇率转为 TTTI-T。金额的 1 % 归创建者。",
+  recordingAcks: "正在记录购买确认…",
+  creatingAddress: "正在创建地址…",
+  getAddress: "获取我的比特币地址",
+  tickAll: "勾选全部六项声明以获取您的地址。",
+  purchaseAddressLabel: "您的比特币购买地址",
+  sentToDelivery: "TTTI-T 将发送到您下方的交付地址。",
+  keepPageOpen:
+    "请保持此页面打开，直到检测到您的充值。如果您离开，您的购买将在您返回此页面时完成，按届时的汇率计算。如果届时销售已结束，您将获得 ckBTC 退款。",
+  delivered: (amount: string) => `已交付 ${amount} TTTI-T`,
+  deliveredDetail: "按每小时 ckBTC 汇率计算",
+  refunded: (amount: string) => `${amount} 已退回您的钱包`,
+  refundedDetail: "转换未能完成，ckBTC 已自动退回。",
+  addressDefaultLabel: "比特币充值地址",
+  addressCopiedToast: "比特币地址已复制",
+  addressCopyFailedToast: "无法复制地址",
+  qrTitle: (address: string) => `比特币地址 ${address} 的二维码`,
+  copyAddressAria: (address: string) => `复制比特币地址 ${address}`,
+  copied: "已复制",
+  clickToCopy: "点击地址即可复制。",
+  errValueTooSmall: (minimum: string) =>
+    `充值金额过小：低于 ${minimum} 的最低限额。未进行转换。`,
+  errTainted: "充值被 ckBTC minter 拒绝。",
+  errMinterUnavailable: "ckBTC minter 不可用。请稍后再查看。",
+  errOther: (server: string | undefined) =>
+    server ? `无法处理此充值。${server}` : "无法处理此充值。",
+  notYet: "尚未",
+  finalWallet: "ckBTC 已在您的钱包中",
+  finalRefunded: "已以 ckBTC 退还",
+  finalDelivered: "TTTI-T 已交付",
+  stepAddress: "地址已显示",
+  stepDetected: "已检测到充值",
+  stepConfirmations: (count: string) => `确认数 ${count}`,
+  stepMinted: "ckBTC 已创建",
+  amountBtcDetected: "检测到的 BTC",
+  amountCkbtcCreated: "已创建的 ckBTC",
+  amountCkbtcPending: "待处理的 ckBTC",
+  amountRefunded: "已退还",
+  amountTttiDelivered: "已交付的 TTTI-T",
+  progressAria: "比特币充值进度",
+  pendingRate: "汇率不可用。ckBTC 将保留至下一个每小时汇率。",
+  lastChecked: (time: string) => `上次检查：${time}`,
+  checking: "正在检查…",
+  check: "检查",
+  flowWallet: "BTC → ckBTC（钱包）",
+  flowPurchase: "BTC → TTTI-T（购买）",
+  noDepositYet: "此地址尚未收到充值。",
+  earlierDeposits: "此地址上的先前充值",
+  depositNumber: (n: string) => `充值 ${n}`,
+  detectedOn: (time: string) => `检测时间：${time}`,
+  stagePendingRate: "等待每小时汇率",
+  conversionCauseLine: (cause: string) => `转换状态：${cause}`,
+  pendingDepositStatus: "比特币充值进行中。",
+  pendingDepositLink: "查看比特币充值",
+  errUnrecoverable: (server: string | undefined) =>
+    server ? `此充值无法处理。${server}` : "此充值无法处理。",
+  refundFailed: (amount: string) =>
+    `超额部分退款失败。仍持有 ${amount}；退款将自动重试。`,
+  waitingNewTransfer: "正在等待向此地址的新转账。",
+  depositFinished: (n: string, status: string) => `充值 ${n}：${status}。`,
+  waitForNew: "等待新的转账",
+  otherDeposits: "此地址上的其他充值",
+  reuseWallet:
+    "从任意比特币钱包向此地址发送 BTC。每笔新转账都会自动转换为 ckBTC。同一地址可以重复使用。",
+  reusePurchase:
+    "从任意比特币钱包向此地址发送 BTC。每笔新转账都会自动转换并以 TTTI-T 交付。同一地址可以重复使用。",
+  waitingDepositStatus: "比特币地址正在等待新的转账。",
+  waitingDepositLink: "查看比特币地址",
+  refundCause: (cause: string) => `原因：${cause}`,
+  refundPurposeFull: "已全额退回",
+  refundPurposeExcess: "已退回超出部分",
+  refundPurposeDeliveryFailed: "交付失败，金额已退回",
+  refundSending: "退款正在发送。",
+  refundRetrying: "退款将自动重试。",
+  refundTxLabel: "退款交易",
+  heldNote: (amount: string) =>
+    `合约持有 ${amount}。可使用下方的 Mint 按钮立即转换。如果转换无法完成，将自动开启退回您钱包的退款。`,
+  convertDelivered: (amount: string) => `已交付 ${amount} TTTI-T`,
+  convertRefunded: (amount: string) => `${amount} 已退回您的钱包`,
+  convertStillHeld: (amount: string) =>
+    `合约仍持有 ${amount}。转换将自动重试。`,
+  convertNothing: "没有等待转换的 ckBTC。",
+  convertFailedTitle: "转换未完成",
+  convertNothingTaken:
+    "未扣除任何款项：您的资金仍归您所有，或已退回您的钱包。您可以再次点击 Mint。",
+  depositAlertDeliveredTitle: "比特币充值已交付",
+  depositAlertDeliveredText: (amount: string) =>
+    `您的比特币充值已收到 ${amount}。`,
+  depositAlertRefundedTitle: "比特币充值已退款",
+  depositAlertRefundedText: (amount: string) =>
+    `${amount} 已退回您的钱包。转换未能完成。`,
+  depositAlertViewDeposit: "查看充值",
+  depositAlertViewHistory: "查看历史记录",
+};
+
+export default zhHans;

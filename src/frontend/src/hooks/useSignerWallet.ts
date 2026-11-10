@@ -151,7 +151,7 @@ export function cachedWalletConfig(): AppConfig | null {
 
 const KIND_KEY = "ttti.connectedWallet.kind";
 const ACCOUNT_KEY = "ttti.signerWallet.account";
-const ACK_KEY_PREFIX = "ttti.walletAck.v2.";
+const ACK_KEY_PREFIX = "ttti.walletAck.";
 const kindListeners = new Set<() => void>();
 
 function readStorage(key: string): string | null {
@@ -207,11 +207,28 @@ export function useRememberedWalletKind(): ConnectedWalletKind | null {
  * backend stays the authority: accepting again is harmless.
  */
 export function hasAcceptedHint(principalText: string): boolean {
-  return readStorage(`${ACK_KEY_PREFIX}${principalText}`) === "1";
+  // Any hint recorded for this principal counts, whatever key it was saved
+  // under: acceptance is requested once and never again.
+  try {
+    const suffix = `.${principalText}`;
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (
+        key?.startsWith(ACK_KEY_PREFIX) &&
+        key.endsWith(suffix) &&
+        window.localStorage.getItem(key) === "1"
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    // Storage unavailable: no hint.
+  }
+  return false;
 }
 
 export function rememberAcceptedHint(principalText: string) {
-  writeStorage(`${ACK_KEY_PREFIX}${principalText}`, "1");
+  writeStorage(`${ACK_KEY_PREFIX}accepted.${principalText}`, "1");
 }
 
 // ------------------------------------------------------------ signer core

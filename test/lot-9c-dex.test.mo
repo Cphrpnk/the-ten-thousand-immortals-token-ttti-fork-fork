@@ -70,6 +70,7 @@ func store() : DexTypes.DexStore {
     var nextPositionId = 100;
     removals = Map.empty<DexTypes.PoolId, DexTypes.PairRemoval>();
     icpswapSamples = Map.empty<Text, DexTypes.IcpSwapSample>();
+    referenceReadings = Map.empty<Text, DexTypes.ReferenceReading>();
     poolPositions = Map.empty<DexTypes.PoolId, Set.Set<DexTypes.PositionId>>();
     fees = {
       var dayStart = 0;
@@ -95,6 +96,7 @@ func positionOf(id : Nat, poolId : Nat, owner : Principal, shares : Nat, started
     relayReceivedNs = 0;
     feesCollected0 = 0;
     feesCollected1 = 0;
+    mintShareE6 = 0;
   };
 };
 

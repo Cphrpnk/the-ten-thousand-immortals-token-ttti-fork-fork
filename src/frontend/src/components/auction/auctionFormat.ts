@@ -3,7 +3,12 @@ import type { BidError, PayToken } from "../../backend";
 import type { BidFailure } from "../../hooks/useAuction";
 import type { Lang } from "../../i18n/core";
 import type { AUCTION_TEXT } from "../../i18n/pages/auction";
-import { TTTI_DECIMALS, formatPayAmount, formatUnits } from "../../lib/token";
+import {
+  TTTI_DECIMALS,
+  formatPayAmount,
+  formatUnits,
+  payTokenSymbol,
+} from "../../lib/token";
 
 export type AuctionText = (typeof AUCTION_TEXT)["en"];
 
@@ -108,6 +113,10 @@ export function bidErrorText(
     case "wholeLotRequired":
       return t.bidErrWholeLot(
         formatTttiE8(error.wholeLotRequired.lotSizeE8s, lang),
+      );
+    case "rateUnavailable":
+      return t.bidErrRateUnavailable(
+        payTokenSymbol(error.rateUnavailable.token),
       );
   }
 }

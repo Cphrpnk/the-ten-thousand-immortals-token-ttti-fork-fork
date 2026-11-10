@@ -3,10 +3,13 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { SITE_TEXT } from "../common/site";
 import { useLanguage } from "./dict";
+import { getLang } from "./lang";
+import { isLanguageReady, loadLanguageWithFallback } from "./loader";
 
 const noopSubscribe = () => () => {};
 
@@ -40,5 +43,22 @@ export function LanguageProvider({
     document.title = SITE_TEXT[pageLang].title;
   }, [lang, isAdmin]);
 
-  return <>{children}</>;
+  const [ready, setReady] = useState(
+    () => isLanguageReady(getLang()) && isLanguageReady("en"),
+  );
+  useEffect(() => {
+    if (ready) return;
+    let active = true;
+    const release = () => {
+      if (active) setReady(true);
+    };
+    loadLanguageWithFallback(getLang()).then(release, release);
+    return () => {
+      active = false;
+    };
+  }, [ready]);
+
+  // Nothing renders until the active language and English are in memory, so
+  // there is never a flash of untranslated text.
+  return ready ? <>{children}</> : null;
 }

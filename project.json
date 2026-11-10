@@ -1,18 +1,19 @@
 {
-  "overview": "Une application de jeton TTTI avec portefeuille, mint, pools de liquidité et enchères, dont le menu Échanger unifie les pools natifs et ICPSwap et affiche l'équivalent en USD des montants.",
+  "overview": "Application TTTI : mint de TTTI-T, pools et échanges, où tous les chemins de mint suivent le pool cible, le choix A/B et la tolérance choisis par l'utilisateur.",
   "features": [
-    "Menu Échanger unifié: pools natifs et ICPSwap comparés, route la moins chère suggérée, choix manuel de la route",
-    "Équivalent en USD à côté de chaque montant en crypto",
-    "Portefeuille, mint, pools de liquidité, garantie et enchères",
-    "Sept langues, l'anglais fait foi"
+    "Mint depuis le portefeuille avec pool cible, choix A/B et tolérance de glissement choisis",
+    "Mint en un clic depuis le solde du DEX",
+    "Mint depuis le ckBTC retenu avec les valeurs de l'utilisateur, plafond de paiement et délai de 5 minutes",
+    "Gros bouton Mint final du parcours BTC, ckBTC, TTTI-T",
+    "Fonds laissés ou rendus à l'utilisateur en cas de refus"
   ],
-  "category": "crypto-wallet",
+  "category": "crypto-token-platform",
   "tags": [
-    "crypto",
-    "wallet",
-    "dex",
     "token",
-    "swap"
+    "mint",
+    "dex",
+    "ckbtc",
+    "internet-computer"
   ],
-  "last_updated": "2026-11-02T05:43:37.736Z"
+  "last_updated": "2026-11-10T19:20:08.853Z"
 }

@@ -21,7 +21,6 @@ module {
     ledgerFee : Nat; // expected ledger transfer fee, token base units
     feeBps : Nat; // 100 (1%) for every pay token
     minimumUsdE8 : Nat; // minimum purchase, fee included: 1.01 USD * 10^8
-    buyerPriceUsd : Nat; // 10_100 USD per whole TTTI-T for every pay token
     fundsCycles : Bool; // true only for ICP
     treasuryConfigured : Bool; // receiving account set
     priceUsdE8 : Nat; // USD per whole token * 10^8, 0 = no rate
@@ -61,7 +60,6 @@ module {
     minPurchase : Nat; // 10_000 (0.0001 TTTI-T)
     tokenPriceUsd : Nat; // 10_000 USD per whole TTTI-T (base price)
     cyclesFeeBps : Nat; // 100 = fixed 1% fee on ICP purchases, share kept for cycles
-    buyerPriceUsd : Nat; // 10_100 USD per whole TTTI-T (base price + 1% fee)
     salesPaused : Bool;
     // The stored hourly ICP/USD rate, exactly the one convertDeposit applies.
     priceUsdE8 : Nat; // ICP/USD * 10^8, 0 = no rate
@@ -111,7 +109,6 @@ module {
     maxRateAgeSeconds : Nat; // 300
     tokenPriceUsd : Nat; // 10_000
     cyclesFeeBps : Nat; // 100 (ICP purchases)
-    buyerPriceUsd : Nat; // 10_100
     minPurchase : Nat; // 10_000 base units
     smallestUnit : Nat; // 1 base unit = 0.00000001 TTTI-T
     roundingRule : Text;

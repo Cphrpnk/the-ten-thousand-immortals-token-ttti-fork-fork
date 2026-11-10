@@ -5,7 +5,6 @@ import Account "../src/backend/types/account";
 import AuctionLib "../src/backend/lib/auction";
 import CreatorFeesLib "../src/backend/lib/creator-fees";
 import DexLib "../src/backend/lib/dex";
-import GuaranteeLib "../src/backend/lib/guarantee";
 import IcrcLib "../src/backend/lib/icrc";
 import SaleLib "../src/backend/lib/presale";
 import CreatorTypes "../src/backend/types/creator-fees";
@@ -124,21 +123,16 @@ do {
 // --- Point 2: the mint ends below the minimum of one mint -----------------------------
 
 do {
-  let sale : SaleLib.SaleStore = { var sold = 0; var reserved = 0; var salesPaused = false };
   // 10_000 e8s is the minimum of one mint: at the minimum the mint goes on.
   let atMinimum = newLedger(Nat.sub(max, 10_000), []);
   assert AuctionLib.mintRemainder(atMinimum) == 0;
-  assert not GuaranteeLib.mintEnded(atMinimum, sale, canister);
   // One e8s below the minimum: the mint is over and the remainder is reported.
   let below = newLedger(Nat.sub(max, 9_999), []);
   assert AuctionLib.mintRemainder(below) == 9_999;
-  assert GuaranteeLib.mintEnded(below, sale, canister);
   // Well above the minimum: not over, no remainder.
   let far = newLedger(Nat.sub(max, 5_000_000), []);
   assert AuctionLib.mintRemainder(far) == 0;
-  assert not GuaranteeLib.mintEnded(far, sale, canister);
   // Fully minted: over, nothing left to carry.
   let full = newLedger(max, []);
   assert AuctionLib.mintRemainder(full) == 0;
-  assert GuaranteeLib.mintEnded(full, sale, canister);
 };

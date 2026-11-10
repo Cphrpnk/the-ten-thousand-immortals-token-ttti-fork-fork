@@ -4,13 +4,17 @@ import Common "common";
 import Pay "pay-token";
 import Retry "retry";
 
-// Mint fee (1/101 of each mint) routing, in the paid token, always for the
+// LEGACY mint fee routing (history and balances only). Mints before the
+// current rule paid a fee of 1/101 that was routed in the paid token to the
 // lowest-liquidity TTTI-T/<paid token> pair: half A to that pair's LPs pro
 // rata as an internal claimable balance (to the set-aside amount when the
-// pair has no LP), half B to the set-aside amount. Set-aside amounts wait
-// until worth 0.001 TTTI-T (10 USD), then 50 % is swapped into TTTI-T
-// (ICPSwap while no native pool of the pair is open, else the native pool)
-// and paired with the other 50 % as permanent liquidity (locked shares).
+// pair had no LP), half B to the set-aside amount. No new routing is created:
+// the current rule is 1 % of the amount paid, which goes to the cycles reserve
+// first and then to the creator (see lib/cycles-reserve.mo). What is stored
+// here stays readable: LPs can still claim their earlier balances, and the
+// set-aside amounts and injections already recorded (50 % swapped into TTTI-T
+// and paired with the other 50 % as permanent liquidity, locked shares) keep
+// their history.
 module {
   public type Account = Common.Account;
   public type PayToken = Pay.PayToken;
@@ -19,7 +23,7 @@ module {
   public type TransferAttempt = Retry.TransferAttempt;
   public type TokenKey = Text; // "icp", "ckbtc", "ckusdc", "ckusdt"
 
-  // One routed mint fee.
+  // One routed mint fee (legacy 1/101 fee, history only).
   public type MintFeeRouting = {
     id : Nat;
     at : Timestamp;
@@ -91,7 +95,7 @@ module {
     updatedAt : Timestamp;
   };
 
-  // Stable mint-fee state (new stable field `mintFees`).
+  // Stable legacy mint-fee state (stable field `mintFees`, history and claims).
   public type MintFeeStore = {
     claimable : Map.Map<Principal, Map.Map<TokenKey, Nat>>;
     claimed : Map.Map<Principal, Map.Map<TokenKey, Nat>>;

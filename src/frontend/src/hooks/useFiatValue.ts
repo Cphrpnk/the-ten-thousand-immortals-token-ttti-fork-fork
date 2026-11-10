@@ -4,6 +4,7 @@ import type { PayToken } from "../backend";
 import {
   NO_VALUE,
   usdValueE8,
+  useConsolidatedTttiUsdE8,
   useTokenUsdRates,
 } from "../components/wallet/valuation";
 import { type Lang, useLanguage } from "../i18n/core";
@@ -14,7 +15,6 @@ import {
   formatUsdE8,
 } from "../lib/token";
 import type { TokenDescriptor } from "../lib/tokenRegistry";
-import { useConsolidatedTttiPrice } from "./useDex";
 
 /** Token whose amount can be shown in USD: ICP, ckBTC, ckUSDC, ckUSDT or TTTI-T. */
 export type FiatToken = PayToken | "ttti";
@@ -57,12 +57,7 @@ function decimalsOf(token: FiatToken): number {
  */
 export function useFiatRates(): FiatRates {
   const payRates = useTokenUsdRates(PAY_DESCRIPTORS);
-  const { data: consolidated } = useConsolidatedTttiPrice();
-  const tttiUsdE8 =
-    consolidated?.price.__kind__ === "available" &&
-    consolidated.price.available > 0n
-      ? consolidated.price.available
-      : null;
+  const tttiUsdE8 = useConsolidatedTttiUsdE8();
   return useMemo(
     () => ({
       usdE8PerToken: (token: FiatToken) =>

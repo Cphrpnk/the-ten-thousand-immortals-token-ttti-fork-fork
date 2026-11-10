@@ -143,12 +143,12 @@ function SettlementDetail({
             </span>
           </Row>
           <Row
-            label={t.settleGuarantee}
-            ocid={`auction.settlement.guarantee.${index}`}
+            label={t.settleReserve}
+            ocid={`auction.settlement.reserve.${index}`}
           >
             <span className="font-mono">
               {pay(settlement.guaranteeAmount)}
-              {payFiat(settlement.guaranteeAmount, "guarantee")}
+              {payFiat(settlement.guaranteeAmount, "reserve")}
             </span>
           </Row>
           {settlement.mintedE8s > 0n && (

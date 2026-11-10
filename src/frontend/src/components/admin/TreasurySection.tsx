@@ -196,8 +196,8 @@ function ReceivingWalletBlock({ token }: { token: PayToken }) {
             {view?.setAt !== undefined
               ? `Set ${formatTimestamp(view.setAt)}`
               : "Set"}
-            {view?.setBy ? ` by ${view.setBy.toText()}` : ""}. Each mint paid
-            with {symbol} sends 100/101 here, ledger fee deducted.
+            {view?.setBy ? ` by ${view.setBy.toText()}` : ""}. Mint payments in{" "}
+            {symbol} are sent here, ledger fee deducted.
           </p>
         </div>
       ) : (
@@ -275,8 +275,8 @@ function ReceivingWalletBlock({ token }: { token: PayToken }) {
               {configured ? "Change" : "Set"} the {symbol} receiving wallet?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              From now on, 100/101 of each mint paid with {symbol} is sent to
-              this account. Check it carefully: ledger sends cannot be undone.
+              From now on, mint payments in {symbol} are sent to this account.
+              Check it carefully: ledger sends cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {pending && (
@@ -533,7 +533,7 @@ function FeeAccountBlock({ token }: { token: PayToken }) {
   return (
     <div className="space-y-5" data-ocid="admin.mint_fee_account">
       <div className="flex flex-wrap items-center gap-3">
-        <p className={BLOCK_LABEL}>Fee account (1/101)</p>
+        <p className={BLOCK_LABEL}>Fee account</p>
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
           Read-only, never withdrawable

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Account, DexToken } from "../../backend";
 import { SIGNER_NAMES, useAccountSigner } from "../../hooks/useAccountSigner";
-import { DexApprovalError } from "../../hooks/useDex";
+import { DexApprovalError, useDexBalances } from "../../hooks/useDex";
 import {
   useAddedSwapTokens,
   useSwapPool,
@@ -226,6 +226,8 @@ export function SwapPanel({
   } | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawMessage, setWithdrawMessage] = useState<string | null>(null);
+  const [dexWithdrawing, setDexWithdrawing] = useState(false);
+  const [dexMessage, setDexMessage] = useState<string | null>(null);
 
   const owner =
     account && isDefaultSubaccount(account.subaccount) ? account.owner : null;
@@ -278,14 +280,14 @@ export function SwapPanel({
   const amountEntered = amountIn !== null && amountIn > 0n && !overMax;
 
   // Native pool route: existing pools, quoted by the DEX.
+  const nativeSwap = useNativeWalletSwap(owner);
   const native = useNativeRoute({
     from,
     to,
     amountIn: quoteFresh ? debounced : null,
     slippageBps: slippageValid ? slippageBps : null,
-    accountOk: !account || owner !== null,
+    accountOk: (!account || owner !== null) && nativeSwap.accountOk,
   });
-  const nativeSwap = useNativeWalletSwap(owner);
 
   // ICPSwap route: last resort, quoted by the ICPSwap pool.
   const icpswapRoute: RouteState = (() => {
@@ -343,6 +345,7 @@ export function SwapPanel({
     setError(null);
     setReceived(null);
     setWithdrawMessage(null);
+    setDexMessage(null);
   };
 
   const pickFrom = (value: string) => {
@@ -413,7 +416,7 @@ export function SwapPanel({
     !overMax &&
     activeState?.status === "ready" &&
     !(activeKind === "icpswap" && (!pool || expired || minOut === null)) &&
-    !(activeKind === "native" && !native.quote) &&
+    !(activeKind === "native" && (!native.quote || !nativeSwap.accountOk)) &&
     !tooSmall &&
     !running &&
     !reviewing;
@@ -514,6 +517,7 @@ export function SwapPanel({
     if (!plan || !checked || !owner) return;
     const current = plan;
     if (current.route === "native" && current.native) {
+      if (!nativeSwap.accountOk) return;
       confirmNative(current, current.native);
       return;
     }
@@ -714,6 +718,47 @@ export function SwapPanel({
         setWithdrawing(false);
         invalidate(pool.poolId);
       });
+  };
+
+  const externalOwner = signer.kind && signer.kind !== "ii" ? owner : null;
+  const dexBalances = useDexBalances(externalOwner);
+  const dexEntries = (dexBalances.data ?? []).flatMap((row) => {
+    const token = tokens.find(
+      (tk) => tk.canisterId.toText() === row.ledgerId.toText(),
+    );
+    return token && row.available > token.fee
+      ? [{ token, amount: row.available, dexToken: row.token }]
+      : [];
+  });
+
+  /** Withdraw every eligible DEX balance, signed by the wallet that holds the account. */
+  const withdrawDexBalances = () => {
+    if (!externalOwner || dexEntries.length === 0 || dexWithdrawing) return;
+    setDexWithdrawing(true);
+    setDexMessage(null);
+    const report = (text: string, ok: boolean) => {
+      setDexMessage(text);
+      if (ok) toast.success(text);
+      else toast.error(text);
+    };
+    void nativeSwap
+      .withdrawDexAll(
+        dexEntries.map((e) => ({ token: e.dexToken, amount: e.amount })),
+      )
+      .then((outcome) => {
+        if (outcome.kind === "done") {
+          report(pickDict(SWAP_TEXT).withdrawDone, true);
+        } else {
+          report(pickDict(SWAP_TEXT).withdrawFailed(outcome.detail), false);
+        }
+      })
+      .catch((failure: unknown) => {
+        const detail =
+          walletFailureMessage(failure) ??
+          (failure instanceof Error ? failure.message : "");
+        report(pickDict(SWAP_TEXT).withdrawFailed(detail), false);
+      })
+      .finally(() => setDexWithdrawing(false));
   };
 
   const stepText: Record<Step, string> = {
@@ -1052,6 +1097,19 @@ export function SwapPanel({
           busy={withdrawing}
           message={withdrawMessage}
           onWithdraw={withdrawUnused}
+        />
+      )}
+
+      {dexEntries.length > 0 && (
+        <UnusedBalance
+          entries={dexEntries}
+          busy={dexWithdrawing}
+          message={dexMessage}
+          onWithdraw={withdrawDexBalances}
+          title={t.dexBalanceTitle}
+          text={t.dexBalanceText}
+          panelOcid="wallet.swap.dex_balance.panel"
+          buttonOcid="wallet.swap.dex_balance.withdraw_button"
         />
       )}
 

@@ -208,11 +208,17 @@ module {
           };
           if (pot.totalProductNs == 0) {
             // Nobody was locked during the day: the pot goes to the reserves.
+            // PTM-10d: through DexLib.depositAtRatio, so the price does not
+            // move; the part beyond the pool ratio goes back to the pending
+            // pot (still owed, shared or returned the next day).
             let pool = switch (store.pools.get(poolId)) {
               case (?p) p;
               case null pool0;
             };
-            store.pools.add(poolId, { pool with reserve0 = pool.reserve0 + pot.frozen0; reserve1 = pool.reserve1 + pot.frozen1 });
+            let (put0, put1) = DexLib.fitAtRatio(pool, pot.frozen0, pot.frozen1);
+            ignore DexLib.depositAtRatio(store, poolId, put0, put1);
+            pot.pending0 += pot.frozen0 - put0;
+            pot.pending1 += pot.frozen1 - put1;
             pot.frozen0 := 0;
             pot.frozen1 := 0;
           } else {
@@ -272,18 +278,18 @@ module {
             };
           };
           // Rounding remainder to the reserves, in favour of the pool.
+          // PTM-10d: through DexLib.depositAtRatio; the part beyond the pool
+          // ratio goes back to the pending pot (still owed).
           let pool = switch (store.pools.get(poolId)) {
             case (?p) p;
             case null pool0;
           };
-          store.pools.add(
-            poolId,
-            {
-              pool with
-              reserve0 = pool.reserve0 + (pot.frozen0 - Nat.min(pot.frozen0, pot.paid0));
-              reserve1 = pool.reserve1 + (pot.frozen1 - Nat.min(pot.frozen1, pot.paid1));
-            },
-          );
+          let left0 = pot.frozen0 - Nat.min(pot.frozen0, pot.paid0);
+          let left1 = pot.frozen1 - Nat.min(pot.frozen1, pot.paid1);
+          let (put0, put1) = DexLib.fitAtRatio(pool, left0, left1);
+          ignore DexLib.depositAtRatio(store, poolId, put0, put1);
+          pot.pending0 += left0 - put0;
+          pot.pending1 += left1 - put1;
           pot.frozen0 := 0;
           pot.frozen1 := 0;
           pot.paid0 := 0;

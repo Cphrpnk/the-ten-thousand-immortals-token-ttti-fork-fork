@@ -1,6 +1,5 @@
-import { DexToken, FeeTier, PoolStatus } from "../../backend";
+import { DexToken, FeeTier, PayToken, PoolStatus } from "../../backend";
 import type {
-  ApproveError,
   ClaimBonusError,
   DexDepositError,
   DexTokenInfo,
@@ -13,11 +12,8 @@ import type {
 } from "../../backend";
 import { type Lang, formatNumber, toIntlLocale } from "../../i18n/core/lang";
 import type { DEX_TEXT } from "../../i18n/pages/dex";
-import { describeApproveError } from "../../lib/icpLedger";
 import {
   PAY_TOKENS,
-  type PayTokenDescriptor,
-  TOKEN_NAME,
   TTTI_DECIMALS,
   TTTI_SYMBOL,
   formatUnits,
@@ -88,6 +84,7 @@ export function requestErrorText(
   t: DexText,
   error: RequestPairError,
   lang: Lang,
+  deposit: { decimals: number; symbol: string },
 ): string {
   switch (error.__kind__) {
     case "anonymous":
@@ -117,15 +114,21 @@ export function requestErrorText(
       return t.errCooldown(formatDexDate(error.cooldown.until, lang));
     case "insufficientAllowance":
       return t.errInsufficientAllowance(
-        formatTttiAmount(error.insufficientAllowance.allowance),
-        formatTttiAmount(error.insufficientAllowance.required),
+        formatDexUnits(error.insufficientAllowance.allowance, deposit),
+        formatDexUnits(error.insufficientAllowance.required, deposit),
       );
     case "insufficientFunds":
       return t.errInsufficientFunds(
-        formatTttiAmount(error.insufficientFunds.balance),
+        formatDexUnits(error.insufficientFunds.balance, deposit),
       );
     case "depositFailed":
       return t.errDepositFailed(error.depositFailed);
+    case "payTokenNotAccepted":
+      return t.errPayTokenNotAccepted(deposit.symbol);
+    case "rateUnavailable":
+      return t.errDepositRateUnavailable(deposit.symbol);
+    case "requestInProgress":
+      return t.errRequestInProgress;
   }
 }
 
@@ -137,6 +140,50 @@ export const DEX_TOKEN_ORDER: ReadonlyArray<DexToken> = [
   DexToken.ckusdc,
   DexToken.ckusdt,
 ];
+
+/** Decimals and symbol of a DEX token (TTTI-T or a pay token). */
+export function dexTokenUnits(token: DexToken): {
+  decimals: number;
+  symbol: string;
+} {
+  switch (token) {
+    case DexToken.tttiT:
+      return { decimals: TTTI_DECIMALS, symbol: TTTI_SYMBOL };
+    case DexToken.icp:
+      return PAY_TOKENS[PayToken.icp];
+    case DexToken.ckbtc:
+      return PAY_TOKENS[PayToken.ckbtc];
+    case DexToken.ckusdc:
+      return PAY_TOKENS[PayToken.ckusdc];
+    case DexToken.ckusdt:
+      return PAY_TOKENS[PayToken.ckusdt];
+  }
+}
+
+/** Tokens accepted for a pair-request deposit, in display order. */
+export const REQUEST_DEPOSIT_TOKENS: ReadonlyArray<DexToken> = [
+  DexToken.icp,
+  DexToken.ckbtc,
+  DexToken.ckusdc,
+  DexToken.ckusdt,
+];
+
+/** Margin, in basis points, added to the approved allowance for rate changes. */
+export const REQUEST_ALLOWANCE_MARGIN_BPS = 500n;
+
+/**
+ * Deposit in base units of a token whose price is `rateUsdE8` per whole
+ * token, rounded up: `usdE8` of value. Null when the rate is missing.
+ */
+export function requestDepositIn(
+  usdE8: bigint,
+  decimals: number,
+  rateUsdE8: bigint | null,
+): bigint | null {
+  if (rateUsdE8 === null || rateUsdE8 <= 0n) return null;
+  const scale = 10n ** BigInt(decimals);
+  return (usdE8 * scale + rateUsdE8 - 1n) / rateUsdE8;
+}
 
 /** Amount in base units with its symbol, in the active number format. */
 export function formatDexUnits(
@@ -219,23 +266,6 @@ export function dexTransferErrorText(
     case "ledgerError":
       return t.errLedger(error.ledgerError);
   }
-}
-
-/** Localized TTTI-T approval failure. */
-export function approvalErrorText(
-  t: DexText,
-  error: ApproveError,
-  fee: bigint,
-): string {
-  const ttti: PayTokenDescriptor = {
-    ...PAY_TOKENS.icp,
-    symbol: TTTI_SYMBOL,
-    name: TOKEN_NAME,
-    ledgerCanisterId: "",
-    decimals: TTTI_DECIMALS,
-    fee,
-  };
-  return t.errApprovalFailed(describeApproveError(error, ttti));
 }
 
 // DEX lot 4: ICP bonus (DL) claims.

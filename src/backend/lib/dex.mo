@@ -8,6 +8,7 @@ import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
 import Principal "mo:core/Principal";
 import Result "mo:core/Result";
+import Runtime "mo:core/Runtime";
 import Set "mo:core/Set";
 import Text "mo:core/Text";
 import Time "mo:core/Time";
@@ -93,6 +94,9 @@ module {
   // fund a pool; 10 USD is the swap-opening threshold only.
   public let USD_RATE_SCALE : Nat = 100_000_000;
   public let TOKEN_PRICE_USD : Nat = 10_000;
+  // PTM-10c: value of a pair request deposit, 0.0005 TTTI-T at the mint price
+  // (10,000 USD per TTTI-T) = 5 USD, in USD * 1e8.
+  public let REQUEST_DEPOSIT_USD_E8 : Nat = 500_000_000; // = REQUEST_DEPOSIT x TOKEN_PRICE_USD
   // Same as OracleLib.VALID_FOR_NS and OracleLib.GRACE_NS (OracleLib.usableRate).
   public let RATE_VALID_FOR_NS : Nat = 3_600_000_000_000;
   public let RATE_GRACE_NS : Nat = 300_000_000_000;
@@ -175,10 +179,43 @@ module {
     { owner = canister; subaccount = ?REQUEST_DEPOSIT_SUBACCOUNT };
   };
 
+  // PTM-10c: one request deposit subaccount per accepted token, 32 bytes of
+  // ASCII ("DEX-REQUEST-DEPOSIT-" plus 12 characters). TTTI-T keeps the
+  // subaccount of the earlier requests. Never change these bytes.
+  public func requestDepositSubaccount(token : Types.DexToken) : Blob {
+    switch (token) {
+      case (#tttiT) REQUEST_DEPOSIT_SUBACCOUNT;
+      case (#icp) "DEX-REQUEST-DEPOSIT-ICP-00000001";
+      case (#ckbtc) "DEX-REQUEST-DEPOSIT-CKBTC-000001";
+      case (#ckusdc) "DEX-REQUEST-DEPOSIT-CKUSDC-00001";
+      case (#ckusdt) "DEX-REQUEST-DEPOSIT-CKUSDT-00001";
+    };
+  };
+
+  public func requestDepositAccountOf(canister : Principal, token : Types.DexToken) : Types.DexAccount {
+    { owner = canister; subaccount = ?requestDepositSubaccount(token) };
+  };
+
+  public func isRequestDepositSubaccount(sub : Blob) : Bool {
+    for (token in DEX_TOKENS.values()) {
+      if (sub == requestDepositSubaccount(token)) return true;
+    };
+    false;
+  };
+
+  // Amount of an accepted token worth 5 USD at the hourly rate `usdE8` (USD *
+  // 1e8 per whole token), rounded up; `decimals` are the token decimals.
+  public func requestDepositAmount(usdE8 : Nat, decimals : Nat) : Nat {
+    if (usdE8 == 0) return 0;
+    (REQUEST_DEPOSIT_USD_E8 * (10 ** decimals) + usdE8 - 1) / usdE8;
+  };
+
   public func config(canister : Principal) : Types.DexConfig {
     {
       requestDeposit = REQUEST_DEPOSIT;
       depositAccount = requestDepositAccount(canister);
+      requestDepositUsdE8 = REQUEST_DEPOSIT_USD_E8;
+      requestDepositAccounts = DEX_TOKENS.filter(func t = t != #tttiT).map(func t = { token = t; account = requestDepositAccountOf(canister, t) });
       maxPendingPerUser = MAX_PENDING_PER_USER;
       refusalCooldownNs = REFUSAL_COOLDOWN_NS;
       messageMaxChars = MESSAGE_MAX_CHARS;
@@ -238,17 +275,26 @@ module {
   // Pool view with the exact guaranteed depth (scans the pool's positions
   // through the index): queries and the liquidity operations.
   public func toPoolView(store : DexStore, pool : Pool, canister : Principal, now : Timestamp, rateOf : UsdRateOf) : PoolView {
-    poolViewWith(store, pool, canister, now, rateOf, guaranteedDepthOf(store, pool, rateOf, now));
+    poolViewWith(store, pool, canister, now, rateOf, guaranteedDepthOf(store, pool, rateOf, now), independentReferenceFor(store, pool, rateOf, now));
   };
 
   // Pool view of the swap path: the guaranteed depth comes from the figure
   // maintained per pool (PoolPot.lockedPositionShares), so a swap reads no
   // position whatever the number of positions in the pool.
   public func toPoolViewCached(store : DexStore, pool : Pool, canister : Principal, now : Timestamp, rateOf : UsdRateOf) : PoolView {
-    poolViewWith(store, pool, canister, now, rateOf, cachedGuaranteedDepth(store, pool, rateOf));
+    poolViewWith(store, pool, canister, now, rateOf, cachedGuaranteedDepth(store, pool, rateOf), independentReferenceFor(store, pool, rateOf, now));
   };
 
-  func poolViewWith(store : DexStore, pool : Pool, canister : Principal, now : Timestamp, rateOf : UsdRateOf, guaranteed : Types.GuaranteedDepth) : PoolView {
+  // Independent reference needed by the spread of one pool: the consolidated
+  // price without that pool; not computed for a pool that has no spread
+  // (utility pair).
+  func independentReferenceFor(store : DexStore, pool : Pool, rateOf : UsdRateOf, now : Timestamp) : ?Nat {
+    if (tttiCounterOf(pool) == null) null else consolidatedExcluding(store, rateOf, now, pool.id).price;
+  };
+
+  // `reference` is the independent reference (consolidated price without this
+  // pool) of the same instant.
+  func poolViewWith(store : DexStore, pool : Pool, canister : Principal, now : Timestamp, rateOf : UsdRateOf, guaranteed : Types.GuaranteedDepth, reference : ?Nat) : PoolView {
     let set = minimumsSet(pool);
     let status = effectiveStatus(pool, rateOf);
     {
@@ -308,11 +354,11 @@ module {
       thresholdMeasuredUsdE8 = thresholdMeasureAt(pool, pool.reserve0, pool.reserve1, rateOf);
       swapState = swapStateOf(store, pool, rateOf, now);
       removal = removalViewOf(store, pool.id);
-      spread = poolSpreadOf(store, pool, rateOf, now);
+      spread = if (tttiCounterOf(pool) == null) null else spreadWith(pool, reference, store, rateOf, now);
     };
   };
 
-  public func toRequestView(request : PairRequest, canister : Principal) : PairRequestView {
+  public func toRequestView(request : PairRequest, canister : Principal, depositToken : Types.DexToken) : PairRequestView {
     {
       id = request.id;
       requester = request.requester;
@@ -325,6 +371,7 @@ module {
       createdAt = request.createdAt;
       checks = request.checks;
       copiedSymbol = request.checks.copiedSymbolOf != null;
+      depositToken;
       depositAmount = request.depositAmount;
       depositBlock = request.depositBlock;
       status = request.status;
@@ -334,7 +381,144 @@ module {
   };
 
   public func listPools(store : DexStore, canister : Principal, now : Timestamp, rateOf : UsdRateOf) : [PoolView] {
-    store.pools.toArray().map(func((_, p)) = toPoolView(store, p, canister, now, rateOf));
+    // The raw consolidated inputs are the same for every pool of the list:
+    // computed once; each pool takes its own leave-one-out reference from them.
+    let raw = consolidatedRaw(store, rateOf, now, null);
+    store.pools.toArray().map(
+      func((_, p)) = poolViewWith(
+        store,
+        p,
+        canister,
+        now,
+        rateOf,
+        guaranteedDepthOf(store, p, rateOf, now),
+        if (tttiCounterOf(p) == null) null else combineConsolidated(raw, ?p.id).price,
+      )
+    );
+  };
+
+  // --- Speed: transient read caches (never stored, never part of the state) ---
+  //
+  // Holds the last listDexPools result and the last consolidated price view.
+  // An entry is served only when (a) the fingerprint of everything the result
+  // depends on is unchanged (every pool field shown in a view, the usable
+  // rates of the pool tokens, removals, maintained locked shares, badge state,
+  // the consolidated samples) and (b) it is at most VIEW_CACHE_TTL_NS old. A
+  // changed pool, an absent or expired rate therefore always recomputes.
+  // A query call discards its writes, so an entry is stored only by the update
+  // calls that warm the cache (warmViewCaches); a query then reads it.
+  public type ViewCache = {
+    var poolsFingerprint : [Int];
+    var poolsAt : Timestamp;
+    var poolsViews : ?[PoolView];
+    var priceFingerprint : [Int];
+    var priceAt : Timestamp;
+    var priceView : ?Types.ConsolidatedPrice;
+  };
+
+  // Maximum age of a cached entry (5 s).
+  public let VIEW_CACHE_TTL_NS : Int = 5_000_000_000;
+
+  public func newViewCache() : ViewCache {
+    { var poolsFingerprint = []; var poolsAt = 0; var poolsViews = null; var priceFingerprint = []; var priceAt = 0; var priceView = null };
+  };
+
+  func optInt(v : ?Int) : Int = switch (v) { case (?x) x; case null -1 };
+  func optNat(v : ?Nat) : Int = switch (v) { case (?x) x; case null -1 };
+
+  // Everything a pool view depends on, as a flat list compared for equality.
+  public func poolsFingerprint(store : DexStore, rateOf : UsdRateOf, now : Timestamp) : [Int] {
+    let out = List.empty<Int>();
+    out.add(store.pools.size());
+    for ((id, p) in store.pools.entries()) {
+      out.add(id);
+      out.add(switch (p.status) { case (#filling) 0; case (#active) 1; case (#removed) 2 });
+      out.add(p.reserve0);
+      out.add(p.reserve1);
+      out.add(p.totalShares);
+      out.add(p.lockedShares);
+      out.add(p.protocolFee0);
+      out.add(p.protocolFee1);
+      out.add(optInt(p.removedAt));
+      out.add(optInt(p.newPairBadgeUntil));
+      out.add(switch (p.newPairBadgeUntil) { case (?until) { if (now < until) 1 else 0 }; case null 0 });
+      out.add(optNat(p.minimumLocked.token0));
+      out.add(optNat(p.minimumLocked.token1));
+      out.add(optNat(rateOf(p.token0)));
+      out.add(optNat(rateOf(p.token1)));
+      out.add(switch (store.fees.pots.get(id)) { case (?pot) pot.lockedPositionShares; case null -1 });
+      out.add(switch (store.poolPositions.get(id)) { case (?ids) ids.size(); case null 0 });
+      switch (store.removals.get(id)) {
+        case null { out.add(-1) };
+        case (?r) {
+          let (code, at) : (Int, Int) = switch (r.state) {
+            case (#announced) (0, 0);
+            case (#cancelled(c)) (1, c.cancelledAt);
+            case (#executing(e)) (2, e.startedAt);
+            case (#completed(c)) (3, c.completedAt);
+          };
+          out.add(code);
+          out.add(at);
+          out.add(r.announcedAt);
+          out.add(r.effectiveAt);
+        };
+      };
+    };
+    out.toArray();
+  };
+
+  func cacheFresh(at : Timestamp, now : Timestamp) : Bool = now >= at and now - at <= VIEW_CACHE_TTL_NS;
+
+  // Same result as listPools; served from the cache when still valid.
+  public func listPoolsCached(cache : ViewCache, store : DexStore, canister : Principal, now : Timestamp, rateOf : UsdRateOf) : [PoolView] {
+    let fp = poolsFingerprint(store, rateOf, now);
+    switch (cache.poolsViews) {
+      case (?views) {
+        if (cacheFresh(cache.poolsAt, now) and cache.poolsFingerprint == fp) return views;
+      };
+      case null {};
+    };
+    let views = listPools(store, canister, now, rateOf);
+    cache.poolsViews := ?views;
+    cache.poolsFingerprint := fp;
+    cache.poolsAt := now;
+    views;
+  };
+
+  // Same result as getPool; read from a valid cached list, else computed.
+  public func getPoolCached(cache : ViewCache, store : DexStore, canister : Principal, now : Timestamp, poolId : PoolId, rateOf : UsdRateOf) : ?PoolView {
+    switch (cache.poolsViews) {
+      case (?views) {
+        if (cacheFresh(cache.poolsAt, now) and cache.poolsFingerprint == poolsFingerprint(store, rateOf, now)) {
+          return views.find(func v = v.id == poolId);
+        };
+      };
+      case null {};
+    };
+    getPool(store, canister, now, poolId, rateOf);
+  };
+
+  // Same result as consolidatedPriceView; served from the cache when valid.
+  public func consolidatedPriceCached(cache : ViewCache, store : DexStore, samples : List.List<ProtocolFeeTypes.ConsolidatedSample>, rateOf : UsdRateOf, now : Timestamp) : Types.ConsolidatedPrice {
+    let last = switch (samples.last()) { case (?s) s.at; case null -1 };
+    let fp = poolsFingerprint(store, rateOf, now).concat([samples.size(), last]);
+    switch (cache.priceView) {
+      case (?view) {
+        if (cacheFresh(cache.priceAt, now) and cache.priceFingerprint == fp) return view;
+      };
+      case null {};
+    };
+    let view = consolidatedPriceView(store, samples, rateOf, now);
+    cache.priceView := ?view;
+    cache.priceFingerprint := fp;
+    cache.priceAt := now;
+    view;
+  };
+
+  // Refreshes both entries; for update calls and timers (a query discards it).
+  public func warmViewCaches(cache : ViewCache, store : DexStore, samples : List.List<ProtocolFeeTypes.ConsolidatedSample>, canister : Principal, now : Timestamp, rateOf : UsdRateOf) {
+    ignore listPoolsCached(cache, store, canister, now, rateOf);
+    ignore consolidatedPriceCached(cache, store, samples, rateOf, now);
   };
 
   public func getPool(store : DexStore, canister : Principal, now : Timestamp, poolId : PoolId, rateOf : UsdRateOf) : ?PoolView {
@@ -344,12 +528,12 @@ module {
     };
   };
 
-  public func listRequests(store : DexStore, canister : Principal) : [PairRequestView] {
-    store.requests.toArray().map(func((_, r)) = toRequestView(r, canister));
+  public func listRequests(store : DexStore, canister : Principal, tokenOf : RequestId -> Types.DexToken) : [PairRequestView] {
+    store.requests.toArray().map(func((_, r)) = toRequestView(r, canister, tokenOf(r.id)));
   };
 
-  public func requestsOf(store : DexStore, canister : Principal, requester : Principal) : [PairRequestView] {
-    store.requests.toArray().filter(func((_, r)) = r.requester == requester).map(func((_, r)) = toRequestView(r, canister));
+  public func requestsOf(store : DexStore, canister : Principal, requester : Principal, tokenOf : RequestId -> Types.DexToken) : [PairRequestView] {
+    store.requests.toArray().filter(func((_, r)) = r.requester == requester).map(func((_, r)) = toRequestView(r, canister, tokenOf(r.id)));
   };
 
   // Message length, pending limit and refusal cooldown (no ledger call).
@@ -498,6 +682,7 @@ module {
     tier : Types.FeeTier,
     message : Text,
     checks : Types.RequestChecks,
+    depositAmount : Nat,
     depositBlock : Nat,
     now : Timestamp,
   ) : PairRequest {
@@ -513,7 +698,7 @@ module {
       message;
       createdAt = now;
       checks;
-      depositAmount = REQUEST_DEPOSIT;
+      depositAmount;
       depositBlock;
       status = #pending;
       refundBlock = null;
@@ -703,11 +888,14 @@ module {
   // on). Returns false if any of these properties fails.
   public func custodyNonOverlapCheck() : Bool {
     let subs = DEX_TOKENS.map(custodySubaccount);
+    for (t in DEX_TOKENS.values()) {
+      if (requestDepositSubaccount(t).size() != 32) return false;
+    };
     var i = 0;
     while (i < subs.size()) {
       let s = subs[i];
       if (s.size() != 32) return false;
-      if (s == REQUEST_DEPOSIT_SUBACCOUNT) return false;
+      if (isRequestDepositSubaccount(s)) return false;
       if (s.toArray()[0] == USER_DEPOSIT_TAG) return false;
       switch (s.decodeUtf8()) {
         case (?text) {
@@ -1238,6 +1426,81 @@ module {
     addLiquidityWith(store, balances, canister, owner, isCreator, args, rateOf, now, true);
   };
 
+  // --- PTM-10d: the only way reserves change outside a swap -------------------
+  //
+  // Only a swap changes the price of a pool. Every other change of reserve0 /
+  // reserve1 (a user's position, the part of a mint deposited after the zap,
+  // an auction settlement, permanent liquidity, a reinjection, the fee pot
+  // returned to the reserves, a removal or liquidation) goes through
+  // depositAtRatio or withdrawAtRatio. Both check, after the change, that
+  // reserve0 / reserve1 did not move beyond one unit of rounding, using the
+  // cross product, and call Runtime.trap otherwise (the whole message is
+  // rolled back). Only the reserves are written: shares, locks and balances
+  // stay with the caller.
+
+  // Ratio test on the cross product. For a deposit or withdrawal of (a0, a1)
+  // the cross difference is a0 * before1 - a1 * before0; one unit of rounding
+  // on either amount moves it by less than max(before0, before1). A pool with
+  // no ratio to preserve (a reserve at zero before) always passes.
+  public func ratioHeld(before0 : Nat, before1 : Nat, after0 : Nat, after1 : Nat) : Bool {
+    if (before0 == 0 or before1 == 0) return true;
+    let cross0 = after0 * before1;
+    let cross1 = after1 * before0;
+    Int.abs(cross0.toInt() - cross1.toInt()) <= Nat.max(before0, before1);
+  };
+
+  // Largest part of (available0, available1) that can be deposited into the
+  // pool at its current ratio (rounded down). A pool with no ratio (a reserve
+  // at zero, or no shares: first deposit) takes both amounts as they are.
+  public func fitAtRatio(pool : Pool, available0 : Nat, available1 : Nat) : (Nat, Nat) {
+    if (pool.totalShares == 0 or pool.reserve0 == 0 or pool.reserve1 == 0) return (available0, available1);
+    if (available0 * pool.reserve1 <= available1 * pool.reserve0) {
+      (available0, available0 * pool.reserve1 / pool.reserve0);
+    } else {
+      (available1 * pool.reserve0 / pool.reserve1, available1);
+    };
+  };
+
+  // Adds (amount0, amount1) to the reserves of the pool. Traps if the pool is
+  // unknown or if reserve0 / reserve1 moves (cross product, one unit of
+  // rounding). The first deposit of an empty pool (no shares, or a reserve at
+  // zero) has no ratio to preserve and is the only exception. Returns the
+  // updated pool (already stored); the caller sets shares, if any.
+  //   depositAtRatio(store, poolId, amount0, amount1) : Pool
+  public func depositAtRatio(store : DexStore, poolId : PoolId, amount0 : Nat, amount1 : Nat) : Pool {
+    let pool = store.pools.get(poolId) ?? Runtime.trap("Liquidity deposit: unknown pool #" # poolId.toText());
+    let updated : Pool = { pool with reserve0 = pool.reserve0 + amount0; reserve1 = pool.reserve1 + amount1 };
+    if (pool.totalShares > 0 and not ratioHeld(pool.reserve0, pool.reserve1, updated.reserve0, updated.reserve1)) {
+      Runtime.trap(
+        "Liquidity deposit refused: it would move the price of pool #" # poolId.toText() # " (reserves " # pool.reserve0.toText() # "/" # pool.reserve1.toText() #
+        ", deposit " # amount0.toText() # "/" # amount1.toText() # ")"
+      );
+    };
+    store.pools.add(poolId, updated);
+    updated;
+  };
+
+  // Takes (amount0, amount1) out of the reserves of the pool. Traps if the
+  // pool is unknown, if an amount exceeds its reserve or if reserve0 /
+  // reserve1 moves (cross product, one unit of rounding). Returns the updated
+  // pool (already stored); the caller sets shares, if any.
+  //   withdrawAtRatio(store, poolId, amount0, amount1) : Pool
+  public func withdrawAtRatio(store : DexStore, poolId : PoolId, amount0 : Nat, amount1 : Nat) : Pool {
+    let pool = store.pools.get(poolId) ?? Runtime.trap("Liquidity withdrawal: unknown pool #" # poolId.toText());
+    if (amount0 > pool.reserve0 or amount1 > pool.reserve1) {
+      Runtime.trap("Liquidity withdrawal refused: amounts exceed the reserves of pool #" # poolId.toText());
+    };
+    let updated : Pool = { pool with reserve0 = pool.reserve0 - amount0; reserve1 = pool.reserve1 - amount1 };
+    if (not ratioHeld(pool.reserve0, pool.reserve1, updated.reserve0, updated.reserve1)) {
+      Runtime.trap(
+        "Liquidity withdrawal refused: it would move the price of pool #" # poolId.toText() # " (reserves " # pool.reserve0.toText() # "/" # pool.reserve1.toText() #
+        ", withdrawal " # amount0.toText() # "/" # amount1.toText() # ")"
+      );
+    };
+    store.pools.add(poolId, updated);
+    updated;
+  };
+
   // PTM-1: addLiquidity with an option to skip the first-deposit reference
   // band (the liquidity mint seeds an empty pool at its own price, 10 000 USD
   // per TTTI-T). Minimums, locked shares and every other rule are unchanged.
@@ -1251,6 +1514,23 @@ module {
     rateOf : UsdRateOf,
     now : Timestamp,
     checkReference : Bool,
+  ) : Result.Result<Types.AddLiquidityResult, Types.AddLiquidityError> {
+    addLiquidityShare(store, balances, canister, owner, isCreator, args, rateOf, now, checkReference, 0);
+  };
+
+  // PTM-10b: same as addLiquidityWith, recording the locked share m (scale
+  // 10^6) of the mint or auction settlement on the position (0 otherwise).
+  public func addLiquidityShare(
+    store : DexStore,
+    balances : Types.DexBalances,
+    canister : Principal,
+    owner : Principal,
+    isCreator : Bool,
+    args : Types.AddLiquidityArgs,
+    rateOf : UsdRateOf,
+    now : Timestamp,
+    checkReference : Bool,
+    mintShareE6 : Nat,
   ) : Result.Result<Types.AddLiquidityResult, Types.AddLiquidityError> {
     switch (checkLockDuration(lockOf(args))) {
       case (?e) return #err(e);
@@ -1280,12 +1560,12 @@ module {
     if (have1 < q.amount1) return #err(#insufficientBalance({ token = t1; available = have1; required = q.amount1 }));
     ignore debit(balances, owner, t0, q.amount0);
     ignore debit(balances, owner, t1, q.amount1);
+    // PTM-10d: the reserves change through the single ratio-checked deposit.
+    let deposited = depositAtRatio(store, pool.id, q.amount0, q.amount1);
     store.pools.add(
       pool.id,
       {
-        pool with
-        reserve0 = pool.reserve0 + q.amount0;
-        reserve1 = pool.reserve1 + q.amount1;
+        deposited with
         totalShares = q.totalSharesAfter;
         lockedShares = pool.lockedShares + q.lockedShares;
       },
@@ -1309,6 +1589,7 @@ module {
       relayReceivedNs = 0;
       feesCollected0 = 0;
       feesCollected1 = 0;
+      mintShareE6;
     };
     store.positions.add(id, position);
     // PTM-9d: per-pool index and lock-time record of a new commitment.
@@ -1364,10 +1645,10 @@ module {
     };
     let amount0 = if (pool.totalShares == 0) 0 else position.shares * pool.reserve0 / pool.totalShares;
     let amount1 = if (pool.totalShares == 0) 0 else position.shares * pool.reserve1 / pool.totalShares;
+    // PTM-10d: the reserves change through the single ratio-checked withdrawal.
+    let withdrawn = withdrawAtRatio(store, pool.id, amount0, amount1);
     let updated : Pool = {
-      pool with
-      reserve0 = pool.reserve0 - amount0;
-      reserve1 = pool.reserve1 - amount1;
+      withdrawn with
       totalShares = pool.totalShares - Nat.min(position.shares, pool.totalShares);
     };
     store.pools.add(pool.id, updated);
@@ -1827,6 +2108,7 @@ module {
       relayReceivedNs = position.relayReceivedNs;
       feesCollected0 = position.feesCollected0;
       feesCollected1 = position.feesCollected1;
+      mintShareE6 = position.mintShareE6;
     };
   };
 
@@ -2315,12 +2597,12 @@ module {
     // Pro rata, rounded down (the remainder stays in the pool).
     let amount0 = if (pool.totalShares == 0) 0 else position.shares * pool.reserve0 / pool.totalShares;
     let amount1 = if (pool.totalShares == 0) 0 else position.shares * pool.reserve1 / pool.totalShares;
+    // PTM-10d: the reserves change through the single ratio-checked withdrawal.
+    let withdrawn = withdrawAtRatio(store, pool.id, amount0, amount1);
     store.pools.add(
       pool.id,
       {
-        pool with
-        reserve0 = pool.reserve0 - amount0;
-        reserve1 = pool.reserve1 - amount1;
+        withdrawn with
         totalShares = pool.totalShares - Nat.min(position.shares, pool.totalShares);
       },
     );
@@ -2357,13 +2639,15 @@ module {
     };
     if (poolHasPositions(store, poolId)) return #err(#notExecuting);
     // PTM-9d: the pending pot of a pool with no position left goes to the
-    // pool reserves (the running sharing, if any, ends on its own).
+    // pool reserves (the running sharing, if any, ends on its own). PTM-10d:
+    // only the part that fits the pool ratio is deposited, through
+    // depositAtRatio; the rest stays in the pending pot (still owed).
     let pot = potOf(store, poolId);
-    let pending0 = pot.pending0;
-    let pending1 = pot.pending1;
-    pot.pending0 := 0;
-    pot.pending1 := 0;
-    let removed : Pool = { pool with status = #removed; removedAt = ?now; reserve0 = pool.reserve0 + pending0; reserve1 = pool.reserve1 + pending1 };
+    let (put0, put1) = fitAtRatio(pool, pot.pending0, pot.pending1);
+    pot.pending0 := pot.pending0 - put0;
+    pot.pending1 := pot.pending1 - put1;
+    let deposited = depositAtRatio(store, poolId, put0, put1);
+    let removed : Pool = { deposited with status = #removed; removedAt = ?now };
     store.pools.add(poolId, removed);
     store.removals.add(poolId, { r with state = #completed({ completedAt = now }) });
     #ok(removed);
@@ -2403,12 +2687,12 @@ module {
     let shares = Nat.min(pool.lockedShares, pool.totalShares);
     let amount0 = Nat.min(pool.reserve0, shares * pool.reserve0 / pool.totalShares);
     let amount1 = Nat.min(pool.reserve1, shares * pool.reserve1 / pool.totalShares);
+    // PTM-10d: the reserves change through the single ratio-checked withdrawal.
+    let withdrawn = withdrawAtRatio(store, poolId, amount0, amount1);
     store.pools.add(
       poolId,
       {
-        pool with
-        reserve0 = pool.reserve0 - amount0;
-        reserve1 = pool.reserve1 - amount1;
+        withdrawn with
         totalShares = pool.totalShares - shares;
         lockedShares = pool.lockedShares - shares;
       },
@@ -2576,19 +2860,19 @@ module {
     usdValueE8(counterReserve, ct.decimals, rate) * USD_RATE_SCALE / tttiReserve;
   };
 
-  // Depth-weighted USD price of every open native TTTI-T pool. A pool that is
-  // empty, not open (depth under 10 USD, removal) or without a valid rate is
-  // left out; with no usable pool the price is null (never invented).
-  public func consolidatedNow(store : DexStore, rateOf : UsdRateOf, now : Timestamp) : ConsolidatedNow {
-    consolidatedWith(store, rateOf, now, null);
+  // Inputs of the consolidated price: every open native TTTI-T pool with its
+  // USD price and depth, plus the pools that were candidates (non-empty, not
+  // removed) and the candidates whose counter token has no valid rate.
+  type ConsolidatedRaw = {
+    items : [{ poolId : PoolId; counterSymbol : Text; price : Nat; depth : Nat }];
+    candidateIds : [PoolId];
+    missingRateIds : [PoolId];
   };
 
-  // Same computation with the reserves and shares of one pool replaced by a
-  // planned after-state (quote of an operation); nothing is stored.
-  public func consolidatedWith(store : DexStore, rateOf : UsdRateOf, now : Timestamp, override : ?{ poolId : PoolId; reserve0 : Nat; reserve1 : Nat; totalShares : Nat }) : ConsolidatedNow {
+  func consolidatedRaw(store : DexStore, rateOf : UsdRateOf, now : Timestamp, override : ?{ poolId : PoolId; reserve0 : Nat; reserve1 : Nat; totalShares : Nat }) : ConsolidatedRaw {
     let raw = List.empty<{ poolId : PoolId; counterSymbol : Text; price : Nat; depth : Nat }>();
-    var candidates = 0;
-    var rateMissing = false;
+    let candidateIds = List.empty<PoolId>();
+    let missingRateIds = List.empty<PoolId>();
     for ((id, stored) in store.pools.entries()) {
       let p : Pool = switch (override) {
         case (?o) {
@@ -2599,9 +2883,9 @@ module {
       switch (tttiCounterOf(p)) {
         case (?(ct, counterReserve, tttiReserve)) {
           if (p.status != #removed and p.removedAt == null and p.totalShares > 0 and counterReserve > 0 and tttiReserve > 0) {
-            candidates += 1;
+            candidateIds.add(id);
             switch (rateOf(ct)) {
-              case null { rateMissing := true };
+              case null { missingRateIds.add(id) };
               case (?rate) {
                 if (swapStateOf(store, p, rateOf, now).open) {
                   let price = nativePrice(counterReserve, tttiReserve, ct, rate);
@@ -2617,8 +2901,20 @@ module {
         case null {};
       };
     };
-    let items = raw.toArray();
+    { items = raw.toArray(); candidateIds = candidateIds.toArray(); missingRateIds = missingRateIds.toArray() };
+  };
+
+  // Depth-weighted average of the raw items, leaving out `exclude` when set.
+  // With no usable pool the price is null (never invented).
+  func combineConsolidated(raw : ConsolidatedRaw, exclude : ?PoolId) : ConsolidatedNow {
+    let kept = func(id : PoolId) : Bool = switch (exclude) {
+      case (?x) id != x;
+      case null true;
+    };
+    let items = raw.items.filter(func i = kept(i.poolId));
     if (items.size() == 0) {
+      let candidates = raw.candidateIds.filter(kept).size();
+      let rateMissing = raw.missingRateIds.filter(kept).size() > 0;
       return { price = null; unavailable = ?(if (candidates > 0 and rateMissing) #noValidRate else #noOpenPool); sources = [] };
     };
     var total = 0;
@@ -2641,6 +2937,27 @@ module {
     let price = weighted / total;
     if (price == 0) return { price = null; unavailable = ?#noOpenPool; sources = [] };
     { price = ?price; unavailable = null; sources };
+  };
+
+  // Depth-weighted USD price of every open native TTTI-T pool. A pool that is
+  // empty, not open (depth under 10 USD, removal) or without a valid rate is
+  // left out; with no usable pool the price is null (never invented).
+  public func consolidatedNow(store : DexStore, rateOf : UsdRateOf, now : Timestamp) : ConsolidatedNow {
+    consolidatedWith(store, rateOf, now, null);
+  };
+
+  // Same computation with the reserves and shares of one pool replaced by a
+  // planned after-state (quote of an operation); nothing is stored.
+  public func consolidatedWith(store : DexStore, rateOf : UsdRateOf, now : Timestamp, override : ?{ poolId : PoolId; reserve0 : Nat; reserve1 : Nat; totalShares : Nat }) : ConsolidatedNow {
+    combineConsolidated(consolidatedRaw(store, rateOf, now, override), null);
+  };
+
+  // Independent reference of one pool: the consolidated price WITHOUT that pool
+  // (leave-one-out), weighted by the depth of the other open pools. The pool
+  // being measured never influences its own reference. price is null (and
+  // `unavailable` set) when no other pool is open.
+  public func consolidatedExcluding(store : DexStore, rateOf : UsdRateOf, now : Timestamp, excluded : PoolId) : ConsolidatedNow {
+    combineConsolidated(consolidatedRaw(store, rateOf, now, null), ?excluded);
   };
 
   // Mean of the samples of the last `windowNs`: (average, count, oldest sample).
@@ -2671,6 +2988,9 @@ module {
   public let LOCKED_SHARE_MAX : Nat = 500_000;
   // One whole TTTI-T in base units (8 decimals).
   let TTTI_UNIT : Nat = 100_000_000;
+  // Reference price of the capitalisation: the target of 10 000 USD per whole
+  // TTTI-T (USD x 1e8). Independent of the pool reserves.
+  public let CAPITALISATION_REFERENCE_USD_E8 : Nat = 1_000_000_000_000;
 
   // Value of the native TTTI-T pools in USD x 1e8: for each pool of kind
   // #tttiPair that is not removed and holds a counterpart reserve (ICP, ckBTC,
@@ -2699,9 +3019,11 @@ module {
     { valueUsdE8 = if (missing) null else ?sum; poolCount = count };
   };
 
-  // Capitalisation (USD x 1e8) = circulating TTTI-T x consolidated price, and
-  // ratio (RATIO_SCALE) = pools value / capitalisation, rounded down. null
-  // when an input is unavailable or the capitalisation is zero.
+  // Capitalisation (USD x 1e8) = circulating TTTI-T x `priceUsdE8`, and ratio
+  // (RATIO_SCALE) = pools value / capitalisation, rounded down. null when an
+  // input is unavailable or the capitalisation is zero. The report passes the
+  // fixed reference CAPITALISATION_REFERENCE_USD_E8, never a price derived from
+  // the pools.
   public func poolCapRatio(poolsValueUsdE8 : ?Nat, circulating : Nat, priceUsdE8 : ?Nat) : { capitalisationUsdE8 : ?Nat; ratio : ?Nat } {
     switch (priceUsdE8) {
       case (?price) {
@@ -2759,12 +3081,14 @@ module {
   };
 
   // Whole PTM-10a computation from its inputs: the pools value at the oracle
-  // rates, the capitalisation at `priceUsdE8` (consolidated hourly average,
-  // null when unavailable) and `circulating` TTTI-T (base units), the stored
-  // ratio samples of the last 24 h, the retained ratio and m. Pure.
+  // rates, the capitalisation at the fixed reference of 10 000 USD per TTTI-T
+  // and `circulating` TTTI-T (base units), the stored ratio samples of the last
+  // 24 h, the retained ratio and m. `priceUsdE8` (consolidated price, null when
+  // unavailable) is shown in the report for information and does not enter the
+  // ratio. Pure.
   public func poolCapRatioReport(store : DexStore, rateOf : UsdRateOf, circulating : Nat, priceUsdE8 : ?Nat, ratioSamples : List.List<ProtocolFeeTypes.PoolCapRatioSample>, now : Timestamp) : ProtocolFeeTypes.PoolCapRatioView {
     let pools = tttiPoolsValue(store, rateOf);
-    let r = poolCapRatio(pools.valueUsdE8, circulating, priceUsdE8);
+    let r = poolCapRatio(pools.valueUsdE8, circulating, ?CAPITALISATION_REFERENCE_USD_E8);
     let w = ratioWindow(ratioSamples, now, ProtocolFeeTypes.CONSOLIDATED_RETENTION_NS);
     let retained = retainedRatio(r.ratio, w.average);
     {
@@ -2773,6 +3097,8 @@ module {
       poolCount = pools.poolCount;
       circulatingTttiT = circulating;
       consolidatedPriceUsdE8 = priceUsdE8;
+      capitalisationReferenceUsdE8 = CAPITALISATION_REFERENCE_USD_E8;
+      capitalisationReference = #targetPrice;
       capitalisationUsdE8 = r.capitalisationUsdE8;
       currentRatio = r.ratio;
       averageRatio24h = w.average;
@@ -2804,13 +3130,16 @@ module {
     };
   };
 
-  func spreadWith(pool : Pool, consolidated : ?Nat, store : DexStore, rateOf : UsdRateOf, now : Timestamp) : ?Types.PoolSpread {
+  // Spread of one pool against its INDEPENDENT reference: the consolidated price
+  // of the other open pools (leave-one-out). `reference` is that price, null
+  // when no other pool is open (#noIndependentReference, never 0 bps).
+  func spreadWith(pool : Pool, reference : ?Nat, store : DexStore, rateOf : UsdRateOf, now : Timestamp) : ?Types.PoolSpread {
     if (pool.status == #removed or pool.removedAt != null) return null;
     switch (tttiCounterOf(pool)) {
       case null null;
       case (?(ct, counterReserve, tttiReserve)) {
         let mk = func(status : Types.SpreadStatus, price : ?Nat, spread : ?Int, exceeds : Bool) : Types.PoolSpread {
-          { poolId = pool.id; counterSymbol = ct.symbol; status; priceUsdE8 = price; spreadBps = spread; exceedsThreshold = exceeds };
+          { poolId = pool.id; counterSymbol = ct.symbol; status; priceUsdE8 = price; spreadBps = spread; exceedsThreshold = exceeds; referencePriceUsdE8 = reference };
         };
         if (tttiReserve == 0 or counterReserve == 0 or pool.totalShares == 0) return ?mk(#empty, null, null, false);
         let rate = switch (rateOf(ct)) {
@@ -2819,8 +3148,8 @@ module {
         };
         let price = nativePrice(counterReserve, tttiReserve, ct, rate);
         if (not swapStateOf(store, pool, rateOf, now).open) return ?mk(#notOpen, ?price, null, false);
-        switch (consolidated) {
-          case null ?mk(#noConsolidatedPrice, ?price, null, false);
+        switch (reference) {
+          case null ?mk(#noIndependentReference, ?price, null, false);
           case (?c) {
             let spread : Int = (price.toInt() - c.toInt()) * BPS_DENOMINATOR.toInt() / c.toInt();
             ?mk(#ok, ?price, ?spread, Int.abs(spread) > Types.SPREAD_ALERT_BPS);
@@ -2830,17 +3159,19 @@ module {
     };
   };
 
-  // Spread of one pool against the consolidated price (PoolView.spread).
+  // Spread of one pool against the consolidated price of the other pools
+  // (PoolView.spread); the same value as the entry of poolSpreads.
   public func poolSpreadOf(store : DexStore, pool : Pool, rateOf : UsdRateOf, now : Timestamp) : ?Types.PoolSpread {
     if (tttiCounterOf(pool) == null) return null;
-    spreadWith(pool, consolidatedNow(store, rateOf, now).price, store, rateOf, now);
+    spreadWith(pool, independentReferenceFor(store, pool, rateOf, now), store, rateOf, now);
   };
 
   public func poolSpreads(store : DexStore, rateOf : UsdRateOf, now : Timestamp) : Types.PoolSpreadReport {
-    let consolidated = consolidatedNow(store, rateOf, now).price;
+    let raw = consolidatedRaw(store, rateOf, now, null);
+    let consolidated = combineConsolidated(raw, null).price;
     let out = List.empty<Types.PoolSpread>();
     for ((_, p) in store.pools.entries()) {
-      switch (spreadWith(p, consolidated, store, rateOf, now)) {
+      switch (spreadWith(p, combineConsolidated(raw, ?p.id).price, store, rateOf, now)) {
         case (?s) out.add(s);
         case null {};
       };
@@ -2848,20 +3179,17 @@ module {
     { computedAt = now; consolidatedPriceUsdE8 = consolidated; thresholdBps = Types.SPREAD_ALERT_BPS; pools = out.toArray() };
   };
 
-  // Pools where `caller` holds a position and the spread exceeds the
-  // threshold now. Computed on each call, nothing stored.
+  // Pools where `caller` holds a position and the independent spread exceeds
+  // the threshold now. Without an independent reference there is no spread and
+  // no alert. Computed on each call, nothing stored.
   public func spreadAlerts(store : DexStore, caller : Principal, rateOf : UsdRateOf, now : Timestamp) : [Types.PoolSpreadAlert] {
     if (caller.isAnonymous()) return [];
     let report = poolSpreads(store, rateOf, now);
-    let consolidated = switch (report.consolidatedPriceUsdE8) {
-      case (?c) c;
-      case null return [];
-    };
     let out = List.empty<Types.PoolSpreadAlert>();
     for (s in report.pools.values()) {
-      switch (s.spreadBps, s.priceUsdE8) {
-        case (?bps, ?price) {
-          if (s.exceedsThreshold) {
+      switch (s.spreadBps, s.priceUsdE8, s.referencePriceUsdE8) {
+        case (?bps, ?price, ?reference) {
+          if (s.status == #ok and s.exceedsThreshold) {
             let ids = List.empty<Types.PositionId>();
             for (pos in positionsInPool(store, s.poolId).values()) {
               if (pos.owner == caller and pos.shares > 0) ids.add(pos.id);
@@ -2873,7 +3201,7 @@ module {
                 positionIds = ids.toArray();
                 spreadBps = bps;
                 poolPriceUsdE8 = price;
-                consolidatedPriceUsdE8 = consolidated;
+                consolidatedPriceUsdE8 = reference;
                 thresholdBps = Types.SPREAD_ALERT_BPS;
                 computedAt = now;
               });
@@ -2922,5 +3250,22 @@ module {
   // Stores the latest reading of an ICPSwap TTTI-T pair.
   public func recordIcpSwapSample(store : DexStore, sample : Types.IcpSwapSample) {
     store.icpswapSamples.add(sample.poolCanister.toText(), sample);
+  };
+
+  // Stores the last reading of an ICPSwap pair (successful or not), keyed by
+  // the counter token symbol. Informational only: it never feeds a price.
+  public func recordReferenceReading(store : DexStore, reading : Types.ReferenceReading) {
+    store.referenceReadings.add(tokenSymbol(reading.counter), reading);
+  };
+
+  // Last reading of every ICPSwap pair (DEX_TOKENS order, without TTTI-T);
+  // #notReadYet when none is stored.
+  public func referenceReadingEntries(store : DexStore) : [Types.ReferenceReadingEntry] {
+    DEX_TOKENS.filter(func t = t != #tttiT).map(
+      func counter = switch (store.referenceReadings.get(tokenSymbol(counter))) {
+        case (?r) #read(r);
+        case null #notReadYet({ counter });
+      }
+    );
   };
 };

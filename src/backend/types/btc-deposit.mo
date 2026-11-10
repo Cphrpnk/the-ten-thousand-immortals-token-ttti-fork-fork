@@ -86,6 +86,12 @@ module {
     btcRefund : ?BtcRefund;
     // Purchase, delivery-and-refund failure: cost to refund by hand.
     costToRefund : ?BtcCostToRefund;
+    // Purchase: the real cause of the last failed or skipped conversion
+    // (ckBTC -> TTTI-T), as text (null = none recorded; old entries default to
+    // null). `causePermanent` = true when the cause cannot fix itself and the
+    // admin must finish the mint or refund (false by default).
+    conversionCause : ?Text;
+    causePermanent : Bool;
   };
 
   // Per principal and kind: one stable address, never rotated, with the
@@ -122,7 +128,7 @@ module {
     #anonymousCaller;
     #acknowledgementRequired; // purchase only
     #purchaseInProgress; // purchase only: shared one-purchase-per-principal lock
-    #noAddressYet; // no longer returned (kept for API compatibility)
+    #noAddressYet; // convertMyHeldBtc: no purchase deposit tracked for the caller
     #minterUnavailable; // minter call rejected or failed
   };
 
@@ -150,6 +156,45 @@ module {
     purchaseFeeBps : Nat; // 100 (1%) on the purchase flow; wallet flow has no app fee
     suggestedPollSeconds : Nat;
     infoFetchedAt : ?Timestamp; // null = defaults, minter not read yet
+  };
+
+  // --- Admin recovery of a stuck ckBTC -> TTTI-T mint ---------------------------
+
+  public type RecoveryAction = {
+    #finishMint;
+    #refund;
+    #none;
+  };
+
+  // Result of diagnoseBtcMint. Amounts in ckBTC sats; mintableRemaining in
+  // TTTI-T base units (e8); minimumMint in TTTI-T base units.
+  public type BtcMintDiagnosis = {
+    buyer : Text; // decoded buyer principal
+    depositSubaccountHex : Text; // 64 hex characters
+    trackingStage : Text; // stage of the newest deposit entry, "none" if no tracking
+    lastErrorKind : ?Text;
+    lastErrorText : ?Text;
+    conversionCause : ?Text;
+    causePermanent : Bool;
+    pendingCkbtcSats : Nat; // ckbtcPendingSats of the newest entry
+    subaccountBalanceSats : Nat; // real ledger balance of the deposit subaccount
+    purchaseLockHeld : Bool;
+    costAttemptOpen : Bool; // an open ckBTC cost attempt (btcRefund / costToRefund)
+    mintableRemaining : Nat;
+    minimumMint : Nat;
+    salesPaused : Bool;
+    dexPaused : Bool;
+    validRateAvailable : Bool;
+    verdictCode : Text; // e.g. "ok", "lockHeld", "salesPaused", "dexPaused", "noRate", "capReached", "belowMinimum", "noDeposit", "alreadyDone"
+    verdictText : Text; // plain English
+    recommendedAction : RecoveryAction;
+  };
+
+  public type FinishMintResult = {
+    #minted : { tttiOut : Nat; conversionId : Nat };
+    #alreadyDone : Text;
+    #refundOpened : { refundSats : Nat };
+    #refused : Text; // exact English reason
   };
 
   // --- ckBTC minter Candid interface (subset) --------------------------------

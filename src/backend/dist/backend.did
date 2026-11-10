@@ -136,12 +136,25 @@ type UnlockBucket =
    amount1: nat;
    shares: nat;
  };
-type UnclaimedMassTotal = 
+type TttiToPayArgs = 
  record {
-   massCount: nat;
-   mintEnded: bool;
-   perToken: vec TokenGuaranteeTotal;
-   remainingTtti: nat;
+   choice: RemainderChoice;
+   targetPoolId: opt PoolId;
+   token: PayToken;
+   tttiAmount: nat;
+ };
+type TttiToPay = 
+ record {
+   choice: RemainderChoice;
+   conversionCost: nat;
+   mShareE6: nat;
+   payAmount: nat;
+   payUsdE8: nat;
+   rateUsdE8: nat;
+   rateValidUntil: Timestamp;
+   token: PayToken;
+   totalPayAmount: nat;
+   tttiAmount: nat;
  };
 type TreasurySweepView = 
  record {
@@ -378,7 +391,7 @@ type TokenState =
    accountsWithBalance: nat;
    comparison: opt Comparison;
    comparisonPending: bool;
-   custodyAccount: Account__5;
+   custodyAccount: Account__3;
    failed: nat;
    feesPaid: nat;
    lastRunAt: opt int;
@@ -434,6 +447,7 @@ type TokenPrice =
    lastError: opt PriceError;
    lastSuccessAt: opt Timestamp;
    pair: text;
+   secondSource: opt SecondSourceObservation;
    source: PriceSource;
    token: PayToken;
    usable: bool;
@@ -445,12 +459,21 @@ type TokenMinimums =
    token0: nat;
    token1: nat;
  };
-type TokenGuaranteeTotal = 
+type TokenBalanceBreakdown = 
  record {
-   excess: nat;
-   remainingGuarantee: nat;
-   remainingTtti: nat;
-   token: PayToken;
+   auctionDeposits: nat;
+   creatorHoldings: nat;
+   dexBalances: nat;
+   difference: int;
+   guarantees: nat;
+   inFlight: nat;
+   ledgerBalance: nat;
+   permanentLiquidity: nat;
+   poolReserves: nat;
+   requestDeposits: nat;
+   status: ReserveStatus;
+   token: DexToken;
+   total: nat;
  };
 type TokenAmounts = 
  record {
@@ -473,7 +496,6 @@ type ThresholdBasis =
  };
 type TechnicalDetails = 
  record {
-   buyerPriceUsd: nat;
    canisterInfoFetchedAt: opt int;
    ckbtcMinterId: principal;
    controllers: opt vec principal;
@@ -511,7 +533,7 @@ type SweepTransferView =
    attempt: nat;
    createdAtTimeNs: nat64;
    fee: nat;
-   from: Account__5;
+   from: Account__3;
    lastError: opt text;
    ledgerBalance: nat;
    memoText: text;
@@ -520,7 +542,7 @@ type SweepTransferView =
    sends: nat;
    source: SweepSource;
    status: DexTransferStatus;
-   to: Account__5;
+   to: Account__3;
    token: DexToken;
  };
 type SweepTokenStatus = 
@@ -668,6 +690,7 @@ type SpreadStatus =
  variant {
    "empty";
    noConsolidatedPrice;
+   noIndependentReference;
    noRate;
    notOpen;
    ok;
@@ -748,11 +771,17 @@ type SettleError =
  };
 type SettleCoreResult = 
  record {
+   conversionCost: nat;
    creatorShare: nat;
    guaranteeAmount: nat;
+   handE8s: nat;
+   lockedAmount: nat;
+   lockedPositionId: opt nat;
+   mShareE6: nat;
    mintedE8s: nat;
    positionAmount: nat;
    positionId: opt nat;
+   reserveToken: PayToken;
    shares: nat;
    takenAmount: nat;
  };
@@ -760,6 +789,7 @@ type SettleCoreArgs =
  record {
    auctionId: AuctionId;
    bidId: BidId;
+   choice: RemainderChoice;
    mintE8s: nat;
    owner: principal;
    priceB: nat;
@@ -786,10 +816,15 @@ type SetAsideView =
    totalReceived: nat;
    valueUsdE8: opt nat;
  };
+type SecondSourceObservation = 
+ record {
+   fetchedAt: Timestamp;
+   source: PriceSource;
+   usdE8: nat;
+ };
 type SaleStatus = 
  record {
    available: nat;
-   buyerPriceUsd: nat;
    complete: bool;
    cyclesFeeBps: nat;
    feeAccountBalance: nat;
@@ -1010,20 +1045,25 @@ type Result__1 =
  };
 type Result_9 = 
  variant {
-   err: variant {notAdmin;};
-   ok: vec TokenState;
+   err: RequestPairError;
+   ok: PairRequestView;
  };
 type Result_8 = 
  variant {
-   err: DexReserveError;
-   ok: DexPauseView;
+   err: variant {notAdmin;};
+   ok: vec TokenState;
  };
 type Result_7 = 
  variant {
    err: DexReserveError;
-   ok: ReserveCheckView;
+   ok: DexPauseView;
  };
 type Result_6 = 
+ variant {
+   err: DexReserveError;
+   ok: ReserveCheckView;
+ };
+type Result_5 = 
  variant {
    err: variant {
           alreadyRunning;
@@ -1031,65 +1071,80 @@ type Result_6 =
         };
    ok: vec TokenState;
  };
-type Result_5 = 
+type Result_4 = 
  variant {
    err: SetMinimumsError;
    ok: PoolView;
  };
-type Result_4 = 
- variant {
-   err: SettleError;
-   ok: SettleReport;
- };
-type Result_32 = 
+type Result_36 = 
  variant {
    err: Error;
    ok;
  };
-type Result_31 = 
+type Result_35 = 
  variant {
    err: AddLiquidityError;
    ok: AddLiquidityResult;
  };
-type Result_30 = 
+type Result_34 = 
  variant {
    err: ApprovePairError;
    ok: PoolView;
  };
-type Result_3 = 
- variant {
-   err: SwapError;
-   ok: SwapResult;
- };
-type Result_29 = 
+type Result_33 = 
  variant {
    err: CancelRemovalError;
    ok: PoolView;
  };
-type Result_28 = 
+type Result_32 = 
+ variant {
+   err: GuaranteeError;
+   ok: vec LegacyConversion;
+ };
+type Result_31 = 
  variant {
    err: AddressBookError;
    ok;
  };
-type Result_27 = 
+type Result_30 = 
  variant {
    err: DexDepositError;
    ok: DexTransferView;
  };
-type Result_26 = 
+type Result_3 = 
+ variant {
+   err: SettleError;
+   ok: SettleReport;
+ };
+type Result_29 = 
  variant {
    err: ExtendLockError;
    ok: ExtendLockResult;
  };
-type Result_25 = 
+type Result_28 = 
  variant {
    err: DexIndicatorsError;
    ok: IndicatorsStatus;
  };
-type Result_24 = 
+type Result_27 = 
  variant {
    err: DexReserveError;
    ok: DexReserveStatus;
+ };
+type Result_26 = 
+ variant {
+   err: LiquidityMintError;
+   ok: PaymentToMint;
+ };
+type Result_25 = 
+ variant {
+   err: LiquidityMintError;
+   ok: MintPoolPreview;
+ };
+type Result_24 = 
+ variant {
+   err: LiquidityMintError;
+   ok: TttiToPay;
  };
 type Result_23 = 
  variant {
@@ -1113,8 +1168,8 @@ type Result_20 =
  };
 type Result_2 = 
  variant {
-   err: AddressBookError;
-   ok: Contact;
+   err: SwapError;
+   ok: SwapResult;
  };
 type Result_19 = 
  variant {
@@ -1124,7 +1179,7 @@ type Result_19 =
 type Result_18 = 
  variant {
    err: BidError;
-   ok: nat;
+   ok: DepositQuote;
  };
 type Result_17 = 
  variant {
@@ -1148,33 +1203,33 @@ type Result_14 =
  };
 type Result_13 = 
  variant {
+   err: GuaranteeError;
+   ok: vec Redemption;
+ };
+type Result_12 = 
+ variant {
    err: RefusePairError;
    ok: PairRequestView;
  };
-type Result_12 = 
+type Result_11 = 
  variant {
    err: RemoveLiquidityError;
    ok: RemoveLiquidityResult;
  };
-type Result_11 = 
+type Result_10 = 
  variant {
    err: RemovePairError;
    ok: PoolView;
  };
-type Result_10 = 
- variant {
-   err: RequestPairError;
-   ok: PairRequestView;
- };
 type Result_1 = 
  variant {
-   err: DexWithdrawError;
-   ok: DexTransferView;
+   err: AddressBookError;
+   ok: Contact;
  };
 type Result = 
  variant {
-   err: GuaranteeError;
-   ok: Redemption;
+   err: DexWithdrawError;
+   ok: DexTransferView;
  };
 type ReservedReconciliation = 
  record {
@@ -1188,11 +1243,34 @@ type ReserveWithdrawal =
    blockIndex: nat;
    timestamp: Timestamp;
  };
+type ReserveView = 
+ record {
+   circulationOutside: nat;
+   invariantHolds: bool;
+   legacyPending: vec LegacyGuaranteeBalance;
+   perToken: vec ReserveTokenLine;
+   requiredUsdE8: nat;
+   reservePerTtti: opt nat;
+   reserveUsdE8: nat;
+   shortfallUsdE8: nat;
+ };
+type ReserveTokenLine = 
+ record {
+   balance: nat;
+   rateUsdE8: opt nat;
+   token: PayToken;
+   valueUsdE8: nat;
+ };
 type ReserveStatus = 
  variant {
    ok;
    shortfall;
    surplus;
+ };
+type ReserveRedeemRule = 
+ variant {
+   parity;
+   reserveShare;
  };
 type ReserveProgress = 
  record {
@@ -1219,6 +1297,14 @@ type ReservePhase =
    idle;
    inProgress;
  };
+type ReservePayoutLine = 
+ record {
+   amount: nat;
+   ledgerFee: nat;
+   rateUsdE8: nat;
+   token: PayToken;
+   valueUsdE8: nat;
+ };
 type ReserveCoverage = 
  record {
    dailyConsumptionCycles: nat;
@@ -1229,6 +1315,16 @@ type ReserveCoverage =
    totalCycles: nat;
    yearTargetCycles: nat;
    yearTargetE8s: opt nat;
+ };
+type ReserveConversionQuote = 
+ record {
+   applies: bool;
+   conversionCost: nat;
+   conversionInput: nat;
+   maxDeviationBps: nat;
+   reserveAmount: nat;
+   reserveToken: PayToken;
+   route: opt Route;
  };
 type ReserveCheckView = 
  record {
@@ -1311,6 +1407,9 @@ type RequestPairError =
                  poolId: opt PoolId;
                  requestId: opt RequestId;
                };
+   payTokenNotAccepted: text;
+   rateUnavailable: text;
+   requestInProgress;
    tooManyPending: record {max: nat;};
    unknownCounterToken;
  };
@@ -1320,6 +1419,7 @@ type RequestPairArgs =
    feeTier: FeeTier;
    ledgerId: principal;
    message: text;
+   payToken: DexToken;
  };
 type RequestId = nat;
 type RequestChecks = 
@@ -1388,6 +1488,11 @@ type RemovalView =
     };
    none;
  };
+type RemainderChoice = 
+ variant {
+   pool;
+   wallet;
+ };
 type RelayOutcome = 
  record {
    positionsFreed: nat;
@@ -1428,6 +1533,18 @@ type ReferenceSource =
    tttiPriceUsdE8: nat;
    weightBps: nat;
  };
+type ReferenceReadingEntry = 
+ variant {
+   notReadYet: record {counter: DexToken;};
+   read: ReferenceReading;
+ };
+type ReferenceReading = 
+ record {
+   counter: DexToken;
+   outcome: ReadingOutcome;
+   poolCanister: opt principal;
+   readAt: Timestamp;
+ };
 type ReferencePrice = 
  record {
    available: bool;
@@ -1450,68 +1567,41 @@ type ReferenceCheck =
    unavailable: opt ReferenceUnavailable;
    withinBand: bool;
  };
-type RedemptionKind = 
- variant {
-   excessWithdrawal;
-   redeem;
- };
 type RedemptionId = nat;
-type RedemptionFee = 
- record {
-   amount: nat;
-   createdAt: Timestamp;
-   redemptionId: RedemptionId;
-   token: PayToken;
- };
 type Redemption = 
  record {
    account: Account;
    createdAt: Timestamp;
-   depositedGuarantee: nat;
-   excessKept: nat;
    id: RedemptionId;
-   kind: RedemptionKind;
    netAmount: nat;
    owner: principal;
    payout: DexTransferAttempt;
-   phase: RedeemPhase;
    rateUsdE8: opt nat;
-   redemptionFee: nat;
-   returnedAmount: nat;
-   rule: RedeemRule;
    status: DexTransferStatus;
    thirdPartyFee: nat;
    token: PayToken;
    tttiAmount: nat;
    tttiPullBlock: opt nat;
  };
-type RedeemRule = 
- variant {
-   dayRate;
-   depositedGuarantee;
-   proRata;
- };
 type RedeemQuote = 
  record {
-   dayRateQuantity: opt nat;
-   depositedGuarantee: nat;
-   excessKept: nat;
-   netAmount: nat;
-   phase: RedeemPhase;
-   rateUsdE8: opt nat;
-   redemptionFee: nat;
-   returnedAmount: nat;
-   rule: RedeemRule;
-   thirdPartyFee: nat;
-   token: PayToken;
+   circulationOutside: nat;
+   parityUsdE8: nat;
+   payoutUsdE8: nat;
+   payouts: vec ReservePayoutLine;
+   proportionalUsdE8: nat;
+   reservePerTtti: opt nat;
+   reserveUsdE8: nat;
+   rule: ReserveRedeemRule;
    tttiAllowanceRequired: nat;
    tttiAmount: nat;
    tttiTransferFee: nat;
  };
-type RedeemPhase = 
+type RecoveryAction = 
  variant {
-   afterMint;
-   duringMint;
+   finishMint;
+   none;
+   refund;
  };
 type ReconcileError = 
  variant {
@@ -1538,6 +1628,30 @@ type ReceivingWalletResult =
    err: TreasuryError;
    ok: ReceivingWalletView;
  };
+type ReadingStep = 
+ variant {
+   metadata;
+   poolLookup;
+   quote;
+   reserve;
+   spotPrice;
+ };
+type ReadingOutcome = 
+ variant {
+   failed: record {
+             detail: opt text;
+             step: ReadingStep;
+           };
+   ok: record {
+         counterPerTttiE8: nat;
+         method: ReadingMethod;
+       };
+ };
+type ReadingMethod = 
+ variant {
+   quote;
+   spot;
+ };
 type Ratio = 
  record {
    denominator: nat;
@@ -1546,6 +1660,8 @@ type Ratio =
 type QuoteArgs = 
  record {
    amount: MintAmount;
+   choice: RemainderChoice;
+   targetPoolId: opt PoolId;
    token: PayToken;
  };
 type Quantity = 
@@ -1672,12 +1788,19 @@ type PriceError =
  };
 type Prepared = 
  record {
+   choice: RemainderChoice;
+   conversionCost: nat;
    creator: nat;
    dust: nat;
    guarantee: nat;
+   handTtti: nat;
    ledgerFee: nat;
+   lockedToken: nat;
+   lockedTtti: nat;
+   mShareE6: nat;
    payAmount: nat;
    payUsdE8: nat;
+   pooledTtti: nat;
    positionToken: nat;
    q: nat;
    rateUsdE8: nat;
@@ -1705,6 +1828,7 @@ type PositionView =
    lockDurationNs: nat;
    lockStartedAt: Timestamp;
    locked: bool;
+   mintShareE6: nat;
    owner: principal;
    poolId: PoolId;
    relayReceivedNs: nat;
@@ -1804,6 +1928,7 @@ type PoolSpread =
    exceedsThreshold: bool;
    poolId: PoolId;
    priceUsdE8: opt nat;
+   referencePriceUsdE8: opt nat;
    spreadBps: opt int;
    status: SpreadStatus;
  };
@@ -1858,6 +1983,8 @@ type PoolDepth =
 type PoolCapRatioView = 
  record {
    averageRatio24h: opt nat;
+   capitalisationReference: variant {targetPrice;};
+   capitalisationReferenceUsdE8: nat;
    capitalisationUsdE8: opt nat;
    circulatingTttiT: nat;
    computedAt: Timestamp;
@@ -1963,9 +2090,29 @@ type PayoutError =
    paused;
    payoutInProgress;
  };
+type PaymentToMintArgs = 
+ record {
+   choice: RemainderChoice;
+   payAmount: nat;
+   targetPoolId: opt PoolId;
+   token: PayToken;
+ };
+type PaymentToMint = 
+ record {
+   choice: RemainderChoice;
+   conversionCost: nat;
+   mShareE6: nat;
+   payAmount: nat;
+   payAmountGiven: nat;
+   payUsdE8: nat;
+   rateUsdE8: nat;
+   rateValidUntil: Timestamp;
+   token: PayToken;
+   totalPayAmount: nat;
+   tttiAmount: nat;
+ };
 type PayTokenStatus = 
  record {
-   buyerPriceUsd: nat;
    decimals: nat8;
    feeBps: nat;
    fundsCycles: bool;
@@ -2004,6 +2151,7 @@ type PairRequestView =
    createdAt: Timestamp;
    depositAmount: nat;
    depositBlock: nat;
+   depositToken: DexToken;
    feeBps: nat;
    feeTier: FeeTier;
    id: RequestId;
@@ -2123,6 +2271,22 @@ type MintTreasuryAccount =
    legacyExternalAccount: opt Account;
    token: PayToken;
  };
+type MintTokenPrice = 
+ record {
+   conversionCostPerTtti: opt nat;
+   minimumConversionCost: opt nat;
+   minimumPayAmount: opt nat;
+   minimumTotalPayAmount: opt nat;
+   payAmountPerTtti: opt nat;
+   rateUsdE8: opt nat;
+   rateValidUntil: opt Timestamp;
+   token: PayToken;
+   totalPayAmountPerTtti: opt nat;
+   walletMinimumPayAmount: opt nat;
+   walletMinimumTotalPayAmount: opt nat;
+   walletPayAmountPerTtti: opt nat;
+   walletTotalPayAmountPerTtti: opt nat;
+ };
 type MintStatus = 
  variant {
    completed;
@@ -2130,6 +2294,57 @@ type MintStatus =
    refundFailed;
    refunded;
    refunding;
+ };
+type MintPricePreview = 
+ record {
+   computedAt: Timestamp;
+   mShareE6: nat;
+   minimumMintUsdE8: nat;
+   minimumMintWalletUsdE8: nat;
+   minimumTtti: nat;
+   mintCostPer100UsdE8: nat;
+   prepaidRedemptionCostPer100UsdE8: nat;
+   pricePerTttiUsdE8: nat;
+   pricePerTttiWalletUsdE8: nat;
+   tokens: vec MintTokenPrice;
+ };
+type MintPoolPreview = 
+ record {
+   consolidatedPriceAfter: ConsolidatedMintPrice;
+   consolidatedPriceBefore: ConsolidatedMintPrice;
+   feeBps: nat;
+   firstDeposit: bool;
+   gapAfterBps: opt int;
+   gapBeforeBps: opt int;
+   isRecommended: bool;
+   noIndependentReference: bool;
+   poolId: PoolId;
+   priceAfter: PoolPrice;
+   priceBefore: PoolPrice;
+   quotedAt: Timestamp;
+   recommendedPoolId: opt PoolId;
+   token: PayToken;
+   tttiAmount: nat;
+   zap: opt ZapSwap;
+ };
+type MintPoolOption = 
+ record {
+   depthUsdE8: opt nat;
+   feeBps: nat;
+   gapBps: opt int;
+   noIndependentReference: bool;
+   poolId: PoolId;
+   price: PoolPrice;
+   recommended: bool;
+   referencePrice: ConsolidatedMintPrice;
+ };
+type MintPoolList = 
+ record {
+   computedAt: Timestamp;
+   consolidatedPrice: ConsolidatedMintPrice;
+   pools: vec MintPoolOption;
+   recommendedPoolId: opt PoolId;
+   token: PayToken;
  };
 type MintId = nat;
 type MintFeeLpView = 
@@ -2159,13 +2374,33 @@ type MintFeeBalance =
    claimed: nat;
    token: PayToken;
  };
+type MintChoiceFigures = 
+ record {
+   choice: RemainderChoice;
+   conversionCost: nat;
+   creatorAmount: nat;
+   dustAmount: nat;
+   freeTokenAmount: nat;
+   freeTttiAmount: nat;
+   handTttiAmount: nat;
+   liquidityUsdE8: nat;
+   lockedTokenAmount: nat;
+   lockedTttiAmount: nat;
+   payAmount: nat;
+   payUsdE8: nat;
+   pooledTokenAmount: nat;
+   pooledTttiAmount: nat;
+   totalPayAmount: nat;
+ };
 type MintArgs = 
  record {
+   choice: RemainderChoice;
    deadline: Timestamp;
    maxPayAmount: nat;
    quantity: Quantity;
    recipient: opt principal;
    slippageBps: opt nat;
+   targetPoolId: opt PoolId;
    token: PayToken;
  };
 type MintAmount = 
@@ -2194,34 +2429,55 @@ type ListSubaccountsArgs =
  };
 type LiquidityMintResult = 
  record {
+   choice: RemainderChoice;
+   conversionCost: nat;
    createdAt: Timestamp;
    creatorAmount: nat;
+   freePositionId: opt PositionId;
    guaranteeAmount: nat;
+   handTttiAmount: nat;
+   lockedPositionId: opt PositionId;
+   lockedTokenAmount: nat;
+   lockedTttiAmount: nat;
+   mShareE6: nat;
    mintId: MintId;
    owner: principal;
    payAmount: nat;
    paymentBlock: nat;
    poolId: PoolId;
-   positionId: PositionId;
+   positionId: opt PositionId;
    positionTokenAmount: nat;
    positionTttiAmount: nat;
    priceAfter: PoolPrice;
    priceBefore: PoolPrice;
    rateUsdE8: nat;
+   reserveAmount: nat;
+   reserveToken: PayToken;
    shares: nat;
    token: PayToken;
+   totalPaid: nat;
    tttiAmount: nat;
    zap: opt ZapSwap;
  };
 type LiquidityMintQuote = 
  record {
+   choice: RemainderChoice;
+   choices: record {
+              pool: MintChoiceFigures;
+              wallet: MintChoiceFigures;
+            };
    consolidatedPriceAfter: ConsolidatedMintPrice;
    consolidatedPriceBefore: ConsolidatedMintPrice;
    creatorAmount: nat;
    dustAmount: nat;
    firstDeposit: bool;
    guaranteeAmount: nat;
+   handTttiAmount: nat;
    ledgerFee: nat;
+   lockedTokenAmount: nat;
+   lockedTttiAmount: nat;
+   mShareE6: nat;
+   noIndependentReference: bool;
    payAmount: nat;
    payUsdE8: nat;
    poolId: PoolId;
@@ -2232,8 +2488,10 @@ type LiquidityMintQuote =
    quotedAt: Timestamp;
    rateUsdE8: nat;
    rateValidUntil: Timestamp;
+   reserve: ReserveConversionQuote;
    shares: nat;
    token: PayToken;
+   totalPayAmount: nat;
    tttiAmount: nat;
    zap: opt ZapSwap;
  };
@@ -2280,6 +2538,10 @@ type LiquidityMintError =
                         };
    invalidAmount;
    invalidSlippage: record {maximumBps: nat;};
+   invalidTargetPool: record {
+                        poolId: PoolId;
+                        reason: InvalidTargetReason;
+                      };
    ledgerError: record {
                   message: text;
                   token: PayToken;
@@ -2294,8 +2556,21 @@ type LiquidityMintError =
    poolRemoved;
    poolUnavailable: record {message: text;};
    purchaseInProgress;
+   rateSourcesDiverge:
+    record {
+      coinbaseUsdE8: opt nat;
+      coingeckoUsdE8: opt nat;
+      differenceBps: opt nat;
+      maximumBps: nat;
+      token: PayToken;
+    };
    rateUnavailable: record {token: PayToken;};
    removalAnnounced: record {effectiveAt: Timestamp;};
+   reserveConversionDeviation: record {
+                                 deviationBps: nat;
+                                 maximumBps: nat;
+                               };
+   reserveConversionFailed: record {message: text;};
    salesPaused;
    slippageExceeded: record {toleranceBps: nat;};
    tooManyDecimals:
@@ -2308,8 +2583,14 @@ type LiquidityMintError =
  };
 type LiquidityMint = 
  record {
+   choice: RemainderChoice;
    createdAt: Timestamp;
+   handTttiAmount: nat;
    id: MintId;
+   lockedPositionId: opt PositionId;
+   lockedTokenAmount: nat;
+   lockedTttiAmount: nat;
+   mShareE6: nat;
    owner: principal;
    payAmount: nat;
    payer: principal;
@@ -2354,6 +2635,17 @@ type LiquidityBreakdown =
    freeShares: nat;
    totalShares: nat;
  };
+type LegacyGuaranteeBalance = 
+ record {
+   balance: nat;
+   token: PayToken;
+ };
+type LegacyConversion = 
+ record {
+   amountIn: nat;
+   amountOut: nat;
+   tokenIn: PayToken;
+ };
 type LegacyBlockInfo = 
  record {
    boundaryIndex: nat;
@@ -2364,6 +2656,13 @@ type LastError =
  record {
    at: Timestamp;
    message: text;
+ };
+type InvalidTargetReason = 
+ variant {
+   otherPair;
+   removalAnnounced: record {effectiveAt: Timestamp;};
+   removed;
+   unknownPool;
  };
 type InvalidReason = 
  variant {
@@ -2559,44 +2858,34 @@ type GuaranteedDepth =
    lockedPositionShares: nat;
    permanentShares: nat;
  };
-type GuaranteeMassView = 
- record {
-   excess: nat;
-   guaranteeValue: nat;
-   guaranteeValueUsdE8: opt nat;
-   mintEnded: bool;
-   rateUsdE8: opt nat;
-   remainingGuarantee: nat;
-   remainingTtti: nat;
-   token: PayToken;
-   totalGuarantee: nat;
-   totalTtti: nat;
-   withdrawableExcess: nat;
- };
 type GuaranteeError = 
  variant {
+   acknowledgementRequired;
    allowanceInsufficient: record {
                             allowance: nat;
                             required: nat;
                           };
-   amountExceedsMass: record {
-                        remaining: nat;
-                        requested: nat;
-                      };
+   amountExceedsCirculation: record {
+                               circulation: nat;
+                               requested: nat;
+                             };
    amountTooSmall;
    anonymous;
    callFailed: text;
-   massNotFound;
-   mintNotEnded;
-   noExcess;
-   nothingRemaining;
+   conversionFailed: text;
+   ledgerFeeNotCovered: record {
+                          fee: nat;
+                          token: PayToken;
+                        };
+   nothingToConvert;
    pullFailed: text;
    rateUnavailable: PayToken;
    redemptionInProgress;
+   reserveEmpty;
    salesPaused;
    slippage: record {
-               expectedNetAmount: nat;
-               netAmount: nat;
+               expectedPayoutUsdE8: nat;
+               payoutUsdE8: nat;
              };
    tttiBalanceInsufficient: record {
                               balance: nat;
@@ -2606,8 +2895,6 @@ type GuaranteeError =
 type GuaranteeAccountView = 
  record {
    accountBalance: nat;
-   equal: bool;
-   massTotal: nat;
    token: DexToken;
  };
 type Guarantee = 
@@ -2660,6 +2947,16 @@ type ForwardStatus =
    needsReview;
    notRequired;
    pending;
+ };
+type FinishMintResult = 
+ variant {
+   alreadyDone: text;
+   minted: record {
+             conversionId: nat;
+             tttiOut: nat;
+           };
+   refundOpened: record {refundSats: nat;};
+   refused: text;
  };
 type FeeTotals = 
  record {
@@ -2947,6 +3244,11 @@ type DexConfig =
    relayDivisor: nat;
    removalNoticeNs: nat;
    requestDeposit: nat;
+   requestDepositAccounts: vec record {
+                                 account: DexAccount;
+                                 token: DexToken;
+                               };
+   requestDepositUsdE8: nat;
    swapDeadlineMaxNs: nat;
    swapThresholdUsdE8: nat;
    tttiMinimumLocked: nat;
@@ -2960,6 +3262,12 @@ type DexBalanceView =
    "reserved": nat;
    symbol: text;
    token: DexToken;
+ };
+type DexBalanceBreakdownSnapshot = 
+ record {
+   checkedAt: Timestamp;
+   complete: bool;
+   tokens: vec TokenBalanceBreakdown;
  };
 type DexAmountArgs = 
  record {
@@ -3017,6 +3325,33 @@ type DepositStage =
    pendingRate;
    refunded;
  };
+type DepositQuote = 
+ record {
+   choice: RemainderChoice;
+   choicePayment: nat;
+   choicePooledAmount: nat;
+   conversionApplies: bool;
+   conversionBuffer: nat;
+   creatorAmount: nat;
+   handE8s: nat;
+   lockedAmount: nat;
+   mShareE6: nat;
+   payment: nat;
+   positionAmount: nat;
+   rateUsdE8: nat;
+   required: nat;
+   reserveAmount: nat;
+   reserveToken: PayToken;
+   token: PayToken;
+ };
+type DepositMintParams = 
+ record {
+   choice: RemainderChoice;
+   deadline: Timestamp;
+   maxPayAmount: nat;
+   slippageBps: nat;
+   targetPoolId: PoolId;
+ };
 type DepositKind = 
  variant {
    purchase;
@@ -3037,9 +3372,11 @@ type DepositEntry =
    btcDetectedSats: nat;
    btcRefund: opt BtcRefund;
    btcTxids: vec text;
+   causePermanent: bool;
    ckbtcMintBlockIndex: opt nat;
    ckbtcMintedSats: nat;
    ckbtcPendingSats: nat;
+   conversionCause: opt text;
    conversionId: opt nat;
    costToRefund: opt BtcCostToRefund;
    detectedAt: Timestamp;
@@ -3217,6 +3554,7 @@ type CoreArgs =
    payer: principal;
    paymentBlock: nat;
    slippage: nat;
+   targetPoolId: opt PoolId;
  };
 type ConversionStatus = 
  variant {
@@ -3345,6 +3683,7 @@ type ClosedBidView =
  record {
    auctionId: AuctionId;
    bidder: principal;
+   choice: RemainderChoice;
    createdAt: Timestamp;
    deposited: nat;
    id: BidId;
@@ -3432,6 +3771,28 @@ type BtcRefund =
    attempt: TransferAttempt;
    purpose: BtcRefundPurpose;
  };
+type BtcMintDiagnosis = 
+ record {
+   buyer: text;
+   causePermanent: bool;
+   conversionCause: opt text;
+   costAttemptOpen: bool;
+   depositSubaccountHex: text;
+   dexPaused: bool;
+   lastErrorKind: opt text;
+   lastErrorText: opt text;
+   minimumMint: nat;
+   mintableRemaining: nat;
+   pendingCkbtcSats: nat;
+   purchaseLockHeld: bool;
+   recommendedAction: RecoveryAction;
+   salesPaused: bool;
+   subaccountBalanceSats: nat;
+   trackingStage: text;
+   validRateAvailable: bool;
+   verdictCode: text;
+   verdictText: text;
+ };
 type BtcDepositResult = 
  variant {
    Err: BtcDepositError;
@@ -3488,9 +3849,14 @@ type BidSettlement =
    bidId: BidId;
    bidder: principal;
    carriedE8s: nat;
+   choice: RemainderChoice;
    creatorShare: nat;
    failureReason: opt text;
    guaranteeAmount: nat;
+   handE8s: nat;
+   lockedAmount: nat;
+   lockedPositionId: opt nat;
+   mShareE6: nat;
    mintedE8s: nat;
    positionAmount: nat;
    positionId: opt nat;
@@ -3538,6 +3904,7 @@ type BidError =
                         minimumUsdE8: nat;
                       };
    quantityBelowMinimum: record {minimum: nat;};
+   rateUnavailable: record {token: PayToken;};
    tooManyBids: record {maximum: nat;};
    wholeLotRequired: record {lotSizeE8s: nat;};
  };
@@ -3546,6 +3913,7 @@ type Bid =
    auctionId: AuctionId;
    bidder: principal;
    block: nat;
+   choice: RemainderChoice;
    createdAt: Timestamp;
    deposited: nat;
    id: BidId;
@@ -3807,7 +4175,7 @@ type Activity =
  };
 type AcknowledgementError = variant {anonymousCaller;};
 type AcknowledgedAt = int;
-type Account__5 = 
+type Account__3 = 
  record {
    owner: principal;
    subaccount: opt blob;
@@ -3854,15 +4222,15 @@ type Account =
  };
 service : {
   _initialize_access_control: () -> ();
-  _internet_identity_sign_in_finish: () -> (Result_32);
+  _internet_identity_sign_in_finish: () -> (Result_36);
   _internet_identity_sign_in_start: () -> (blob);
   acceptPurchaseAcknowledgements: () ->
    (variant {
       err: AcknowledgementError;
       ok: PurchaseAcknowledgement;
     });
-  addContact: (input: ContactInput) -> (Result_2);
-  addLiquidity: (args: AddLiquidityArgs) -> (Result_31);
+  addContact: (input: ContactInput) -> (Result_1);
+  addLiquidity: (args: AddLiquidityArgs) -> (Result_35);
   adminGetRouterFees: () ->
    (variant {
       err: RouterAdminError;
@@ -3873,10 +4241,10 @@ service : {
       err: RouterAdminError;
       ok: Page_1;
     }) query;
-  approvePair: (requestId: nat, minimums: opt TokenMinimums) -> (Result_30);
+  approvePair: (requestId: nat, minimums: opt TokenMinimums) -> (Result_34);
   assignCallerUserRole: (user: principal, role: UserRole) -> ();
   auctionSettleCore: (args: SettleCoreArgs) -> (SettleCoreResult);
-  cancelPairRemoval: (poolId: nat) -> (Result_29);
+  cancelPairRemoval: (poolId: nat) -> (Result_33);
   checkBtcPurchaseDeposit: () -> (BtcDepositResult);
   checkBtcWalletDeposit: () -> (BtcDepositResult);
   checkBtcWalletDepositFor: (owner: principal) -> (BtcDepositResult);
@@ -3887,11 +4255,15 @@ service : {
    (PurchaseResult);
   convertDepositWith: (token: PayToken, recipient: opt Account, payAmount:
    nat, tttiTarget: opt nat) -> (PurchaseResult);
-  deleteContact: (id: ContactId) -> (Result_28);
-  depositToDex: (args: DexAmountArgs) -> (Result_27);
+  convertLegacyGuarantees: () -> (Result_32);
+  convertMyHeldBtc: (params: DepositMintParams) -> (BtcDepositResult);
+  deleteContact: (id: ContactId) -> (Result_31);
+  depositToDex: (args: DexAmountArgs) -> (Result_30);
+  diagnoseBtcMint: (input: text) -> (BtcMintDiagnosis);
   execute: (qJson: text) -> (Result__1) query;
   exportBalanceSnapshot: () -> (BalanceSnapshot) query;
-  extendLock: (positionId: nat, newUnlockAt: int) -> (Result_26);
+  extendLock: (positionId: nat, newUnlockAt: int) -> (Result_29);
+  finishBtcMint: (input: text, refund: bool) -> (FinishMintResult);
   getApiDoc: () -> (text) query;
   getAuctionResult: (auctionId: AuctionId) -> (opt AuctionResultView) query;
   getAuctionView: () -> (AuctionView) query;
@@ -3913,11 +4285,12 @@ service : {
   getCyclesShareHistory: () -> (vec ShareChange) query;
   getCyclesStatus: () -> (CyclesStatus) query;
   getDeliveryAddress: () -> (opt Account) query;
+  getDexBalanceBreakdown: () -> (DexBalanceBreakdownSnapshot) query;
   getDexBalances: (owner: principal) -> (vec DexBalanceView) query;
   getDexConfig: () -> (DexConfig) query;
   getDexCustodyAccounts: () ->
    (vec record {
-          account: Account__5;
+          account: Account__3;
           token: DexToken;
         }) query;
   getDexCustodyComparison: () ->
@@ -3928,14 +4301,14 @@ service : {
   getDexDepositAccount: (owner: principal) -> (DexAccount) query;
   getDexEstimatedShare: (positionId: nat) -> (opt EstimatedShareView) query;
   getDexIndicators: () -> (opt DexIndicatorsSnapshot) query;
-  getDexIndicatorsStatus: () -> (Result_25) query;
+  getDexIndicatorsStatus: () -> (Result_28) query;
   getDexPauseStatus: () -> (PublicDexPause) query;
   getDexPendingPot: (poolId: nat) -> (opt PendingPotView) query;
   getDexPendingPots: () -> (vec PendingPotView) query;
   getDexPool: (poolId: nat) -> (opt PoolView) query;
   getDexPoolAccount: (poolId: nat) -> (opt DexAccount) query;
   getDexPosition: (positionId: nat) -> (opt PositionView) query;
-  getDexReserveStatus: () -> (Result_24) query;
+  getDexReserveStatus: () -> (Result_27) query;
   getDexSweepProgress: () -> (SweepProgress) query;
   getDexSweepState: () -> (vec TokenState) query;
   getDexTokens: () -> (vec DexTokenInfo) query;
@@ -3947,13 +4320,15 @@ service : {
   getIcpPrice: () -> (IcpPrice) query;
   getLastWeeklyAllocation: () -> (opt WeeklyAllocation) query;
   getLegacyBlockInfo: () -> (LegacyBlockInfo) query;
+  getMintAmountForPayment: (args: PaymentToMintArgs) -> (Result_26) query;
   getMintFeeAccount: () -> (FeeAccountResult);
+  getMintPoolPreview: (args: QuoteArgs) -> (Result_25) query;
+  getMintPricePreview: () -> (MintPricePreview) query;
   getMintTreasuryAccounts: () -> (vec MintTreasuryAccount) query;
   getMyAuctionBids: () -> (vec Bid) query;
   getMyBtcDeposits: () -> (MyBtcDeposits) query;
   getMyConversions: () -> (vec Conversion) query;
   getMyDexEstimatedShares: () -> (vec EstimatedShareView) query;
-  getMyGuaranteeMasses: () -> (vec GuaranteeMassView) query;
   getMyGuarantees: () -> (vec Guarantee) query;
   getMyLiquidityMints: () -> (vec LiquidityMint) query;
   getMyLpBonus: () -> (LpBonusView) query;
@@ -3964,6 +4339,7 @@ service : {
   getMyRoutedSwaps: (cursor: opt nat, limit: nat) -> (Page_1) query;
   getMyWithdrawable: () -> (vec MyBalance) query;
   getOwnerAccumulated: () -> (vec OwnerAccumulated) query;
+  getPayAmountForTtti: (args: TttiToPayArgs) -> (Result_24) query;
   getPermanentLiquiditySummary: () -> (PermanentSummary) query;
   getPoolCapRatio: () -> (PoolCapRatioView) query;
   getPoolSpreads: () -> (PoolSpreadReport) query;
@@ -3972,6 +4348,8 @@ service : {
   getPublicTreasuryInfo: () -> (opt PublicTreasuryInfo) query;
   getReceivingWallets: () -> (ReceivingWalletsResult) query;
   getReferencePrice: (poolId: nat) -> (opt ReferencePrice) query;
+  getReferenceReadings: () -> (vec ReferenceReadingEntry) query;
+  getReserveView: () -> (ReserveView) query;
   getSaleStatus: () -> (SaleStatus) query;
   getSetAsideAmounts: () -> (vec SetAsideView) query;
   getSettlementStatus: () -> (SettlementStatusResult) query;
@@ -3979,7 +4357,6 @@ service : {
   getTokenPrices: () -> (vec TokenPrice) query;
   getTreasuryConfig: () -> (opt TreasuryConfig) query;
   getTreasurySweepStatus: () -> (TreasurySweepView) query;
-  getUnclaimedMassTotal: () -> (UnclaimedMassTotal) query;
   getUpgradeReadiness: () -> (UpgradeReadiness) query;
   get_account_transactions: (args: GetAccountTransactionsArgs) ->
    (GetTransactionsResult) query;
@@ -4026,6 +4403,7 @@ service : {
   listDexSweepTransfers: (cursor: opt nat, limit: nat) -> (Page) query;
   listGuarantees: (offset: nat, limit: nat) -> (vec Guarantee) query;
   listLiquidityInjections: (offset: nat, limit: nat) -> (InjectionPage) query;
+  listMintPools: (token: PayToken) -> (MintPoolList) query;
   listMyContacts: () -> (Result_23) query;
   listMyRedemptions: () -> (vec Redemption) query;
   listOwnerSends: (offset: nat, limit: nat) -> (OwnerSendPage) query;
@@ -4033,7 +4411,6 @@ service : {
   listPermanentLiquidityLog: (offset: nat, limit: nat) ->
    (PermanentLogPage) query;
   listPoolPositions: (poolId: nat) -> (vec PositionView) query;
-  listRedemptionFees: (offset: nat, limit: nat) -> (vec RedemptionFee) query;
   listTransfersToReview: () -> (vec TransferReview) query;
   listTransfersToReviewFiltered: (filter: ReviewFilter) ->
    (vec TransferReview) query;
@@ -4068,12 +4445,11 @@ service : {
   openAuction: () -> (Result_21);
   payCreatorFees: (token: DexToken) -> (PayoutResult);
   placeAuctionBid: (token: PayToken, quantityE8s: nat, priceB: nat,
-   depositAmount: nat) -> (Result_20);
+   depositAmount: nat, choice: RemainderChoice) -> (Result_20);
   quoteAddLiquidity: (args: AddLiquidityQuoteArgs) -> (Result_19) query;
-  quoteAuctionDeposit: (token: PayToken, priceB: nat, quantityE8s: nat) ->
-   (Result_18) query;
-  quoteGuaranteeRedeem: (token: PayToken, tttiAmount: nat) ->
-   (Result_17) query;
+  quoteAuctionDeposit: (token: PayToken, priceB: nat, quantityE8s: nat,
+   choice: RemainderChoice) -> (Result_18) query;
+  quoteGuaranteeRedeem: (tttiAmount: nat) -> (Result_17) query;
   quoteLiquidityMint: (args: QuoteArgs) -> (Result_16) query;
   quoteRoutedSwap: (args: RoutedQuoteArgs) ->
    (variant {
@@ -4083,40 +4459,38 @@ service : {
   quoteSwap: (poolId: nat, tokenIn: DexToken, amountIn: nat, slippageBps:
    nat) -> (Result_15) query;
   reconcileReserved: () -> (Result_14);
-  redeemGuarantee: (token: PayToken, tttiAmount: nat, expectedNetAmount:
-   nat) -> (Result);
+  redeemGuarantee: (tttiAmount: nat, expectedPayoutUsdE8: nat) -> (Result_13);
   refreshIcpPrice: () -> (PriceResult);
   refreshReferenceSources: () -> (nat);
   refreshTokenPrice: (token: PayToken) -> (TokenPriceResult);
-  refusePair: (requestId: nat, reason: text) -> (Result_13);
-  removeLiquidity: (positionId: nat) -> (Result_12);
-  removePair: (poolId: nat, reason: text) -> (Result_11);
-  requestPair: (args: RequestPairArgs) -> (Result_10);
-  resendDexSweepTransfers: () -> (Result_9);
-  resumeDex: () -> (Result_8);
+  refusePair: (requestId: nat, reason: text) -> (Result_12);
+  removeLiquidity: (positionId: nat) -> (Result_11);
+  removePair: (poolId: nat, reason: text) -> (Result_10);
+  requestPair: (args: RequestPairArgs) -> (Result_9);
+  resendDexSweepTransfers: () -> (Result_8);
+  resumeDex: () -> (Result_7);
   routedSwap: (args: RoutedSwapArgs) ->
    (variant {
       err: RouteError;
       ok: RoutedSwapResult;
     });
   runDexPotSlice: (poolId: nat) -> (PotSliceReport);
-  runDexReserveCheck: () -> (Result_7);
-  runDexSweep: () -> (Result_6);
+  runDexReserveCheck: () -> (Result_6);
+  runDexSweep: () -> (Result_5);
   schema: () -> (text) query;
   setDeliveryAddress: (principalText: text) -> (DeliveryAddressResult);
   setReceivingWallet: (token: PayToken, account: Account) ->
    (ReceivingWalletResult);
   setSalesPaused: (paused: bool) -> ();
   setUtilityPairMinimums: (poolId: nat, minimums: TokenMinimums) ->
-   (Result_5);
-  settleAuctionWinners: (auctionId: AuctionId) -> (Result_4);
+   (Result_4);
+  settleAuctionWinners: (auctionId: AuctionId) -> (Result_3);
   startDexDayRoll: () -> (DayRollReport);
   status: () -> (IndexStatus) query;
   swap: (poolId: nat, tokenIn: DexToken, amountIn: nat, minAmountOut: 
-   nat, deadline: int) -> (Result_3);
+   nat, deadline: int) -> (Result_2);
   topUpCycles: () -> (TopUpResult);
   transform: (input: TransformationInput) -> (TransformationOutput) query;
-  updateContact: (id: ContactId, input: ContactInput) -> (Result_2);
-  withdrawFromDex: (args: DexAmountArgs) -> (Result_1);
-  withdrawGuaranteeExcess: (token: PayToken) -> (Result);
+  updateContact: (id: ContactId, input: ContactInput) -> (Result_1);
+  withdrawFromDex: (args: DexAmountArgs) -> (Result);
 }

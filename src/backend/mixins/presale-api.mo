@@ -48,9 +48,8 @@ mixin (
 
   // --- One-time purchase acknowledgement (per caller) ------------------------
 
-  // Records that the signed-in caller accepted the current version of the six
-  // purchase acknowledgements; a repeat call at the current version keeps the
-  // first record, an older version is replaced.
+  // Records that the signed-in caller accepted the wallet terms (one time); a
+  // repeat call keeps the first record, whatever its version.
   public shared ({ caller }) func acceptPurchaseAcknowledgements() : async { #ok : Sale.PurchaseAcknowledgement; #err : Sale.AcknowledgementError } {
     SaleLib.accept(acknowledgements, caller, Time.now());
   };

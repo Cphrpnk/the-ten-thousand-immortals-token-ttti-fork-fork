@@ -18,6 +18,11 @@ module {
 
   public type ReserveStatus = DexReserve.ReserveStatus;
 
+  // PTM-10d: per-token balance breakdown shown beside the proof of reserves
+  // (defined in types/dex-reserve.mo).
+  public type TokenBalanceBreakdown = DexReserve.TokenBalanceBreakdown;
+  public type DexBalanceBreakdownSnapshot = DexReserve.DexBalanceBreakdownSnapshot;
+
   // --- Snapshot (public) -----------------------------------------------------
 
   // Proof of reserves of one token, copied from the latest reserve check.

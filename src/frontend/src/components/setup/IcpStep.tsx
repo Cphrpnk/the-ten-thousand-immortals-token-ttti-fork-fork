@@ -3,11 +3,6 @@ import { ArrowDownToLine, CreditCard, Loader2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
-  type SetupExit,
-  WALLET_BTC_HASH,
-  WALLET_RECEIVE_HASH_PREFIX,
-} from "../../hooks/useBuyFunnel";
-import {
   type SetupWalletKind,
   useConnectedWallet,
 } from "../../hooks/useConnectedWallet";
@@ -15,6 +10,11 @@ import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import { useWalletBalance } from "../../hooks/useWallet";
 import { pickDict, useDict } from "../../i18n/core";
 import { SETUP_TEXT } from "../../i18n/pages/setup";
+import {
+  type SetupExit,
+  WALLET_BTC_HASH,
+  WALLET_RECEIVE_HASH_PREFIX,
+} from "../../lib/funnel-exit";
 import { ICP_LEDGER_CANISTER_ID } from "../../lib/icpLedger";
 import { copyAddressAndOpenOnramper } from "../../lib/onramper";
 import {

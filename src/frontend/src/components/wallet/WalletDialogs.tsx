@@ -4,6 +4,7 @@ import { SWAP_TEXT } from "../../i18n/pages/swap";
 import { WALLET_EXPLORER_TEXT, WALLET_TEXT } from "../../i18n/pages/wallet";
 import { payTokenSymbol } from "../../lib/token";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
+import { isTttiToken } from "../../lib/ttti-token";
 import { ExplorerLink } from "../ExplorerLink";
 import {
   Dialog,
@@ -16,7 +17,6 @@ import { PurchaseHistorySection } from "./PurchaseHistorySection";
 import { ReceivePanel } from "./ReceivePanel";
 import { SendPanel } from "./SendPanel";
 import { SwapPanel } from "./SwapPanel";
-import { isTttiToken } from "./TokenBalanceCard";
 import { TttiMovements } from "./TttiMovements";
 import { dashboardAccountUrl } from "./accountExplorer";
 import { payTokenForLedger } from "./valuation";

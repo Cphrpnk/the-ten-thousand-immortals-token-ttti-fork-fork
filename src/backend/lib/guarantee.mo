@@ -1,5 +1,5 @@
 import Array "mo:core/Array";
-import Map "mo:core/Map";
+import List "mo:core/List";
 import Nat "mo:core/Nat";
 import Result "mo:core/Result";
 import Runtime "mo:core/Runtime";
@@ -13,40 +13,37 @@ import IcrcLib "icrc";
 import OracleLib "oracle";
 import PayTokenLib "pay-token";
 import RetryLib "retry";
+import RouterLib "router";
 import SaleLib "presale";
 import DexTypes "../types/dex";
 import Icrc "../types/icrc";
 import Types "../types/guarantee";
 import RetryTypes "../types/retry";
+import SaleTypes "../types/presale";
 
-// PTM-2: personal guarantee and redemption.
+// PTM-11 / PTM-11b: common reserve and redemption.
 //
-// Each minter has one mass per payment token (TTTI-T minted and the matching
-// guarantee), built by the liquidity mint in the same synchronous block that
-// records the Guarantee. The right to redeem belongs to the person: any TTTI-T
-// she holds permits redeeming up to her remaining mass.
+// The dedicated per-token internal guarantee accounts (ckUSDC, ckUSDT) of the
+// common custody ARE the reserve: 10 000 USD per TTTI-T minted. Any holder,
+// minter or not, returns x TTTI-T and is paid min(10 000 USD x x, reserve /
+// circulation outside the contract x x), in the reserve tokens in proportion
+// to the reserve composition. No fee.
 //
-// redeem: in ONE synchronous block (before the first await) the guarantee
-// payout is reserved in the contract's DEX balance, the TTTI-T are pulled to
-// the dedicated returned account on the own TTTI-T ledger, the mass is
-// updated and the payout (memo TTTI-GR-<n>, created_at_time) is recorded.
-// The payout is then sent from the token custody account and resent / renewed
-// with the DEX retry rules until it arrives or goes to review after 23 h.
+// redeem: the wallet-terms acceptance is checked first. Then in ONE
+// synchronous block (before the first await) the payouts are reserved in the
+// contract's DEX balance, the reserve accounts are debited, the TTTI-T are
+// pulled to the dedicated returned account on the own TTTI-T ledger and the
+// payouts (memo TTTI-GR-<n>, created_at_time) are recorded. The payouts are
+// then sent from the token custody account and resent / renewed with the DEX
+// retry rules until they arrive or go to review after 23 h.
 module {
-  public type GuaranteeMass = Types.GuaranteeMass;
   public type Redemption = Types.Redemption;
 
   // 10 000 USD per TTTI-T, in USD e8 per TTTI-T base unit (1 TTTI-T = 1e8
   // base units = 10 000 USD = 10_000e8 USD e8).
   public let USD_E8_PER_TTTI_UNIT : Nat = 10_000;
-  // Redemption fee: 1 % of the redeemed amount. PTM-4: the ICP part fills the
-  // cycles reserve first (up to one year of measured consumption), the rest
-  // is credited to the creator holdings (source #buybackFee).
-  public let REDEMPTION_FEE_BPS : Nat = 100;
-
   public type GuaranteeContext = {
-    masses : Types.GuaranteeMassStore;
-    // PTM-9b: dedicated internal guarantee account per token, in the common custody.
+    // Dedicated internal reserve account per token, in the common custody.
     guaranteeAccount : Types.GuaranteeAccountStore;
     store : Types.RedemptionStore;
     sale : SaleLib.SaleStore;
@@ -56,18 +53,11 @@ module {
     dex : RetryLib.DexContext;
     canister : Principal;
     locks : Set.Set<Text>; // transient: redemption locks
-    // PTM-4: where the 1 % redemption fee goes (the cycles reserve first, then the creator).
+    // The creator share bears the ledger fee of a reserve payout.
     creatorFees : CreatorFeesLib.CreatorFeeStore;
     cyclesFees : CyclesReserveLib.CyclesFeeRouting;
-  };
-
-  public func tokenKey(token : Types.PayToken) : Types.TokenKey {
-    switch (token) {
-      case (#icp) "icp";
-      case (#ckbtc) "ckbtc";
-      case (#ckusdc) "ckusdc";
-      case (#ckusdt) "ckusdt";
-    };
+    // Wallet-terms acceptances (same store as the mint checks): redemption needs a stored acceptance (any version).
+    acknowledgements : SaleTypes.AcknowledgementStore;
   };
 
   func dexOf(token : Types.PayToken) : Types.DexToken {
@@ -79,33 +69,13 @@ module {
     };
   };
 
-  // Transient lock key of one mass: owner principal and mass token.
-  public func lockKey(owner : Principal, token : Types.PayToken) : Text {
-    "GM/" # owner.toText() # "/" # tokenKey(token);
-  };
-
   func payoutLockKey(id : Types.RedemptionId) : Text {
     "GR/" # id.toText();
   };
 
-  // Token quantity worth 10 000 USD x tttiAmount at `rateUsdE8` (USD e8 per
-  // whole token). 0 when the rate is 0.
-  public func dayRateQuantity(token : Types.PayToken, tttiAmount : Nat, rateUsdE8 : Nat) : Nat {
-    if (rateUsdE8 == 0) return 0;
-    let scale = 10 ** PayTokenLib.expectedDecimals(token).toNat();
-    tttiAmount * USD_E8_PER_TTTI_UNIT * scale / rateUsdE8;
-  };
+  // --- Reserve accounts (one per token, common custody) -------------------------
 
-  // PTM-9b: the mint has ended when what remains to mint is below the minimum
-  // of one mint. That remainder joins the first auction lot.
-  public func mintEnded(ledger : IcrcLib.Ledger, sale : SaleLib.SaleStore, canister : Principal) : Bool {
-    ignore (sale, canister);
-    IcrcLib.mintableRemaining(ledger) < SaleLib.MIN_PURCHASE;
-  };
-
-  // --- PTM-9b: dedicated guarantee account (one per token, common custody) -----
-
-  // Keys of the account store and of the masses: "tttiT", "icp", "ckbtc", "ckusdc", "ckusdt".
+  // Keys of the account store: "tttiT", "icp", "ckbtc", "ckusdc", "ckusdt".
   public func accountKey(token : Types.DexToken) : Types.TokenKey {
     switch (token) {
       case (#tttiT) "tttiT";
@@ -120,7 +90,7 @@ module {
     account.get(accountKey(token)) ?? 0;
   };
 
-  // The mint and the auction settlement credit the guarantee they create.
+  // The mint and the auction settlement credit the reserve part they create.
   public func creditAccount(account : Types.GuaranteeAccountStore, token : Types.PayToken, amount : Nat) {
     if (amount == 0) return;
     let k = accountKey(dexOf(token));
@@ -138,59 +108,13 @@ module {
     true;
   };
 
-  // Public: per token, the sum of every mass (remaining guarantee + excess)
-  // against the balance of the dedicated account.
-  public func accountViews(masses : Types.GuaranteeMassStore, account : Types.GuaranteeAccountStore) : [Types.GuaranteeAccountView] {
+  // Public: per token, the balance of the dedicated account.
+  public func accountViews(account : Types.GuaranteeAccountStore) : [Types.GuaranteeAccountView] {
     DexLib.DEX_TOKENS.map(
       func(token : Types.DexToken) : Types.GuaranteeAccountView {
-        var total : Nat = 0;
-        for (perOwner in masses.values()) {
-          switch (perOwner.get(accountKey(token))) {
-            case (?m) { total += m.remainingGuarantee + m.excess };
-            case null {};
-          };
-        };
-        let balance = accountBalance(account, token);
-        { token; massTotal = total; accountBalance = balance; equal = total == balance };
+        { token; accountBalance = accountBalance(account, token) };
       }
     );
-  };
-
-  public func massOf(masses : Types.GuaranteeMassStore, owner : Principal, token : Types.PayToken) : ?Types.GuaranteeMass {
-    switch (masses.get(owner)) {
-      case (?perOwner) perOwner.get(tokenKey(token));
-      case null null;
-    };
-  };
-
-  public func setMass(masses : Types.GuaranteeMassStore, owner : Principal, mass : Types.GuaranteeMass) {
-    let perOwner = switch (masses.get(owner)) {
-      case (?m) m;
-      case null {
-        let fresh : Map.Map<Types.TokenKey, Types.GuaranteeMass> = Map.empty();
-        masses.add(owner, fresh);
-        fresh;
-      };
-    };
-    perOwner.add(tokenKey(mass.token), mass);
-  };
-
-  // Called by the liquidity mint, in the same synchronous block that records
-  // the Guarantee: adds the minted TTTI-T and the guarantee to the owner's mass.
-  public func addMass(masses : Types.GuaranteeMassStore, owner : Principal, token : Types.PayToken, ttti : Nat, guarantee : Nat) {
-    let base : Types.GuaranteeMass = switch (massOf(masses, owner, token)) {
-      case (?m) m;
-      case null {
-        { token; totalTtti = 0; totalGuarantee = 0; remainingTtti = 0; remainingGuarantee = 0; excess = 0 };
-      };
-    };
-    setMass(masses, owner, {
-      base with
-      totalTtti = base.totalTtti + ttti;
-      totalGuarantee = base.totalGuarantee + guarantee;
-      remainingTtti = base.remainingTtti + ttti;
-      remainingGuarantee = base.remainingGuarantee + guarantee;
-    });
   };
 
   func tttiErrorText(err : Icrc.TransferFromError) : Text {
@@ -209,136 +133,135 @@ module {
 
   // --- Reads ------------------------------------------------------------------
 
-  public func massViews(ctx : GuaranteeContext, owner : Principal, now : Int) : [Types.GuaranteeMassView] {
-    let ended = mintEnded(ctx.ledger, ctx.sale, ctx.canister);
-    switch (ctx.masses.get(owner)) {
-      case null [];
-      case (?perOwner) {
-        perOwner.values().map(
-          func(m : Types.GuaranteeMass) : Types.GuaranteeMassView {
-            let value = m.remainingGuarantee + m.excess;
-            let rate = OracleLib.usableRate(OracleLib.storeFor(ctx.oracle, ctx.tokenRates, m.token), now);
-            let usd = switch (rate) {
-              case (?r) ?(value * r / (10 ** PayTokenLib.expectedDecimals(m.token).toNat()));
-              case null null;
-            };
-            {
-              token = m.token;
-              totalTtti = m.totalTtti;
-              totalGuarantee = m.totalGuarantee;
-              remainingTtti = m.remainingTtti;
-              remainingGuarantee = m.remainingGuarantee;
-              excess = m.excess;
-              withdrawableExcess = if (ended) m.excess else 0;
-              guaranteeValue = value;
-              rateUsdE8 = rate;
-              guaranteeValueUsdE8 = usd;
-              mintEnded = ended;
-            };
-          }
-        ).toArray();
-      };
-    };
-  };
-
-  public func unclaimedTotal(ctx : GuaranteeContext) : Types.UnclaimedMassTotal {
-    var ttti : Nat = 0;
-    var count : Nat = 0;
-    let perToken = PayTokenLib.ALL.map(
-      func(token : Types.PayToken) : Types.TokenGuaranteeTotal {
-        var t : Nat = 0;
-        var g : Nat = 0;
-        var e : Nat = 0;
-        for (perOwner in ctx.masses.values()) {
-          switch (perOwner.get(tokenKey(token))) {
-            case (?m) {
-              t += m.remainingTtti;
-              g += m.remainingGuarantee;
-              e += m.excess;
-            };
-            case null {};
-          };
-        };
-        { token; remainingTtti = t; remainingGuarantee = g; excess = e };
-      },
-    );
-    for (perOwner in ctx.masses.values()) {
-      for (m in perOwner.values()) {
-        ttti += m.remainingTtti;
-        if (m.remainingTtti > 0 or m.remainingGuarantee > 0 or m.excess > 0) count += 1;
-      };
-    };
-    { remainingTtti = ttti; massCount = count; perToken; mintEnded = mintEnded(ctx.ledger, ctx.sale, ctx.canister) };
-  };
-
   public func redemptionsOf(store : Types.RedemptionStore, owner : Principal) : [Types.Redemption] {
     store.redemptions.values().filter(func(r : Types.Redemption) : Bool = r.owner == owner).toArray().reverse();
   };
 
-  public func listFees(store : Types.RedemptionStore, offset : Nat, limit : Nat) : [Types.RedemptionFee] {
-    let all = store.fees.values().toArray();
-    if (offset >= all.size()) return [];
-    all.sliceToArray(offset, Nat.min(all.size(), offset + limit));
+  // --- Common reserve -----------------------------------------------------------
+
+  func sat(a : Nat, b : Nat) : Nat = if (a > b) Nat.sub(a, b) else 0;
+
+  // The reserve tokens, in display order. The reserve is held in the token the
+  // minter paid in (no conversion) and valued in USD at the oracle rates.
+  public let RESERVE_TOKENS : [Types.PayToken] = [#icp, #ckbtc, #ckusdc, #ckusdt];
+
+  func valueUsdE8Of(token : Types.PayToken, amount : Nat, rateUsdE8 : Nat) : Nat {
+    amount * rateUsdE8 / (10 ** PayTokenLib.expectedDecimals(token).toNat());
+  };
+
+  // TTTI-T minted and held outside the contract: ledger supply minus what the
+  // contract holds (returned account, auction lots, unsold remainder). TTTI-T
+  // base units.
+  public func circulationOutside(ctx : GuaranteeContext) : Nat {
+    sat(IcrcLib.totalSupply(ctx.ledger), IcrcLib.balanceOf(ctx.ledger, IcrcLib.returnedAccount(ctx.canister)));
+  };
+
+  // The reserve tokens with their balance, usable rate and USD value.
+  func reserveLines(ctx : GuaranteeContext, now : Int) : [Types.ReserveTokenLine] {
+    RESERVE_TOKENS.map(
+      func(token : Types.PayToken) : Types.ReserveTokenLine {
+        let balance = accountBalance(ctx.guaranteeAccount, dexOf(token));
+        let rate = OracleLib.usableRate(OracleLib.storeFor(ctx.oracle, ctx.tokenRates, token), now);
+        let value = switch (rate) {
+          case (?r) valueUsdE8Of(token, balance, r);
+          case null 0;
+        };
+        { token; balance; rateUsdE8 = rate; valueUsdE8 = value };
+      }
+    );
+  };
+
+  // Pure: the reserve view from the reserve lines, the circulation outside the
+  // contract and the legacy balances.
+  public func reserveViewOf(lines : [Types.ReserveTokenLine], circulation : Nat, legacy : [Types.LegacyGuaranteeBalance]) : Types.ReserveView {
+    var reserve : Nat = 0;
+    for (l in lines.values()) { reserve += l.valueUsdE8 };
+    let required = circulation * USD_E8_PER_TTTI_UNIT;
+    {
+      perToken = lines;
+      reserveUsdE8 = reserve;
+      circulationOutside = circulation;
+      reservePerTtti = if (circulation == 0) null else ?(reserve * 100_000_000 / circulation);
+      requiredUsdE8 = required;
+      invariantHolds = reserve >= required;
+      shortfallUsdE8 = sat(required, reserve);
+      legacyPending = legacy;
+    };
+  };
+
+  // The common reserve: balance of the ICP, ckBTC, ckUSDC and ckUSDT guarantee
+  // accounts valued in USD at the stored rates, circulation outside the
+  // contract, reserve per TTTI-T, invariant (reserve >= 10 000 USD x
+  // circulation) and shortfall. legacyPending is always empty: nothing is
+  // converted any more, ICP / ckBTC count in the reserve.
+  public func reserveView(ctx : GuaranteeContext, now : Int) : Types.ReserveView {
+    reserveViewOf(reserveLines(ctx, now), circulationOutside(ctx), []);
   };
 
   // --- Quote ------------------------------------------------------------------
 
-  type Basis = {
-    phase : Types.RedeemPhase;
-    rule : Types.RedeemRule;
-    dayQuantity : ?Nat;
-    rate : ?Nat;
-    returned : Nat;
-  };
-
-  // Pure preview of redeeming x of `owner`'s mass in `token`. Reads the stored
-  // rate only; refuses with #rateUnavailable during the mint when it is absent
-  // or expired.
-  public func quote(ctx : GuaranteeContext, owner : Principal, token : Types.PayToken, x : Nat, now : Int) : Result.Result<Types.RedeemQuote, Types.GuaranteeError> {
-    if (owner.isAnonymous()) return #err(#anonymous);
-    let mass = switch (massOf(ctx.masses, owner, token)) {
-      case (?m) m;
-      case null return #err(#massNotFound);
-    };
-    if (mass.remainingTtti == 0) return #err(#nothingRemaining);
+  // Pure: amount paid for x TTTI-T. USD = min(10 000 USD x x, reserve USD /
+  // circulation x x); split between the reserve tokens in proportion to their
+  // USD value, rounded down to the token unit (the dust stays in the reserve).
+  public func payoutPlan(lines : [Types.ReserveTokenLine], circulation : Nat, x : Nat) : Result.Result<{ rule : Types.ReserveRedeemRule; parityUsdE8 : Nat; proportionalUsdE8 : Nat; payoutUsdE8 : Nat; reserveUsdE8 : Nat; payouts : [Types.ReservePayoutLine] }, Types.GuaranteeError> {
     if (x == 0) return #err(#amountTooSmall);
-    if (x > mass.remainingTtti) return #err(#amountExceedsMass({ requested = x; remaining = mass.remainingTtti }));
-    let deposited = mass.remainingGuarantee * x / mass.remainingTtti;
-    let basis : Basis = if (mintEnded(ctx.ledger, ctx.sale, ctx.canister)) {
-      { phase = #afterMint; rule = #proRata; dayQuantity = null; rate = null; returned = deposited };
-    } else {
-      switch (OracleLib.usableRate(OracleLib.storeFor(ctx.oracle, ctx.tokenRates, token), now)) {
-        case null return #err(#rateUnavailable(token));
-        case (?r) {
-          let q = dayRateQuantity(token, x, r);
-          if (deposited <= q) {
-            { phase = #duringMint; rule = #depositedGuarantee; dayQuantity = ?q; rate = ?r; returned = deposited };
-          } else {
-            { phase = #duringMint; rule = #dayRate; dayQuantity = ?q; rate = ?r; returned = q };
+    if (x > circulation) return #err(#amountExceedsCirculation({ requested = x; circulation }));
+    var reserve : Nat = 0;
+    for (l in lines.values()) {
+      if (l.balance > 0 and l.rateUsdE8 == null) return #err(#rateUnavailable(l.token));
+      reserve += l.valueUsdE8;
+    };
+    if (reserve == 0) return #err(#reserveEmpty);
+    let parity = x * USD_E8_PER_TTTI_UNIT;
+    let proportional = reserve * x / circulation;
+    let rule : Types.ReserveRedeemRule = if (parity <= proportional) #parity else #reserveShare;
+    let payout = Nat.min(parity, proportional);
+    let out = List.empty<Types.ReservePayoutLine>();
+    for (l in lines.values()) {
+      switch (l.rateUsdE8) {
+        case (?rate) {
+          if (l.valueUsdE8 > 0 and rate > 0) {
+            let shareUsd = payout * l.valueUsdE8 / reserve;
+            let amount = Nat.min(l.balance, shareUsd * (10 ** PayTokenLib.expectedDecimals(l.token).toNat()) / rate);
+            if (amount > 0) {
+              out.add({ token = l.token; amount; ledgerFee = PayTokenLib.expectedFee(l.token); valueUsdE8 = valueUsdE8Of(l.token, amount, rate); rateUsdE8 = rate });
+            };
           };
         };
+        case null {};
       };
     };
-    let fee = basis.returned * REDEMPTION_FEE_BPS / 10_000;
-    let third = PayTokenLib.expectedFee(token);
-    if (basis.returned <= fee + third) return #err(#amountTooSmall);
-    let tttiFee = IcrcLib.fee(ctx.ledger);
-    #ok({
-      token;
-      tttiAmount = x;
-      phase = basis.phase;
-      rule = basis.rule;
-      depositedGuarantee = deposited;
-      dayRateQuantity = basis.dayQuantity;
-      rateUsdE8 = basis.rate;
-      returnedAmount = basis.returned;
-      excessKept = Nat.sub(deposited, basis.returned);
-      redemptionFee = fee;
-      thirdPartyFee = third;
-      netAmount = Nat.sub(basis.returned, fee + third);
-      tttiTransferFee = tttiFee;
-      tttiAllowanceRequired = x + tttiFee;
-    });
+    if (out.size() == 0) return #err(#amountTooSmall);
+    #ok({ rule; parityUsdE8 = parity; proportionalUsdE8 = proportional; payoutUsdE8 = payout; reserveUsdE8 = reserve; payouts = out.toArray() });
+  };
+
+  // Pure preview of redeeming x TTTI-T against the common reserve. Amount in USD = min(10 000 USD x x, reserve USD /
+  // circulation outside the contract x x), paid in ckUSDC and ckUSDT in
+  // proportion to the reserve composition. No fee. Refused only with
+  // #amountExceedsCirculation when x exceeds the circulation outside the
+  // contract (also #amountTooSmall, #rateUnavailable, #reserveEmpty).
+  public func quote(ctx : GuaranteeContext, x : Nat, now : Int) : Result.Result<Types.RedeemQuote, Types.GuaranteeError> {
+    let circulation = circulationOutside(ctx);
+    let lines = reserveLines(ctx, now);
+    switch (payoutPlan(lines, circulation, x)) {
+      case (#err(e)) #err(e);
+      case (#ok(p)) {
+        let view = reserveViewOf(lines, circulation, []);
+        #ok({
+          tttiAmount = x;
+          rule = p.rule;
+          parityUsdE8 = p.parityUsdE8;
+          proportionalUsdE8 = p.proportionalUsdE8;
+          payoutUsdE8 = p.payoutUsdE8;
+          reserveUsdE8 = p.reserveUsdE8;
+          reservePerTtti = view.reservePerTtti;
+          circulationOutside = circulation;
+          payouts = p.payouts;
+          tttiTransferFee = IcrcLib.FIXED_FEE;
+          tttiAllowanceRequired = x + IcrcLib.FIXED_FEE;
+        });
+      };
+    };
   };
 
   // --- Recording and payout -----------------------------------------------------
@@ -346,23 +269,16 @@ module {
   type Open = {
     owner : Principal;
     token : Types.PayToken;
-    kind : Types.RedemptionKind;
-    phase : Types.RedeemPhase;
-    rule : Types.RedeemRule;
     tttiAmount : Nat;
     pullBlock : ?Nat;
-    deposited : Nat;
     rate : ?Nat;
-    returned : Nat;
-    excessKept : Nat;
-    fee : Nat;
     third : Nat;
     net : Nat;
   };
 
-  // Synchronous: opens the GR payout attempt (memo, created_at_time), records
-  // the redemption and its fee. The payout amount (net + third) is already
-  // reserved by the caller.
+  // Synchronous: opens the GR payout attempt (memo, created_at_time) and records
+  // the redemption. The payout amount (net + third) is already reserved by the
+  // caller.
   func record(ctx : GuaranteeContext, o : Open, now : Int) : Types.Redemption {
     let account : Types.Account = { owner = o.owner; subaccount = null };
     let request : RetryTypes.DexTransferRequest = {
@@ -377,17 +293,10 @@ module {
       id = attempt.n;
       owner = o.owner;
       account;
-      kind = o.kind;
       token = o.token;
-      phase = o.phase;
-      rule = o.rule;
       tttiAmount = o.tttiAmount;
       tttiPullBlock = o.pullBlock;
-      depositedGuarantee = o.deposited;
       rateUsdE8 = o.rate;
-      returnedAmount = o.returned;
-      excessKept = o.excessKept;
-      redemptionFee = o.fee;
       thirdPartyFee = o.third;
       netAmount = o.net;
       createdAt = now;
@@ -395,24 +304,7 @@ module {
       status = #inProgress;
     };
     ctx.store.redemptions.add(r.id, r);
-    if (o.fee > 0) {
-      ctx.store.fees.add(r.id, { redemptionId = r.id; token = o.token; amount = o.fee; createdAt = now });
-      splitFee(ctx, r.id, o.token, o.fee, now);
-    };
     r;
-  };
-
-  // PTM-4, synchronous (no await, no new way to fail): splits the fee already
-  // sitting in the contract's DEX balance. The creator part moves to the
-  // creator holdings; the cycles part stays in the ICP balance as a pending
-  // share sent later by the settlement. If the balance cannot give the
-  // creator part, nothing is moved and the fee keeps its previous meaning.
-  func splitFee(ctx : GuaranteeContext, id : Types.RedemptionId, token : Types.PayToken, fee : Nat, now : Int) {
-    let split = CyclesReserveLib.planFeeSplit(ctx.cyclesFees, token == #icp, fee, now);
-    if (not DexLib.debit(ctx.dex.balances, ctx.canister, dexOf(token), split.creator)) return;
-    CyclesReserveLib.recordCyclesShare(ctx.cyclesFees.fees, split.cyclesE8s);
-    CreatorFeesLib.credit(ctx.creatorFees, dexOf(token), split.creator, #buybackFee, now);
-    ctx.cyclesFees.fees.buybackSplits.add(id, split);
   };
 
   func reservedAmount(r : Types.Redemption) : Nat {
@@ -449,150 +341,129 @@ module {
 
   // --- Redeem ---------------------------------------------------------------------
 
-  // Returns x TTTI-T of the caller's mass in `token`. Everything up to the
-  // payout record is synchronous (one message): reserve the guarantee payout,
-  // pull the TTTI-T on the own ledger, update the mass, record the payout.
-  public func redeem(ctx : GuaranteeContext, caller : Principal, token : Types.PayToken, x : Nat, expectedNet : Nat) : async Result.Result<Types.Redemption, Types.GuaranteeError> {
+  // Pure: #acknowledgementRequired unless the caller has a stored acceptance of
+  // the wallet terms (any version).
+  public func acknowledgementError(store : SaleTypes.AcknowledgementStore, caller : Principal) : ?Types.GuaranteeError {
+    if (SaleLib.hasAccepted(store, caller)) null else ?#acknowledgementRequired;
+  };
+
+  func redeemLockKey(caller : Principal) : Text {
+    "GR-CALLER/" # caller.toText();
+  };
+
+  // Where the ledger fee of a reserve payout comes from. The creator
+  // share first; otherwise the contract balance outside the reserve
+  // (`surplus`); #none only when neither covers it. Never the holder's amount.
+  public func ledgerFeeSource(creatorHeld : Nat, surplus : Nat, fee : Nat) : { #creator; #surplus; #none } {
+    if (creatorHeld >= fee) #creator else if (surplus >= fee) #surplus else #none;
+  };
+
+  // Returns x TTTI-T of any holder to the contract and pays the
+  // quoted amount from the common reserve, one payout (Redemption) per reserve
+  // token, ledger fees borne by the creator share. Everything up to the payout
+  // records is synchronous (one message): reserve the payouts, debit the
+  // reserve accounts, pull the TTTI-T on the own ledger, record the payouts.
+  // Refused with #slippage when the payout is lower than expectedPayoutUsdE8.
+  public func redeem(ctx : GuaranteeContext, caller : Principal, x : Nat, expectedPayoutUsdE8 : Nat) : async Result.Result<[Types.Redemption], Types.GuaranteeError> {
     if (caller.isAnonymous()) return #err(#anonymous);
+    switch (acknowledgementError(ctx.acknowledgements, caller)) {
+      case (?e) return #err(e);
+      case null {};
+    };
     if (ctx.sale.salesPaused) return #err(#salesPaused);
-    let lk = lockKey(caller, token);
+    let lk = redeemLockKey(caller);
     if (not RetryLib.tryLock(ctx.locks, lk)) return #err(#redemptionInProgress);
-    var payKey : ?Text = null;
+    let payKeys = List.empty<Text>();
     try {
       let now = Time.now();
-      let q = switch (quote(ctx, caller, token, x, now)) {
+      let q = switch (quote(ctx, x, now)) {
         case (#ok(q)) q;
         case (#err(e)) return #err(e);
       };
-      if (q.netAmount < expectedNet) {
-        return #err(#slippage({ expectedNetAmount = expectedNet; netAmount = q.netAmount }));
+      if (q.payoutUsdE8 < expectedPayoutUsdE8) {
+        return #err(#slippage({ expectedPayoutUsdE8; payoutUsdE8 = q.payoutUsdE8 }));
       };
-      let account : Types.Account = { owner = caller; subaccount = null };
-      let balance = IcrcLib.balanceOf(ctx.ledger, account);
-      if (balance < q.tttiAllowanceRequired) {
-        return #err(#tttiBalanceInsufficient({ balance; required = q.tttiAllowanceRequired }));
-      };
-      let allowance = IcrcLib.allowance(ctx.ledger, { account; spender = { owner = ctx.canister; subaccount = null } }).allowance;
-      if (allowance < q.tttiAllowanceRequired) {
-        return #err(#allowanceInsufficient({ allowance; required = q.tttiAllowanceRequired }));
-      };
-      let mass = switch (massOf(ctx.masses, caller, token)) {
-        case (?m) m;
-        case null return #err(#massNotFound);
-      };
-      // Reserve the payout first (reversible); the pull comes next.
-      let payoutDebit = q.netAmount + q.thirdPartyFee;
-      // PTM-9b: the redemption is paid out of the dedicated guarantee account only.
-      if (accountBalance(ctx.guaranteeAccount, dexOf(token)) < q.returnedAmount) {
-        return #err(#callFailed("The guarantee account does not cover the redemption"));
-      };
-      if (not DexLib.reserve(ctx.dex.balances, ctx.canister, dexOf(token), payoutDebit)) {
-        return #err(#callFailed("The guarantee balance held by the contract does not cover the payout"));
-      };
-      let block = switch (IcrcLib.transferFrom(ctx.ledger, ctx.canister, ctx.canister, {
-        spender_subaccount = null;
-        from = account;
-        to = IcrcLib.returnedAccount(ctx.canister);
-        amount = x;
-        fee = ?q.tttiTransferFee;
-        memo = null;
-        created_at_time = null;
-      })) {
-        case (#Ok(b)) b;
-        case (#Err(e)) {
-          DexLib.release(ctx.dex.balances, ctx.canister, dexOf(token), payoutDebit);
-          return #err(#pullFailed(tttiErrorText(e)));
+      // Every check that can refuse comes before the TTTI-T pull.
+      for (line in q.payouts.values()) {
+        let t = dexOf(line.token);
+        let balance = accountBalance(ctx.guaranteeAccount, t);
+        let avail = DexLib.available(ctx.dex.balances, ctx.canister, t);
+        if (balance < line.amount or avail < line.amount) {
+          return #err(#callFailed("The reserve held by the contract does not cover the payout"));
+        };
+        if (ledgerFeeSource(CreatorFeesLib.held(ctx.creatorFees, t), sat(avail, balance), line.ledgerFee) == #none) {
+          return #err(#ledgerFeeNotCovered({ token = line.token; fee = line.ledgerFee }));
         };
       };
-      ignore debitAccount(ctx.guaranteeAccount, token, q.returnedAmount);
-      ignore CreatorFeesLib.collectTransferFees(ctx.creatorFees, ctx.ledger, ctx.canister, now);
-      setMass(ctx.masses, caller, {
-        mass with
-        remainingTtti = Nat.sub(mass.remainingTtti, x);
-        remainingGuarantee = Nat.sub(mass.remainingGuarantee, q.depositedGuarantee);
-        excess = mass.excess + q.excessKept;
-      });
-      let r = record(ctx, {
-        owner = caller;
-        token;
-        kind = #redeem;
-        phase = q.phase;
-        rule = q.rule;
-        tttiAmount = x;
-        pullBlock = ?block;
-        deposited = q.depositedGuarantee;
-        rate = q.rateUsdE8;
-        returned = q.returnedAmount;
-        excessKept = q.excessKept;
-        fee = q.redemptionFee;
-        third = q.thirdPartyFee;
-        net = q.netAmount;
-      }, now);
-      let k = payoutLockKey(r.id);
-      ignore RetryLib.tryLock(ctx.locks, k);
-      payKey := ?k;
-      #ok(await sendPayout(ctx, r.id));
+      let fee = IcrcLib.FIXED_FEE;
+      let block = switch (
+        IcrcLib.transferFrom(
+          ctx.ledger,
+          ctx.canister,
+          ctx.canister,
+          {
+            spender_subaccount = null;
+            from = { owner = caller; subaccount = null };
+            to = IcrcLib.returnedAccount(ctx.canister);
+            amount = x;
+            fee = ?fee;
+            memo = null;
+            created_at_time = null;
+          },
+        )
+      ) {
+        case (#Ok(b)) b;
+        case (#Err(#InsufficientFunds({ balance }))) return #err(#tttiBalanceInsufficient({ balance; required = x + fee }));
+        case (#Err(#InsufficientAllowance({ allowance }))) return #err(#allowanceInsufficient({ allowance; required = x + fee }));
+        case (#Err(e)) return #err(#pullFailed(tttiErrorText(e)));
+      };
+      let recs = List.empty<Types.Redemption>();
+      var first = true;
+      for (line in q.payouts.values()) {
+        let t = dexOf(line.token);
+        // The ledger fee moves from the creator share to the contract balance,
+        // then is reserved with the payout. When the creator share cannot
+        // cover it, the fee comes from the contract balance held outside the
+        // reserve (already in the balance, nothing to credit).
+        if (CreatorFeesLib.bearLedgerFee(ctx.creatorFees, t, line.ledgerFee)) {
+          DexLib.credit(ctx.dex.balances, ctx.canister, t, line.ledgerFee);
+        };
+        ignore DexLib.reserve(ctx.dex.balances, ctx.canister, t, line.amount + line.ledgerFee);
+        ignore debitAccount(ctx.guaranteeAccount, line.token, line.amount);
+        recs.add(record(ctx, {
+          owner = caller;
+          token = line.token;
+          tttiAmount = if (first) x else 0;
+          pullBlock = ?block;
+          rate = ?line.rateUsdE8;
+          third = line.ledgerFee;
+          net = line.amount;
+        }, now));
+        first := false;
+      };
+      let out = List.empty<Types.Redemption>();
+      for (r in recs.values()) {
+        let k = payoutLockKey(r.id);
+        if (RetryLib.tryLock(ctx.locks, k)) {
+          payKeys.add(k);
+          out.add(await sendPayout(ctx, r.id));
+        } else {
+          out.add(r);
+        };
+      };
+      #ok(out.toArray());
     } finally {
       RetryLib.unlock(ctx.locks, lk);
-      switch (payKey) {
-        case (?k) RetryLib.unlock(ctx.locks, k);
-        case null {};
-      };
+      for (k in payKeys.values()) { RetryLib.unlock(ctx.locks, k) };
     };
   };
 
-  // Pays the caller's excess in `token`, once the mint has ended.
-  public func withdrawExcess(ctx : GuaranteeContext, caller : Principal, token : Types.PayToken) : async Result.Result<Types.Redemption, Types.GuaranteeError> {
-    if (caller.isAnonymous()) return #err(#anonymous);
-    if (ctx.sale.salesPaused) return #err(#salesPaused);
-    let lk = lockKey(caller, token);
-    if (not RetryLib.tryLock(ctx.locks, lk)) return #err(#redemptionInProgress);
-    var payKey : ?Text = null;
-    try {
-      let mass = switch (massOf(ctx.masses, caller, token)) {
-        case (?m) m;
-        case null return #err(#massNotFound);
-      };
-      if (mass.excess == 0) return #err(#noExcess);
-      if (not mintEnded(ctx.ledger, ctx.sale, ctx.canister)) return #err(#mintNotEnded);
-      let third = PayTokenLib.expectedFee(token);
-      if (mass.excess <= third) return #err(#amountTooSmall);
-      let net = Nat.sub(mass.excess, third);
-      if (accountBalance(ctx.guaranteeAccount, dexOf(token)) < mass.excess) {
-        return #err(#callFailed("The guarantee account does not cover the withdrawal"));
-      };
-      if (not DexLib.reserve(ctx.dex.balances, ctx.canister, dexOf(token), mass.excess)) {
-        return #err(#callFailed("The guarantee balance held by the contract does not cover the payout"));
-      };
-      ignore debitAccount(ctx.guaranteeAccount, token, mass.excess);
-      setMass(ctx.masses, caller, { mass with excess = 0 });
-      let r = record(ctx, {
-        owner = caller;
-        token;
-        kind = #excessWithdrawal;
-        phase = #afterMint;
-        rule = #depositedGuarantee;
-        tttiAmount = 0;
-        pullBlock = null;
-        deposited = mass.excess;
-        rate = null;
-        returned = mass.excess;
-        excessKept = 0;
-        fee = 0;
-        third;
-        net;
-      }, Time.now());
-      let k = payoutLockKey(r.id);
-      ignore RetryLib.tryLock(ctx.locks, k);
-      payKey := ?k;
-      #ok(await sendPayout(ctx, r.id));
-    } finally {
-      RetryLib.unlock(ctx.locks, lk);
-      switch (payKey) {
-        case (?k) RetryLib.unlock(ctx.locks, k);
-        case null {};
-      };
-    };
+  // PTM-11: the reserve is held in the paid token (ICP, ckBTC, ckUSDC, ckUSDT)
+  // and valued in USD, so there is no legacy conversion any more. Kept so that
+  // the public interface stays compatible: it moves nothing and always answers
+  // #nothingToConvert. Guarantees already converted to ckUSDC stay as they are.
+  public func convertLegacy(_ctx : GuaranteeContext, _router : RouterLib.RouterContext, _usdRateOf : DexLib.UsdRateOf) : async Result.Result<[Types.LegacyConversion], Types.GuaranteeError> {
+    #err(#nothingToConvert);
   };
 
   // --- Retry timer -------------------------------------------------------------------

@@ -46,7 +46,7 @@ function venueLabel(m: MintText, inj: LiquidityInjection): string {
   return inj.venue.__kind__ === "icpswap" ? m.venueIcpswap : m.venueNative;
 }
 
-/** Public: mint fee halves set aside per token and recent liquidity injections. */
+/** Public: amounts set aside per token and recent liquidity injections. */
 export function SetAsideInjections({
   pools,
 }: {

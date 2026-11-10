@@ -67,6 +67,7 @@ func store() : DexTypes.DexStore {
     var nextPositionId = 100;
     removals = Map.empty<DexTypes.PoolId, DexTypes.PairRemoval>();
     icpswapSamples = Map.empty<Text, DexTypes.IcpSwapSample>();
+    referenceReadings = Map.empty<Text, DexTypes.ReferenceReading>();
     poolPositions = Map.empty<DexTypes.PoolId, Set.Set<DexTypes.PositionId>>();
     fees = {
       var dayStart = 0;
@@ -93,6 +94,7 @@ func addLocked(s : DexTypes.DexStore, id : Nat, who : Principal, shares : Nat, u
     relayReceivedNs = 0;
     feesCollected0 = 0;
     feesCollected1 = 0;
+    mintShareE6 = 0;
   };
   s.positions.add(id, p);
   DexLib.indexAdd(s, 1, id);
@@ -180,11 +182,14 @@ func sharing(sliceSize : Nat) : ([(Nat, Nat)], Nat, Nat, Nat, Nat) {
     sum0 += a;
     sum1 += b;
   };
-  // Conservation: paid + remainder kept in the reserves = the frozen pot.
-  assert sum0 + (reserves0(s) - r0) == 1_000_003;
-  assert sum1 + (reserves1(s) - r1) == 777;
-  // Nothing left in the pot, nothing owed any more.
-  assert DexLib.potOwed(s, 1) == (0, 0);
+  // Conservation (PTM-10d): paid + remainder deposited into the reserves
+  // + the part that did not fit the pool ratio (left in the pending pot, still
+  // owed) = the frozen pot.
+  let (owed0, owed1) = DexLib.potOwed(s, 1);
+  assert sum0 + (reserves0(s) - r0) + owed0 == 1_000_003;
+  assert sum1 + (reserves1(s) - r1) + owed1 == 777;
+  // The remainder deposit kept the pool ratio (one unit of rounding).
+  assert DexLib.ratioHeld(100_000_000_000, 1_000_000_000, reserves0(s), reserves1(s));
   // Lock records opened for the new day.
   switch (s.fees.locks.get(1)) {
     case (?l) { assert l.lockedFrom == DAY and l.lockedUntil == null };
@@ -299,6 +304,7 @@ do {
     relayReceivedNs = 0;
     feesCollected0 = 0;
     feesCollected1 = 0;
+    mintShareE6 = 0;
   };
   s.positions.add(1, p);
   DexLib.indexAdd(s, 1, 1);
@@ -309,8 +315,11 @@ do {
   let balances = Map.empty<Principal, Map.Map<Text, DexTypes.DexBalance>>();
   ignore runAll(s, balances, 5_000);
   assert balances.size() == 0;
-  assert reserves0(s) == r0 + 900 and reserves1(s) == r1 + 90;
-  assert DexLib.potOwed(s, 1) == (0, 0);
+  // PTM-10d: only the part that fits the pool ratio (100 : 1) is deposited;
+  // the rest stays in the pending pot, still owed. Total conserved.
+  assert reserves0(s) == r0 + 900 and reserves1(s) == r1 + 9;
+  assert DexLib.potOwed(s, 1) == (0, 81);
+  assert (reserves1(s) - r1) + 81 == 90;
 };
 
 // --- A swap reads no position ------------------------------------------------------

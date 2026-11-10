@@ -1,0 +1,118 @@
+import type en from "./en";
+
+const fr: typeof en = {
+  suggestContacts: "Contacts",
+  suggestRecent: "Récents du ledger",
+  suggestEmpty: "Aucun contact ni adresse récente.",
+  suggestLoading: "Chargement des suggestions…",
+  suggestError:
+    "Certains index de ledger n'ont pas répondu. La liste peut être incomplète.",
+  suggestLastUsed: "Dernière utilisation",
+  openButton: "Carnet d'adresses",
+  title: "Carnet d'adresses",
+  searchPlaceholder: "Rechercher par pseudo ou principal",
+  addContact: "Ajouter un contact",
+  empty: "Aucun contact pour l'instant.",
+  emptyNoMatch: "Aucun contact ne correspond à cette recherche.",
+  signInRequired:
+    "Connectez-vous avec Internet Identity pour utiliser le carnet d'adresses.",
+  loading: "Chargement des contacts…",
+  loadError: "Le carnet d'adresses n'a pas pu être chargé.",
+  retry: "Réessayer",
+  select: "Utiliser",
+  edit: "Modifier",
+  count: (count: string, max: string) => `${count} contacts sur ${max}`,
+  cardTitle: "Fiche contact",
+  newContactTitle: "Nouveau contact",
+  nicknameLabel: "Pseudo",
+  nicknamePlaceholder: "ex. Trésorerie",
+  principalLabel: "Principal",
+  principalPlaceholder: "ID du principal",
+  memoLabel: "Mémo",
+  memoOptional: "(facultatif)",
+  memoPlaceholder: "Mémo par défaut",
+  memoHint: (max: string) =>
+    `Jusqu'à ${max} octets. Prérempli lors d'un envoi à ce contact.`,
+  memoBytes: (used: string, max: string) => `${used}/${max} octets`,
+  save: "Enregistrer",
+  saving: "Enregistrement…",
+  cancel: "Annuler",
+  delete: "Supprimer",
+  errNicknameRequired: "Saisissez un pseudo.",
+  errNicknameTooLong: (max: string) =>
+    `Le pseudo est limité à ${max} caractères.`,
+  errDuplicate: "Un contact porte déjà ce pseudo.",
+  errInvalidPrincipal: "Saisissez un ID de principal valide.",
+  errOwnAddress: "Il s'agit de votre propre adresse.",
+  errPrincipalNotAllowed:
+    "Ce principal ne peut pas être enregistré comme contact.",
+  errMemoTooLong: (max: string) => `Le mémo est limité à ${max} octets.`,
+  errLimitReached: (max: string) =>
+    `Limite du carnet d'adresses atteinte (${max} contacts).`,
+  errNotFound: "Ce contact n'existe plus.",
+  errGeneric: "Le carnet d'adresses n'a pas pu être mis à jour. Réessayez.",
+  savedToast: "Contact enregistré",
+  deletedToast: "Contact supprimé",
+  deleteTitle: "Supprimer ce contact ?",
+  deleteBody: (name: string) =>
+    `${name} sera retiré de votre carnet d'adresses. Les approvals sur les ledgers ne sont pas modifiées.`,
+  copyPrincipal: "Copier le principal",
+  copied: "Principal copié",
+  saveAsContact: "Enregistrer comme contact",
+  sendMemoLabel: "Mémo",
+  sendMemoOptional: "(facultatif)",
+  sendMemoHint: (max: string) =>
+    `Texte jusqu'à ${max} octets, enregistré sur le ledger.`,
+  sendMemoTooLong: (max: string) => `Le mémo est limité à ${max} octets.`,
+  approvalsTitle: "Approvals ICRC-2",
+  approvalsIntro:
+    "Une approval permet à cette adresse de retirer de votre solde jusqu'au montant approuvé, sans nouvelle signature, jusqu'à son expiration.",
+  approvalsSignerHint:
+    "Les approvals sont signées avec le wallet qui détient votre compte : Internet Identity, OISY, NFID Wallet ou Plug.",
+  signerMissing:
+    "Connectez-vous avec Internet Identity ou connectez OISY, NFID Wallet ou Plug pour signer les approvals.",
+  allowanceNone: "Aucune approval",
+  allowanceAmount: (amount: string) => `Allowance : ${amount}`,
+  allowanceExpiresAt: (date: string) => `Expire le ${date}`,
+  allowanceExpired: "Expirée",
+  allowanceNoExpiry: "Sans expiration",
+  allowanceLoading: "Lecture de l'allowance…",
+  allowanceError: "Allowance indisponible",
+  grant: "Approuver",
+  modify: "Modifier",
+  revoke: "Révoquer",
+  formTitle: (symbol: string) => `Approuver ${symbol}`,
+  revokeTitle: (symbol: string) => `Révoquer l'approval ${symbol}`,
+  maxAmountLabel: "Montant maximum",
+  errAmountInvalid: "Saisissez un montant valide supérieur à 0.",
+  expirationLabel: "Expiration",
+  expiry15m: "15 min",
+  expiry1h: "1 h",
+  expiry24h: "24 h",
+  expiry7d: "7 jours",
+  expiryCustom: "Date personnalisée",
+  customDateLabel: "Date d'expiration",
+  errExpirationRequired: "Choisissez une expiration dans le futur.",
+  feeLine: (fee: string) => `Frais du ledger pour cette action : ${fee}`,
+  balanceLine: (balance: string) => `Solde : ${balance}`,
+  warnTrust:
+    "N'approuvez qu'un canister ou une personne en qui vous avez confiance.",
+  warnUnknown:
+    "Une approval sur une adresse inconnue peut vider le montant approuvé.",
+  warnFee:
+    "Chaque approval, modification ou révocation coûte des frais de ledger.",
+  warnRevoke: "Révoquez une approval quand elle n'est plus nécessaire.",
+  warnOverBalance:
+    "Le montant dépasse votre solde actuel. L'approval couvre aussi les fonds reçus plus tard.",
+  warnLongLived: "Cette approval reste valable plus de 24 heures.",
+  confirmCheckbox: "Je comprends et j'approuve cette adresse.",
+  confirmRevokeCheckbox:
+    "Je comprends que la révocation ramène l'allowance à 0 et coûte des frais de ledger.",
+  confirm: "Confirmer",
+  confirming: "Signature…",
+  approveSuccess: (symbol: string) => `Approval ${symbol} enregistrée`,
+  revokeSuccess: (symbol: string) => `Approval ${symbol} révoquée`,
+  approveError: "L'approval n'a pas été enregistrée.",
+};
+
+export default fr;

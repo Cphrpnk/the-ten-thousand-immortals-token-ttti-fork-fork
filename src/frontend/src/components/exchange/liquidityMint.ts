@@ -1,10 +1,16 @@
-import { DexToken, PayToken } from "../../backend";
-import type { LiquidityMintError, MintAmount } from "../../backend";
+import { DexToken, PayToken, RemainderChoice } from "../../backend";
+import type {
+  LiquidityMintError,
+  LiquidityMintQuote,
+  MintAmount,
+  MintChoiceFigures,
+  MintPricePreview,
+} from "../../backend";
 import { toIntlLocale } from "../../i18n/core";
 import { pickDict } from "../../i18n/core/dict";
-import { type Lang, getLang } from "../../i18n/core/lang";
+import { type Lang, formatNumber, getLang } from "../../i18n/core/lang";
 import { AUCTION_TEXT } from "../../i18n/pages/auction";
-import { BUY_LIQUIDITY_TEXT } from "../../i18n/pages/buy";
+import { BUY_LIQUIDITY_TEXT, BUY_MINT_POOL_TEXT } from "../../i18n/pages/buy";
 import {
   TTTI_DECIMALS,
   formatDecimal,
@@ -13,10 +19,10 @@ import {
   parseUnits,
   payTokenSymbol,
 } from "../../lib/token";
+
+import { formatUsdE8 } from "../dex/liquidityFormat";
 import type { Notice } from "./purchaseOutcome";
 
-/** Smallest mint: 0.0001 TTTI-T. */
-export const MINT_MIN_TTTI = 10_000n;
 /** A mint not executed within 5 minutes is refused by the backend. */
 export const MINT_DEADLINE_NS = 5n * 60n * 1_000_000_000n;
 /** Wait after the last keystroke before the preview is requested. */
@@ -47,8 +53,16 @@ export function normalizeDecimalText(text: string): string | null {
   return fraction ? `${whole || "0"}.${fraction}` : whole || "0";
 }
 
-/** Interpret the typed amount; more than 8 TTTI-T decimals go to the backend. */
-export function parseMintInput(mode: MintInputMode, text: string): MintInput {
+/**
+ * Interpret the typed amount; more than 8 TTTI-T decimals go to the backend.
+ * `minimumTtti` is the backend minimum (base units); without it the backend
+ * alone refuses an amount that is too small.
+ */
+export function parseMintInput(
+  mode: MintInputMode,
+  text: string,
+  minimumTtti?: bigint,
+): MintInput {
   if (text.trim() === "") return { kind: "empty" };
   if (mode === "usd") {
     const usd = parseUnits(text, 8);
@@ -70,7 +84,12 @@ export function parseMintInput(mode: MintInputMode, text: string): MintInput {
   }
   const baseUnits = parseUnits(normalized, TTTI_DECIMALS);
   if (baseUnits === null) return { kind: "invalid" };
-  if (baseUnits < MINT_MIN_TTTI) return { kind: "belowMinimum" };
+  if (
+    baseUnits === 0n ||
+    (minimumTtti !== undefined && baseUnits < minimumTtti)
+  ) {
+    return { kind: "belowMinimum" };
+  }
   return {
     kind: "ready",
     amount: { __kind__: "ttti", ttti: { __kind__: "baseUnits", baseUnits } },
@@ -87,20 +106,6 @@ export function mintInputKey(token: PayToken, input: MintInput): string {
     : `${token}:base:${amount.ttti.baseUnits}`;
 }
 
-/** TTTI-T base units minted for a USD payment: floor(usd × 99 / 2,000,000). */
-export function tttiFromUsdPayment(usdE8: bigint): bigint {
-  return (usdE8 * 99n) / 2_000_000n;
-}
-
-/** USD value (e8) of a token amount at the hourly rate (USD e8 per whole token). */
-export function usdFromTokenAmount(
-  amount: bigint,
-  decimals: number,
-  rateUsdE8: bigint,
-): bigint {
-  return (amount * rateUsdE8) / 10n ** BigInt(decimals);
-}
-
 /** Highest payable amount accepted at a tolerance in basis points (rounded up). */
 export function maxPayWithTolerance(
   payAmount: bigint,
@@ -112,6 +117,27 @@ export function maxPayWithTolerance(
 /** Deadline of a mint, in nanoseconds since the epoch, 5 minutes from now. */
 export function mintDeadline(): bigint {
   return BigInt(Date.now()) * 1_000_000n + MINT_DEADLINE_NS;
+}
+
+/** Scale of the locked share m reported by the backend (`mShareE6`). */
+const LOCKED_SHARE_SCALE = 1_000_000;
+
+/** Locked share m as a localized percentage; the value comes from the backend. */
+export function formatLockedShare(mShareE6: bigint): string {
+  return formatNumber(Number(mShareE6) / LOCKED_SHARE_SCALE, {
+    style: "percent",
+    maximumFractionDigits: 2,
+  });
+}
+
+/** Figures of one remainder choice, as quoted by the backend. */
+export function choiceFigures(
+  quote: LiquidityMintQuote,
+  choice: RemainderChoice,
+): MintChoiceFigures {
+  return choice === RemainderChoice.wallet
+    ? quote.choices.wallet
+    : quote.choices.pool;
 }
 
 /** TTTI-T quantity as text, up to 8 decimals. */
@@ -149,12 +175,44 @@ function dateText(timestamp: bigint, lang: Lang): string {
   });
 }
 
-/** Title and message for a refused preview or mint, in the active language. */
+/**
+ * Backend minimum mint in dollars ("1 USD") from the mint price preview;
+ * undefined until the preview is loaded.
+ */
+export function formatMinimumUsd(
+  preview: MintPricePreview | undefined,
+): string | undefined {
+  return preview ? `${formatUsdE8(preview.minimumMintUsdE8)} USD` : undefined;
+}
+
+/**
+ * A held-ckBTC conversion refused for a typed mint reason (deadline, cap,
+ * slippage, target pool); nothing was taken from the buyer.
+ */
+export class MintRefusedError extends Error {
+  readonly refusal: LiquidityMintError;
+  constructor(refusal: LiquidityMintError) {
+    super(refusal.__kind__);
+    this.name = "MintRefusedError";
+    this.refusal = refusal;
+  }
+}
+
+/** The mint was refused because the wallet terms are not accepted. */
+export function isTermsRequiredError(err: LiquidityMintError): boolean {
+  return err.__kind__ === "acknowledgementRequired";
+}
+
+/**
+ * Title and message for a refused preview or mint, in the active language.
+ * `preview` is the backend mint price preview (minimum in dollars).
+ */
 export function describeMintError(
   err: LiquidityMintError,
   selected: PayToken,
   stage: "preview" | "mint",
   lang?: Lang,
+  preview?: MintPricePreview,
 ): Notice {
   const t = pickDict(BUY_LIQUIDITY_TEXT, lang);
   const title = stage === "preview" ? t.previewFailedTitle : t.mintFailedTitle;
@@ -170,11 +228,26 @@ export function describeMintError(
           payTokenSymbol(err.rateUnavailable.token),
         ),
       };
+    case "rateSourcesDiverge": {
+      const detail = err.rateSourcesDiverge;
+      const rate = (usdE8: bigint | undefined) =>
+        usdE8 === undefined ? t.rateSourceMissing : `${formatUsdE8(usdE8)} USD`;
+      return {
+        title,
+        message: t.errRateSourcesDiverge(
+          payTokenSymbol(detail.token),
+          rate(detail.coinbaseUsdE8),
+          rate(detail.coingeckoUsdE8),
+          percent(detail.maximumBps),
+        ),
+      };
+    }
     case "belowMinimum":
       return {
         title,
         message: t.errBelowMinimum(
           formatMintTtti(err.belowMinimum.minimumTtti),
+          formatMinimumUsd(preview),
         ),
       };
     case "tooManyDecimals":
@@ -259,6 +332,25 @@ export function describeMintError(
           dateText(err.removalAnnounced.effectiveAt, lang ?? getLang()),
         ),
       };
+    case "invalidTargetPool": {
+      const pools = pickDict(BUY_MINT_POOL_TEXT, lang);
+      const reason = err.invalidTargetPool.reason;
+      switch (reason.__kind__) {
+        case "unknownPool":
+          return { title, message: pools.errUnknownPool };
+        case "otherPair":
+          return { title, message: pools.errOtherPair };
+        case "removalAnnounced":
+          return {
+            title,
+            message: pools.errPoolRemovalAnnounced(
+              dateText(reason.removalAnnounced.effectiveAt, lang ?? getLang()),
+            ),
+          };
+        default:
+          return { title, message: pools.errPoolRemoved };
+      }
+    }
     case "poolNotFound":
       return {
         title,

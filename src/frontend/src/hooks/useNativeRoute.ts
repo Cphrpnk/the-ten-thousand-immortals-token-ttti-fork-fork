@@ -7,13 +7,13 @@ import {
   type SwapError,
   type SwapQuote,
 } from "../backend";
-import { isTttiToken } from "../components/wallet/TokenBalanceCard";
 import {
   type RouteIssue,
   type RouteState,
   emptyRoute,
 } from "../lib/swapRoutes";
 import type { TokenDescriptor } from "../lib/tokenRegistry";
+import { isTttiToken } from "../lib/ttti-token";
 import { useDexPools, useDexTokens, useQuoteSwap } from "./useDex";
 
 /** Native pool route of a pair: its pool, token rows, quote and route state. */

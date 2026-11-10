@@ -186,7 +186,7 @@ module {
     needsReview : Bool;
   };
 
-  // --- PTM-4: 1 % mint and buyback fees --------------------------------------
+  // --- PTM-4: 1 % mint fees (buyback fees: history) --------------------------------------
 
   // Split of one 1 % fee, recorded with the fee entry when the fee is booked.
   // cyclesE8s = ICP part kept in the contract's ICP DEX balance until the
@@ -212,8 +212,9 @@ module {
 
   // Stable (new stable field `cyclesFees`). recordedE8s = sum of all cycles
   // shares ever recorded = pendingE8s + inFlightE8s + settledE8s.
-  // mintSplits / buybackSplits hold the split recorded with each 1 % fee, keyed
-  // by the id of the fee entry (CreatorSetAside.mintId, RedemptionFee.redemptionId).
+  // mintSplits holds the split recorded with each 1 % mint fee, keyed by the id
+  // of the fee entry (CreatorSetAside.mintId). buybackSplits is read-only
+  // history of fees booked before PTM-11; no new entry is written.
   // An entry without a split (every fee booked before PTM-4, or a fee whose
   // split could not be applied) keeps its previous meaning.
   public type CyclesFeeStore = {

@@ -1,7 +1,6 @@
 import { Principal } from "@icp-sdk/core/principal";
 import type {
   Account,
-  Account__5,
   AccountMismatch,
   AccountRef,
   AccountResult,
@@ -62,13 +61,19 @@ import type {
   Guarantee,
   GuaranteeError,
   GuaranteeAccountView,
-  GuaranteeMassView,
   LiquidityMint,
   LiquidityMintError,
   LiquidityMintQuote,
   MintArgs,
+  InvalidTargetReason,
+  MintChoiceFigures,
+  MintPoolList,
+  MintPoolOption,
+  MintPoolPreview,
   PoolPrice,
   Quantity,
+  PaymentToMintArgs,
+  TttiToPayArgs,
   QuoteArgs,
   ZapSwap,
   CounterToken,
@@ -76,6 +81,7 @@ import type {
   DcBatch,
   DepositEntry,
   DepthLevel,
+  DexBalanceBreakdownSnapshot,
   DexIndicatorsSnapshot,
   FeeTotals,
   IndicatorsStatus,
@@ -129,7 +135,9 @@ import type {
   PurchaseTrace,
   Ratio,
   ReferenceCheck,
+  ReadingOutcome,
   ReferencePrice,
+  ReferenceReadingEntry,
   ReferenceSource,
   ReferenceUnavailable,
   RefusePairError,
@@ -162,6 +170,7 @@ import type {
   TokenReserveResult,
   TopUpAttempt,
   TopUpRecord,
+  TransferAttempt,
   TransferReview,
   TreasuryConfig,
   TreasurySweepView,
@@ -172,11 +181,15 @@ import type {
   WeeklyAllocation,
   RedeemQuote,
   Redemption,
-  RedemptionFee,
-  TokenGuaranteeTotal,
-  UnclaimedMassTotal,
+  ReserveConversionQuote,
+  ReserveView,
+  ReservePayoutLine,
+  LegacyConversion,
+  DepositMintParams,
+  DepositQuote,
   backendInterface,
 } from "../backend";
+import { MintRefusedError } from "../components/exchange/liquidityMint";
 import {
   BidOutcome,
   ClosedStatus,
@@ -187,6 +200,7 @@ import {
   BtcDepositErrorCode,
   BtcRefundPurpose,
   CancelRemovalError,
+  RecoveryAction,
   CollectState,
   ComputationResult,
   ConsolidatedUnavailable,
@@ -206,15 +220,16 @@ import {
   HolderKind,
   MintStatus,
   PayToken,
+  RemainderChoice,
   PermanentKind,
   PoolKind,
   PoolSide,
   PoolStatus,
-  RedeemPhase,
-  RedeemRule,
-  RedemptionKind,
+  ReserveRedeemRule,
   PriceSource,
   ReconcileError,
+  ReadingMethod,
+  ReadingStep,
   ReferenceSourceKind,
   AccountKind,
   ReserveBinding,
@@ -231,38 +246,31 @@ import {
   TreasurySource,
   UserRole,
   Variant_surplus_shortfall_balanced,
+  Variant_targetPrice,
 } from "../backend";
 import {
   BTC_DEFAULT_CHECK_FEE_SATS,
   BTC_DEFAULT_DEPOSIT_MIN_SATS,
   BTC_DEFAULT_MIN_CONFIRMATIONS,
-  BUYER_PRICE_USD,
   CKBTC_LEDGER_CANISTER_ID,
   CKBTC_MINTER_CANISTER_ID,
   CKUSDC_LEDGER_CANISTER_ID,
   CKUSDT_LEDGER_CANISTER_ID,
-  CK_FEE_BPS,
-  CYCLES_FEE_BPS,
   CYCLES_FEE_TEXT,
   CYCLES_TOP_UP_THRESHOLD,
   ICP_DIVISOR,
   LEGACY_TTTI_DECIMALS,
-  MIN_PURCHASE,
   PAY_TOKENS,
   PAY_TOKEN_ORDER,
   RESERVE_FLOOR_E8S,
   SWAP_FEE_LP_PERCENT,
   SWAP_FEE_PERMANENT_PERCENT,
   TOKEN_NAME,
-  TOKEN_PRICE_USD,
   TTTI_DECIMALS,
   TTTI_DIVISOR,
   TTTI_SYMBOL,
   encodeAccountText,
-  icpForTtti,
   parseUnits,
-  tttiFromIcp,
-  tttiFromToken,
   validateDeliveryAddress,
 } from "../lib/token";
 
@@ -285,8 +293,32 @@ const DEX_OF_PAY: Record<PayToken, DexToken> = {
 
 // Mock oracle price: ICP = $12.50 (usdE8 = USD * 10^8).
 const MOCK_USD_E8 = 1_250_000_000n;
-/** TTTI-T base units per whole ICP at the mock price, fee included. */
-const MOCK_LIVE_RATE = tttiFromIcp(ICP_DIVISOR, MOCK_USD_E8);
+/**
+ * Plain mock figures for the simulated mint (the real figures come from the backend):
+ * TTTI-T base units delivered per 1 USD paid, the minimum mint and the reported price.
+ */
+const MOCK_TTTI_BASE_PER_USD = 4_950n;
+const MOCK_MIN_PURCHASE = 10_000n;
+const MOCK_MIN_PURCHASE_USD_E8 = 101_000_000n;
+const MOCK_TOKEN_PRICE_USD = 10_000n;
+const MOCK_USD_SCALE = 100_000_000n;
+
+/** Mock TTTI-T base units (rounded down) for `payAmount` of a pay token at `usdE8` per whole token. */
+function mockTtti(payAmount: bigint, token: PayToken, usdE8: bigint): bigint {
+  const paidUsdE8 = (payAmount * usdE8) / 10n ** BigInt(PAY_TOKENS[token].decimals);
+  return (paidUsdE8 * MOCK_TTTI_BASE_PER_USD) / MOCK_USD_SCALE;
+}
+
+/** Mock pay-token base units (rounded up) for `tttiBase` TTTI-T base units at `usdE8` per whole token. */
+function mockPayFor(tttiBase: bigint, token: PayToken, usdE8: bigint): bigint {
+  if (usdE8 <= 0n) return 0n;
+  const numerator = tttiBase * MOCK_USD_SCALE * 10n ** BigInt(PAY_TOKENS[token].decimals);
+  const denominator = MOCK_TTTI_BASE_PER_USD * usdE8;
+  return (numerator + denominator - 1n) / denominator;
+}
+
+/** TTTI-T base units per whole ICP at the mock price. */
+const MOCK_LIVE_RATE = mockTtti(ICP_DIVISOR, PayToken.icp, MOCK_USD_E8);
 /** validUntil + 5-minute grace, as in the backend. */
 const MAX_RATE_AGE_SECONDS = 3_900n;
 const HOURLY_RATE_TEXT =
@@ -337,6 +369,11 @@ const CYCLES_RESERVE_ACCOUNT: Account = {
   subaccount: new TextEncoder().encode("CYCLES-RESERVE-TTTI-T-0000000001"),
 };
 const TOP_UP_THRESHOLD = CYCLES_TOP_UP_THRESHOLD;
+/**
+ * The contract still reports these two sale-status fields (cyclesFeeBps and feeBps);
+ * they are not used by any computation of the mock or of the screens.
+ */
+const REPORTED_FEE_BPS = 100n;
 /** The backend publishes the same rule text as CYCLES_FEE_TEXT. */
 const RESERVE_RULE = CYCLES_FEE_TEXT;
 const TREASURY_ACCOUNT: Account = {
@@ -524,6 +561,8 @@ function newEntry(index: number): DepositEntry {
     updatedAt: nowNs(),
     errorKind: undefined,
     errorMessage: undefined,
+    conversionCause: undefined,
+    causePermanent: false,
   };
 }
 
@@ -585,7 +624,7 @@ function advanceEntry(kind: DepositKind, entry: DepositEntry): DepositEntry {
           ...next,
           stage: { __kind__: "delivered", delivered: null },
           ckbtcPendingSats: MOCK_REFUND_HELD_SATS,
-          tttiDelivered: tttiFromToken(
+          tttiDelivered: mockTtti(
             minted - MOCK_REFUND_HELD_SATS,
             PayToken.ckbtc,
             MOCK_PAY_USD_E8[PayToken.ckbtc],
@@ -599,7 +638,7 @@ function advanceEntry(kind: DepositKind, entry: DepositEntry): DepositEntry {
         ...next,
         stage: { __kind__: "delivered", delivered: null },
         ckbtcPendingSats: 0n,
-        tttiDelivered: tttiFromToken(minted, PayToken.ckbtc, MOCK_PAY_USD_E8[PayToken.ckbtc]),
+        tttiDelivered: mockTtti(minted, PayToken.ckbtc, MOCK_PAY_USD_E8[PayToken.ckbtc]),
         conversionId: BigInt(state.conversions.length + 1),
       };
     default:
@@ -707,8 +746,111 @@ function checkBtcResult(kind: DepositKind): BtcDepositResult {
   return { __kind__: "Ok", Ok: next };
 }
 
+/** ckBTC refund transfer of a held deposit, sent to the buyer's wallet. */
+function mockBtcRefundAttempt(index: bigint, amount: bigint): TransferAttempt {
+  return {
+    n: index + 1n,
+    attempt: 1n,
+    request: { to: CALLER_ACCOUNT, fee: undefined, token: PayToken.ckbtc, amount },
+    memo: new TextEncoder().encode(`TTTI-BR-${index}`),
+    sends: 1n,
+    created_at_time: nowNs(),
+    outcome: { __kind__: "succeeded", succeeded: 2_741_900n + index },
+  };
+}
+
+/** ckBTC base units returned to the buyer wallet by held-ckBTC refunds (the wallet ledger itself is not simulated). */
+let mockHeldBtcRefundedToWallet = 0n;
+/** TTTI-T base units delivered by held-ckBTC conversions. */
+let mockHeldBtcDeliveredTtti = 0n;
+
+/**
+ * convertMyHeldBtc: while sales are paused the conversion fails with a permanent
+ * cause and the held ckBTC is refunded to the buyer wallet (the held amount
+ * becomes empty); otherwise the held ckBTC is converted and TTTI-T is delivered.
+ */
+function convertHeldBtcResult(params: DepositMintParams): BtcDepositResult {
+  const stored = state.btcPurchase;
+  if (!stored) {
+    return {
+      __kind__: "Err",
+      Err: {
+        code: BtcDepositErrorCode.noAddressYet,
+        message: "No purchase deposit address has been created yet.",
+      },
+    };
+  }
+  // Same refusals as mockMintLiquidity; nothing is taken, the held ckBTC stays.
+  if (params.slippageBps > DEX_MAX_SLIPPAGE_BPS) {
+    throw new MintRefusedError({ __kind__: "invalidSlippage", invalidSlippage: { maximumBps: DEX_MAX_SLIPPAGE_BPS } });
+  }
+  const now = nowNs();
+  if (params.deadline < now) {
+    throw new MintRefusedError({ __kind__: "deadlineExpired", deadlineExpired: { now, deadline: params.deadline } });
+  }
+  const target = mintTargetPool(PayToken.ckbtc, params.targetPoolId);
+  if ("err" in target) throw new MintRefusedError(target.err.err);
+  if (mintScenario() === "slippage") {
+    throw new MintRefusedError({ __kind__: "slippageExceeded", slippageExceeded: { toleranceBps: params.slippageBps } });
+  }
+  const heldTotal = stored.deposits.reduce(
+    (sum, entry) =>
+      (entry.stage.__kind__ === "minted" || entry.stage.__kind__ === "pendingRate") ? sum + entry.ckbtcPendingSats : sum,
+    0n,
+  );
+  if (heldTotal > 0n && params.maxPayAmount < heldTotal) {
+    throw new MintRefusedError({
+      __kind__: "maxPayExceeded",
+      maxPayExceeded: { maxPayAmount: params.maxPayAmount, payAmount: heldTotal },
+    });
+  }
+  const deposits = stored.deposits.map((entry): DepositEntry => {
+    const kind = entry.stage.__kind__;
+    if ((kind !== "minted" && kind !== "pendingRate") || entry.ckbtcPendingSats === 0n) {
+      return entry;
+    }
+    const held = entry.ckbtcPendingSats;
+    if (state.salesPaused) {
+      mockHeldBtcRefundedToWallet += held;
+      return {
+        ...entry,
+        stage: { __kind__: "refunded", refunded: null },
+        refundedSats: held,
+        ckbtcPendingSats: 0n,
+        conversionCause: "Sales are paused.",
+        causePermanent: true,
+        btcRefund: {
+          attempt: mockBtcRefundAttempt(entry.index, held),
+          purpose: BtcRefundPurpose.fullRefund,
+        },
+        updatedAt: nowNs(),
+      };
+    }
+    const delivered = mockTtti(held, PayToken.ckbtc, MOCK_PAY_USD_E8[PayToken.ckbtc]);
+    mockHeldBtcDeliveredTtti += delivered;
+    return {
+      ...entry,
+      stage: { __kind__: "delivered", delivered: null },
+      ckbtcPendingSats: 0n,
+      tttiDelivered: delivered,
+      conversionId: BigInt(state.conversions.length + 1),
+      conversionCause: undefined,
+      causePermanent: false,
+      updatedAt: nowNs(),
+    };
+  });
+  const next: DepositTracking = {
+    ...stored,
+    deposits,
+    stage: deposits[0]?.stage ?? stored.stage,
+    lastCheckedAt: nowNs(),
+  };
+  state.btcPurchase = next;
+  return { __kind__: "Ok", Ok: next };
+}
+
 /** Acknowledgement version in force, as in the backend. */
-const ACK_VERSION = 2n;
+const ACK_VERSION = 3n;
 
 /** Only a record of the version in force counts as accepted. */
 function ackAccepted(): boolean {
@@ -729,9 +871,9 @@ const btcAckRequired = (): BtcDepositResult => ({
   },
 });
 
-/** Live conversion at the buyer price (1% cycles fee included), floored. */
+/** Mock live conversion of an ICP amount, floored. */
 function liveTtti(icpAmount: bigint): bigint {
-  return tttiFromIcp(icpAmount, MOCK_USD_E8);
+  return mockTtti(icpAmount, PayToken.icp, MOCK_USD_E8);
 }
 
 /** Fresh minting plus the collected fee account, as in getSaleStatus. */
@@ -760,7 +902,7 @@ const saleMintable = (): bigint => {
 };
 
 /** The mint is over when what remains to mint is below the minimum of one mint. */
-const saleMintEnded = (): boolean => saleMintable() < MIN_PURCHASE;
+const saleMintEnded = (): boolean => saleMintable() < MOCK_MIN_PURCHASE;
 
 /** The remainder carried to the first auction lot (0 while the mint is running). */
 const saleRemainder = (): bigint => (saleMintEnded() ? saleMintable() : 0n);
@@ -775,7 +917,7 @@ function makeConversion(icpAmount: bigint, recipient: Account): Conversion {
   // Fresh minting only: transfer fees held for the creator are never delivered.
   const mintable = saleMintable();
   const minted = tttiAmount < mintable ? tttiAmount : mintable;
-  const feeBps = PAY_TOKENS[PayToken.icp].feeBps;
+  const feeBps = REPORTED_FEE_BPS;
   // payAmount includes the fee: fee = payAmount * feeBps / (10_000 + feeBps).
   const feeAmount = (icpAmount * feeBps) / (10_000n + feeBps);
   state.nextBlock += 2n;
@@ -822,7 +964,7 @@ state.conversions.unshift(makeConversion(ICP_DIVISOR, CALLER_ACCOUNT));
 // Purchase paid in ckUSDT: 101 ckUSDT, 1% fee, 100 ckUSDT net for 0.01 TTTI-T.
 // Its mass exercises the one-time ckUSDT payout failure and the retry.
 {
-  const feeBps = PAY_TOKENS[PayToken.ckusdt].feeBps;
+  const feeBps = REPORTED_FEE_BPS;
   const unit = 10n ** BigInt(PAY_TOKENS[PayToken.ckusdt].decimals);
   const payAmount = 101n * unit;
   const feeAmount = (payAmount * feeBps) / (10_000n + feeBps);
@@ -1309,7 +1451,7 @@ const mockRunClosing = (input: MockClosingInput): MockClosedRecord => {
     if (hi > lo) mintPlan.set(bidId, hi - lo);
   };
   const toClosed = (bid: Bid, outcome: BidOutcome, served: bigint): ClosedBidView => {
-    const servedDeposit = served > 0n ? mockAuctionRequired(bid.priceB, served) : 0n;
+    const servedDeposit = served > 0n ? mockAuctionRequired(bid.token, bid.priceB, served) : 0n;
     const returned = bid.deposited - servedDeposit;
     // Unserved deposits go straight to the DEX balance; a served bid's deposit waits for its settlement.
     if (served > 0n) mockAuctionCredit(bid.bidder, bid.token, 0n, bid.deposited);
@@ -1324,6 +1466,7 @@ const mockRunClosing = (input: MockClosingInput): MockClosedRecord => {
       requiredDeposit: bid.requiredDeposit,
       deposited: bid.deposited,
       createdAt: bid.createdAt,
+      choice: bid.choice,
       outcome,
       servedE8s: served,
       pricePaidB: served > 0n ? bid.priceB : 0n,
@@ -1343,6 +1486,10 @@ const mockRunClosing = (input: MockClosingInput): MockClosedRecord => {
         surplusReturned: 0n,
         carriedE8s: 0n,
         mintedE8s: 0n,
+        handE8s: 0n,
+        mShareE6: MOCK_M_SEED_E6,
+        choice: bid.choice,
+        lockedAmount: 0n,
       },
     };
   };
@@ -1420,10 +1567,10 @@ const MOCK_SETTLE_DELAY_NS = 30_000_000_000n;
 
 /**
  * Settles every pending winner of one auction. Served quantity q at price B:
- * 2 x B x q / 0.99 is taken from the deposit, the creator share is 1 % of the amount paid
- * after the cycles reserve, a position of B x q holds q TTTI-T, a guarantee of B per TTTI-T is set, and
- * the rest of the deposit is credited to the DEX balance. A failed winner has
- * no position or guarantee: the whole deposit is credited to its DEX balance
+ * (B + 10 000 USD) x q / 0.99 is taken from the deposit, the creator share is 1 % of the amount paid
+ * after the cycles reserve, a position of B x q holds q TTTI-T, 10 000 USD x q is paid into the common
+ * reserve, and the rest of the deposit is credited to the DEX balance. A failed winner has
+ * no position or reserve payment: the whole deposit is credited to its DEX balance
  * and the quantity is carried to the next lot. Other winners are unaffected.
  */
 const mockSettleRecord = (record: MockClosedRecord): SettleReport => {
@@ -1462,8 +1609,17 @@ const mockSettleRecord = (record: MockClosedRecord): SettleReport => {
       report.carriedE8s += bid.servedE8s;
       continue;
     }
-    const taken = bid.servedDeposit;
-    const amountB = (bid.priceB * bid.servedE8s) / 10n ** 8n;
+    const depositQuote = mockAuctionDepositQuote(
+      bid.token,
+      bid.priceB,
+      bid.servedE8s,
+      bid.settlement.choice,
+      mockLockedShareE6(),
+    );
+    // The amount taken follows the choice at the locked share of the settlement; the rest is returned.
+    const choiceTaken = depositQuote.choicePayment;
+    const taken = choiceTaken < bid.servedDeposit ? choiceTaken : bid.servedDeposit;
+    const amountB = depositQuote.choicePooledAmount;
     const surplus = bid.deposited - taken;
     mockAuctionCredit(bid.bidder, bid.token, surplus, 0n);
     bid.returned = surplus;
@@ -1473,16 +1629,20 @@ const mockSettleRecord = (record: MockClosedRecord): SettleReport => {
       state.sold += minted;
       mockRemainderMinted += minted;
     }
-    mockAuctionGuaranteeCredit(bid.token, bid.servedE8s, amountB);
+    mockAuctionReserveCredit(depositQuote.reserveToken, depositQuote.reserveAmount, bid.servedE8s);
     bid.settlement = {
       ...bid.settlement,
       status: SettlementStatus__1.settled,
       mintedE8s: minted,
       settledE8s: bid.servedE8s,
       takenAmount: taken,
-      creatorShare: taken - 2n * amountB,
+      creatorShare: depositQuote.creatorAmount,
       positionAmount: amountB,
-      guaranteeAmount: amountB,
+      handE8s: depositQuote.handE8s,
+      mShareE6: depositQuote.mShareE6,
+      choice: depositQuote.choice,
+      lockedAmount: depositQuote.lockedAmount,
+      guaranteeAmount: reserveUsdInToken(bid.token, bid.servedE8s),
       surplusReturned: surplus,
       positionId: nextPositionId++,
       attemptedAt: now,
@@ -1534,7 +1694,7 @@ const mockSeedClosed = () => {
     extraDeposit = 0n,
   ): Bid => {
     const priceB = priceIn(token, usdWhole);
-    const required = mockAuctionRequired(priceB, quantityE8s);
+    const required = mockAuctionRequired(token, priceB, quantityE8s);
     return {
       id,
       auctionId,
@@ -1547,6 +1707,7 @@ const mockSeedClosed = () => {
       memo: new TextEncoder().encode(`TTTI-AB-${id}`),
       block: 1_000n + id,
       createdAt,
+      choice: RemainderChoice.pool,
     };
   };
   const firstOpened = now - 74n * HOUR_NS;
@@ -1655,8 +1816,102 @@ const mockAuctionSettled = (): Auction | null => {
   return current;
 };
 
-const mockAuctionRequired = (priceB: bigint, quantityE8s: bigint): bigint =>
-  (2n * priceB * quantityE8s * 100n + 10n ** 8n * 99n - 1n) / (10n ** 8n * 99n);
+const RESERVE_USD_PER_TTTI_E8 = 10_000n;
+
+/** 10 000 USD x q (q in TTTI-T e8s) expressed in the base units of one token, rounded down. */
+const reserveUsdInToken = (token: PayToken, q: bigint): bigint =>
+  (q * RESERVE_USD_PER_TTTI_E8 * 10n ** BigInt(PAY_TOKENS[token].decimals)) / MOCK_PAY_USD_E8[token];
+
+/** Reserve part of q TTTI-T paid in `token`: held as is in the paid token (ICP, ckBTC, ckUSDC or ckUSDT), no conversion. */
+function mockReserveConversion(token: PayToken, q: bigint): ReserveConversionQuote {
+  return {
+    applies: false,
+    reserveToken: token,
+    reserveAmount: reserveUsdInToken(token, q),
+    conversionInput: 0n,
+    conversionCost: 0n,
+    maxDeviationBps: 0n,
+  };
+}
+
+/** Scale of the locked share m (10^6 is 100 %). */
+const MOCK_M_SCALE = 1_000_000n;
+/** Locked share used where no live figure is read (seeded bids): the 50 % maximum. */
+const MOCK_M_SEED_E6 = 500_000n;
+
+/** Liquidity factor of a remainder choice (scale 10^6): 10^6 for A (pool), m for B (wallet). */
+const mockLiquidityFactorE6 = (choice: RemainderChoice, mShareE6: bigint): bigint =>
+  choice === RemainderChoice.pool ? MOCK_M_SCALE : mShareE6;
+
+const mockCeilDiv = (a: bigint, b: bigint): bigint => (a + b - 1n) / b;
+
+/** Locked share m (scale 10^6) read from the pool cap ratio, as the backend does at each quote. */
+const mockLockedShareE6 = (): bigint => {
+  const share = dexPoolCapRatio().lockedShare;
+  return share > MOCK_M_SEED_E6 ? MOCK_M_SEED_E6 : share;
+};
+
+/** Locked part m x full (rounded up, at most full) and the pooled part of a choice. */
+function mockSplit(choice: RemainderChoice, mShareE6: bigint, q: bigint, full: bigint) {
+  const lockedToken = (() => {
+    const v = mockCeilDiv(mShareE6 * full, MOCK_M_SCALE);
+    return v < full ? v : full;
+  })();
+  const lockedTtti = (() => {
+    const v = mockCeilDiv(mShareE6 * q, MOCK_M_SCALE);
+    return v < q ? v : q;
+  })();
+  return choice === RemainderChoice.pool
+    ? { lockedToken, lockedTtti, pooledToken: full, pooledTtti: q, handTtti: 0n }
+    : { lockedToken, lockedTtti, pooledToken: lockedToken, pooledTtti: lockedTtti, handTtti: q - lockedTtti };
+}
+
+/**
+ * Deposit of a bid: (B + 10 000 USD) x q / 0,99, with the reserve part held in the paid token
+ * (no conversion, no buffer). B is the price per TTTI-T in the pay token, q the quantity in TTTI-T.
+ * The 10 000 USD part goes to the common reserve; 1 % of the gross amount is the creator fee.
+ * `payment` and `required` are the deposit basis (choice A, the maximum); the choice figures follow
+ * the asked choice at locked share m.
+ */
+function mockAuctionDepositQuote(
+  token: PayToken,
+  priceB: bigint,
+  quantityE8s: bigint,
+  choice: RemainderChoice = RemainderChoice.pool,
+  mShareE6: bigint = MOCK_M_SEED_E6,
+): DepositQuote {
+  const positionAmount = (priceB * quantityE8s) / 10n ** 8n;
+  const reserveGuarantee = reserveUsdInToken(token, quantityE8s);
+  const perTtti = (RESERVE_USD_PER_TTTI_E8 * 10n ** BigInt(PAY_TOKENS[token].decimals)) / MOCK_PAY_USD_E8[token];
+  const gross = ((priceB + perTtti) * quantityE8s * 100n + 10n ** 8n * 99n - 1n) / (10n ** 8n * 99n);
+  const factor = mockLiquidityFactorE6(choice, mShareE6);
+  const choicePayment = mockCeilDiv(
+    (perTtti * MOCK_M_SCALE + priceB * factor) * quantityE8s * 100n,
+    MOCK_M_SCALE * 99n * 10n ** 8n,
+  );
+  const split = mockSplit(choice, mShareE6, quantityE8s, positionAmount);
+  return {
+    token,
+    choice,
+    mShareE6,
+    choicePayment,
+    choicePooledAmount: split.pooledToken,
+    lockedAmount: split.lockedToken,
+    handE8s: split.handTtti,
+    rateUsdE8: MOCK_PAY_USD_E8[token],
+    positionAmount,
+    reserveToken: token,
+    reserveAmount: reserveGuarantee,
+    conversionApplies: false,
+    conversionBuffer: 0n,
+    creatorAmount: gross > positionAmount + reserveGuarantee ? gross - positionAmount - reserveGuarantee : 0n,
+    payment: gross,
+    required: gross,
+  };
+}
+
+const mockAuctionRequired = (token: PayToken, priceB: bigint, quantityE8s: bigint): bigint =>
+  mockAuctionDepositQuote(token, priceB, quantityE8s).required;
 
 /** USD (e8) per whole TTTI-T of a price expressed in base units of the pay token per whole TTTI-T. */
 const mockBidUsdE8 = (token: PayToken, priceB: bigint): bigint =>
@@ -1696,7 +1951,8 @@ const mockAuctionCheck = (
 /**
  * Reserve per TTTI-T: the highest of the fixed floor, the 24 h average of the
  * consolidated price and the current consolidated price. A component that is
- * unavailable is left out, so the reserve never falls below the floor.
+ * unavailable is left out, so the reserve never falls below the floor. The market part reads the
+ * pool prices as they stand: pooling winners at settlement does not move it.
  */
 const mockAuctionReserve = (): {
   reserve: bigint;
@@ -1760,6 +2016,7 @@ const mockPlaceAuctionBid = (
   quantityE8s: bigint,
   priceB: bigint,
   depositAmount: bigint,
+  choice: RemainderChoice,
 ): { __kind__: "ok"; ok: Bid } | { __kind__: "err"; err: BidError } => {
   const current = mockAuctionOpen();
   if (!current || current.closesAt <= nowNs()) {
@@ -1776,7 +2033,7 @@ const mockPlaceAuctionBid = (
       err: { __kind__: "tooManyBids", tooManyBids: { maximum: AUCTION_MAX_BIDS } },
     };
   }
-  const required = mockAuctionRequired(priceB, quantityE8s);
+  const required = mockAuctionRequired(token, priceB, quantityE8s);
   const ledgerFee = PAY_TOKENS[token].fee;
   if (depositAmount < ledgerFee) {
     return {
@@ -1810,6 +2067,7 @@ const mockPlaceAuctionBid = (
     memo: new TextEncoder().encode(`TTTI-AB-${id}`),
     block: 1_000n + id,
     createdAt: nowNs(),
+    choice,
   };
   mockAuctionState.bids.push(bid);
   return { __kind__: "ok", ok: bid };
@@ -1845,10 +2103,10 @@ const MOCK_API_DOC = [
   "# TTTI-T backend API (simulated contract)",
   "",
   "## Purchase acknowledgements",
-  "- Acceptances are stored as { acceptedAt; version }; the version in force is 2 and records from before the change are version 1.",
-  "- getMyPurchaseAcknowledgement() : query -> PurchaseAcknowledgement { accepted; acceptedAt } — accepted only for a version-2 record.",
-  "- acceptPurchaseAcknowledgements() -> records version 2 (an existing version-2 record is kept unchanged).",
-  "- A missing or version-1 record is refused with #acknowledgementRequired by the purchase, getBtcPurchaseAddress() and checkBtcPurchaseDeposit() until accepted again.",
+  "- Acceptances are stored as { acceptedAt; version }; the version in force is 3 and records from before the change are older versions.",
+  "- getMyPurchaseAcknowledgement() : query -> PurchaseAcknowledgement { accepted; acceptedAt } — accepted only for a version-3 record.",
+  "- acceptPurchaseAcknowledgements() -> records version 3 (an existing version-3 record is kept unchanged).",
+  "- A missing or older record is refused with #acknowledgementRequired by the purchase, getBtcPurchaseAddress(), checkBtcPurchaseDeposit() and redeemGuarantee() until accepted again.",
   "",
   "## Transfer retries (lib/retry.mo)",
   "Every outgoing transfer is an attempt recorded before the first await: number, memo, created_at_time and the full request.",
@@ -1867,7 +2125,7 @@ const MOCK_API_DOC = [
   "- Impermanent loss: a liquidity position holds a share of the pool, not a fixed amount of each token. When the pool price moves, the position can be worth less than the same tokens held outside the pool, whatever the fees collected.",
   "- Exposure: through its pools (TTTI-T/ICP, TTTI-T/ckBTC, TTTI-T/ckUSDC, TTTI-T/ckUSDT) the TTTI-T side of a position is exposed to the value of BTC and ICP.",
   "- Mint zap: an automatic swap in the target pool, made with the minter's own money at the moment of the mint, at the pool's market price and fee, so that the rest can be deposited at the pool ratio.",
-  "- Personal guarantee: each minter can recover their own stake by returning TTTI-T under the redemption rules; there is no common reserve and no promise of value.",
+  "- Common reserve: 10 000 USD per TTTI-T minted is computed in USD and held in the token paid (ICP, ckBTC, ckUSDC or ckUSDT), without conversion. Any holder can return TTTI-T to the contract and receive the lower of 10 000 USD per TTTI-T or the proportional share of the reserve. The creator fee is 1 % of the amount paid at mint. 1 TTTI-T is always redeemable for 10 000 USD, by any holder, when the reserve covers it; the payout is not a promise of value.",
   "- Chance: at the mint every minter has an equal chance (same price, no bid, no priority). At auctions the highest bids win, in price order, until the lot is sold.",
   "- Lock (relay): optional, from 3 months to 5 years of remaining time, at opening and after an extension. A third of the weight of each new commitment relieves the other locked positions of the pool (relief of a third party); an owner can extend. A relieved or expired position is unlocked without eviction: it stays in the pool as free liquidity.",
   "- LP fees: half stays in the reserves pro rata to shares; half is set aside and shared among locked positions by capital x sqrt(remaining time / 5 years), only fees actually paid.",
@@ -1875,28 +2133,28 @@ const MOCK_API_DOC = [
   "- The creator's holdings are declared and public (getCreatorHoldings); the creator is not named.",
   "",
   "## Liquidity-forming mint (isolated)",
-  "- quoteLiquidityMint(args) : query -> Result<LiquidityMintQuote, LiquidityMintError> and mintLiquidity(args) -> Result<LiquidityMintResult, LiquidityMintError> — the creator share is 1 % of the amount paid after the cycles reserve; the rest forms the minter's position and guarantee.",
-  "- The mint is isolated: the swap, the pool deposit and the guarantee form one unit. If swap is refused, the deposit is refused or the balance cannot cover the guarantee, the whole mint fails: no TTTI-T is minted (total supply and mintable remaining unchanged), pool reserves and positions are unchanged, the mass and the guarantee are unchanged, and the payment sits in the payer's internal balance, where it is withdrawable.",
+  "- quoteLiquidityMint(args) : query -> Result<LiquidityMintQuote, LiquidityMintError> and mintLiquidity(args) -> Result<LiquidityMintResult, LiquidityMintError> — the creator share is 1 % of the amount paid after the cycles reserve; 10 000 USD per TTTI-T minted goes to the common reserve in the token paid, without conversion (LiquidityMintQuote.reserve has applies = false, reserveToken = the paid token, conversionCost = 0); the rest forms the minter's position. totalPayAmount = payAmount; LiquidityMintResult adds reserveToken, reserveAmount, conversionCost (0) and totalPaid.",
+  "- The mint is isolated: the swap, the pool deposit and the reserve part form one unit. If swap is refused, the deposit is refused or the balance cannot cover the reserve part, the whole mint fails: no TTTI-T is minted (total supply and mintable remaining unchanged), pool reserves and positions are unchanged, the common reserve and the circulation are unchanged, and the payment sits in the payer's internal balance, where it is withdrawable.",
   "- The contract then withdraws the payment to the payer's wallet (memo TTTI-DW-<n>). LiquidityMint { id; status; refundWithdrawalN?; refusalCause?; paymentBlock?; positionId?; ... } records the withdrawal number and the cause of the refusal.",
-  "- MintStatus: #inProgress, #completed, #refunding (withdrawal in progress), #refunded, #refundFailed (the payment stays in the internal balance and can be withdrawn with withdrawFromDex). Only #completed mints count as sold and in the mass.",
+  "- MintStatus: #inProgress, #completed, #refunding (withdrawal in progress), #refunded, #refundFailed (the payment stays in the internal balance and can be withdrawn with withdrawFromDex). Only #completed mints count as sold. Mint history is read-only.",
   "- LiquidityMintError for a failed isolated mint: #depositFailedRefunded { mintId } (payment returned, ledger fee deducted), #depositFailedRefunding { mintId } (payment being returned, it remains in the internal wallet balance until the withdrawal ends) and #depositFailedRefundFailed { mintId } (withdrawal failed, the payment remains in the internal balance).",
   "- liquidityMintCore(args) is the isolated core of the mint, reserved to the canister itself (self-call): any other caller is rejected with \"Unauthorized: reserved to the canister itself\". A refusal inside it rolls the whole message back.",
   "- The mint lock releases itself: a mint that fails, traps or stops on a refusal frees the caller's lock without any manual action, so a new mint can follow at once (#purchaseInProgress only while a call is running).",
-  "- Simulation switch ?mint=: rate, cap, balance, allowance, slippage (refused before payment); swap, deposit, guarantee (isolated failure, payment returned); refunding (withdrawal in progress, then succeeded on the next getMyLiquidityMints); refundfailed (withdrawal failed). A built-in self-check throws if a failed isolated mint minted TTTI-T, moved the pool, changed the mass or guarantee, or did not leave the payment in the payer's balance.",
+  "- Simulation switch ?mint=: rate, cap, balance, allowance, slippage (refused before payment); swap, deposit, guarantee (isolated failure, payment returned); refunding (withdrawal in progress, then succeeded on the next getMyLiquidityMints); refundfailed (withdrawal failed); the errors #reserveConversionFailed and #reserveConversionDeviation exist in the type but are no longer returned. A built-in self-check throws if a failed isolated mint minted TTTI-T, moved the pool, changed the common reserve, or did not leave the payment in the payer's balance.",
   "",
-  "## Personal guarantee and redemption (PTM-2)",
-  "- Each minter has one personal mass per payment token: the TTTI-T minted and the guarantee deposited with the mint. No mass is shared between owners.",
-  "- Each minter can recover their own stake by returning TTTI-T under the redemption rules; the guarantee is personal, with no common reserve and no promise of value.",
-  "- The right to redeem belongs to the person: any TTTI-T the person holds can be returned, up to the remaining mass. Returned TTTI-T go to a contract-held account and stay out of circulation; nothing is burned.",
-  "- getMyGuaranteeMasses() : query -> [GuaranteeMassView] — token, totalTtti, totalGuarantee, remainingTtti, remainingGuarantee, excess, withdrawableExcess (excess once the mint has ended), guaranteeValue (remainingGuarantee + excess), rateUsdE8, guaranteeValueUsdE8, mintEnded.",
-  "- quoteGuaranteeRedeem(token, tttiAmount) : query -> Result<RedeemQuote, GuaranteeError> — during the mint the returned amount is the lower of the guarantee deposited for the amount and the quantity worth 10,000 USD x amount at the stored rate (rule #depositedGuarantee or #dayRate); the difference stays in the guarantee as excessKept. After the mint it is the pro rata share of the mass, in kind (rule #proRata). redemptionFee is 1 % of returnedAmount; netAmount = returnedAmount - redemptionFee - thirdPartyFee; tttiAllowanceRequired = tttiAmount + tttiTransferFee.",
-  "- redeemGuarantee(token, tttiAmount, expectedNetAmount) -> Result<Redemption, GuaranteeError> — pulls tttiAmount with ICRC-2 transfer_from, updates the mass and records the payout (memo TTTI-GR-<n>, created_at_time) before the first await. Refused with #slippage when the net amount is lower than expectedNetAmount, and with #salesPaused while sales are paused.",
-  "- withdrawGuaranteeExcess(token) -> Result<Redemption, GuaranteeError> — pays the caller's excess once the mint has ended (#mintNotEnded before, #noExcess when none); kind #excessWithdrawal, tttiAmount 0.",
+  "## Common reserve and redemption (PTM-11)",
+  "- Common reserve: 10 000 USD per TTTI-T minted is computed in USD and held in the token paid (ICP, ckBTC, ckUSDC or ckUSDT) in the guarantee accounts of the contract, without conversion. Any holder can redeem TTTI-T against it at the lower of 10 000 USD x x and (reserve / circulation) x x; the reserve is public and can be short (see getReserveView), so the payout is not a promise of value.",
+  "- 1 TTTI-T is always redeemable for 10 000 USD, by any holder, as long as the reserve covers it. The creator fee is 1 % of the amount paid at mint.",
+  "- Every mint and every auction settlement pays 10 000 USD x q into the reserve: held as is in the token paid (ICP, ckBTC, ckUSDC or ckUSDT), without conversion. A redemption pays pro rata to the reserve composition, in each of the four tokens.",
+  "- Returned TTTI-T go to a contract-held account and stay out of circulation; nothing is burned. Circulation outside the contract = total supply minus the returned TTTI-T.",
+  "- getReserveView() : query -> ReserveView — public: perToken (token, balance, rateUsdE8?, valueUsdE8), reserveUsdE8, circulationOutside, reservePerTtti?, requiredUsdE8 (10 000 USD x circulation), invariantHolds, shortfallUsdE8, legacyPending (always empty). perToken covers ICP, ckBTC, ckUSDC and ckUSDT.",
+  "- quoteGuaranteeRedeem(tttiAmount) : query -> Result<RedeemQuote, GuaranteeError> — public: rule (#parity or #reserveShare, the lower one), parityUsdE8, proportionalUsdE8, payoutUsdE8, reserveUsdE8, reservePerTtti, circulationOutside, payouts (token, amount, ledgerFee, valueUsdE8, rateUsdE8), tttiTransferFee, tttiAllowanceRequired = tttiAmount + tttiTransferFee. Errors: #amountTooSmall, #amountExceedsCirculation { requested; circulation }, #reserveEmpty, #rateUnavailable.",
+  "- redeemGuarantee(tttiAmount, expectedPayoutUsdE8) -> Result<[Redemption], GuaranteeError> — any signed-in holder; pulls tttiAmount with ICRC-2 transfer_from and pays the reserve tokens (memo TTTI-GR-<n>). Refused with #acknowledgementRequired when the caller has not accepted the version in force, with #slippage { payoutUsdE8; expectedPayoutUsdE8 } when the payout is lower than expected, and with #salesPaused while sales are paused. Redemption { id; owner; account; token; tttiAmount; tttiPullBlock?; rateUsdE8?; thirdPartyFee; netAmount; createdAt; payout; status }.",
+  "- convertLegacyGuarantees() -> Result<[LegacyConversion], GuaranteeError> — admin: always returns #nothingToConvert, since the reserve is never converted.",
+  "- getGuaranteeAccounts() : query -> [GuaranteeAccountView { token; accountBalance }] — public: balance of the dedicated account of each token.",
   "- listMyRedemptions() : query -> [Redemption] — status, amounts, TTTI-T pull block, payout attempt.",
-  "- getUnclaimedMassTotal() : query -> UnclaimedMassTotal — public: remainingTtti, massCount, mintEnded and, per token, remainingTtti, remainingGuarantee and excess.",
-  "- getGuaranteeAccounts() : query -> [GuaranteeAccountView] — public, one entry per token (TTTI-T, ICP, ckBTC, ckUSDC, ckUSDT): { token; massTotal (sum of every guarantee mass, remaining guarantee + excess, all owners); accountBalance (balance of the dedicated internal guarantee account); equal (massTotal == accountBalance) }. The mint and the auction settlement credit the account with each guarantee; a redemption (and an excess withdrawal) is the only debit. The funds stay in the common custody.",
-  "- listRedemptionFees(offset, limit) : query -> [RedemptionFee] — admin: the 1 % redemption fees set aside for the creator.",
-  "- GuaranteeError: #anonymous, #salesPaused, #massNotFound, #nothingRemaining, #amountTooSmall, #amountExceedsMass, #rateUnavailable, #tttiBalanceInsufficient, #allowanceInsufficient, #slippage, #redemptionInProgress, #mintNotEnded, #noExcess, #pullFailed, #callFailed.",
+  "- GuaranteeError: #anonymous, #acknowledgementRequired, #salesPaused, #amountTooSmall, #amountExceedsCirculation, #reserveEmpty, #rateUnavailable, #tttiBalanceInsufficient, #allowanceInsufficient, #slippage, #redemptionInProgress, #ledgerFeeNotCovered { fee; token }, #nothingToConvert, #conversionFailed, #pullFailed, #callFailed.",
+  "- Simulation switches ?reserve= (short: the reserve holds 70 % of the required amount) and ?guarantee= (ended, rate, balance, allowance, slippage).",
   "",
   "## Bitcoin deposits",
   "- getBtcPurchaseAddress(), getBtcWalletAddress() and getBtcWalletAddressFor(owner) (unsigned) -> BtcDepositResult — #Ok with the stored tracking, or an unsaved #addressShown tracking (deposits = []); they store nothing. Errors: #anonymousCaller, #acknowledgementRequired (purchase only), #minterUnavailable.",
@@ -1937,7 +2195,8 @@ const MOCK_API_DOC = [
   "- getDexBalances(owner) : [DexBalanceView] — public, one row per token with available and reserved; getDexTransfers(owner) : [DexTransferView] — public, unpaged; getDexTransfersPage(owner, cursor : ?Nat, limit : Nat) : Page { items [DexTransferView]; nextCursor ?Nat } — public, newest first, cursor = transfer number n (global across deposits and withdrawals): null returns the newest items, ?c the transfers with n strictly below c; limit 0 means 50, capped at 100; nextCursor = n of the last returned transfer while older ones may remain, null on the last page.",
   "- depositToDex({ token; amount }) — DD: icrc2_transfer_from of amount (the user approves amount plus the ledger fee), memo TTTI-DD-<n> with created_at_time; credits available. Errors: #anonymous, #amountTooSmall, #transferInProgress, #insufficientAllowance, #insufficientFunds, #ledgerError.",
   "- withdrawFromDex({ token; amount }) — DW: available -> reserved, transfer of amount minus the ledger fee to the owner, memo TTTI-DW-<n>; Ok: final debit, Err: given back. Errors: #anonymous, #amountTooSmall, #insufficientBalance, #transferInProgress, #ledgerError.",
-  "- PairRequestView.refundStatus: #none, #inProgress, #needsReview or #refunded(block); the DQ refund of an approved request uses memo TTTI-DQ-<pair request id> (the request number, not a transfer counter); renewed attempts append -<m>. The deposit of a refused request is counted once as TTTI-T feeding the protocol liquidity (mockRefusedPairDeposits, a per-request flag plus a running total); pending or approved requests add nothing and no TTTI-T is created.",
+  "- requestPair({ ledgerId; counter; feeTier; message; payToken }) -> RequestPairResult — payToken is ICP, ckBTC, ckUSDC or ckUSDT. The deposit is the equivalent of 0.0005 TTTI-T at the mint price (5 USD) at the current hourly rate, rounded up, taken by ICRC-2 transferFrom into the request-deposit account of that token (getDexConfig: requestDepositUsdE8, requestDepositAccounts). Errors include #payTokenNotAccepted(text) (TTTI-T is not accepted) and #rateUnavailable(text) (rate absent or expired). PairRequestView.depositToken is the token paid; a request with the legacy TTTI-T deposit shows #tttiT. An approved request refunds the deposit in the paid token.",
+  "- PairRequestView.refundStatus: #none, #inProgress, #needsReview or #refunded(block); the DQ refund of an approved request uses memo TTTI-DQ-<pair request id> (the request number, not a transfer counter); renewed attempts append -<m>. The deposit of a refused request stays in the token it was paid in and joins the permanent liquidity set-aside, counted once per request (mockRefusedDepositSetAside); nothing is added to any pool, and pending or approved requests add nothing.",
   "- To review adds DD, DW (id = transfer n) and DQ (id = request id). Arrived: DD credits, DW final debit, DQ #refunded. Not arrived: DD nothing credited, DW given back, DQ new attempt.",
   "",
   "## DEX liquidity and swaps (lot 3)",
@@ -1975,19 +2234,19 @@ const MOCK_API_DOC = [
   "- getMyLpBonus() : LpBonusView (caller) and claimLpBonus() -> ClaimBonusResult — bonuses already earned stay claimable (memo TTTI-DL-<n>); swap fees credit no new bonus. Errors: #anonymous, #nothingToClaim, #belowMinimum { minimumE8s }, #claimInProgress.",
   "",
   "## Mint revenue: direct sends (OW), fee account and settlement (ST)",
-  "- A mint is paid 101 for 100. At each mint the 100/101 share is sent directly, in the paid token, to the receiving wallet the admin configured for that token, ledger fee deducted (memo TTTI-OW-<n>, lib/retry.mo rules; an unknown outcome goes to To review). BTC mints follow ckBTC. Nothing accumulates in the contract and there is no withdraw endpoint.",
+  "- At each mint, 1 % of the amount paid goes to the creator after the cycles reserve: it tops up the cycles reserve first, and the remainder is sent in the paid token to the receiving wallet the admin configured for that token, ledger fee deducted (memo TTTI-OW-<n>, lib/retry.mo rules; an unknown outcome goes to To review). BTC mints follow ckBTC. Nothing accumulates in the contract and there is no withdraw endpoint.",
   "- A mint with a token that has no receiving wallet is refused with #receivingWalletNotConfigured { token } before any funds are taken.",
   "- setReceivingWallet(token, account) -> ReceivingWalletResult (admin) — owner principal plus optional 32-byte subaccount. Errors: #notAdmin, #anonymousOwner, #invalidSubaccount, #contractAccount. getReceivingWallets() -> ReceivingWalletsResult (admin) — per token: wallet, accountText, setAt, setBy.",
-  "- The 1/101 mint fee stays in a dedicated contract fee account that cannot be withdrawn. getMintFeeAccount() -> FeeAccountResult (admin) — owner, subaccountHex, accountText, readAt and per token: balance, received, redistributedToLps, setAside, injected.",
+  "- Mint fees recorded before this rule stay in a dedicated contract fee account that cannot be withdrawn. getMintFeeAccount() -> FeeAccountResult (admin) — owner, subaccountHex, accountText, readAt and per token: balance, received, redistributedToLps, setAside, injected.",
   "- getSettlementStatus() -> SettlementStatusResult (admin) — one-time settlement per token: the accumulated revenue and the legacy mint-treasury owner share (minus past withdrawals) are sent to the receiving wallet; legacy and pending fees are moved once to the fee account; LP credits are unchanged. Status #pendingWallet, #sending, #sent([block]), #toReview or #failed(text); legs with purpose #ownerAccumulated, #ownerMintTreasury, #feePending or #feeLegacy, amount, destination, memoText (TTTI-ST-<n>), status and block.",
   "- listAdminHistory(filter, token, offset, limit) -> HistoryResult (admin) — one history, newest first, with total for pagination. filter: #all, #revenueSent, #destination, #swap, #liquidity, #mintDeposit, #redemption, #refund; token: optional ICP, TTTI-T, ckBTC, ckUSDC or ckUSDT. Row: id, kind, token, amount, status, detail, counterparty, memo, block, timestamp. Errors: #notAdmin.",
   "- getOwnerAccumulated() : [OwnerAccumulated] (admin); listOwnerSends(offset, limit) : OwnerSendPage and listTreasuryWithdrawals(offset, limit) (admin) — read-only history of past sends (source #mint(id), #accumulated, #treasurySweep, #withdrawal { by, from }, #settlement { from }).",
   "",
-  "## Mint fee halves (MF, set-aside amounts, injections)",
-  "- The 1/101 mint fee is split in two halves in the paid token, for the lowest-liquidity TTTI-T pair of that token.",
-  "- Half A goes to that pair's liquidity providers pro rata; when the pair has none, it is set aside. getMyMintFees() : MintFeeLpView (caller) — balances { token; claimable; claimed } and claims.",
+  "## Earlier mint fees (MF, set-aside amounts, injections)",
+  "- Mint fees recorded before the current rule stay readable and claimable. Refused pair-request deposits also join the permanent liquidity set-aside, in their paid token.",
+  "- getMyMintFees() : MintFeeLpView (caller) — balances { token; claimable; claimed } and claims.",
   "- claimMintFee(token) -> ClaimMintFeeResult — sends the whole claimable amount of that token (memo TTTI-MF-<n>). Errors: #anonymous, #nothingToClaim, #belowLedgerFee { fee }, #claimInProgress.",
-  "- Half B is set aside until worth 0.001 TTTI-T (10 USD), then 50 % is swapped into TTTI-T (ICPSwap, then native pools) at bounded slippage and added with the other 50 % as permanent liquidity. A missing or expired rate waits. No TTTI-T is created for pools.",
+  "- Set-aside amounts are added once worth 0.001 TTTI-T (10 USD): 50 % is swapped into TTTI-T (ICPSwap, then native pools) at bounded slippage and added with the other 50 % as permanent liquidity. A missing or expired rate waits. No TTTI-T is created for pools.",
   "- getSetAsideAmounts() : [SetAsideView] (public) — token, amount, valueUsdE8, thresholdUsdE8, totalReceived, totalInjected, lastInjectionAt, targetPoolId.",
   "- listLiquidityInjections(offset, limit) : InjectionPage (public) — newest first; token, poolId, venue (#native(poolId) or #icpswap(principal)), amountIn, swapAmountIn, pairAmountIn, minTttiOut, tttiReceived, used0, used1, liquidityShares, status (#swapping, #addingLiquidity, #completed, #needsReview, #failed).",
   "",
@@ -1998,14 +2257,14 @@ const MOCK_API_DOC = [
   "## Auction (sealed bids, PTM-6a)",
   "- getAuctionView() : AuctionView (public) — open, auctionId, lotSizeE8s, pendingLotE8s, openedAt, closesAt, reservePriceUsdE8 (effective reserve per TTTI-T: the highest of reserveFloorUsdE8 = 10 000 USD, dailyAverageUsdE8 = 24 h average of the consolidated TTTI-T price and consolidatedPriceUsdE8 = current consolidated TTTI-T price; a component that is unavailable is absent and left out, so the reserve is never below 10 000 USD; the reserve stays at 10 000 USD, no offer below it passes and nothing is reissued below 10 000 USD, the lot stays in the contract), reserveBinding (#floor | #dailyAverage | #consolidated: the component that sets the reserve), reservePrices per pay token (reserve at the current rate; price absent when the rate is absent or expired), minQuantityE8s (100 000 = 0.001 TTTI-T), maxBidsPerPerson (10), guaranteeRecoverable. PTM-9b adds blockSale (the open lot is below minQuantityE8s and is sold in block), lotRemainderE8s (part of the open lot that is the end-of-mint remainder) and pendingRemainderE8s (remainder not yet committed to a lot, included in pendingLotE8s).",
   "- getMyAuctionBids() : [Bid] — only the caller's own offers; offers of other principals are never returned.",
-  "- quoteAuctionDeposit(token, priceB, quantityE8s) : Result<Nat, BidError> — required deposit = ceil(2 x priceB x quantityE8s / (10^8 x 0.99)) in the token's base units; #invalidPrice for a zero price, #priceBelowMinimum { minimumUsdE8; bidUsdE8 } under the minimum price of 10 000 USD per TTTI-T at the current rate, #quantityBelowMinimum under the minimum, #wholeLotRequired { lotSizeE8s } on a block sale when the quantity is not the whole lot.",
-  "- placeAuctionBid(token, quantityE8s, priceB, depositAmount) : Result<Bid, BidError> — pulls the deposit with icrc2_transfer_from (ICRC-2 approval first); errors #noOpenAuction, #quantityBelowMinimum, #wholeLotRequired { lotSizeE8s } (block sale: a partial bid is refused), #invalidPrice, #priceBelowMinimum { minimumUsdE8; bidUsdE8 } (price under 10 000 USD per TTTI-T at the current rate), #tooManyBids (10), #depositBelowLedgerFee { fee; deposited } (the deposit must cover at least the ledger fee), #depositBelowRequired. Offers are firm: no withdrawal or change.",
+  "- quoteAuctionDeposit(token, priceB, quantityE8s, choice) : Result<DepositQuote, BidError> — choice is #pool (A) or #wallet (B); required deposit = ceil((priceB + 10 000 USD in the token) x quantityE8s / (10^8 x 0.99)) in the token's base units on the choice A basis, with no conversion buffer (the 10 000 USD part is held in the token paid); DepositQuote { token; required; payment; positionAmount; reserveAmount; creatorAmount; reserveToken; conversionApplies (false); conversionBuffer (0); rateUsdE8; mShareE6; choice; choicePayment; choicePooledAmount; lockedAmount; handE8s }. Errors: #invalidPrice for a zero price, #priceBelowMinimum { minimumUsdE8; bidUsdE8 } under the minimum price of 10 000 USD per TTTI-T at the current rate, #quantityBelowMinimum under the minimum, #wholeLotRequired { lotSizeE8s } on a block sale when the quantity is not the whole lot.",
+  "- placeAuctionBid(token, quantityE8s, priceB, depositAmount, choice) : Result<Bid, BidError> — pulls the deposit with icrc2_transfer_from (ICRC-2 approval first); errors #noOpenAuction, #quantityBelowMinimum, #wholeLotRequired { lotSizeE8s } (block sale: a partial bid is refused), #invalidPrice, #priceBelowMinimum { minimumUsdE8; bidUsdE8 } (price under 10 000 USD per TTTI-T at the current rate), #tooManyBids (10), #depositBelowLedgerFee { fee; deposited } (the deposit must cover at least the ledger fee), #depositBelowRequired. Offers are firm: no withdrawal or change.",
   "- openAuction() : Result<Auction, OpenAuctionError> — opens a 24 hour auction on the pending lot; #alreadyOpen, #emptyLot, #paused.",
   "",
   "## End of the mint, block sale and transfer fees (PTM-9b)",
   "- Transfer fees are paid to the creator (CreatorTokenView.transferFee, source #transferFee). They are never counted in the TTTI-T available at mint: mintableRemaining is fresh minting up to the cap only, and available = mintableRemaining (collected fees are never delivered by a purchase).",
   "- getSaleStatus() : SaleStatus adds mintEnded (true when mintableRemaining is below minPurchase, the minimum of one mint) and remainderE8s (mintableRemaining while mintEnded, else 0). Once the mint is over, mintLiquidity and quoteLiquidityMint return #mintEnded.",
-  "- The end-of-mint remainder joins the first auction lot (AuctionView.pendingRemainderE8s, then lotRemainderE8s and Auction.remainderE8s) and is minted only at the settlement of the winner for the part it is served (BidSettlement.mintedE8s, SettleCoreResult.mintedE8s), pooled with the winner's mass. A part nobody is served for, or a failed settlement, goes back to the remainder of the next lot.",
+  "- The end-of-mint remainder joins the first auction lot (AuctionView.pendingRemainderE8s, then lotRemainderE8s and Auction.remainderE8s) and is minted only at the settlement of the winner for the part it is served (BidSettlement.mintedE8s, SettleCoreResult.mintedE8s), delivered to the winner. A part nobody is served for, or a failed settlement, goes back to the remainder of the next lot.",
   "- Block sale: a lot below the minimum of one bid (minQuantityE8s) is sold whole (AuctionView.blockSale, Auction.blockSale, ClosedAuctionView.blockSale). Each bid is a price per TTTI-T for the whole lot (quantityE8s = lotSizeE8s); a partial bid returns #wholeLotRequired { lotSizeE8s }. The best price at or above the reserve wins the entire lot at its own price; below the reserve there is no sale and the lot goes to the next lot. The winner is pooled as in any other settlement.",
   "- ClosedAuctionView adds blockSale and remainderE8s.",
   "",
@@ -2020,9 +2279,9 @@ const MOCK_API_DOC = [
   "## Auction settlement of winners (PTM-6c)",
   "- Unserved offers, unserved parts and deposits of discarded offers are credited to the bidder's DEX internal balance at closing and can be taken out with withdrawFromDex (the Recover button). The deposit of each served offer stays pending settlement (pendingSettlement in getMyWithdrawable) until its settlement.",
   "- settleAuctionWinners(auctionId) : Result<SettleReport, SettleError> — settles every pending winner of a closed auction, one by one; a failure of one winner never affects the others. SettleReport { auctionId; attempted; settled; failed; settledE8s; carriedE8s; remaining }. Errors #unknownAuction, #nothingToSettle, #inProgress, #paused.",
-  "- For a served quantity q at price B: 2 x B x q / 0.99 is taken from the deposit (takenAmount); the creator share is 1 % of the amount paid after the cycles reserve (creatorShare), and the rest forms the minter's position and guarantee: a position of B x q holding q TTTI-T is created (positionAmount, positionId) and a guarantee of B per TTTI-T is set in the paid token (guaranteeAmount); the deposit surplus is credited to the DEX internal balance (surplusReturned).",
-  "- Failed settlement for one winner: no position and no guarantee, the whole deposit is credited to that winner's DEX balance (withdrawable with withdrawFromDex), and the quantity q is carried to the next lot (carriedE8s, failureReason). Other winners are unaffected.",
-  "- auctionSettleCore(args : SettleCoreArgs) : SettleCoreResult — isolated core of one settlement (reserved to the canister itself): { takenAmount; creatorShare; positionAmount; guaranteeAmount; positionId; shares }. A refusal rolls the whole message back.",
+  "- For a served quantity q at price B: (B + 10 000 USD) x q / 0.99 is taken from the deposit (takenAmount); the creator share is 1 % of the amount paid (creatorShare), a position of B x q holding q TTTI-T is created (positionAmount, positionId) and 10 000 USD x q is paid into the common reserve (guaranteeAmount in the paid token; SettleCoreResult adds reserveToken = the paid token and conversionCost = 0); the deposit surplus is credited to the DEX internal balance (surplusReturned).",
+  "- Failed settlement for one winner: no position and no reserve payment, the whole deposit is credited to that winner's DEX balance (withdrawable with withdrawFromDex), and the quantity q is carried to the next lot (carriedE8s, failureReason). Other winners are unaffected.",
+  "- auctionSettleCore(args : SettleCoreArgs) : SettleCoreResult — isolated core of one settlement (reserved to the canister itself): { takenAmount; creatorShare; positionAmount; guaranteeAmount; reserveToken; conversionCost; positionId; shares }. A refusal rolls the whole message back.",
   "- SettlementStatus of a bid: #notRequired (not served), #pending, #settled, #failed. BidSettlement { auctionId; bidId; bidder; token; status; settledE8s; takenAmount; creatorShare; positionAmount; guaranteeAmount; surplusReturned; carriedE8s; positionId?; failureReason?; attemptedAt?; settledAt? }.",
   "- getClosedAuctions() returns [ClosedAuctionView] (ClosedAuction plus settlement : AuctionSettlementSummary { pendingCount; settledCount; failedCount; settledE8s; failedCarriedE8s }); getAuctionResult(auctionId) returns ?AuctionResultView { auction : ClosedAuctionView; bids : [ClosedBidView] } where each ClosedBidView is a ClosedBid plus settlement : BidSettlement.",
   "- Mock-only URL switches: ?auction=closing closes the open auction after 20 s; ?auction=pending leaves it past its closing time without a valid rate; ?auction=settlefail fails the settlement of the first winner of the next closing; ?auction=settlepending keeps settlements pending. Otherwise settlement runs 30 s after closing.",
@@ -2055,9 +2314,9 @@ function mockPurchase(recipient: Account | null, icpAmount: bigint): PurchaseRes
     return purchaseError({ __kind__: "saleComplete", saleComplete: null }, "Sale complete.");
   }
   const requested = liveTtti(icpAmount);
-  if (requested < MIN_PURCHASE) {
+  if (requested < MOCK_MIN_PURCHASE) {
     return purchaseError(
-      { __kind__: "belowMinimum", belowMinimum: { minimumTtti: MIN_PURCHASE, requestedTtti: requested } },
+      { __kind__: "belowMinimum", belowMinimum: { minimumTtti: MOCK_MIN_PURCHASE, requestedTtti: requested } },
       "The minimum mint is 1 USD (about 0.0001 TTTI-T).",
     );
   }
@@ -2067,7 +2326,7 @@ function mockPurchase(recipient: Account | null, icpAmount: bigint): PurchaseRes
         __kind__: "aboveRemaining",
         aboveRemaining: {
           token: PayToken.icp,
-          maximumPayAmount: icpForTtti(remaining, MOCK_USD_E8),
+          maximumPayAmount: mockPayFor(remaining, PayToken.icp, MOCK_USD_E8),
           maximumTtti: remaining,
           requestedTtti: requested,
         },
@@ -2391,10 +2650,9 @@ function mockPayTokens(): Array<PayTokenStatus> {
       decimals: descriptor.decimals,
       ledgerCanisterId: Principal.fromText(descriptor.ledgerCanisterId),
       ledgerFee: descriptor.fee,
-      feeBps: descriptor.feeBps,
+      feeBps: REPORTED_FEE_BPS,
       fundsCycles: descriptor.fundsCycles,
-      buyerPriceUsd: (BigInt(TOKEN_PRICE_USD) * (10_000n + descriptor.feeBps)) / 10_000n,
-      minimumUsdE8: BigInt(Math.round(descriptor.minimumUsd * 100)) * 1_000_000n,
+      minimumUsdE8: MOCK_MIN_PURCHASE_USD_E8,
       priceUsdE8: MOCK_PAY_USD_E8[token],
       priceSource: price.source,
       priceUsable: price.usable,
@@ -2497,12 +2755,34 @@ let nextPoolId = 0n;
 const mockPairRequests: Array<PairRequestView> = [];
 let nextPairRequestId = 1n;
 let nextDexBlock = 4_200n;
-/** Refused pair-request deposits fed once to the protocol liquidity as TTTI-T (no TTTI-T is created). */
-const mockRefusedPairDeposits = { fed: new Set<bigint>(), totalTttiT: 0n };
-function dexFeedRefusedDeposit(request: PairRequestView) {
-  if (request.status.__kind__ !== "refused" || mockRefusedPairDeposits.fed.has(request.id)) return;
-  mockRefusedPairDeposits.fed.add(request.id);
-  mockRefusedPairDeposits.totalTttiT += request.depositAmount;
+/**
+ * Refused pair-request deposits stay in the token they were paid in and join the
+ * permanent liquidity set-aside, once per request. Nothing is added to any pool.
+ */
+const mockRefusedDepositSetAside = { counted: new Set<bigint>(), byToken: new Map<DexToken, bigint>() };
+function dexSetAsideRefusedDeposit(request: PairRequestView) {
+  if (request.status.__kind__ !== "refused" || mockRefusedDepositSetAside.counted.has(request.id)) return;
+  mockRefusedDepositSetAside.counted.add(request.id);
+  const { byToken } = mockRefusedDepositSetAside;
+  byToken.set(request.depositToken, (byToken.get(request.depositToken) ?? 0n) + request.depositAmount);
+}
+
+/** Tokens a pair-request deposit can be paid in (TTTI-T is not accepted). */
+const DEX_REQUEST_PAY_TOKENS: Array<DexToken> = [DexToken.icp, DexToken.ckbtc, DexToken.ckusdc, DexToken.ckusdt];
+const DEX_REQUEST_PAY_OF: Partial<Record<DexToken, PayToken>> = {
+  [DexToken.icp]: PayToken.icp,
+  [DexToken.ckbtc]: PayToken.ckbtc,
+  [DexToken.ckusdc]: PayToken.ckusdc,
+  [DexToken.ckusdt]: PayToken.ckusdt,
+};
+/** The request deposit: 5 USD (0.0005 TTTI-T at the mint price) at the hourly rate, rounded up. */
+const DEX_REQUEST_DEPOSIT_USD_E8 = 500_000_000n;
+function dexRequestDepositIn(token: DexToken): bigint | undefined {
+  const pay = DEX_REQUEST_PAY_OF[token];
+  if (pay === undefined) return undefined;
+  const rate = MOCK_PAY_USD_E8[pay];
+  const scale = 10n ** BigInt(PAY_TOKENS[pay].decimals);
+  return (DEX_REQUEST_DEPOSIT_USD_E8 * scale + rate - 1n) / rate;
 }
 
 const dexSameLedger = (a: PoolTokenView, b: PoolTokenView) =>
@@ -2736,6 +3016,7 @@ function dexNewRequest(
   feeTier: FeeTier,
   message: string,
   createdAt: bigint,
+  deposit: { token: DexToken; amount: bigint } = { token: DexToken.tttiT, amount: DEX_REQUEST_DEPOSIT },
 ): PairRequestView {
   const copiedSymbolOf = dexCopiedSymbolOf(token);
   const request: PairRequestView = {
@@ -2756,7 +3037,8 @@ function dexNewRequest(
       ...(copiedSymbolOf ? { copiedSymbolOf } : {}),
     },
     copiedSymbol: copiedSymbolOf !== undefined,
-    depositAmount: DEX_REQUEST_DEPOSIT,
+    depositToken: deposit.token,
+    depositAmount: deposit.amount,
     depositBlock: nextDexBlock++,
     status: { __kind__: "pending", pending: null },
     refundStatus: { __kind__: "none", none: null },
@@ -2772,6 +3054,7 @@ dexNewRequest(
   FeeTier.bps30,
   "Ledger with ICRC-1 and ICRC-2, metadata published.",
   nowNs() - 5n * HOUR_NS,
+  { token: DexToken.icp, amount: dexRequestDepositIn(DexToken.icp) ?? 0n },
 );
 const dexRefusedSeed = dexNewRequest(
   HOLDER_3,
@@ -2785,7 +3068,7 @@ dexRefusedSeed.status = {
   __kind__: "refused",
   refused: { reason: "The symbol copies ICP.", at: nowNs() - 2n * 24n * HOUR_NS },
 };
-dexFeedRefusedDeposit(dexRefusedSeed);
+dexSetAsideRefusedDeposit(dexRefusedSeed);
 
 function mockRequestPair(args: RequestPairArgs): Outcome<"requestPair"> {
   const err = (e: RequestPairError): Outcome<"requestPair"> => ({ __kind__: "err", err: e });
@@ -2805,6 +3088,16 @@ function mockRequestPair(args: RequestPairArgs): Outcome<"requestPair"> {
   }
   if (args.ledgerId.toText() === DEX_NO_ICRC2_LEDGER.toText()) {
     return err({ __kind__: "missingStandards", missingStandards: { icrc1: true, icrc2: false } });
+  }
+  const depositAmount = dexRequestDepositIn(args.payToken);
+  if (depositAmount === undefined) {
+    return err({
+      __kind__: "payTokenNotAccepted",
+      payTokenNotAccepted: "TTTI-T is not accepted for the request deposit.",
+    });
+  }
+  if (!dexRatesValid()) {
+    return err({ __kind__: "rateUnavailable", rateUnavailable: "The hourly rate is absent or expired." });
   }
   const token = dexReadToken(args.ledgerId);
   const tokenView = dexToken(token.ledgerId, token.symbol, token.decimals, token.ledgerId.toText() === TTTI_CANISTER.toText());
@@ -2833,7 +3126,10 @@ function mockRequestPair(args: RequestPairArgs): Outcome<"requestPair"> {
       return err({ __kind__: "cooldown", cooldown: { until: r.status.refused.at + DEX_COOLDOWN_NS } });
     }
   }
-  const request = dexNewRequest(CALLER, token, counter, args.feeTier, args.message, nowNs());
+  const request = dexNewRequest(CALLER, token, counter, args.feeTier, args.message, nowNs(), {
+    token: args.payToken,
+    amount: depositAmount,
+  });
   return { __kind__: "ok", ok: request };
 }
 
@@ -2876,7 +3172,7 @@ function mockRefusePair(requestId: bigint, reason: string): Outcome<"refusePair"
     return err({ __kind__: "reasonTooLong", reasonTooLong: { max: DEX_REASON_MAX } });
   }
   request.status = { __kind__: "refused", refused: { reason: trimmed, at: nowNs() } };
-  dexFeedRefusedDeposit(request);
+  dexSetAsideRefusedDeposit(request);
   return { __kind__: "ok", ok: request };
 }
 
@@ -2953,6 +3249,11 @@ function mockSetUtilityPairMinimums(poolId: bigint, minimums: TokenMinimums): Ou
 function mockDexConfig(): DexConfig {
   return {
     requestDeposit: DEX_REQUEST_DEPOSIT,
+    requestDepositUsdE8: DEX_REQUEST_DEPOSIT_USD_E8,
+    requestDepositAccounts: DEX_REQUEST_PAY_TOKENS.map((token) => ({
+      token,
+      account: { owner: DEX_DEPOSIT_ACCOUNT.owner, subaccount: DEX_DEPOSIT_ACCOUNT.subaccount },
+    })),
     depositAccount: DEX_DEPOSIT_ACCOUNT,
     maxPendingPerUser: DEX_MAX_PENDING,
     refusalCooldownNs: DEX_COOLDOWN_NS,
@@ -3477,7 +3778,7 @@ function mockLastReserveStatus(): ReserveStatus | undefined {
 
 const DEX_CUSTODY_OWNER = principalFrom(7);
 
-function dexCustodyAccount(token: DexToken): Account__5 {
+function dexCustodyAccount(token: DexToken): Account {
   const subaccount = new Uint8Array(32);
   subaccount[0] = DEX_TOKEN_ORDER.indexOf(token) + 1;
   return { owner: DEX_CUSTODY_OWNER, subaccount };
@@ -4148,6 +4449,35 @@ function dexConsolidatedMintPrice(override?: DexReservesOverride): ConsolidatedM
     : { __kind__: "unavailable", unavailable: price.unavailable };
 }
 
+/**
+ * Independent reference price of a pool: mean of the prices of the OTHER open TTTI-T pools weighted
+ * by their depth. Undefined when no other pool is open (no independent reference).
+ */
+function dexReferenceExcluding(excluded: PoolView): bigint | undefined {
+  if (!dexRatesValid() || dexScenario() === "nosource") return undefined;
+  let weighted = 0n;
+  let total = 0n;
+  for (const pool of mockPools) {
+    if (pool === excluded || !dexSwapState(pool).open) continue;
+    const price = dexTttiPoolPriceUsdE8(pool);
+    const depth = dexDepthAt(pool).usdE8;
+    if (price === undefined || depth === undefined) continue;
+    weighted += price * depth;
+    total += depth;
+  }
+  return total === 0n ? undefined : weighted / total;
+}
+
+/** Reference price of a pool as carried by a mint quote; unavailable without an independent reference. */
+function dexReferenceMintPrice(pool: PoolView): ConsolidatedMintPrice {
+  const reference = dexReferenceExcluding(pool);
+  if (reference !== undefined) return { __kind__: "available", available: reference };
+  return {
+    __kind__: "unavailable",
+    unavailable: dexRatesValid() ? ConsolidatedUnavailable.noOpenPool : ConsolidatedUnavailable.noValidRate,
+  };
+}
+
 /** Spread of a TTTI-T pool versus the consolidated price, as carried by the pool view. */
 function dexSpreadOf(pool: PoolView): PoolSpread | undefined {
   return dexPoolSpreads().pools.find((spread) => spread.poolId === pool.id);
@@ -4164,10 +4494,12 @@ const POOL_CAP_TARGET_RATIO = 500_000_000_000n;
 /** Locked share scale: 10^6 is 100 %; the maximum m is 50 %. */
 const POOL_CAP_LOCKED_SCALE = 1_000_000n;
 const POOL_CAP_LOCKED_MAX = 500_000n;
+/** Capitalisation reference: the target price of 10 000 USD per circulating TTTI-T (usdE8). */
+const POOL_CAP_REFERENCE_USD_E8 = 10_000n * 100_000_000n;
 
 /**
  * Pools value versus capitalisation: 2 x the counterpart reserve of each TTTI-T pool at the
- * simulated oracle rates, over circulating TTTI-T x the instantaneous consolidated price.
+ * simulated oracle rates, over circulating TTTI-T x the 10 000 USD target price.
  */
 function dexPoolCapRatio(): PoolCapRatioView {
   const tttiPools = mockPools.filter(
@@ -4182,10 +4514,7 @@ function dexPoolCapRatio(): PoolCapRatioView {
   const consolidatedPriceUsdE8 =
     consolidated.price.__kind__ === "available" ? consolidated.price.available : undefined;
   const circulatingTttiT = mockTotalSupply();
-  const capitalisationUsdE8 =
-    consolidatedPriceUsdE8 === undefined
-      ? undefined
-      : (circulatingTttiT * consolidatedPriceUsdE8) / 100_000_000n;
+  const capitalisationUsdE8 = (circulatingTttiT * POOL_CAP_REFERENCE_USD_E8) / 100_000_000n;
   const currentRatio =
     poolsValueUsdE8 !== undefined && capitalisationUsdE8 !== undefined && capitalisationUsdE8 > 0n
       ? (poolsValueUsdE8 * POOL_CAP_RATIO_SCALE) / capitalisationUsdE8
@@ -4220,6 +4549,8 @@ function dexPoolCapRatio(): PoolCapRatioView {
     lockedShare,
     ratioScale: POOL_CAP_RATIO_SCALE,
     lockedShareScale: POOL_CAP_LOCKED_SCALE,
+    capitalisationReferenceUsdE8: POOL_CAP_REFERENCE_USD_E8,
+    capitalisationReference: Variant_targetPrice.targetPrice,
   };
 }
 
@@ -4237,9 +4568,21 @@ function dexPoolSpreads(): PoolSpreadReport {
       if (consolidated === undefined) {
         return { ...base, status: SpreadStatus.noConsolidatedPrice, priceUsdE8: price };
       }
-      const spreadBps = ((price - consolidated) * DEX_BPS) / consolidated;
+      // The reference excludes the pool itself: without another open pool there is no spread.
+      const reference = dexReferenceExcluding(pool);
+      if (reference === undefined || reference === 0n) {
+        return { ...base, status: SpreadStatus.noIndependentReference, priceUsdE8: price };
+      }
+      const spreadBps = ((price - reference) * DEX_BPS) / reference;
       const exceedsThreshold = (spreadBps < 0n ? -spreadBps : spreadBps) > DEX_SPREAD_THRESHOLD_BPS;
-      return { ...base, status: SpreadStatus.ok, priceUsdE8: price, spreadBps, exceedsThreshold };
+      return {
+        ...base,
+        status: SpreadStatus.ok,
+        priceUsdE8: price,
+        referencePriceUsdE8: reference,
+        spreadBps,
+        exceedsThreshold,
+      };
     });
   return {
     ...(consolidated !== undefined ? { consolidatedPriceUsdE8: consolidated } : {}),
@@ -4252,10 +4595,16 @@ function dexPoolSpreads(): PoolSpreadReport {
 /** Pools above the threshold where the caller holds a position. */
 function dexMySpreadAlerts(): Array<PoolSpreadAlert> {
   const report = dexPoolSpreads();
-  const consolidatedPriceUsdE8 = report.consolidatedPriceUsdE8;
-  if (consolidatedPriceUsdE8 === undefined) return [];
   return report.pools.flatMap((spread): Array<PoolSpreadAlert> => {
-    if (!spread.exceedsThreshold || spread.spreadBps === undefined || spread.priceUsdE8 === undefined) return [];
+    const referencePriceUsdE8 = spread.referencePriceUsdE8;
+    if (
+      !spread.exceedsThreshold ||
+      spread.spreadBps === undefined ||
+      spread.priceUsdE8 === undefined ||
+      referencePriceUsdE8 === undefined
+    ) {
+      return [];
+    }
     const positionIds = mockPositions
       .filter((p) => p.poolId === spread.poolId && p.shares > 0n && p.owner.toText() === CALLER.toText())
       .map((p) => p.id);
@@ -4267,7 +4616,7 @@ function dexMySpreadAlerts(): Array<PoolSpreadAlert> {
         spreadBps: spread.spreadBps,
         thresholdBps: report.thresholdBps,
         poolPriceUsdE8: spread.priceUsdE8,
-        consolidatedPriceUsdE8,
+        consolidatedPriceUsdE8: referencePriceUsdE8,
         computedAt: report.computedAt,
         positionIds,
       },
@@ -4331,9 +4680,73 @@ let dexReferenceReadAt = nowNs() - 12n * 60n * 1_000_000_000n;
 
 /** Simulates reading the ICPSwap pairs again; returns the number of readable pairs. */
 function dexRefreshReferenceSources(): number {
-  if (dexScenario() === "nosource") return 0;
   dexReferenceReadAt = nowNs();
+  if (dexScenario() === "nosource") return 0;
+  dexReferenceReadings = new Map(
+    DEX_REF_ICPSWAP_PAIRS.map((pair) => [
+      pair.counter,
+      dexReadingOk(pair.counter, DEX_REF_REFRESHED_METHOD[pair.counter] ?? ReadingMethod.spot, dexReferenceReadAt),
+    ]),
+  );
   return DEX_REF_ICPSWAP_PAIRS.length;
+}
+
+/** Counter whole tokens x 1e8 per 1 whole TTTI-T implied by a simulated ICPSwap pair. */
+function dexReadingCounterPerTttiE8(pair: { counter: DexToken; offsetBps: bigint }): bigint {
+  const tttiUsdE8 = (DEX_TTTI_T_USD_E8 * (DEX_BPS + pair.offsetBps)) / DEX_BPS;
+  const counterRate = MOCK_PAY_USD_E8[PAY_OF_DEX[pair.counter as Exclude<DexToken, DexToken.tttiT>]];
+  return (tttiUsdE8 * 10n ** 8n) / counterRate;
+}
+
+function dexReadingEntry(counter: DexToken, outcome: ReadingOutcome, readAt: bigint): ReferenceReadingEntry {
+  return { __kind__: "read", read: { counter, outcome, readAt } };
+}
+
+function dexReadingOk(counter: DexToken, method: ReadingMethod, readAt: bigint): ReferenceReadingEntry {
+  const pair = DEX_REF_ICPSWAP_PAIRS.find((p) => p.counter === counter);
+  const counterPerTttiE8 = pair ? dexReadingCounterPerTttiE8(pair) : 0n;
+  return dexReadingEntry(counter, { __kind__: "ok", ok: { method, counterPerTttiE8 } }, readAt);
+}
+
+const DEX_REF_REFRESHED_METHOD: Record<string, ReadingMethod> = {
+  [DexToken.icp]: ReadingMethod.spot,
+  [DexToken.ckbtc]: ReadingMethod.quote,
+  [DexToken.ckusdc]: ReadingMethod.spot,
+  [DexToken.ckusdt]: ReadingMethod.quote,
+};
+
+let dexReferenceReadings: Map<DexToken, ReferenceReadingEntry> | null = null;
+
+/** Per-pair readings: some read, one failed step and one not read yet until the first refresh. */
+function dexReferenceReadingEntries(): Array<ReferenceReadingEntry> {
+  if (dexScenario() === "nosource") {
+    return DEX_REF_ICPSWAP_PAIRS.map((pair) =>
+      dexReadingEntry(
+        pair.counter,
+        { __kind__: "failed", failed: { step: ReadingStep.poolLookup, detail: "No ICPSwap pool found for this pair." } },
+        dexReferenceReadAt,
+      ),
+    );
+  }
+  if (dexReferenceReadings === null) {
+    dexReferenceReadings = new Map<DexToken, ReferenceReadingEntry>([
+      [DexToken.icp, dexReadingOk(DexToken.icp, ReadingMethod.spot, dexReferenceReadAt)],
+      [DexToken.ckbtc, dexReadingOk(DexToken.ckbtc, ReadingMethod.quote, dexReferenceReadAt)],
+      [
+        DexToken.ckusdc,
+        dexReadingEntry(
+          DexToken.ckusdc,
+          { __kind__: "failed", failed: { step: ReadingStep.spotPrice, detail: "The pool returned no price." } },
+          dexReferenceReadAt,
+        ),
+      ],
+      [DexToken.ckusdt, { __kind__: "notReadYet", notReadYet: { counter: DexToken.ckusdt } }],
+    ]);
+  }
+  const readings = dexReferenceReadings;
+  return DEX_REF_ICPSWAP_PAIRS.map(
+    (pair) => readings.get(pair.counter) ?? { __kind__: "notReadYet", notReadYet: { counter: pair.counter } },
+  );
 }
 
 function dexReferenceSources(pool: PoolView): Array<ReferenceSource> {
@@ -4653,6 +5066,7 @@ function dexPositionView(position: DexPosition): PositionView {
     isCreator: position.isCreator,
     unlocked,
     withdrawable: unlocked,
+    mintShareE6: 0n,
   };
 }
 
@@ -6944,9 +7358,10 @@ function wholeUnitsOrZero(whole: string, decimals: number): bigint {
   return parseUnits(whole, decimals) ?? 0n;
 }
 
-function mockDexIndicators(): DexIndicatorsSnapshot {
+/** Proof of reserves per token: the last reserve check, or the live internal totals. */
+function mockDexProofs(): Array<TokenProof> {
   const lastCheck = mockDexReserve.lastCheck;
-  const proofs: Array<TokenProof> = DEX_TOKEN_ORDER.map((token) => {
+  return DEX_TOKEN_ORDER.map((token) => {
     const checked = lastCheck?.results.find((r) => r.token === token);
     if (checked) {
       return {
@@ -6960,11 +7375,47 @@ function mockDexIndicators(): DexIndicatorsSnapshot {
     const total = dexInternalTotal(token);
     return { token, internalTotal: total, ledgerTotal: total, difference: 0n, status: ReserveStatus.ok };
   });
+}
+
+function mockDexIndicators(): DexIndicatorsSnapshot {
+  const lastCheck = mockDexReserve.lastCheck;
   return {
     computedAt: INDICATORS_COMPUTED_AT,
     reserveCheckedAt: lastCheck?.checkedAt ?? INDICATORS_COMPUTED_AT - 10n * INDICATORS_MINUTE_NS,
-    proofs,
+    proofs: mockDexProofs(),
     pools: mockPools.map(mockPoolIndicators),
+  };
+}
+
+/**
+ * Balance breakdown per token, consistent with the proofs of reserves: the total, the
+ * ledger balance, the difference and the status are those of the proof. The simulated
+ * contract holds pool reserves and internal DEX balances only, so the other components
+ * are zero; a simulated shortfall is carried by the DEX balances (credits above the ledger).
+ */
+function mockDexBalanceBreakdown(): DexBalanceBreakdownSnapshot {
+  const lastCheck = mockDexReserve.lastCheck;
+  return {
+    complete: true,
+    checkedAt: lastCheck?.checkedAt ?? INDICATORS_COMPUTED_AT - 10n * INDICATORS_MINUTE_NS,
+    tokens: mockDexProofs().map((proof) => {
+      const poolReserves = dexPoolReserveTotal(proof.token);
+      return {
+        token: proof.token,
+        poolReserves,
+        guarantees: 0n,
+        creatorHoldings: 0n,
+        dexBalances: proof.internalTotal - poolReserves,
+        permanentLiquidity: 0n,
+        requestDeposits: 0n,
+        auctionDeposits: 0n,
+        inFlight: 0n,
+        total: proof.internalTotal,
+        ledgerBalance: proof.ledgerTotal,
+        difference: proof.difference,
+        status: proof.status,
+      };
+    }),
   };
 }
 
@@ -6989,9 +7440,11 @@ let nextMintId = 1n;
 /**
  * Mock-only simulation switch: `?mint=` in the page URL.
  * Refused before payment: rate | cap | balance | allowance | slippage.
+ * rateSourcesDiverge (Coinbase and CoinGecko differ by more than 2 percent): diverge,
+ * or divergemissing when the CoinGecko rate is missing.
  * Isolated failure (the mint fails as a whole, the payment returns to the payer's
  * internal balance, then is withdrawn): swap (swap refused), deposit (pool deposit
- * refused), guarantee (insufficient balance for the guarantee), refunding (withdrawal
+ * refused), guarantee (insufficient balance for the reserve part), refunding (withdrawal
  * in progress, then succeeded on the next read) and refundfailed (withdrawal failed,
  * the payment stays in the internal balance).
  */
@@ -7026,8 +7479,8 @@ function mintQuantity(quantity: Quantity): { ok: bigint } | MintFail {
   return { ok: BigInt(whole) * TTTI_DIVISOR + BigInt(fraction.padEnd(MINT_MAX_DECIMALS, "0")) };
 }
 
-function mintTttiFromUsd(usdE8: bigint): bigint {
-  return (usdE8 * 99n) / 2_000_000n;
+function mintTttiFromUsd(usdE8: bigint, choice: RemainderChoice, mShareE6: bigint): bigint {
+  return (usdE8 * 99n) / (MOCK_M_SCALE + mockLiquidityFactorE6(choice, mShareE6));
 }
 
 /** The TTTI-T / token pool of a payment token, created on first use. */
@@ -7059,11 +7512,83 @@ function mintSoldTtti(): bigint {
   return mockLiquidityMints.reduce((sum, m) => (m.status === MintStatus.completed ? sum + m.tttiAmount : sum), 0n);
 }
 
-function mintPlan(token: PayToken, q: bigint): { __kind__: "ok"; ok: LiquidityMintQuote } | MintFail {
+/** Price of one whole TTTI-T: 20 000 USD / 0.99, rounded up (USD e8). */
+const MINT_PRICE_PER_TTTI_USD_E8 = dexCeilDiv(2_000_000_000_000n * 100n, 99n);
+/** 100 USD / 0.99 (101.01 USD, USD e8), shown for a mint and for a prepaid redemption. */
+const MINT_COST_PER_100_USD_E8 = dexCeilDiv(10_000_000_000n * 100n, 99n);
+
+/**
+ * Payment for q TTTI-T in one token at the mock rate (the reserve part is held in the paid token):
+ * (10 000 USD + liquidity) x q / 0.99, the liquidity being 10 000 USD (choice A) or m x 10 000 USD (B).
+ */
+function mintPayment(token: PayToken, q: bigint, choice: RemainderChoice, mShareE6: bigint) {
+  const factor = MOCK_M_SCALE + mockLiquidityFactorE6(choice, mShareE6);
+  const payUsdE8 = dexCeilDiv(q * factor, 99n);
+  const payAmount = dexCeilDiv(
+    q * factor * 10n ** BigInt(PAY_TOKENS[token].decimals),
+    99n * MOCK_PAY_USD_E8[token],
+  );
+  const conversionCost = mockReserveConversion(token, q).conversionCost;
+  return { payUsdE8, payAmount, conversionCost, totalPayAmount: payAmount + conversionCost };
+}
+
+/** The figures of one remainder choice for q TTTI-T, as the backend quote returns them. */
+function mintFigures(token: PayToken, q: bigint, choice: RemainderChoice, mShareE6: bigint): MintChoiceFigures {
+  const rate = MOCK_PAY_USD_E8[token];
+  const decimals = 10n ** BigInt(PAY_TOKENS[token].decimals);
+  const { payUsdE8, payAmount, conversionCost, totalPayAmount } = mintPayment(token, q, choice, mShareE6);
+  const full = (q * 10_000n * decimals) / rate;
+  const split = mockSplit(choice, mShareE6, q, full);
+  const creatorAmount = (payAmount * 100n) / 10_000n;
+  const used = split.pooledToken + full + creatorAmount;
+  return {
+    choice,
+    payAmount,
+    payUsdE8,
+    totalPayAmount,
+    conversionCost,
+    liquidityUsdE8: (10_000n * q * mockLiquidityFactorE6(choice, mShareE6)) / MOCK_M_SCALE,
+    pooledTokenAmount: split.pooledToken,
+    pooledTttiAmount: split.pooledTtti,
+    lockedTokenAmount: split.lockedToken,
+    lockedTttiAmount: split.lockedTtti,
+    freeTokenAmount: split.pooledToken - split.lockedToken,
+    freeTttiAmount: split.pooledTtti - split.lockedTtti,
+    handTttiAmount: split.handTtti,
+    creatorAmount,
+    dustAmount: payAmount > used ? payAmount - used : 0n,
+  };
+}
+
+function mintPlan(
+  token: PayToken,
+  q: bigint,
+  choice: RemainderChoice,
+  targetPoolId?: bigint,
+): { __kind__: "ok"; ok: LiquidityMintQuote } | MintFail {
+  const mShareE6 = mockLockedShareE6();
   if (!dexRatesValid() || mintScenario() === "rate") {
     return mintFail({ __kind__: "rateUnavailable", rateUnavailable: { token } });
   }
+  const divergence = mintScenario();
+  if (divergence === "diverge" || divergence === "divergemissing") {
+    const coinbaseUsdE8 = MOCK_PAY_USD_E8[token];
+    const missing = divergence === "divergemissing";
+    const coingeckoUsdE8 = missing ? undefined : (coinbaseUsdE8 * 105n) / 100n;
+    return mintFail({
+      __kind__: "rateSourcesDiverge",
+      rateSourcesDiverge: {
+        token,
+        coinbaseUsdE8,
+        coingeckoUsdE8,
+        differenceBps: missing ? undefined : 500n,
+        maximumBps: 200n,
+      },
+    });
+  }
   if (state.salesPaused) return mintFail({ __kind__: "salesPaused", salesPaused: null });
+  const target = mintTargetPool(token, targetPoolId);
+  if ("err" in target) return target.err;
   // PTM-9b: the mint is over once the remainder is below the minimum of one mint.
   const capRemaining = MINT_CAP_TTTI > mintSoldTtti() ? MINT_CAP_TTTI - mintSoldTtti() : 0n;
   if (saleMintEnded() || capRemaining < MINT_MIN_TTTI) {
@@ -7088,26 +7613,25 @@ function mintPlan(token: PayToken, q: bigint): { __kind__: "ok"; ok: LiquidityMi
       },
     });
   }
-  const pool = mintPool(token);
+  const pool = target.pool;
   const tttiIs0 = pool.token0.isTttiT;
   const reserveTtti = tttiIs0 ? pool.reserve0 : pool.reserve1;
   const reserveToken = tttiIs0 ? pool.reserve1 : pool.reserve0;
   const firstDeposit = pool.totalShares === 0n || reserveTtti === 0n || reserveToken === 0n;
   const rate = MOCK_PAY_USD_E8[token];
-  const decimals = 10n ** BigInt(PAY_TOKENS[token].decimals);
-  const payUsdE8 = dexCeilDiv(q * 2_000_000n, 99n);
-  const payAmount = dexCeilDiv(payUsdE8 * decimals, rate);
-  const guaranteeAmount = (q * 10_000n * decimals) / rate;
-  const positionTokenAmount = guaranteeAmount;
-  const creatorAmount = (payAmount * 100n) / 10_000n;
-  const spent = guaranteeAmount + positionTokenAmount + creatorAmount;
-  const dustAmount = payAmount > spent ? payAmount - spent : 0n;
+  const figures = mintFigures(token, q, choice, mShareE6);
+  const { payUsdE8, payAmount, creatorAmount, dustAmount } = figures;
+  const guaranteeAmount = (q * 10_000n * 10n ** BigInt(PAY_TOKENS[token].decimals)) / rate;
+  const reserve = mockReserveConversion(token, q);
+  // The position pooled by the choice: all of it for A, the locked part only for B.
+  const positionTokenAmount = figures.pooledTokenAmount;
+  const positionTttiAmount = figures.pooledTttiAmount;
   let zap: ZapSwap | undefined;
   let shares: bigint;
   if (firstDeposit) {
-    shares = dexIsqrt(positionTokenAmount * q);
+    shares = dexIsqrt(positionTokenAmount * positionTttiAmount);
   } else {
-    const needed = (q * reserveToken) / reserveTtti;
+    const needed = (positionTttiAmount * reserveToken) / reserveTtti;
     const amountIn = positionTokenAmount > needed ? (positionTokenAmount - needed) / 2n : 0n;
     if (amountIn > 0n) {
       zap = {
@@ -7118,7 +7642,7 @@ function mintPlan(token: PayToken, q: bigint): { __kind__: "ok"; ok: LiquidityMi
         feeAmount: (amountIn * 3n) / 1000n,
       };
     }
-    shares = (q * pool.totalShares) / reserveTtti;
+    shares = (positionTttiAmount * pool.totalShares) / reserveTtti;
   }
   const now = nowNs();
   return {
@@ -7127,24 +7651,33 @@ function mintPlan(token: PayToken, q: bigint): { __kind__: "ok"; ok: LiquidityMi
       ...(zap ? { zap } : {}),
       rateUsdE8: rate,
       token,
+      choice,
+      mShareE6,
+      choices: {
+        pool: mintFigures(token, q, RemainderChoice.pool, mShareE6),
+        wallet: mintFigures(token, q, RemainderChoice.wallet, mShareE6),
+      },
+      lockedTttiAmount: figures.lockedTttiAmount,
+      lockedTokenAmount: figures.lockedTokenAmount,
+      handTttiAmount: figures.handTttiAmount,
       dustAmount,
       shares,
       payUsdE8,
       ledgerFee: PAY_TOKENS[token].fee,
+      reserve,
+      totalPayAmount: figures.totalPayAmount,
       firstDeposit,
       payAmount,
       guaranteeAmount,
-      priceAfter: mintPoolPrice(token, reserveToken + positionTokenAmount, reserveTtti + q),
-      consolidatedPriceBefore: dexConsolidatedMintPrice(),
-      consolidatedPriceAfter: dexConsolidatedMintPrice({
-        pool,
-        reserve0: tttiIs0 ? reserveTtti + q : reserveToken + positionTokenAmount,
-        reserve1: tttiIs0 ? reserveToken + positionTokenAmount : reserveTtti + q,
-      }),
+      priceAfter: mintPoolPrice(token, reserveToken + positionTokenAmount, reserveTtti + positionTttiAmount),
+      // The reference excludes the target pool, so it is the same before and after the mint.
+      consolidatedPriceBefore: dexReferenceMintPrice(pool),
+      consolidatedPriceAfter: dexReferenceMintPrice(pool),
+      noIndependentReference: dexReferenceExcluding(pool) === undefined,
       rateValidUntil: now + HOUR_NS,
       quotedAt: now,
       tttiAmount: q,
-      positionTttiAmount: q,
+      positionTttiAmount,
       positionTokenAmount,
       priceBefore: mintPoolPrice(token, reserveToken, reserveTtti),
       creatorAmount,
@@ -7154,11 +7687,257 @@ function mintPlan(token: PayToken, q: bigint): { __kind__: "ok"; ok: LiquidityMi
 }
 
 function mockQuoteLiquidityMint(args: QuoteArgs): Outcome<"quoteLiquidityMint"> {
+  const target = args.targetPoolId;
   if (args.amount.__kind__ === "usd") {
-    return mintPlan(args.token, mintTttiFromUsd(args.amount.usd));
+    return mintPlan(
+      args.token,
+      mintTttiFromUsd(args.amount.usd, args.choice, mockLockedShareE6()),
+      args.choice,
+      target,
+    );
   }
   const parsed = mintQuantity(args.amount.ttti);
-  return "ok" in parsed ? mintPlan(args.token, parsed.ok) : parsed;
+  return "ok" in parsed ? mintPlan(args.token, parsed.ok, args.choice, target) : parsed;
+}
+
+/** Signed gap of a pool price versus the consolidated price in bps; undefined without both. */
+function mintGapBps(price: PoolPrice, consolidated: ConsolidatedMintPrice): bigint | undefined {
+  if (
+    price.usdPerTtti === undefined ||
+    price.reserveTtti === 0n ||
+    consolidated.__kind__ !== "available" ||
+    consolidated.available === 0n
+  ) {
+    return undefined;
+  }
+  return ((price.usdPerTtti - consolidated.available) * 10_000n) / consolidated.available;
+}
+
+/** Pools of the token's pair that can take a mint: not removed and no removal announced. */
+function mintEligiblePools(token: PayToken): Array<PoolView> {
+  if (mintScenario() === "nopool") return [];
+  const counter = DEX_TOKEN_VIEW[DEX_OF_PAY[token]];
+  const goneAfterMs = 15_000;
+  return mockPools
+    .filter(
+      (p) =>
+        p.kind === PoolKind.tttiPair &&
+        p.status !== PoolStatus.removed &&
+        (p.removal.__kind__ === "none" || p.removal.__kind__ === "cancelled") &&
+        (dexSameLedger(p.token0, counter) || dexSameLedger(p.token1, counter)),
+    )
+    .filter((p) => !(mintScenario() === "poolgone" && p.id === mintAltIcpPoolId && Date.now() - mockStartedMs > goneAfterMs))
+    .sort((a, b) => Number(a.feeBps - b.feeBps));
+}
+
+/** Recommended pool of a list: the smallest absolute gap with the consolidated price, else the first. */
+function mintRecommendedPool(token: PayToken, pools: Array<PoolView>): PoolView | undefined {
+  let best: PoolView | undefined;
+  let bestGap: bigint | undefined;
+  for (const pool of pools) {
+    const tttiIs0 = pool.token0.isTttiT;
+    const gap = mintGapBps(
+      mintPoolPrice(token, tttiIs0 ? pool.reserve1 : pool.reserve0, tttiIs0 ? pool.reserve0 : pool.reserve1),
+      dexReferenceMintPrice(pool),
+    );
+    if (gap === undefined) continue;
+    const abs = gap < 0n ? -gap : gap;
+    if (bestGap === undefined || abs < bestGap) {
+      best = pool;
+      bestGap = abs;
+    }
+  }
+  return best ?? pools[0];
+}
+
+/** The pool a mint goes to: the target when given and valid, else the recommended pool. */
+function mintTargetPool(token: PayToken, targetPoolId: bigint | undefined): { pool: PoolView } | { err: MintFail } {
+  const eligible = mintEligiblePools(token);
+  if (targetPoolId === undefined) {
+    const recommended = mintRecommendedPool(token, eligible);
+    return { pool: recommended ?? mintPool(token) };
+  }
+  const invalid = (reason: InvalidTargetReason): { err: MintFail } => ({
+    err: mintFail({ __kind__: "invalidTargetPool", invalidTargetPool: { poolId: targetPoolId, reason } }),
+  });
+  const found = mockPools.find((p) => p.id === targetPoolId);
+  if (!found) return invalid({ __kind__: "unknownPool", unknownPool: null });
+  const counter = DEX_TOKEN_VIEW[DEX_OF_PAY[token]];
+  const samePair =
+    found.kind === PoolKind.tttiPair && (dexSameLedger(found.token0, counter) || dexSameLedger(found.token1, counter));
+  if (!samePair) return invalid({ __kind__: "otherPair", otherPair: null });
+  if (found.removal.__kind__ === "announced") {
+    return invalid({ __kind__: "removalAnnounced", removalAnnounced: { effectiveAt: found.removal.announced.effectiveAt } });
+  }
+  if (!eligible.some((p) => p.id === found.id)) return invalid({ __kind__: "removed", removed: null });
+  return { pool: found };
+}
+
+/** Pools offered for a payment token with their price, depth and gap with the consolidated price. */
+function mockListMintPools(token: PayToken): MintPoolList {
+  const consolidatedPrice = dexConsolidatedMintPrice();
+  const eligible = mintEligiblePools(token);
+  const recommended = mintRecommendedPool(token, eligible);
+  const pools: Array<MintPoolOption> = eligible.map((pool) => {
+    const tttiIs0 = pool.token0.isTttiT;
+    const price = mintPoolPrice(token, tttiIs0 ? pool.reserve1 : pool.reserve0, tttiIs0 ? pool.reserve0 : pool.reserve1);
+    const depth = dexDepthAt(pool).usdE8;
+    const referencePrice = dexReferenceMintPrice(pool);
+    const gapBps = mintGapBps(price, referencePrice);
+    return {
+      poolId: pool.id,
+      feeBps: pool.feeBps,
+      price,
+      recommended: pool.id === recommended?.id,
+      noIndependentReference: dexReferenceExcluding(pool) === undefined,
+      referencePrice,
+      ...(depth !== undefined && depth > 0n ? { depthUsdE8: depth } : {}),
+      ...(gapBps !== undefined ? { gapBps } : {}),
+    };
+  });
+  return {
+    token,
+    pools,
+    consolidatedPrice,
+    computedAt: nowNs(),
+    ...(recommended ? { recommendedPoolId: recommended.id } : {}),
+  };
+}
+
+/** Pool preview of a mint: prices before and after in the chosen pool and their gaps with the consolidated price. */
+function mockMintPoolPreview(args: QuoteArgs): Outcome<"getMintPoolPreview"> {
+  const plan = mockQuoteLiquidityMint(args);
+  if (plan.__kind__ === "err") return plan;
+  const { ok } = plan;
+  const pool = mockPools.find((p) => p.id === ok.poolId);
+  const recommended = mintRecommendedPool(args.token, mintEligiblePools(args.token));
+  const gapBeforeBps = mintGapBps(ok.priceBefore, ok.consolidatedPriceBefore);
+  const gapAfterBps = mintGapBps(ok.priceAfter, ok.consolidatedPriceAfter);
+  const preview: MintPoolPreview = {
+    token: args.token,
+    poolId: ok.poolId,
+    feeBps: pool?.feeBps ?? 0n,
+    isRecommended: recommended?.id === ok.poolId,
+    noIndependentReference: ok.noIndependentReference,
+    tttiAmount: ok.tttiAmount,
+    priceBefore: ok.priceBefore,
+    priceAfter: ok.priceAfter,
+    consolidatedPriceBefore: ok.consolidatedPriceBefore,
+    consolidatedPriceAfter: ok.consolidatedPriceAfter,
+    firstDeposit: ok.firstDeposit,
+    quotedAt: ok.quotedAt,
+    ...(recommended ? { recommendedPoolId: recommended.id } : {}),
+    ...(gapBeforeBps !== undefined ? { gapBeforeBps } : {}),
+    ...(gapAfterBps !== undefined ? { gapAfterBps } : {}),
+    ...(ok.zap ? { zap: ok.zap } : {}),
+  };
+  return { __kind__: "ok", ok: preview };
+}
+
+/** Mint price preview: one figure per token, null fields when its rate is expired or missing. */
+function mockMintPricePreview(): Outcome<"getMintPricePreview"> {
+  const now = nowNs();
+  const rateOk = dexRatesValid() && mintScenario() !== "rate";
+  const m = mockLockedShareE6();
+  const pool = RemainderChoice.pool;
+  const wallet = RemainderChoice.wallet;
+  return {
+    mShareE6: m,
+    pricePerTttiUsdE8: MINT_PRICE_PER_TTTI_USD_E8,
+    pricePerTttiWalletUsdE8: mintPayment(PayToken.ckusdc, TTTI_DIVISOR, wallet, m).payUsdE8,
+    computedAt: now,
+    minimumTtti: MINT_MIN_TTTI,
+    minimumMintUsdE8: MINT_MIN_TTTI * RESERVE_USD_PER_TTTI_E8,
+    minimumMintWalletUsdE8: mintPayment(PayToken.ckusdc, MINT_MIN_TTTI, wallet, m).payUsdE8,
+    mintCostPer100UsdE8: MINT_COST_PER_100_USD_E8,
+    prepaidRedemptionCostPer100UsdE8: MINT_COST_PER_100_USD_E8,
+    tokens: PAY_TOKEN_ORDER.map((token) => {
+      if (!rateOk) return { token };
+      const one = mintPayment(token, TTTI_DIVISOR, pool, m);
+      const minimum = mintPayment(token, MINT_MIN_TTTI, pool, m);
+      const oneWallet = mintPayment(token, TTTI_DIVISOR, wallet, m);
+      const minimumWallet = mintPayment(token, MINT_MIN_TTTI, wallet, m);
+      return {
+        token,
+        rateUsdE8: MOCK_PAY_USD_E8[token],
+        rateValidUntil: now + HOUR_NS,
+        payAmountPerTtti: one.payAmount,
+        conversionCostPerTtti: one.conversionCost,
+        totalPayAmountPerTtti: one.totalPayAmount,
+        walletPayAmountPerTtti: oneWallet.payAmount,
+        walletTotalPayAmountPerTtti: oneWallet.totalPayAmount,
+        minimumPayAmount: minimum.payAmount,
+        minimumConversionCost: minimum.conversionCost,
+        minimumTotalPayAmount: minimum.totalPayAmount,
+        walletMinimumPayAmount: minimumWallet.payAmount,
+        walletMinimumTotalPayAmount: minimumWallet.totalPayAmount,
+      };
+    }),
+  };
+}
+
+/** TTTI-T to receive for a total payment: the largest q whose total payment does not exceed it. */
+function mockMintAmountForPayment(args: PaymentToMintArgs): Outcome<"getMintAmountForPayment"> {
+  const probe = mintPlan(args.token, MINT_MIN_TTTI, args.choice, args.targetPoolId);
+  if (probe.__kind__ === "err" && probe.err.__kind__ === "rateUnavailable") return probe;
+  const m = mockLockedShareE6();
+  let low = 0n;
+  let high =
+    (args.payAmount * MOCK_PAY_USD_E8[args.token] * 99n) /
+      (10n ** BigInt(PAY_TOKENS[args.token].decimals) * MOCK_M_SCALE) +
+    1n;
+  while (low < high) {
+    const middle = (low + high + 1n) / 2n;
+    if (mintPayment(args.token, middle, args.choice, m).totalPayAmount <= args.payAmount) low = middle;
+    else high = middle - 1n;
+  }
+  const plan = mintPlan(args.token, low < MINT_MIN_TTTI ? MINT_MIN_TTTI : low, args.choice, args.targetPoolId);
+  if (plan.__kind__ === "err") return plan;
+  if (low < MINT_MIN_TTTI) {
+    return mintFail({
+      __kind__: "belowMinimum",
+      belowMinimum: { granularityTtti: 1n, minimumTtti: MINT_MIN_TTTI, requestedTtti: low },
+    });
+  }
+  const { ok } = plan;
+  return {
+    __kind__: "ok",
+    ok: {
+      rateUsdE8: ok.rateUsdE8,
+      token: ok.token,
+      choice: ok.choice,
+      mShareE6: ok.mShareE6,
+      payAmountGiven: args.payAmount,
+      payUsdE8: ok.payUsdE8,
+      totalPayAmount: ok.totalPayAmount,
+      conversionCost: ok.reserve.conversionCost,
+      payAmount: ok.payAmount,
+      rateValidUntil: ok.rateValidUntil,
+      tttiAmount: ok.tttiAmount,
+    },
+  };
+}
+
+/** Payment for a given TTTI-T quantity; same figures as the liquidity mint quote. */
+function mockPayAmountForTtti(args: TttiToPayArgs): Outcome<"getPayAmountForTtti"> {
+  const plan = mintPlan(args.token, args.tttiAmount, args.choice, args.targetPoolId);
+  if (plan.__kind__ === "err") return plan;
+  const { ok } = plan;
+  return {
+    __kind__: "ok",
+    ok: {
+      rateUsdE8: ok.rateUsdE8,
+      token: ok.token,
+      choice: ok.choice,
+      mShareE6: ok.mShareE6,
+      payUsdE8: ok.payUsdE8,
+      totalPayAmount: ok.totalPayAmount,
+      conversionCost: ok.reserve.conversionCost,
+      payAmount: ok.payAmount,
+      rateValidUntil: ok.rateValidUntil,
+      tttiAmount: ok.tttiAmount,
+    },
+  };
 }
 
 /** A step of the isolated mint that the simulation can refuse. */
@@ -7168,16 +7947,15 @@ type IsolatedFailure = { step: MintStep; cause: string; withdrawal: "done" | "pe
 const ISOLATED_FAILURES = new Map<string, IsolatedFailure>([
   ["swap", { step: "swap", cause: "Swap refused by the pool.", withdrawal: "done" }],
   ["deposit", { step: "deposit", cause: "Deposit refused by the pool.", withdrawal: "done" }],
-  ["guarantee", { step: "guarantee", cause: "Insufficient balance for the guarantee.", withdrawal: "done" }],
+  ["guarantee", { step: "guarantee", cause: "Insufficient balance for the reserve part.", withdrawal: "done" }],
   ["refunding", { step: "deposit", cause: "Deposit refused by the pool.", withdrawal: "pending" }],
   ["refundfailed", { step: "deposit", cause: "Deposit refused by the pool.", withdrawal: "failed" }],
 ]);
 
 class MintStepRefused extends Error {}
 
-/** Everything a failed isolated mint must leave untouched, plus the payer's internal balance. */
+/** Everything a failed isolated mint must leave untouched (including the common reserve), plus the payer's internal balance. */
 function mintSnapshot(token: PayToken, pool: PoolView) {
-  const mass = massOf(token);
   return {
     totalSupply: mockTotalSupply(),
     mintableRemaining: mintableRemaining(),
@@ -7186,10 +7964,9 @@ function mintSnapshot(token: PayToken, pool: PoolView) {
     reserve1: pool.reserve1,
     totalShares: pool.totalShares,
     positions: mockPositions.length,
-    guarantees: mockGuarantees.length,
     setAsides: mockCreatorSetAsides.length,
-    massTtti: mass?.totalTtti ?? 0n,
-    massGuarantee: mass?.totalGuarantee ?? 0n,
+    reserve: PAY_TOKEN_ORDER.map((t) => mockGuaranteeAccountBalances()[t]).join("/"),
+    circulation: mockCirculation(),
     available: dexBalanceOf(CALLER, DEX_OF_PAY[token]).available,
   };
 }
@@ -7263,12 +8040,11 @@ function assertIsolatedMintFailure(
     broken("the pool reserves or positions moved");
   }
   if (
-    after.massTtti !== before.massTtti ||
-    after.massGuarantee !== before.massGuarantee ||
-    after.guarantees !== before.guarantees ||
+    after.reserve !== before.reserve ||
+    after.circulation !== before.circulation ||
     after.setAsides !== before.setAsides
   ) {
-    broken("the mass or the guarantee changed");
+    broken("the common reserve or the circulation changed");
   }
   if (after.available !== before.available + payAmount) {
     broken("the payment is not in the payer's internal balance");
@@ -7283,7 +8059,7 @@ function mockFailedIsolatedMint(
   failure: IsolatedFailure,
   now: bigint,
 ): Outcome<"mintLiquidity"> {
-  const pool = mintPool(args.token);
+  const pool = mockPools.find((p) => p.id === quote.poolId) ?? mintPool(args.token);
   const dexToken = DEX_OF_PAY[args.token];
   const before = mintSnapshot(args.token, pool);
   // The payment is credited first to the payer's internal balance (withdrawable).
@@ -7325,6 +8101,11 @@ function mockFailedIsolatedMint(
     payAmount: quote.payAmount,
     tttiAmount: quote.tttiAmount,
     payer: CALLER,
+    choice: quote.choice,
+    mShareE6: quote.mShareE6,
+    lockedTokenAmount: quote.lockedTokenAmount,
+    lockedTttiAmount: quote.lockedTttiAmount,
+    handTttiAmount: quote.handTttiAmount,
     poolId: pool.id,
   });
   return mintFail(err);
@@ -7353,34 +8134,34 @@ function mockMintLiquidity(args: MintArgs): Outcome<"mintLiquidity"> {
   if (args.deadline < now) {
     return mintFail({ __kind__: "deadlineExpired", deadlineExpired: { now, deadline: args.deadline } });
   }
-  const plan = mintPlan(args.token, parsed.ok);
+  const plan = mintPlan(args.token, parsed.ok, args.choice, args.targetPoolId);
   if (plan.__kind__ === "err") return plan;
   const quote = plan.ok;
   const scenario = mintScenario();
   if (scenario === "balance") {
     return mintFail({
       __kind__: "insufficientBalance",
-      insufficientBalance: { token: args.token, balance: 0n, required: quote.payAmount + 2n * quote.ledgerFee },
+      insufficientBalance: { token: args.token, balance: 0n, required: quote.totalPayAmount + 2n * quote.ledgerFee },
     });
   }
   if (scenario === "allowance") {
     return mintFail({
       __kind__: "insufficientAllowance",
-      insufficientAllowance: { token: args.token, required: quote.payAmount + quote.ledgerFee, allowance: 0n },
+      insufficientAllowance: { token: args.token, required: quote.totalPayAmount + quote.ledgerFee, allowance: 0n },
     });
   }
   if (scenario === "slippage") {
     return mintFail({ __kind__: "slippageExceeded", slippageExceeded: { toleranceBps: slippageBps } });
   }
-  if (args.maxPayAmount < quote.payAmount) {
+  if (args.maxPayAmount < quote.totalPayAmount) {
     return mintFail({
       __kind__: "maxPayExceeded",
-      maxPayExceeded: { maxPayAmount: args.maxPayAmount, payAmount: quote.payAmount },
+      maxPayExceeded: { maxPayAmount: args.maxPayAmount, payAmount: quote.totalPayAmount },
     });
   }
   const isolatedFailure = ISOLATED_FAILURES.get(scenario);
   if (isolatedFailure) return mockFailedIsolatedMint(scenario, args, quote, isolatedFailure, now);
-  const pool = mintPool(args.token);
+  const pool = mockPools.find((p) => p.id === quote.poolId) ?? mintPool(args.token);
   if (pool.token0.isTttiT) {
     pool.reserve0 += quote.positionTttiAmount;
     pool.reserve1 += quote.positionTokenAmount;
@@ -7418,29 +8199,37 @@ function mockMintLiquidity(args: MintArgs): Outcome<"mintLiquidity"> {
     payAmount: quote.payAmount,
     tttiAmount: quote.tttiAmount,
     payer: CALLER,
+    choice: quote.choice,
+    mShareE6: quote.mShareE6,
+    lockedTokenAmount: quote.lockedTokenAmount,
+    lockedTttiAmount: quote.lockedTttiAmount,
+    handTttiAmount: quote.handTttiAmount,
     poolId: pool.id,
   });
-  mockGuarantees.push({
-    token: args.token,
-    owner: CALLER,
-    createdAt: now,
-    mintId,
-    amount: quote.guaranteeAmount,
-  });
+  // No personal guarantee record is written: the reserve part goes straight to the common reserve.
   mockCreatorSetAsides.push({ token: args.token, mintId, amount: quote.creatorAmount });
-  mockGuaranteeCredit(args.token, quote.guaranteeAmount);
+  mockGuaranteeCredit(quote.reserve.reserveToken, quote.reserve.reserveAmount);
   return {
     __kind__: "ok",
     ok: {
       ...(quote.zap ? { zap: quote.zap } : {}),
       rateUsdE8: quote.rateUsdE8,
       token: args.token,
+      choice: quote.choice,
+      mShareE6: quote.mShareE6,
+      lockedTttiAmount: quote.lockedTttiAmount,
+      lockedTokenAmount: quote.lockedTokenAmount,
+      handTttiAmount: quote.handTttiAmount,
       shares: quote.shares,
       owner: CALLER,
       createdAt: now,
       mintId,
       paymentBlock,
       positionId,
+      reserveToken: quote.reserve.reserveToken,
+      reserveAmount: quote.reserve.reserveAmount,
+      conversionCost: quote.reserve.conversionCost,
+      totalPaid: quote.totalPayAmount,
       payAmount: quote.payAmount,
       guaranteeAmount: quote.guaranteeAmount,
       priceAfter: quote.priceAfter,
@@ -7454,29 +8243,26 @@ function mockMintLiquidity(args: MintArgs): Outcome<"mintLiquidity"> {
   };
 }
 
-// --- PTM-2: personal guarantee and redemption (simulated) ------------------
+// --- PTM-2 / PTM-11: common reserve and redemption by any holder (simulated) ---
 
 const mockRedemptions: Array<Redemption> = [];
-const mockRedemptionFees: Array<RedemptionFee> = [];
 let nextRedemptionId = 1n;
 
-/** Redeemed part of the caller's mass, per token (the masses themselves come from the simulated mints). */
-interface RedeemedState {
-  ttti: bigint;
-  guarantee: bigint;
-  excess: bigint;
-  withdrawn: bigint;
-}
-const mockRedeemed: Record<PayToken, RedeemedState> = {
-  [PayToken.icp]: { ttti: 0n, guarantee: 0n, excess: 0n, withdrawn: 0n },
-  [PayToken.ckbtc]: { ttti: 0n, guarantee: 0n, excess: 0n, withdrawn: 0n },
-  [PayToken.ckusdc]: { ttti: 0n, guarantee: 0n, excess: 0n, withdrawn: 0n },
-  [PayToken.ckusdt]: { ttti: 0n, guarantee: 0n, excess: 0n, withdrawn: 0n },
-};
+/** TTTI-T held by other holders before the mock starts: 0.2 TTTI-T, part of the circulation. */
+const OTHER_MASS_TTTI = 20_000_000n;
 
-/** Mass of other minters counted in the public unclaimed total (simulated). */
-const OTHER_MASS_COUNT = 3n;
-const OTHER_MASS_TTTI = 20_000_000n; // 0.2 TTTI-T, in ICP
+/**
+ * Mock-only simulation switch: `?reserve=` in the page URL.
+ * short: the reserve holds 70 % of 10 000 USD x circulation (the redemption pays the reserve share).
+ */
+function reserveScenario(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return new URLSearchParams(window.location.search).get("reserve") ?? "";
+  } catch {
+    return "";
+  }
+}
 
 /** Mock-only simulation switch: `?guarantee=ended|rate|balance|allowance|slippage` in the page URL. */
 function guaranteeScenario(): string {
@@ -7494,17 +8280,19 @@ const guaranteeRate = (token: PayToken): bigint | undefined =>
   dexRatesValid() && guaranteeScenario() !== "rate" ? MOCK_PAY_USD_E8[token] : undefined;
 
 /**
- * PTM-9b: the dedicated internal guarantee account of each token, inside the common custody.
- * The mint and the auction settlement credit it; a redemption (or an excess withdrawal) is the only debit.
- * It starts at the guarantee of the other minters' masses (ICP).
+ * The dedicated internal guarantee account of each token, inside the common custody.
+ * The common reserve is held in the token paid: ICP, ckBTC, ckUSDC or ckUSDT, never converted.
+ * Every mint and auction settlement credits the reserve; a redemption is the only debit.
+ * It starts at 10 000 USD per TTTI-T of the 0.2 TTTI-T already in circulation (ckUSDC).
  */
 let mockGuaranteeAccountState: Record<PayToken, bigint> | undefined;
 const mockGuaranteeAccountBalances = (): Record<PayToken, bigint> => {
   if (!mockGuaranteeAccountState) {
+    const initial = reserveUsdInToken(PayToken.ckusdc, OTHER_MASS_TTTI);
     mockGuaranteeAccountState = {
-      [PayToken.icp]: mockOtherGuarantee(),
+      [PayToken.icp]: 0n,
       [PayToken.ckbtc]: 0n,
-      [PayToken.ckusdc]: 0n,
+      [PayToken.ckusdc]: reserveScenario() === "short" ? (initial * 70n) / 100n : initial,
       [PayToken.ckusdt]: 0n,
     };
   }
@@ -7518,141 +8306,119 @@ const mockGuaranteeDebit = (token: PayToken, amount: bigint) => {
   balances[token] = balances[token] > amount ? balances[token] - amount : 0n;
 };
 
-/** Guarantee of the other minters' masses, in ICP. */
-const mockOtherGuarantee = (): bigint =>
-  (OTHER_MASS_TTTI * 10_000n * 10n ** BigInt(PAY_TOKENS[PayToken.icp].decimals)) /
-  MOCK_PAY_USD_E8[PayToken.icp];
+/** TTTI-T delivered to auction winners at settlement (all principals): they join the circulation. */
+let mockAuctionCirculation = 0n;
+/** TTTI-T returned to the contract by redemptions: out of circulation, never burned. */
+let mockReturnedTtti = 0n;
+/** TTTI-T the caller returned by redemptions. */
+let mockCallerReturnedTtti = 0n;
 
-/** Masses created by settled auction winners (all principals), per payment token. */
-const mockAuctionMass: Record<PayToken, { ttti: bigint; guarantee: bigint; count: bigint }> = {
-  [PayToken.icp]: { ttti: 0n, guarantee: 0n, count: 0n },
-  [PayToken.ckbtc]: { ttti: 0n, guarantee: 0n, count: 0n },
-  [PayToken.ckusdc]: { ttti: 0n, guarantee: 0n, count: 0n },
-  [PayToken.ckusdt]: { ttti: 0n, guarantee: 0n, count: 0n },
+/** TTTI-T outside the contract: earlier holders, completed mints and settled auction winners, minus the returned ones. */
+function mockCirculation(): bigint {
+  return OTHER_MASS_TTTI + mintSoldTtti() + mockAuctionCirculation - mockReturnedTtti;
+}
+
+/** A settled winner's reserve part credits the common reserve; the winner's TTTI-T join the circulation. */
+function mockAuctionReserveCredit(reserveToken: PayToken, reserveAmount: bigint, tttiE8s: bigint) {
+  mockAuctionCirculation += tttiE8s;
+  mockGuaranteeCredit(reserveToken, reserveAmount);
+}
+
+const RESERVE_TOKENS: ReadonlyArray<PayToken> = [PayToken.icp, PayToken.ckbtc, PayToken.ckusdc, PayToken.ckusdt];
+
+const reserveValueUsdE8 = (token: PayToken, balance: bigint): bigint => {
+  const rate = guaranteeRate(token);
+  return rate === undefined ? 0n : (balance * rate) / 10n ** BigInt(PAY_TOKENS[token].decimals);
 };
 
-/** A settled winner's guarantee joins the common mass and credits the guarantee account. */
-function mockAuctionGuaranteeCredit(token: PayToken, tttiE8s: bigint, guarantee: bigint) {
-  const mass = mockAuctionMass[token];
-  mass.ttti += tttiE8s;
-  mass.guarantee += guarantee;
-  mass.count += 1n;
-  mockGuaranteeCredit(token, guarantee);
+/** Public: the common reserve against 10 000 USD x the TTTI-T in circulation outside the contract. */
+function mockReserveView(): ReserveView {
+  const balances = mockGuaranteeAccountBalances();
+  const perToken = RESERVE_TOKENS.map((token) => ({
+    token,
+    balance: balances[token],
+    rateUsdE8: guaranteeRate(token),
+    valueUsdE8: reserveValueUsdE8(token, balances[token]),
+  }));
+  const reserveUsdE8 = perToken.reduce((sum, line) => sum + line.valueUsdE8, 0n);
+  const circulationOutside = mockCirculation();
+  const requiredUsdE8 = circulationOutside * RESERVE_USD_PER_TTTI_E8;
+  return {
+    perToken,
+    reserveUsdE8,
+    circulationOutside,
+    reservePerTtti: circulationOutside > 0n ? (reserveUsdE8 * TTTI_DIVISOR) / circulationOutside : undefined,
+    requiredUsdE8,
+    invariantHolds: reserveUsdE8 >= requiredUsdE8,
+    shortfallUsdE8: requiredUsdE8 > reserveUsdE8 ? requiredUsdE8 - reserveUsdE8 : 0n,
+    legacyPending: [],
+  };
 }
 
-/** Sum of every guarantee mass (remaining guarantee + excess) of one token, all owners. */
-function mockGuaranteeMassTotal(token: PayToken): bigint {
-  const own = massOf(token)?.guaranteeValue ?? 0n;
-  const other = token === PayToken.icp ? mockOtherGuarantee() : 0n;
-  return own + other + mockAuctionMass[token].guarantee;
-}
-
-/** Public: per token, the sum of the masses against the balance of the dedicated account. */
+/** Public: balance of the dedicated account of each token (the common reserve in ICP, ckBTC, ckUSDC and ckUSDT). */
 function mockGuaranteeAccounts(): Array<GuaranteeAccountView> {
   const balances = mockGuaranteeAccountBalances();
-  const entries: Array<GuaranteeAccountView> = [
-    // TTTI-T carries no guarantee mass: its guarantee account stays empty.
-    { token: DexToken.tttiT, massTotal: 0n, accountBalance: 0n, equal: true },
-  ];
+  const entries: Array<GuaranteeAccountView> = [{ token: DexToken.tttiT, accountBalance: 0n }];
   for (const token of PAY_TOKEN_ORDER) {
-    const massTotal = mockGuaranteeMassTotal(token);
-    entries.push({
-      token: DEX_OF_PAY[token],
-      massTotal,
-      accountBalance: balances[token],
-      equal: massTotal === balances[token],
-    });
+    entries.push({ token: DEX_OF_PAY[token], accountBalance: balances[token] });
   }
   return entries;
 }
 
-function massOf(token: PayToken): GuaranteeMassView | undefined {
-  const mints = mockLiquidityMints.filter(
-    (m) => m.status === MintStatus.completed && m.token === token && m.owner.toText() === CALLER.toText(),
-  );
-  if (mints.length === 0) return undefined;
-  const totalTtti = mints.reduce((sum, m) => sum + m.tttiAmount, 0n);
-  const totalGuarantee = mockGuarantees
-    .filter((g) => g.token === token && g.owner.toText() === CALLER.toText())
-    .reduce((sum, g) => sum + g.amount, 0n);
-  const done = mockRedeemed[token];
-  const excess = done.excess - done.withdrawn;
-  const remainingGuarantee = totalGuarantee - done.guarantee;
-  const guaranteeValue = remainingGuarantee + excess;
-  const rate = guaranteeRate(token);
-  const ended = guaranteeMintEnded();
-  return {
-    token,
-    totalTtti,
-    totalGuarantee,
-    remainingTtti: totalTtti - done.ttti,
-    remainingGuarantee,
-    excess,
-    withdrawableExcess: ended ? excess : 0n,
-    guaranteeValue,
-    rateUsdE8: rate,
-    guaranteeValueUsdE8: rate === undefined ? undefined : (guaranteeValue * rate) / 10n ** BigInt(PAY_TOKENS[token].decimals),
-    mintEnded: ended,
-  };
-}
-
-function mockGuaranteeMasses(): Array<GuaranteeMassView> {
-  return PAY_TOKEN_ORDER.map(massOf).filter((m): m is GuaranteeMassView => m !== undefined);
-}
-
 type QuoteResult = { __kind__: "ok"; ok: RedeemQuote } | { __kind__: "err"; err: GuaranteeError };
-type RedeemResult = { __kind__: "ok"; ok: Redemption } | { __kind__: "err"; err: GuaranteeError };
+type RedeemAllResult = { __kind__: "ok"; ok: Array<Redemption> } | { __kind__: "err"; err: GuaranteeError };
 const quoteFail = (err: GuaranteeError): QuoteResult => ({ __kind__: "err", err });
-const redeemFail = (err: GuaranteeError): RedeemResult => ({ __kind__: "err", err });
+const redeemFail = (err: GuaranteeError): { __kind__: "err"; err: GuaranteeError } => ({ __kind__: "err", err });
 
-function mockQuoteGuarantee(token: PayToken, tttiAmount: bigint): QuoteResult {
-  const mass = massOf(token);
-  if (!mass) return quoteFail({ __kind__: "massNotFound", massNotFound: null });
-  if (mass.remainingTtti === 0n) return quoteFail({ __kind__: "nothingRemaining", nothingRemaining: null });
+/**
+ * Any holder can return TTTI-T and receive the lower of 10 000 USD x amount (parity) and
+ * (reserve USD / circulation outside the contract) x amount (reserve share),
+ * split over ICP, ckBTC, ckUSDC and ckUSDT in proportion to the reserve composition.
+ */
+function mockQuoteGuarantee(tttiAmount: bigint): QuoteResult {
   if (tttiAmount === 0n) return quoteFail({ __kind__: "amountTooSmall", amountTooSmall: null });
-  if (tttiAmount > mass.remainingTtti) {
+  const view = mockReserveView();
+  if (tttiAmount > view.circulationOutside) {
     return quoteFail({
-      __kind__: "amountExceedsMass",
-      amountExceedsMass: { requested: tttiAmount, remaining: mass.remainingTtti },
+      __kind__: "amountExceedsCirculation",
+      amountExceedsCirculation: { requested: tttiAmount, circulation: view.circulationOutside },
     });
   }
-  const decimals = 10n ** BigInt(PAY_TOKENS[token].decimals);
-  const deposited = (mass.remainingGuarantee * tttiAmount) / mass.remainingTtti;
-  const phase = mass.mintEnded ? RedeemPhase.afterMint : RedeemPhase.duringMint;
-  let returned = deposited;
-  let rule = RedeemRule.proRata;
-  let excessKept = 0n;
-  let dayRateQuantity: bigint | undefined;
-  const rate = mass.rateUsdE8;
-  if (!mass.mintEnded) {
-    if (rate === undefined) return quoteFail({ __kind__: "rateUnavailable", rateUnavailable: token });
-    dayRateQuantity = (tttiAmount * 10_000n * decimals) / rate;
-    if (dayRateQuantity < deposited) {
-      returned = dayRateQuantity;
-      rule = RedeemRule.dayRate;
-      excessKept = deposited - dayRateQuantity;
-    } else {
-      rule = RedeemRule.depositedGuarantee;
+  const held = view.perToken.filter((line) => line.balance > 0n);
+  const unrated = held.find((line) => line.rateUsdE8 === undefined);
+  if (unrated) return quoteFail({ __kind__: "rateUnavailable", rateUnavailable: unrated.token });
+  if (held.length === 0 || view.reserveUsdE8 === 0n) return quoteFail({ __kind__: "reserveEmpty", reserveEmpty: null });
+  const parityUsdE8 = tttiAmount * RESERVE_USD_PER_TTTI_E8;
+  const proportionalUsdE8 = (view.reserveUsdE8 * tttiAmount) / view.circulationOutside;
+  const rule = parityUsdE8 <= proportionalUsdE8 ? ReserveRedeemRule.parity : ReserveRedeemRule.reserveShare;
+  const payoutUsdE8 = rule === ReserveRedeemRule.parity ? parityUsdE8 : proportionalUsdE8;
+  const payouts: Array<ReservePayoutLine> = [];
+  let allocated = 0n;
+  held.forEach((line, index) => {
+    const rate = line.rateUsdE8 ?? 0n;
+    const valueUsdE8 =
+      index === held.length - 1 ? payoutUsdE8 - allocated : (payoutUsdE8 * line.valueUsdE8) / view.reserveUsdE8;
+    allocated += valueUsdE8;
+    const amount = (valueUsdE8 * 10n ** BigInt(PAY_TOKENS[line.token].decimals)) / rate;
+    if (amount > 0n) {
+      payouts.push({ token: line.token, amount, ledgerFee: PAY_TOKENS[line.token].fee, valueUsdE8, rateUsdE8: rate });
     }
+  });
+  if (payouts.length === 0 || payouts.some((line) => line.amount <= line.ledgerFee)) {
+    return quoteFail({ __kind__: "amountTooSmall", amountTooSmall: null });
   }
-  const redemptionFee = returned / 100n;
-  const thirdPartyFee = PAY_TOKENS[token].fee;
-  if (returned <= redemptionFee + thirdPartyFee) return quoteFail({ __kind__: "amountTooSmall", amountTooSmall: null });
   return {
     __kind__: "ok",
     ok: {
-      token,
       tttiAmount,
-      phase,
       rule,
-      depositedGuarantee: deposited,
-      dayRateQuantity,
-      rateUsdE8: mass.mintEnded ? undefined : rate,
-      returnedAmount: returned,
-      excessKept,
-      redemptionFee,
-      thirdPartyFee,
-      netAmount: returned - redemptionFee - thirdPartyFee,
+      parityUsdE8,
+      proportionalUsdE8,
+      payoutUsdE8,
+      reserveUsdE8: view.reserveUsdE8,
+      reservePerTtti: view.reservePerTtti,
+      circulationOutside: view.circulationOutside,
+      payouts,
       tttiTransferFee: state.fee,
       tttiAllowanceRequired: tttiAmount + state.fee,
     },
@@ -7685,15 +8451,27 @@ function redemptionPayout(
   };
 }
 
-function mockRedeemGuarantee(token: PayToken, tttiAmount: bigint, expectedNetAmount: bigint): RedeemResult {
-  const quoted = mockQuoteGuarantee(token, tttiAmount);
+/** TTTI-T the caller holds: the wallet balance plus what the caller minted, minus what was returned. */
+function mockCallerTtti(): bigint {
+  const minted = mockLiquidityMints
+    .filter((m) => m.status === MintStatus.completed && m.owner.toText() === CALLER.toText())
+    .reduce((sum, m) => sum + m.tttiAmount, 0n);
+  return 250_000n + minted + mockHeldBtcDeliveredTtti - mockCallerReturnedTtti;
+}
+
+function mockRedeemGuarantee(tttiAmount: bigint, expectedPayoutUsdE8: bigint): RedeemAllResult {
+  if (!ackAccepted()) {
+    return redeemFail({ __kind__: "acknowledgementRequired", acknowledgementRequired: null });
+  }
+  const quoted = mockQuoteGuarantee(tttiAmount);
   if (quoted.__kind__ === "err") return quoted;
   const quote = quoted.ok;
   const scenario = guaranteeScenario();
-  if (scenario === "balance") {
+  const balance = mockCallerTtti();
+  if (scenario === "balance" || balance < quote.tttiAllowanceRequired) {
     return redeemFail({
       __kind__: "tttiBalanceInsufficient",
-      tttiBalanceInsufficient: { balance: 0n, required: quote.tttiAllowanceRequired },
+      tttiBalanceInsufficient: { balance: scenario === "balance" ? 0n : balance, required: quote.tttiAllowanceRequired },
     });
   }
   if (scenario === "allowance") {
@@ -7702,108 +8480,43 @@ function mockRedeemGuarantee(token: PayToken, tttiAmount: bigint, expectedNetAmo
       allowanceInsufficient: { allowance: 0n, required: quote.tttiAllowanceRequired },
     });
   }
-  if (scenario === "slippage" || quote.netAmount < expectedNetAmount) {
+  if (scenario === "slippage" || quote.payoutUsdE8 < expectedPayoutUsdE8) {
     return redeemFail({
       __kind__: "slippage",
-      slippage: { netAmount: quote.netAmount, expectedNetAmount },
+      slippage: { payoutUsdE8: quote.payoutUsdE8, expectedPayoutUsdE8 },
     });
   }
-  const done = mockRedeemed[token];
-  done.ttti += quote.tttiAmount;
-  done.guarantee += quote.depositedGuarantee;
-  done.excess += quote.excessKept;
-  // The redemption is the only debit of the guarantee account: what leaves the masses.
-  mockGuaranteeDebit(token, quote.returnedAmount);
-  const id = nextRedemptionId++;
+  // The payouts debit the guarantee accounts and the TTTI-T go to the contract-held account: nothing is burned.
+  for (const line of quote.payouts) mockGuaranteeDebit(line.token, line.amount);
+  mockReturnedTtti += quote.tttiAmount;
+  mockCallerReturnedTtti += quote.tttiAmount;
   const now = nowNs();
   const pullBlock = nextDexBlock++;
-  const payoutBlock = nextDexBlock++;
-  const redemption: Redemption = {
-    id,
-    owner: CALLER,
-    account: { owner: CALLER },
-    kind: RedemptionKind.redeem,
-    token,
-    phase: quote.phase,
-    rule: quote.rule,
-    tttiAmount: quote.tttiAmount,
-    tttiPullBlock: pullBlock,
-    depositedGuarantee: quote.depositedGuarantee,
-    rateUsdE8: quote.rateUsdE8,
-    returnedAmount: quote.returnedAmount,
-    excessKept: quote.excessKept,
-    redemptionFee: quote.redemptionFee,
-    thirdPartyFee: quote.thirdPartyFee,
-    netAmount: quote.netAmount,
-    createdAt: now,
-    payout: redemptionPayout(id, token, quote.netAmount, quote.thirdPartyFee, { __kind__: "succeeded", succeeded: payoutBlock }, now, CALLER),
-    status: { __kind__: "completed", completed: payoutBlock },
-  };
-  mockRedemptions.push(redemption);
-  mockRedemptionFees.push({ redemptionId: id, token, amount: quote.redemptionFee, createdAt: now });
-  return { __kind__: "ok", ok: redemption };
-}
-
-function mockWithdrawExcess(token: PayToken): RedeemResult {
-  const mass = massOf(token);
-  if (!mass) return redeemFail({ __kind__: "massNotFound", massNotFound: null });
-  if (!mass.mintEnded) return redeemFail({ __kind__: "mintNotEnded", mintNotEnded: null });
-  if (mass.withdrawableExcess === 0n) return redeemFail({ __kind__: "noExcess", noExcess: null });
-  const thirdPartyFee = PAY_TOKENS[token].fee;
-  const amount = mass.withdrawableExcess;
-  if (amount <= thirdPartyFee) return redeemFail({ __kind__: "amountTooSmall", amountTooSmall: null });
-  mockRedeemed[token].withdrawn += amount;
-  mockGuaranteeDebit(token, amount);
-  const id = nextRedemptionId++;
-  const now = nowNs();
-  const payoutBlock = nextDexBlock++;
-  const netAmount = amount - thirdPartyFee;
-  const redemption: Redemption = {
-    id,
-    owner: CALLER,
-    account: { owner: CALLER },
-    kind: RedemptionKind.excessWithdrawal,
-    token,
-    phase: RedeemPhase.afterMint,
-    rule: RedeemRule.proRata,
-    tttiAmount: 0n,
-    depositedGuarantee: 0n,
-    returnedAmount: amount,
-    excessKept: 0n,
-    redemptionFee: 0n,
-    thirdPartyFee,
-    netAmount,
-    createdAt: now,
-    payout: redemptionPayout(id, token, netAmount, thirdPartyFee, { __kind__: "succeeded", succeeded: payoutBlock }, now, CALLER),
-    status: { __kind__: "completed", completed: payoutBlock },
-  };
-  mockRedemptions.push(redemption);
-  return { __kind__: "ok", ok: redemption };
-}
-
-function mockUnclaimedTotal(): UnclaimedMassTotal {
-  const own = mockGuaranteeMasses();
-  const otherGuarantee = mockOtherGuarantee();
-  const perToken: Array<TokenGuaranteeTotal> = PAY_TOKEN_ORDER.map((token) => {
-    const mass = own.find((m) => m.token === token);
-    const other = token === PayToken.icp;
+  const redemptions = quote.payouts.map((line, index): Redemption => {
+    const id = nextRedemptionId++;
+    const payoutBlock = nextDexBlock++;
     return {
-      token,
-      remainingTtti: (mass?.remainingTtti ?? 0n) + (other ? OTHER_MASS_TTTI : 0n) + mockAuctionMass[token].ttti,
-      remainingGuarantee:
-        (mass?.remainingGuarantee ?? 0n) + (other ? otherGuarantee : 0n) + mockAuctionMass[token].guarantee,
-      excess: mass?.excess ?? 0n,
+      id,
+      owner: CALLER,
+      account: { owner: CALLER },
+      token: line.token,
+      tttiAmount: index === 0 ? quote.tttiAmount : 0n,
+      tttiPullBlock: pullBlock,
+      rateUsdE8: line.rateUsdE8,
+      thirdPartyFee: line.ledgerFee,
+      netAmount: line.amount,
+      createdAt: now,
+      payout: redemptionPayout(id, line.token, line.amount, line.ledgerFee, { __kind__: "succeeded", succeeded: payoutBlock }, now, CALLER),
+      status: { __kind__: "completed", completed: payoutBlock },
     };
-  }).filter((entry) => entry.remainingTtti > 0n || entry.excess > 0n);
-  return {
-    massCount:
-      OTHER_MASS_COUNT +
-      BigInt(own.filter((m) => m.remainingTtti > 0n).length) +
-      PAY_TOKEN_ORDER.reduce((sum, token) => sum + mockAuctionMass[token].count, 0n),
-    remainingTtti: perToken.reduce((sum, entry) => sum + entry.remainingTtti, 0n),
-    mintEnded: guaranteeMintEnded(),
-    perToken,
-  };
+  });
+  mockRedemptions.push(...redemptions);
+  return { __kind__: "ok", ok: redemptions };
+}
+
+/** Admin: no legacy balance exists any more, the reserve is never converted. */
+function mockConvertLegacyGuarantees(): { __kind__: "ok"; ok: Array<LegacyConversion> } | { __kind__: "err"; err: GuaranteeError } {
+  return { __kind__: "err", err: { __kind__: "nothingToConvert", nothingToConvert: null } };
 }
 
 function setRedemptionStatus(id: bigint, status: Redemption["status"], outcome: AttemptOutcome) {
@@ -7847,23 +8560,15 @@ function redemptionReviewRow(r: Redemption): TransferReview {
   const createdAt = nowNs() - 25n * HOUR_NS;
   const token = PayToken.icp;
   const returned = ICP_DIVISOR / 2n;
-  const redemptionFee = returned / 100n;
   const thirdPartyFee = ICP_LEDGER_FEE;
-  const netAmount = returned - redemptionFee - thirdPartyFee;
+  const netAmount = returned - thirdPartyFee;
   const review: Redemption = {
     id,
     owner: HOLDER_3,
     account: { owner: HOLDER_3 },
-    kind: RedemptionKind.redeem,
     token,
-    phase: RedeemPhase.afterMint,
-    rule: RedeemRule.proRata,
     tttiAmount: TTTI_DIVISOR / 1000n,
     tttiPullBlock: 1_100n + id,
-    depositedGuarantee: returned,
-    returnedAmount: returned,
-    excessKept: 0n,
-    redemptionFee,
     thirdPartyFee,
     netAmount,
     createdAt,
@@ -7871,7 +8576,6 @@ function redemptionReviewRow(r: Redemption): TransferReview {
     status: { __kind__: "needsReview", needsReview: null },
   };
   mockRedemptions.push(review);
-  mockRedemptionFees.push({ redemptionId: id, token, amount: redemptionFee, createdAt });
   mockReviews.push(redemptionReviewRow(review));
 }
 
@@ -8302,6 +9006,45 @@ for (const pool of mockPools) {
   pot.pending1 += pool.reserve1 / 2_000n;
 }
 
+
+// --- Mint pool choice: a second TTTI-T/ICP pool with another fee tier ---------
+
+const mockStartedMs = Date.now();
+
+/**
+ * The ICP pair gets a second pool (0.05 % fee tier) with liquidity at 10 040 USD per TTTI-T, so the
+ * mint page offers a choice. The default 0.30 % ICP pool stays empty.
+ * Mock-only switches `?mint=`: nopool (no eligible pool), poolgone (the second pool leaves the list
+ * after 15 seconds, then is refused as removed), plus any pool id typed in a stale tab.
+ */
+const mintAltIcpPoolId: bigint = (() => {
+  const pool = dexCreatePool(DEX_TTTI, DEX_ICP, FeeTier.bps5, dexStartedAt);
+  const counterAmount = 4_000n * ICP_DIVISOR;
+  const priceUsdE8 = 10_040n * DEX_USD_RATE_SCALE;
+  const counterUsdE8 = (counterAmount * MOCK_PAY_USD_E8[PayToken.icp]) / ICP_DIVISOR;
+  const tttiAmount = (counterUsdE8 * DEX_TTTI_UNIT) / priceUsdE8;
+  pool.reserve0 = pool.token0.isTttiT ? tttiAmount : counterAmount;
+  pool.reserve1 = pool.token0.isTttiT ? counterAmount : tttiAmount;
+  const shares = dexIsqrt(pool.reserve0 * pool.reserve1);
+  pool.totalShares = shares;
+  const at = nowNs() - 20n * HOUR_NS;
+  mockPositions.push({
+    id: nextPositionId++,
+    poolId: pool.id,
+    owner: HOLDER_2,
+    shares,
+    createdAt: at,
+    lockStartedAt: at,
+    unlockAt: at,
+    isCreator: false,
+    relayReceivedNs: 0n,
+    feesCollected0: 0n,
+    feesCollected1: 0n,
+  });
+  dexRefreshOpening(pool);
+  return pool.id;
+})();
+
 export const mockBackend: backendInterface = {
   _initialize_access_control: async () => undefined,
   setReceivingWallet: async (token, account) => mockSetReceivingWallet(token, account),
@@ -8439,6 +9182,7 @@ export const mockBackend: backendInterface = {
   listDexSweepTransfers: async (cursor, limit) => mockPage([...mockSweepTransfers].reverse(), cursor, limit),
   getDexSweepProgress: async () => mockSweepProgress(),
   getDexIndicators: async () => mockDexIndicators(),
+  getDexBalanceBreakdown: async () => mockDexBalanceBreakdown(),
   getDexIndicatorsStatus: async () => ({ __kind__: "ok", ok: mockDexIndicatorsStatus() }),
   getMyRoutedSwaps: async (cursor, limit) =>
     mockPage(mockRoutedSwaps.filter((s) => s.owner.toText() === CALLER.toText()).reverse(), cursor, limit),
@@ -8481,6 +9225,7 @@ export const mockBackend: backendInterface = {
     const pool = mockPools.find((p) => p.id === poolId);
     return pool ? dexReference(pool) : null;
   },
+  getReferenceReadings: async () => dexReferenceReadingEntries(),
   refreshReferenceSources: async () => BigInt(dexRefreshReferenceSources()),
   getConsolidatedTttiPrice: async () => {
     dexRefreshAllOpenings();
@@ -8514,28 +9259,30 @@ export const mockBackend: backendInterface = {
   withdrawFromDex: async ({ token, amount }) => mockWithdrawFromDex(token, amount),
   getUpgradeReadiness: async () => mockUpgradeReadiness(),
   reconcileReserved: async () => mockReconcileReserved(),
-  getMyGuaranteeMasses: async () => mockGuaranteeMasses(),
-  quoteGuaranteeRedeem: async (token, tttiAmount) => mockQuoteGuarantee(token, tttiAmount),
-  redeemGuarantee: async (token, tttiAmount, expectedNetAmount) =>
+  getReserveView: async () => mockReserveView(),
+  quoteGuaranteeRedeem: async (tttiAmount) => mockQuoteGuarantee(tttiAmount),
+  redeemGuarantee: async (tttiAmount, expectedPayoutUsdE8) =>
     state.salesPaused
       ? redeemFail({ __kind__: "salesPaused", salesPaused: null })
-      : mockRedeemGuarantee(token, tttiAmount, expectedNetAmount),
-  withdrawGuaranteeExcess: async (token) => mockWithdrawExcess(token),
+      : mockRedeemGuarantee(tttiAmount, expectedPayoutUsdE8),
+  convertLegacyGuarantees: async () => mockConvertLegacyGuarantees(),
   listMyRedemptions: async () =>
     mockRedemptions.filter((r) => r.owner.toText() === CALLER.toText()).reverse(),
-  getUnclaimedMassTotal: async () => mockUnclaimedTotal(),
   getGuaranteeAccounts: async () => mockGuaranteeAccounts(),
   getAuctionView: async () => mockAuctionView(),
   getMyAuctionBids: async () =>
     mockAuctionState.bids.filter((b) => b.bidder.toText() === CALLER.toText()),
-  quoteAuctionDeposit: async (token, priceB, quantityE8s) => {
+  quoteAuctionDeposit: async (token, priceB, quantityE8s, choice) => {
     const invalid = mockAuctionCheck(priceB, quantityE8s, token);
     return invalid
       ? { __kind__: "err", err: invalid }
-      : { __kind__: "ok", ok: mockAuctionRequired(priceB, quantityE8s) };
+      : {
+          __kind__: "ok",
+          ok: mockAuctionDepositQuote(token, priceB, quantityE8s, choice, mockLockedShareE6()),
+        };
   },
-  placeAuctionBid: async (token, quantityE8s, priceB, depositAmount) =>
-    mockPlaceAuctionBid(token, quantityE8s, priceB, depositAmount),
+  placeAuctionBid: async (token, quantityE8s, priceB, depositAmount, choice) =>
+    mockPlaceAuctionBid(token, quantityE8s, priceB, depositAmount, choice),
   openAuction: async () => mockOpenAuction(),
   getClosedAuctions: async () => {
     mockAuctionSettled();
@@ -8570,20 +9317,28 @@ export const mockBackend: backendInterface = {
     return { __kind__: "ok", ok: mockSettleRecord(record) };
   },
   auctionSettleCore: async (args: SettleCoreArgs): Promise<SettleCoreResult> => {
-    const taken = mockAuctionRequired(args.priceB, args.quantityE8s);
-    const amountB = (args.priceB * args.quantityE8s) / 10n ** 8n;
+    const quote = mockAuctionDepositQuote(
+      args.token,
+      args.priceB,
+      args.quantityE8s,
+      args.choice,
+      mockLockedShareE6(),
+    );
     return {
       mintedE8s: args.mintE8s,
-      takenAmount: taken,
-      creatorShare: taken - 2n * amountB,
-      positionAmount: amountB,
-      guaranteeAmount: amountB,
+      takenAmount: quote.required,
+      creatorShare: quote.creatorAmount,
+      positionAmount: quote.choicePooledAmount,
+      handE8s: quote.handE8s,
+      mShareE6: quote.mShareE6,
+      lockedAmount: quote.lockedAmount,
+      guaranteeAmount: reserveUsdInToken(args.token, args.quantityE8s),
+      reserveToken: quote.reserveToken,
+      conversionCost: 0n,
       positionId: nextPositionId,
       shares: args.quantityE8s,
     };
   },
-  listRedemptionFees: async (offset, limit) =>
-    mockRedemptionFees.slice(Number(offset), Number(offset + limit)),
   addContact: async (input) => {
     if (hasDuplicateNickname(input.nickname)) {
       return { __kind__: "err", err: { __kind__: "duplicateNickname", duplicateNickname: null } };
@@ -8643,7 +9398,7 @@ export const mockBackend: backendInterface = {
     minConfirmations: BTC_DEFAULT_MIN_CONFIRMATIONS,
     depositMinSats: BTC_DEFAULT_DEPOSIT_MIN_SATS,
     checkFeeSats: BTC_DEFAULT_CHECK_FEE_SATS,
-    purchaseFeeBps: CK_FEE_BPS,
+    purchaseFeeBps: REPORTED_FEE_BPS,
     suggestedPollSeconds: 30n,
     infoFetchedAt: hourStartNs(),
   }),
@@ -8653,6 +9408,8 @@ export const mockBackend: backendInterface = {
   checkBtcPurchaseDeposit: async () =>
     ackAccepted() ? checkBtcResult(DepositKind.purchase) : btcAckRequired(),
   getBtcWalletAddress: async () => btcAddressResult(DepositKind.wallet),
+  convertMyHeldBtc: async (params) =>
+    ackAccepted() ? convertHeldBtcResult(params) : btcAckRequired(),
   checkBtcWalletDeposit: async () => checkBtcResult(DepositKind.wallet),
   getBtcWalletAddressFor: async (_owner) => btcAddressResult(DepositKind.wallet),
   checkBtcWalletDepositFor: async (_owner) => checkBtcResult(DepositKind.wallet),
@@ -8665,6 +9422,11 @@ export const mockBackend: backendInterface = {
   convertDeposit: async () => replacedByLiquidityMint(),
   convertDepositWith: async () => replacedByLiquidityMint(),
   quoteLiquidityMint: async (args) => mockQuoteLiquidityMint(args),
+  getMintPricePreview: async () => mockMintPricePreview(),
+  getMintPoolPreview: async (args) => mockMintPoolPreview(args),
+  listMintPools: async (token) => mockListMintPools(token),
+  getMintAmountForPayment: async (args) => mockMintAmountForPayment(args),
+  getPayAmountForTtti: async (args) => mockPayAmountForTtti(args),
   mintLiquidity: async (args) => mockMintLiquidity(args),
   liquidityMintCore: async () => {
     throw new Error("Unauthorized: reserved to the canister itself");
@@ -8696,6 +9458,31 @@ export const mockBackend: backendInterface = {
     ],
   }),
   getApiDoc: async () => MOCK_API_DOC,
+  diagnoseBtcMint: async (input) => ({
+    buyer: Principal.anonymous().toText(),
+    depositSubaccountHex: input,
+    trackingStage: "ckbtcMinted",
+    lastErrorKind: undefined,
+    lastErrorText: undefined,
+    conversionCause: undefined,
+    causePermanent: false,
+    pendingCkbtcSats: 0n,
+    subaccountBalanceSats: MOCK_BTC_DEPOSIT_SATS,
+    purchaseLockHeld: false,
+    costAttemptOpen: false,
+    mintableRemaining: 100_000_000n,
+    minimumMint: 10_000n,
+    salesPaused: false,
+    dexPaused: false,
+    validRateAvailable: true,
+    verdictCode: "readyToFinish",
+    verdictText: "The ckBTC is in the subaccount and the mint can be finished.",
+    recommendedAction: RecoveryAction.finishMint,
+  }),
+  finishBtcMint: async () => ({
+    __kind__: "alreadyDone",
+    alreadyDone: "The mint was already finished.",
+  }),
   listTransfersToReview: async () => {
     dexProcessRemovals();
     return [...mockReviews, ...custodySurplusReviews()];
@@ -8745,10 +9532,9 @@ export const mockBackend: backendInterface = {
       reserved: state.reserved,
       available,
       complete: available === 0n,
-      minPurchase: MIN_PURCHASE,
-      tokenPriceUsd: BigInt(TOKEN_PRICE_USD),
-      cyclesFeeBps: CYCLES_FEE_BPS,
-      buyerPriceUsd: BigInt(BUYER_PRICE_USD),
+      minPurchase: MOCK_MIN_PURCHASE,
+      tokenPriceUsd: MOCK_TOKEN_PRICE_USD,
+      cyclesFeeBps: REPORTED_FEE_BPS,
       salesPaused: state.salesPaused,
       priceUsdE8: price.usdE8,
       priceSource: price.source,
@@ -8770,10 +9556,9 @@ export const mockBackend: backendInterface = {
     oracleSources: [HOURLY_RATE_TEXT],
     refreshPolicy: HOURLY_RATE_TEXT,
     maxRateAgeSeconds: MAX_RATE_AGE_SECONDS,
-    tokenPriceUsd: BigInt(TOKEN_PRICE_USD),
-    cyclesFeeBps: CYCLES_FEE_BPS,
-    buyerPriceUsd: BigInt(BUYER_PRICE_USD),
-    minPurchase: MIN_PURCHASE,
+    tokenPriceUsd: MOCK_TOKEN_PRICE_USD,
+    cyclesFeeBps: REPORTED_FEE_BPS,
+    minPurchase: MOCK_MIN_PURCHASE,
     smallestUnit: 1n,
     roundingRule: "TTTI-T amounts rounded down to 1 base unit; ICP costs rounded up to 1 e8s",
     excessPaymentHandling: "Only the ICP cost of the delivered TTTI-T is collected; any excess is never pulled",

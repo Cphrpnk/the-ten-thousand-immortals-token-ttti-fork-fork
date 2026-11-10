@@ -1,6 +1,7 @@
 import Principal "mo:core/Principal";
 import Set "mo:core/Set";
 import Btc "../types/btc-deposit";
+import MintTypes "../types/liquidity-mint";
 import BtcDepositLib "../lib/btc-deposit";
 import SaleLib "../lib/presale";
 import LiquidityMintLib "../lib/liquidity-mint";
@@ -24,14 +25,32 @@ mixin (
     if (caller.isAnonymous()) {
       return #Err({ code = #anonymousCaller; message = "Please sign in to check a Bitcoin deposit" });
     };
-    if (purchasesInFlight.contains(caller)) {
-      return #Err({ code = #purchaseInProgress; message = "A purchase is already in progress for this account; please wait for it to finish" });
+    // The lock is stamped (self-releasing after 10 minutes, shared with the timer).
+    let stamp = switch (LiquidityMintLib.takePurchaseLock(mintContext.lockTimes, purchasesInFlight, caller)) {
+      case (?s) s;
+      case null return #Err({ code = #purchaseInProgress; message = "A purchase is already in progress for this account; please wait for it to finish" });
     };
-    purchasesInFlight.add(caller);
     try {
       await* BtcDepositLib.checkPurchase(btcDeposits, purchaseContext, mintContext, caller);
     } finally {
-      purchasesInFlight.remove(caller);
+      LiquidityMintLib.releasePurchaseLock(mintContext.lockTimes, purchasesInFlight, caller, stamp);
+    };
+  };
+
+  // Buyer only, on their own held ckBTC: converts it into TTTI-T, or refunds it to
+  // the caller's wallet account when the cause is permanent. Mints only with the caller's params. Safe to repeat.
+  public shared ({ caller }) func convertMyHeldBtc(params : MintTypes.DepositMintParams) : async Btc.BtcDepositResult {
+    if (caller.isAnonymous()) {
+      return #Err({ code = #anonymousCaller; message = "Please sign in to convert your held ckBTC" });
+    };
+    let stamp = switch (LiquidityMintLib.takePurchaseLock(mintContext.lockTimes, purchasesInFlight, caller)) {
+      case (?s) s;
+      case null return #Err({ code = #purchaseInProgress; message = "A purchase is already in progress for this account; please wait for it to finish" });
+    };
+    try {
+      await* BtcDepositLib.convertHeld(btcDeposits, purchaseContext, mintContext, caller, params);
+    } finally {
+      LiquidityMintLib.releasePurchaseLock(mintContext.lockTimes, purchasesInFlight, caller, stamp);
     };
   };
 

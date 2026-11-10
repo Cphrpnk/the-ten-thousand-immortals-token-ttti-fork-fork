@@ -4,15 +4,19 @@ import { EXPLORER_TEXT } from "../../i18n/common/explorer";
 import { useDict, useLanguage } from "../../i18n/core";
 import { GUARANTEE_TEXT } from "../../i18n/pages/guarantee";
 import {
+  GuaranteeFailure,
+  allowanceCovers,
   formatTttiQuantity,
+  formatUsdValue,
   guaranteeFailureMessage,
   payoutBlockTarget,
   pullBlockTarget,
   redemptionStatusLabel,
 } from "../../lib/guarantee";
-import { formatPayAmount } from "../../lib/token";
+import { formatPayAmount, payTokenSymbol } from "../../lib/token";
 import { ExplorerLink } from "../ExplorerLink";
 import { FiatAmount } from "../FiatAmount";
+import { WalletTermsOpenButton, useWalletTerms } from "../acceptance";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -33,8 +37,8 @@ interface RedeemConfirmDialogProps {
   onClose: (done: boolean) => void;
 }
 
-/** Outcome line of a recorded redemption. */
-export function RedemptionOutcome({
+/** Outcome line of one recorded redemption (one per reserve token paid). */
+function RedemptionOutcomeLine({
   redemption,
   ocid,
 }: { redemption: Redemption; ocid: string }) {
@@ -57,6 +61,7 @@ export function RedemptionOutcome({
   return (
     <div className="flex flex-col gap-3 text-sm" data-ocid={ocid}>
       <p className="font-medium" data-ocid={`${ocid}.status`}>
+        {payTokenSymbol(redemption.token)} ·{" "}
         {redemptionStatusLabel(redemption, t)}
       </p>
       <p>{message}</p>
@@ -94,6 +99,24 @@ export function RedemptionOutcome({
   );
 }
 
+/** Outcome of a redemption: one block per reserve token paid. */
+export function RedemptionOutcome({
+  redemptions,
+  ocid,
+}: { redemptions: ReadonlyArray<Redemption>; ocid: string }) {
+  return (
+    <div className="flex flex-col gap-4" data-ocid={ocid}>
+      {redemptions.map((redemption) => (
+        <RedemptionOutcomeLine
+          key={redemption.id.toString()}
+          redemption={redemption}
+          ocid={`${ocid}.${redemption.token}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 /** Explains what is signed, requests the allowance if needed, then redeems. */
 export function RedeemConfirmDialog({
   owner,
@@ -105,8 +128,19 @@ export function RedeemConfirmDialog({
   const { lang } = useLanguage();
   const flow = useGuaranteeRedeem(owner);
   const busy = flow.phase !== "idle";
-  const covered =
-    allowance !== undefined && allowance >= quote.tttiAllowanceRequired;
+  const covered = allowanceCovers(allowance, quote);
+  // Wallet terms are accepted once, through the shared status that also drives
+  // the banner; the backend answers #acknowledgementRequired when they are
+  // missing.
+  const { status: terms } = useWalletTerms();
+  const ackRefused =
+    flow.error instanceof GuaranteeFailure &&
+    flow.error.error.__kind__ === "acknowledgementRequired";
+  const ackMissing = !terms.accepted && (terms.needsAcceptance || ackRefused);
+  const ackReady = terms.accepted;
+  const ackChecking = terms.signedIn && !terms.known && !terms.isError;
+  // Once the terms are accepted, a refusal for missing acceptance is stale.
+  const shownError = ackRefused && terms.accepted ? null : flow.error;
 
   const close = () => {
     if (!busy) onClose(flow.result !== null);
@@ -136,7 +170,7 @@ export function RedeemConfirmDialog({
 
         {flow.result ? (
           <RedemptionOutcome
-            redemption={flow.result}
+            redemptions={flow.result}
             ocid="guarantee.confirm.result"
           />
         ) : (
@@ -175,27 +209,72 @@ export function RedeemConfirmDialog({
                   />
                 </dd>
               </div>
+              <div className="flex justify-between gap-3 py-2">
+                <dt className="text-muted-foreground">{t.previewCap}</dt>
+                <dd className="font-mono tabular-nums">
+                  {formatUsdValue(quote.parityUsdE8, lang)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3 py-2">
+                <dt className="text-muted-foreground">
+                  {t.previewReserveShare}
+                </dt>
+                <dd className="font-mono tabular-nums">
+                  {formatUsdValue(quote.proportionalUsdE8, lang)}
+                </dd>
+              </div>
+              {quote.payouts.map((line) => (
+                <div
+                  key={line.token}
+                  className="flex justify-between gap-3 py-2"
+                >
+                  <dt className="text-muted-foreground">
+                    {t.previewPaidIn(payTokenSymbol(line.token))}
+                  </dt>
+                  <dd className="font-mono tabular-nums">
+                    {formatPayAmount(line.amount, line.token, lang)}
+                  </dd>
+                </div>
+              ))}
               <div className="flex justify-between gap-3 py-2 font-medium">
                 <dt className="text-muted-foreground">{t.previewNet}</dt>
-                <dd className="font-mono tabular-nums text-primary">
-                  {formatPayAmount(quote.netAmount, quote.token, lang)}
-                  <FiatAmount
-                    token={quote.token}
-                    amount={quote.netAmount}
-                    className="ml-1.5"
-                    ocid="guarantee.confirm.net_fiat"
-                  />
+                <dd
+                  className="font-mono tabular-nums text-primary"
+                  data-ocid="guarantee.confirm.payout"
+                >
+                  {formatUsdValue(quote.payoutUsdE8, lang)}
                 </dd>
               </div>
             </dl>
-            {flow.error !== null && (
+            {ackChecking && (
               <p
-                className="callout-danger px-3 py-2"
+                className="text-muted-foreground"
+                data-ocid="guarantee.confirm.acknowledgement_loading_state"
+              >
+                {t.acceptanceChecking}
+              </p>
+            )}
+            {ackMissing && (
+              <div
+                className="callout-warning flex flex-col items-start gap-2 px-3 py-3"
+                role="alert"
+                data-ocid="guarantee.confirm.acknowledgement_required"
+              >
+                <p>{t.acceptanceMissing}</p>
+                <WalletTermsOpenButton ocid="guarantee.confirm.acknowledgement_link" />
+              </div>
+            )}
+            {shownError !== null && (
+              <div
+                className="callout-danger flex flex-col items-start gap-2 px-3 py-2"
                 role="alert"
                 data-ocid="guarantee.confirm.error_state"
               >
-                {guaranteeFailureMessage(flow.error, lang)}
-              </p>
+                <p>{guaranteeFailureMessage(shownError, lang)}</p>
+                {ackRefused && !terms.needsAcceptance && (
+                  <WalletTermsOpenButton ocid="guarantee.confirm.error_acknowledgement_button" />
+                )}
+              </div>
             )}
           </div>
         )}
@@ -225,7 +304,7 @@ export function RedeemConfirmDialog({
               <Button
                 type="button"
                 onClick={() => void flow.confirm(quote, allowance)}
-                disabled={busy || !flow.ready}
+                disabled={busy || !flow.ready || !ackReady}
                 className="min-h-11 sm:min-h-9"
                 data-ocid="guarantee.confirm.confirm_button"
               >

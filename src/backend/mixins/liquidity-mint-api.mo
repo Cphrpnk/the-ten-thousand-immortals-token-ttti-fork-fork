@@ -19,12 +19,27 @@ mixin (
     };
   };
 
-  // Preview: quantity, amount payable, position / guarantee / creator split,
+  // Preview: quantity, amount payable, position / reserve / creator split,
   // target pool, pool price before and after the balancing swap. Reads the
   // stored hourly rate only. Wallet and allowance shortfalls are reported by
   // mintLiquidity (a query cannot call a ledger).
   public query func quoteLiquidityMint(args : Types.QuoteArgs) : async Result.Result<Types.LiquidityMintQuote, Types.LiquidityMintError> {
     LiquidityMintLib.quote(mintContext, args, Time.now());
+  };
+
+  // Manual pool choice: every eligible TTTI-T/<token> pool (not removed, no
+  // removal announced) with id, fee tier (bps), depth, pool price in the unit of
+  // the mint preview, signed gap in bps with the consolidated price and the
+  // recommended flag (lowest liquidity of the pair). Anonymous allowed.
+  public query func listMintPools(token : Types.PayToken) : async Types.MintPoolList {
+    LiquidityMintLib.listMintPools(mintContext, token, Time.now());
+  };
+
+  // Pool price before and after the zap for the chosen pool (args.targetPoolId;
+  // null = the recommendation), with the consolidated price and signed gaps.
+  // getMintPricePreview keeps its per-token figures unchanged. Anonymous allowed.
+  public query func getMintPoolPreview(args : Types.QuoteArgs) : async Result.Result<Types.MintPoolPreview, Types.LiquidityMintError> {
+    LiquidityMintLib.mintPoolPreview(mintContext, args, Time.now());
   };
 
   // Mints q TTTI-T for the caller. Refuses before taking any funds when the
@@ -51,12 +66,13 @@ mixin (
     LiquidityMintLib.mintsOf(mintContext.store, caller);
   };
 
-  // The caller's personal guarantees (owner only).
+  // Read-only history: the guarantees recorded for the caller's mints made
+  // before PTM-11 (owner only). No new record is written.
   public shared query ({ caller }) func getMyGuarantees() : async [Types.Guarantee] {
     LiquidityMintLib.guaranteesOf(mintContext.store, caller);
   };
 
-  // Admin: every guarantee, paged.
+  // Admin: the recorded guarantee history, paged (read-only).
   public shared query ({ caller }) func listGuarantees(offset : Nat, limit : Nat) : async [Types.Guarantee] {
     requireMintAdmin(caller);
     LiquidityMintLib.listGuarantees(mintContext.store, offset, limit);

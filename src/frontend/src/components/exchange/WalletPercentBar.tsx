@@ -118,6 +118,10 @@ export function PercentBar({
   const approx =
     spendable > 0n ? Number((currentAmount * 100n) / spendable) : 1;
   const sliderValue = percent ?? Math.min(100, Math.max(1, approx));
+  // Real percentage of the current value; null only when there is no spendable base.
+  const shownPercent =
+    percent ?? (spendable > 0n ? Math.min(100, Math.max(0, approx)) : null);
+  const percentText = shownPercent !== null ? `${shownPercent}%` : undefined;
   const amountAtPercent =
     percent !== null && balance !== undefined
       ? amountForPercentWithFees(balance, ledgerFee, feeCount, percent)
@@ -136,15 +140,18 @@ export function PercentBar({
       data-ocid={`${ocidPrefix}.panel`}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <span id={labelElementId} className="text-sm text-muted-foreground">
+        <span
+          id={labelElementId}
+          className="min-w-0 break-words text-sm text-muted-foreground"
+        >
           {t.percentShare(symbol)}
         </span>
         <span
-          className="font-mono text-sm font-semibold tabular-nums text-primary"
+          className="shrink-0 whitespace-nowrap font-mono text-sm font-semibold tabular-nums text-primary"
           aria-live="polite"
           data-ocid={`${ocidPrefix}.value`}
         >
-          {percent !== null ? `${percent}%` : "—"}
+          {percentText ?? "—"}
         </span>
       </div>
 
@@ -175,7 +182,7 @@ export function PercentBar({
           </SliderPrimitive.Track>
           <SliderPrimitive.Thumb
             aria-labelledby={labelElementId}
-            aria-valuetext={percent !== null ? `${percent}%` : undefined}
+            aria-valuetext={percentText}
             className="block size-5 rounded-full border-2 border-gold-strong bg-background shadow-gold transition-smooth hover:ring-4 hover:ring-ring/30 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/70 data-[disabled]:pointer-events-none"
           />
         </SliderPrimitive.Root>

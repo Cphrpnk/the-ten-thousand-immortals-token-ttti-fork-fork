@@ -74,6 +74,7 @@ export function useListTokens() {
       );
     },
     enabled: !!actor && !isFetching,
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -92,6 +93,7 @@ export function useTokenMetadata(canisterId: Principal | undefined) {
       return token ? describe(token, actor) : null;
     },
     enabled: !!actor && !isFetching && !!canisterId,
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -175,6 +177,7 @@ export function useBtcUsdRate() {
       return actor.getBtcUsdRate();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 60_000,
   });
 }
 

@@ -60,7 +60,9 @@ module {
     reserve1 : Nat;
     // All LP shares, including the contract-owned minimum shares.
     totalShares : Nat;
-    // Minimum shares minted at the first deposit, owned by the contract forever.
+    // Shares kept by the contract forever, set at the first deposit:
+    // max(1, min(usual minimum, total / 2)) when total >= 2, never more than
+    // half of the shares created. The first deposit itself has no minimum.
     lockedShares : Nat;
     // 30 % protocol share of each fee, accumulated only (not in the reserves).
     protocolFee0 : Nat;
@@ -138,6 +140,11 @@ module {
     // PTM-3: cumulative set-aside LP fees credited to the owner, per pool token.
     feesCollected0 : Nat;
     feesCollected1 : Nat;
+    // PTM-10b: locked share m (10^6 = 100 %) read when the mint or the auction
+    // settlement formed this position as its locked part; 0 for every other
+    // position. A locked part has lockDurationNs = MIN_LOCK_NS (3 months) and is
+    // released by the existing relay at the latest after those 3 months.
+    mintShareE6 : Nat;
   };
 
   // Relay applied to other positions by one commitment.
@@ -237,7 +244,8 @@ module {
   };
 
   // Record of one refused pair-request deposit fed to the protocol liquidity
-  // (one entry per refused request, never counted twice). `amount` is the
+  // before PTM-10c (history only, never rewritten; new refused deposits are
+  // recorded in PairPayDeposit). `amount` is the
   // TTTI-T credited to the pool's permanent liquidity (deposit minus one
   // TTTI-T ledger fee, which goes to the fee collector as for every transfer).
   public type RefusedDepositFeed = {
@@ -273,6 +281,10 @@ module {
     // PTM-9d: per-pool pending pot of the locked-share half of the LP fees,
     // the daily sharing state and the per-position lock-time records.
     fees : FeePotStore;
+    // Last reading of each ICPSwap pair (success or failed step), keyed by the
+    // counter token symbol text ("icp", "ckbtc", "ckusdc", "ckusdt").
+    // Added by the migration 20261214_000000, initially empty.
+    referenceReadings : Map.Map<Text, ReferenceReading>;
   };
 
   // --- PTM-9d: per-pool LP fee pot and daily sliced sharing -------------------
@@ -492,6 +504,36 @@ module {
     readAt : Timestamp;
   };
 
+  // Step of an ICPSwap reading that can fail.
+  public type ReadingStep = { #poolLookup; #metadata; #spotPrice; #quote; #reserve };
+
+  // How a successful reading obtained its price: the spot price from the pool
+  // metadata sqrtPriceX96, or a quote on 1 % of the pool TTTI-T reserve.
+  public type ReadingMethod = { #spot; #quote };
+
+  public type ReadingOutcome = {
+    // counterPerTttiE8 = counter whole tokens (x 1e8) per whole TTTI-T.
+    #ok : { counterPerTttiE8 : Nat; method : ReadingMethod };
+    #failed : { step : ReadingStep; detail : ?Text };
+  };
+
+  // Last reading of the ICPSwap TTTI-T/<counter> pair used by the first-deposit
+  // reference price, successful or not. poolCanister is null until the pool
+  // lookup has succeeded. Stored per counter token in
+  // DexStore.referenceReadings; informational only.
+  public type ReferenceReading = {
+    counter : DexToken;
+    poolCanister : ?Principal;
+    readAt : Timestamp;
+    outcome : ReadingOutcome;
+  };
+
+  // One entry per ICPSwap pair; #notReadYet until a reading has been recorded.
+  public type ReferenceReadingEntry = {
+    #notReadYet : { counter : DexToken };
+    #read : ReferenceReading;
+  };
+
   public type ReferenceSourceKind = { #icpswap; #native };
 
   // One source of the TTTI-T reference price. tttiPriceUsdE8 = USD x 1e8 per
@@ -638,7 +680,8 @@ module {
     firstDepositMinimum : PoolMinimums;
     minimumsSet : Bool;
     lockedSharesStatement : Text;
-    // Launch depth: first deposit >= this total USD value (USD * 1e8), both sides.
+    // No first-deposit minimum exists: always 0 (compatibility). The only
+    // threshold is the swap-opening one (swapThresholdUsdE8, 10 USD).
     launchMinimumTotalUsdE8 : Nat;
     newPairBadgeUntil : ?Timestamp;
     newPairBadgeActive : Bool;
@@ -668,8 +711,9 @@ module {
     thresholdMeasuredUsdE8 : ?Nat;
     swapState : SwapState;
     removal : RemovalView;
-    // PTM-5: spread against the consolidated TTTI-T price; null for pools that
-    // are not native TTTI-T pools (utility pairs) and for removed pools.
+    // PTM-5: spread against the consolidated TTTI-T price of the OTHER open
+    // pools (leave-one-out); #noIndependentReference without another open pool.
+    // null for utility pairs and for removed pools.
     spread : ?PoolSpread;
   };
 
@@ -766,6 +810,8 @@ module {
     relayReceivedNs : Nat;
     feesCollected0 : Nat;
     feesCollected1 : Nat;
+    // PTM-10b: locked share m of the mint or auction settlement that formed this position (0 otherwise).
+    mintShareE6 : Nat;
   };
 
   public type AddLiquidityResult = {
@@ -916,6 +962,9 @@ module {
     createdAt : Timestamp;
     checks : RequestChecks;
     copiedSymbol : Bool;
+    // PTM-10c: token the deposit was paid in (#tttiT for earlier requests);
+    // depositAmount and depositBlock are in this token.
+    depositToken : DexToken;
     depositAmount : Nat;
     depositBlock : Nat;
     status : RequestStatus;
@@ -986,8 +1035,14 @@ module {
   };
 
   public type DexConfig = {
+    // 0.0005 TTTI-T: the value of the deposit (earlier requests paid it in TTTI-T).
     requestDeposit : Nat;
+    // Account of the earlier TTTI-T deposits.
     depositAccount : DexAccount;
+    // PTM-10c: value of the deposit in USD * 1e8 at the mint price (5 USD) and
+    // the request deposit account of each accepted token.
+    requestDepositUsdE8 : Nat;
+    requestDepositAccounts : [{ token : DexToken; account : DexAccount }];
     maxPendingPerUser : Nat;
     refusalCooldownNs : Int;
     messageMaxChars : Nat;
@@ -1000,7 +1055,7 @@ module {
     protocolStatement : Text;
     lockedSharesStatement : Text;
     approvalStatement : Text;
-    // Launch depth rule (computed constants, USD * 1e8).
+    // No first-deposit minimum: always 0 (compatibility, USD * 1e8).
     launchMinimumTotalUsdE8 : Nat;
     usdRateScale : Nat;
     // TTTI-T valued at a fixed 10,000 USD per token.
@@ -1037,6 +1092,9 @@ module {
     counter : CounterToken;
     feeTier : FeeTier;
     message : Text;
+    // PTM-10c: accepted token the deposit is paid in (#icp, #ckbtc, #ckusdc
+    // or #ckusdt), for the value of 0.0005 TTTI-T at the mint price.
+    payToken : DexToken;
   };
 
   public type RequestPairError = {
@@ -1053,6 +1111,12 @@ module {
     #insufficientAllowance : { allowance : Nat; required : Nat };
     #insufficientFunds : { balance : Nat };
     #depositFailed : Text;
+    // PTM-10c: the pay token is TTTI-T or not accepted.
+    #payTokenNotAccepted : Text;
+    // PTM-10c: the hourly rate of the pay token is absent or expired.
+    #rateUnavailable : Text;
+    // PTM-10c: another request of the caller or for the same token is being recorded.
+    #requestInProgress;
   };
 
   public type ApprovePairError = {
@@ -1137,17 +1201,24 @@ module {
   };
 
   // #ok = spread computed; the others are the explicit no-spread states.
+  // #noIndependentReference = no other open native TTTI-T pool, so the pool has
+  // no reference that excludes itself (spreadBps absent, never 0).
+  // #noConsolidatedPrice is kept for compatibility and is no longer produced.
   public type SpreadStatus = {
     #ok;
     #empty;
     #notOpen;
     #noRate;
     #noConsolidatedPrice;
+    #noIndependentReference;
   };
 
-  // Spread of one native TTTI-T pool against the consolidated price. spreadBps
-  // = (pool price - consolidated) x 10000 / consolidated, signed (negative: the
-  // pool is cheaper). exceedsThreshold = |spreadBps| > 200.
+  // Spread of one native TTTI-T pool against its independent reference, the
+  // consolidated price of the OTHER open pools (leave-one-out, weighted by their
+  // depth). spreadBps = (pool price - reference) x 10000 / reference, signed
+  // (negative: the pool is cheaper). exceedsThreshold = |spreadBps| > 200 and
+  // false without an independent reference. referencePriceUsdE8 = that
+  // reference (absent when no other pool is open).
   public type PoolSpread = {
     poolId : PoolId;
     counterSymbol : Text;
@@ -1155,6 +1226,7 @@ module {
     priceUsdE8 : ?Nat;
     spreadBps : ?Int;
     exceedsThreshold : Bool;
+    referencePriceUsdE8 : ?Nat;
   };
 
   public type PoolSpreadReport = {
@@ -1165,7 +1237,8 @@ module {
   };
 
   // Computed in-app alert for an LP: a pool where the caller holds a position
-  // and whose spread exceeds the threshold now. Not stored; it disappears when
+  // and whose independent spread exceeds the threshold now (consolidatedPriceUsdE8
+  // is the independent reference, the consolidated price without that pool). Not stored; it disappears when
   // the spread falls back to 2 % or less.
   public type PoolSpreadAlert = {
     poolId : PoolId;

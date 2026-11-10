@@ -81,6 +81,7 @@ func storeOf(pools : [DexTypes.Pool]) : DexTypes.DexStore {
     var nextPositionId = 1;
     removals = Map.empty<DexTypes.PoolId, DexTypes.PairRemoval>();
     icpswapSamples = Map.empty<Text, DexTypes.IcpSwapSample>();
+    referenceReadings = Map.empty<Text, DexTypes.ReferenceReading>();
     poolPositions = Map.empty<DexTypes.PoolId, Set.Set<DexTypes.PositionId>>();
     fees = {
       var dayStart = 0;
@@ -165,12 +166,14 @@ do {
   assert w.currentRatio == null;
   assert w.lockedShare == 500_000;
 
-  // Hourly price unavailable: no capitalisation, no ratio, m = 50 %.
+  // Hourly/consolidated price unavailable: the capitalisation does not read it
+  // (fixed 10 000 USD reference), so the ratio and m are computed all the same.
   let x = report(storeOf([pool(1, usdcToken, T0, C0)]), null, noSamples);
-  assert x.capitalisationUsdE8 == null;
-  assert x.currentRatio == null;
-  assert x.retainedRatio == null;
-  assert x.lockedShare == 500_000;
+  assert x.consolidatedPriceUsdE8 == null;
+  assert x.capitalisationUsdE8 == ?500_000_000_000;
+  assert x.currentRatio == ?400_000_000_000;
+  assert x.retainedRatio == ?400_000_000_000;
+  assert x.lockedShare == 100_000;
 
   // Oracle rate absent or expired: no pools value, no fallback rate, m = 50 %.
   let y = DexLib.poolCapRatioReport(storeOf([pool(1, usdcToken, T0, C0)]), noRateOf, CIRCULATING, ?HOURLY, noSamples, now);
@@ -247,21 +250,17 @@ do {
   assert high.lockedShare == 100_000;
 };
 
-// --- 5. Purchase of TTTI-T in a pool: current ratio rises at once, m only after
-//        the hourly price absorbs the new spot price --------------------------
+// --- 5. A pool that moves its own price: the capitalisation does not follow ---
 //
-// Documented behaviour: under the specified rule, capitalisation uses the
-// consolidated HOURLY AVERAGE price, not the spot price. A purchase therefore
-// raises the pools value (and the current ratio) at once over an unchanged
-// capitalisation, which lowers m (no sample) or leaves it unchanged (with a
-// 24 h average). m rises only after the hourly price has absorbed the new spot
-// price. The three cases below (no sample, with a 24 h average, hourly price
-// caught up) are asserted exactly to guard this behaviour against regressions.
+// The capitalisation is circulating TTTI-T x the fixed reference of 10 000 USD
+// per whole TTTI-T (CAPITALISATION_REFERENCE_USD_E8), never a price read from
+// the pools. A pool therefore cannot move the denominator of its own ratio:
+// the ratio and m depend on the pools value (counterpart reserves at the oracle
+// rate) alone, whatever consolidated price is passed along for display.
 //
 // Buying with 200 ckUSDC (constant product, fee ignored): the counter reserve
 // goes from 1 000 to 1 200 USDC and the TTTI-T reserve from 0.1 to 0.08333334.
-// Spot price: 10 000 -> 14 400 USD. Capitalisation uses the consolidated HOURLY
-// average, not the spot price (rule applied exactly as specified).
+// Spot price: 10 000 -> 14 400 USD, pools value 2 000 -> 2 400 USD.
 
 let C1 : Nat = 1_200_000_000;
 let T1 : Nat = T0 - T0 * 200_000_000 / C1; // 8 333_334
@@ -277,28 +276,63 @@ do {
   assert spot > HOURLY; // the purchase made the price rise
   assert spot == 1_439_999_884_800; // 14 399.998848 USD x 1e8
 
-  // (a) Right after the purchase the hourly average has not moved yet: the
-  // pools value rose (2 000 -> 2 400 USD) over an unchanged capitalisation, so
-  // the current ratio rises 40 % -> 48 %. With no ratio sample the retained
-  // ratio is the current one and m FALLS from 10 % to 2 %. With a 24 h average
-  // of 40 % the retained ratio stays 40 % and m is unchanged (10 %).
+  // (a) The pools value rose (2 000 -> 2 400 USD) over an unchanged
+  // capitalisation (5 000 USD), so the current ratio rises 40 % -> 48 %. With no
+  // ratio sample the retained ratio is the current one and m falls from 10 % to
+  // 2 %. With a 24 h average of 40 % the retained ratio stays 40 % and m is
+  // unchanged (10 %).
   let noHistory = report(afterBuy, ?HOURLY, noSamples);
   assert noHistory.poolsValueUsdE8 == ?240_000_000_000;
+  assert noHistory.capitalisationUsdE8 == ?500_000_000_000;
   assert noHistory.currentRatio == ?480_000_000_000;
   assert noHistory.lockedShare == 20_000; // 2 %: lower, not higher
   let withHistory = report(afterBuy, ?HOURLY, ratioSamples(288, 400_000_000_000));
   assert withHistory.retainedRatio == ?400_000_000_000;
   assert withHistory.lockedShare == 100_000; // unchanged
 
-  // (b) Once the hourly average has absorbed the new price, the capitalisation
-  // grows faster than the pools value (price x1.44 against pools value x1.2):
-  // the current ratio falls to 33.33 % and m rises to 16.67 % at once, even
-  // with a 24 h average of 40 % (the lower value is retained).
-  let caughtUp = report(afterBuy, ?spot, ratioSamples(288, 400_000_000_000));
-  assert caughtUp.currentRatio == ?333_333_360_000;
-  assert caughtUp.retainedRatio == ?333_333_360_000;
-  assert caughtUp.lockedShare == 166_667;
-  assert caughtUp.lockedShare > before.lockedShare;
+  // (b) The price passed along (hourly, spot or absent) is shown but never
+  // enters the ratio: the same pools give the same capitalisation, ratio and m.
+  let atSpot = report(afterBuy, ?spot, noSamples);
+  assert atSpot.consolidatedPriceUsdE8 == ?spot;
+  assert atSpot.capitalisationUsdE8 == noHistory.capitalisationUsdE8;
+  assert atSpot.currentRatio == noHistory.currentRatio;
+  assert atSpot.lockedShare == noHistory.lockedShare;
+  let noPrice = report(afterBuy, null, noSamples);
+  assert noPrice.consolidatedPriceUsdE8 == null;
+  assert noPrice.currentRatio == noHistory.currentRatio;
+  assert noPrice.lockedShare == noHistory.lockedShare;
+  // With the 24 h average the spot price does not lift m either (it used to
+  // rise to 16.67 % once the denominator followed the pool's own price).
+  let spotWithHistory = report(afterBuy, ?spot, ratioSamples(288, 400_000_000_000));
+  assert spotWithHistory.currentRatio == ?480_000_000_000;
+  assert spotWithHistory.retainedRatio == ?400_000_000_000;
+  assert spotWithHistory.lockedShare == before.lockedShare;
+};
+
+// A pool that moves its own price without changing its counterpart reserve
+// (the TTTI-T side halves or doubles, the price doubles or halves): the pools
+// value, the capitalisation, the ratio and m are exactly those of the base case.
+do {
+  let base = report(storeOf([pool(1, usdcToken, T0, C0)]), ?HOURLY, noSamples);
+  for (tttiReserve in [T0 / 2, T0 * 2].values()) {
+    let moved = storeOf([pool(1, usdcToken, tttiReserve, C0)]);
+    let price = switch (DexLib.consolidatedNow(moved, rateOf, now).price) {
+      case (?p) p;
+      case null { assert false; 0 };
+    };
+    assert price != HOURLY; // the pool really moved its own price
+    for (shown in [?HOURLY, ?price, null].values()) {
+      let r = report(moved, shown, noSamples);
+      assert r.poolsValueUsdE8 == base.poolsValueUsdE8;
+      assert r.capitalisationUsdE8 == base.capitalisationUsdE8;
+      assert r.currentRatio == base.currentRatio;
+      assert r.retainedRatio == base.retainedRatio;
+      assert r.lockedShare == base.lockedShare;
+    };
+  };
+  assert base.capitalisationReferenceUsdE8 == DexLib.CAPITALISATION_REFERENCE_USD_E8;
+  assert base.capitalisationReferenceUsdE8 == 1_000_000_000_000; // 10 000 USD
+  assert base.capitalisationReference == #targetPrice;
 };
 
 // --- 6. Liquidity added just before a calculation, then removed --------------

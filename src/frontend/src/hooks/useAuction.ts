@@ -14,10 +14,12 @@ import type {
   BidError,
   BidSettlement,
   ClosedBidView,
+  DepositQuote,
   PayToken,
+  RemainderChoice,
 } from "../backend";
 import { buildApproveArgs } from "../lib/icpLedger";
-import { PAY_TOKENS, ceilDiv } from "../lib/token";
+import { PAY_TOKENS } from "../lib/token";
 import type { TokenDescriptor } from "../lib/tokenRegistry";
 import { useAccountSigner } from "./useAccountSigner";
 import { useActor } from "./useActor";
@@ -201,28 +203,41 @@ export function useMyAuctionBids() {
   });
 }
 
-/** Required deposit computed by the contract; undefined when it refuses. */
+/** Deposit quote of the contract, or the error it refused with. */
+export interface DepositQuoteOutcome {
+  quote: DepositQuote | null;
+  error: BidError | null;
+}
+
+/** Required deposit and its split, computed by the contract. */
 export function useAuctionDepositQuote(
   token: PayToken,
   priceB: bigint | null,
   quantityE8s: bigint | null,
+  choice: RemainderChoice,
 ) {
   const { actor, isFetching } = useActor();
-  return useQuery<bigint | undefined>({
+  return useQuery<DepositQuoteOutcome>({
     queryKey: [
       AUCTION_KEYS.quote,
       token,
       priceB?.toString(),
       quantityE8s?.toString(),
+      choice,
     ],
     queryFn: async () => {
-      if (!actor || priceB === null || quantityE8s === null) return undefined;
+      if (!actor || priceB === null || quantityE8s === null) {
+        return { quote: null, error: null };
+      }
       const result = await actor.quoteAuctionDeposit(
         token,
         priceB,
         quantityE8s,
+        choice,
       );
-      return result.__kind__ === "ok" ? result.ok : undefined;
+      return result.__kind__ === "ok"
+        ? { quote: result.ok, error: null }
+        : { quote: null, error: result.err };
     },
     enabled: !!actor && !isFetching && priceB !== null && quantityE8s !== null,
   });
@@ -243,19 +258,12 @@ export function useOpenAuction() {
   });
 }
 
-/** Required deposit: ceil(2 x B x quantity / 0.99), as in the contract. */
-export function localRequiredDeposit(
-  priceB: bigint,
-  quantityE8s: bigint,
-): bigint {
-  return ceilDiv(2n * priceB * quantityE8s * 100n, 10n ** 8n * 99n);
-}
-
 export interface PlaceBidInput {
   token: PayToken;
   quantityE8s: bigint;
   priceB: bigint;
   deposit: bigint;
+  choice: RemainderChoice;
 }
 
 export type BidPhase = "idle" | "approving" | "sending";
@@ -297,6 +305,7 @@ export function usePlaceAuctionBid(owner: Principal | undefined) {
         input.quantityE8s,
         input.priceB,
         input.deposit,
+        input.choice,
       );
     },
     onSuccess: () => invalidateAfterBid(queryClient),

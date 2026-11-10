@@ -3,9 +3,12 @@ import { useDict, useLanguage } from "../../i18n/core";
 import { DEX_TEXT } from "../../i18n/pages/dex";
 import { cn } from "../../lib/utils";
 import { Skeleton } from "../ui/skeleton";
+import { DexFiat, fiatTokenOfDex } from "./DexFiat";
 import {
+  dexTokenUnits,
   feeTierLabel,
   formatDexDate,
+  formatDexUnits,
   refundStatusLabel,
   requestStatusLabel,
 } from "./dexFormat";
@@ -118,19 +121,44 @@ export function PairRequestList({
                       {t.copiedSymbolOf(request.checks.copiedSymbolOf)}
                     </span>
                   )}
+                  <span
+                    className="text-xs text-muted-foreground tabular-nums"
+                    data-ocid={`${ocid}.deposit.${i + 1}`}
+                  >
+                    {t.deposit(
+                      formatDexUnits(
+                        request.depositAmount,
+                        dexTokenUnits(request.depositToken),
+                      ),
+                    )}{" "}
+                    <DexFiat
+                      token={fiatTokenOfDex(request.depositToken)}
+                      amount={request.depositAmount}
+                    />
+                  </span>
                   {kind === "approved" && (
-                    <span
-                      className="text-xs text-muted-foreground tabular-nums"
-                      data-ocid={`${ocid}.refund.${i + 1}`}
-                    >
-                      {t.refundLabel}:{" "}
-                      {refundStatusLabel(t, request.refundStatus)}
-                    </span>
+                    <>
+                      <span
+                        className="text-xs text-muted-foreground tabular-nums"
+                        data-ocid={`${ocid}.refund.${i + 1}`}
+                      >
+                        {t.refundLabel}:{" "}
+                        {refundStatusLabel(t, request.refundStatus)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {t.depositApprovedNote}
+                      </span>
+                    </>
                   )}
                   {request.status.__kind__ === "refused" && (
-                    <span className="text-xs text-muted-foreground break-words">
-                      {t.refusedReason(request.status.refused.reason)}
-                    </span>
+                    <>
+                      <span className="text-xs text-muted-foreground break-words">
+                        {t.refusedReason(request.status.refused.reason)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {t.depositRefusedNote}
+                      </span>
+                    </>
                   )}
                 </div>
               </li>

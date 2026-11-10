@@ -83,9 +83,9 @@ export function AuctionSummary({ view }: { view: AuctionView }) {
         </h2>
         <span
           className="rounded-full border border-gold px-3 py-1 text-xs font-medium text-primary"
-          data-ocid="auction.recoverable_badge"
+          data-ocid="auction.reserve_badge"
         >
-          {t.recoverableBadge}
+          {t.reserveBadge}
         </span>
       </div>
 
@@ -216,6 +216,12 @@ export function AuctionSummary({ view }: { view: AuctionView }) {
           >
             {bindingText} {t.unavailableNote}
           </p>
+          <p
+            className="text-sm text-muted-foreground"
+            data-ocid="auction.reserve_settlement_note"
+          >
+            {t.reserveSettlementNote}
+          </p>
         </div>
         <div className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">
@@ -249,9 +255,9 @@ export function AuctionSummary({ view }: { view: AuctionView }) {
 
       <p
         className="callout-info px-3 py-2 text-sm"
-        data-ocid="auction.recoverable_note"
+        data-ocid="auction.reserve_note"
       >
-        {t.recoverableSentence}
+        {t.reserveSentence}
       </p>
     </section>
   );

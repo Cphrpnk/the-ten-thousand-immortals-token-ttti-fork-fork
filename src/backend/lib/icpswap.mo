@@ -85,17 +85,32 @@ module {
     };
   };
 
-  public func info(poolId : Principal, tttiLedger : Principal) : async Result.Result<PoolInfo, Text> {
+  type Metadata = { info : PoolInfo; sqrtPriceX96 : ?Nat };
+
+  func readMetadata(poolId : Principal, tttiLedger : Principal) : async Result.Result<Metadata, Text> {
     try {
       switch (await pool(poolId).metadata()) {
         case (#ok(m)) {
           let t = tttiLedger.toText();
-          if (m.token0.address == t) #ok({ poolId; tttiIsToken0 = true; fee = m.fee }) else if (m.token1.address == t) #ok({ poolId; tttiIsToken0 = false; fee = m.fee }) else #err("ICPSwap pool does not hold TTTI-T");
+          if (m.token0.address == t) {
+            #ok({ info = { poolId; tttiIsToken0 = true; fee = m.fee }; sqrtPriceX96 = m.sqrtPriceX96 });
+          } else if (m.token1.address == t) {
+            #ok({ info = { poolId; tttiIsToken0 = false; fee = m.fee }; sqrtPriceX96 = m.sqrtPriceX96 });
+          } else {
+            #err("ICPSwap pool does not hold TTTI-T");
+          };
         };
         case (#err(e)) #err(errorText(e));
       };
     } catch (e) {
       #err("ICPSwap metadata call rejected: " # e.message());
+    };
+  };
+
+  public func info(poolId : Principal, tttiLedger : Principal) : async Result.Result<PoolInfo, Text> {
+    switch (await readMetadata(poolId, tttiLedger)) {
+      case (#ok(m)) #ok(m.info);
+      case (#err(e)) #err(e);
     };
   };
 
@@ -151,42 +166,124 @@ module {
     getTokenAmountState : shared query () -> async AmountStateResult;
   };
 
-  // Probe size of the price reading: 0.01 TTTI-T (8 decimals).
-  let PROBE_AMOUNT : Nat = 1_000_000;
-  let FEE_SCALE : Nat = 1_000_000;
+  // --- Reference price reading -------------------------------------------
 
-  // Reads the TTTI-T price on the ICPSwap TTTI-T/<counter> pair (read only, no
-  // transfer, no order): the pair is found through the factory, a 0.01 TTTI-T
-  // quote gives the counter amount per TTTI-T (pool fee added back), and the
-  // pool amounts give the counter-side depth. Null when the pair does not
-  // exist, a call fails or the quote is empty.
-  public func readTttiSample(counter : DexTypes.DexToken, counterLedger : Principal, counterDecimals : Nat8, tttiLedger : Principal, now : Int) : async ?DexTypes.IcpSwapSample {
-    let poolId = switch (await findPool(tttiLedger, counterLedger)) {
-      case (?p) p;
+  public let FEE_SCALE : Nat = 1_000_000;
+
+  // Smallest TTTI-T amount (e8s) quoted when the spot price is not readable.
+  public let MIN_QUOTE_AMOUNT : Nat = 100;
+
+  // Amount quoted on the quote path: 1 % of the pool's TTTI-T reserve, never
+  // below 100 e8s. Pure.
+  public func quoteAmountFor(tttiReserve : Nat) : Nat {
+    let onePercent = tttiReserve / 100;
+    if (onePercent < MIN_QUOTE_AMOUNT) MIN_QUOTE_AMOUNT else onePercent;
+  };
+
+  // Spot price from the pool's sqrtPriceX96: raw price token1 / token0 =
+  // (sqrtPriceX96 / 2^96)^2 in base units, converted with the token order and
+  // the counter decimals (TTTI-T has 8) to counter whole tokens x 1e8 per whole
+  // TTTI-T. Null when the value is absent, zero or rounds to zero. Pure.
+  public func priceFromSqrt(sqrtPriceX96 : ?Nat, tttiIsToken0 : Bool, counterDecimals : Nat8) : ?Nat {
+    let s = switch (sqrtPriceX96) {
+      case (?v) v;
       case null return null;
     };
-    let i = switch (await info(poolId, tttiLedger)) {
-      case (#ok(i)) i;
-      case (#err(_)) return null;
-    };
-    if (i.fee >= FEE_SCALE) return null;
-    let out = switch (await quote(poolId, i.tttiIsToken0, PROBE_AMOUNT)) {
-      case (#ok(v)) v;
-      case (#err(_)) return null;
-    };
-    if (out == 0) return null;
-    let gross = out * FEE_SCALE / (FEE_SCALE - i.fee);
-    let counterPerTttiE8 = gross * 100_000_000 * 100_000_000 / (PROBE_AMOUNT * 10 ** counterDecimals.toNat());
-    if (counterPerTttiE8 == 0) return null;
+    if (s == 0) return null;
+    let q192 : Nat = 2 ** 192;
+    let sq = s * s;
+    let scale : Nat = 10 ** counterDecimals.toNat();
+    let e16 : Nat = 10 ** 16;
+    let price = if (tttiIsToken0) sq * e16 / (q192 * scale) else q192 * e16 / (sq * scale);
+    if (price == 0) null else ?price;
+  };
+
+  // Price from a quote: `out` counter base units obtained for `amountIn` TTTI-T
+  // e8s, with the pool fee (parts per FEE_SCALE) added back, as counter whole
+  // tokens x 1e8 per whole TTTI-T. Null for an empty quote or an unusable fee.
+  // Pure.
+  public func priceFromQuote(amountIn : Nat, out : Nat, poolFee : Nat, counterDecimals : Nat8) : ?Nat {
+    if (amountIn == 0 or out == 0 or poolFee >= FEE_SCALE) return null;
+    let gross = out * FEE_SCALE / (FEE_SCALE - poolFee);
+    let price = gross * 100_000_000 * 100_000_000 / (amountIn * 10 ** counterDecimals.toNat());
+    if (price == 0) null else ?price;
+  };
+
+  public type Reading = {
+    reading : DexTypes.ReferenceReading;
+    sample : ?DexTypes.IcpSwapSample;
+  };
+
+  public func failedReading(counter : DexTypes.DexToken, poolCanister : ?Principal, step : DexTypes.ReadingStep, detail : ?Text, now : Int) : DexTypes.ReferenceReading {
+    { counter; poolCanister; readAt = now; outcome = #failed({ step; detail }) };
+  };
+
+  func failed(counter : DexTypes.DexToken, poolCanister : ?Principal, step : DexTypes.ReadingStep, detail : ?Text, now : Int) : Reading {
+    { reading = failedReading(counter, poolCanister, step, detail, now); sample = null };
+  };
+
+  func readReserves(poolId : Principal) : async Result.Result<{ token0Amount : Nat; token1Amount : Nat }, Text> {
     let state : AmountStatePool = actor (poolId.toText());
-    let counterReserve = try {
+    try {
       switch (await state.getTokenAmountState()) {
-        case (#ok(s)) { if (i.tttiIsToken0) s.token1Amount else s.token0Amount };
-        case (#err(_)) return null;
+        case (#ok(s)) #ok(s);
+        case (#err(e)) #err(errorText(e));
       };
-    } catch (_) {
-      return null;
+    } catch (e) {
+      #err("ICPSwap getTokenAmountState call rejected: " # e.message());
     };
-    ?{ poolCanister = poolId; counter; counterPerTttiE8; counterReserve; readAt = now };
+  };
+
+  // Reads the TTTI-T price on the ICPSwap TTTI-T/<counter> pair (read only, no
+  // transfer, no order). Steps: pool lookup through the factory, metadata
+  // (token order, fee, sqrtPriceX96), pool amounts, then the price: the spot
+  // price from sqrtPriceX96, or when it is absent or unusable a quote on 1 % of
+  // the pool's TTTI-T reserve (minimum 100 e8s) with the pool fee added back.
+  // The counter-side reserve gives the depth. Always returns the reading; the
+  // sample is present only on success, and a failure names the step.
+  public func readTttiSample(counter : DexTypes.DexToken, counterLedger : Principal, counterDecimals : Nat8, tttiLedger : Principal, now : Int) : async Reading {
+    let poolId = switch (await findPool(tttiLedger, counterLedger)) {
+      case (?p) p;
+      case null return failed(counter, null, #poolLookup, ?"No ICPSwap pool found for the pair, or the factory call failed", now);
+    };
+    let meta = switch (await readMetadata(poolId, tttiLedger)) {
+      case (#ok(m)) m;
+      case (#err(e)) return failed(counter, ?poolId, #metadata, ?e, now);
+    };
+    let fee = meta.info.fee;
+    if (fee >= FEE_SCALE) return failed(counter, ?poolId, #metadata, ?("Pool fee out of range: " # fee.toText()), now);
+    let tttiIsToken0 = meta.info.tttiIsToken0;
+    let reserves = switch (await readReserves(poolId)) {
+      case (#ok(r)) r;
+      case (#err(e)) return failed(counter, ?poolId, #reserve, ?e, now);
+    };
+    let tttiReserve = if (tttiIsToken0) reserves.token0Amount else reserves.token1Amount;
+    let counterReserve = if (tttiIsToken0) reserves.token1Amount else reserves.token0Amount;
+
+    var price : Nat = 0;
+    var method : DexTypes.ReadingMethod = #spot;
+    switch (priceFromSqrt(meta.sqrtPriceX96, tttiIsToken0, counterDecimals)) {
+      case (?p) { price := p };
+      case null {
+        if (tttiReserve == 0) return failed(counter, ?poolId, #spotPrice, ?"sqrtPriceX96 absent or unusable and the pool holds no TTTI-T to quote on", now);
+        let amountIn = quoteAmountFor(tttiReserve);
+        let out = switch (await quote(poolId, tttiIsToken0, amountIn)) {
+          case (#ok(v)) v;
+          case (#err(e)) return failed(counter, ?poolId, #quote, ?e, now);
+        };
+        switch (priceFromQuote(amountIn, out, fee, counterDecimals)) {
+          case (?p) {
+            price := p;
+            method := #quote;
+          };
+          case null return failed(counter, ?poolId, #quote, ?("Quote on " # amountIn.toText() # " e8s returned an empty or unusable price"), now);
+        };
+      };
+    };
+    let sample : DexTypes.IcpSwapSample = { poolCanister = poolId; counter; counterPerTttiE8 = price; counterReserve; readAt = now };
+    {
+      reading = { counter; poolCanister = ?poolId; readAt = now; outcome = #ok({ counterPerTttiE8 = price; method }) };
+      sample = ?sample;
+    };
   };
 };

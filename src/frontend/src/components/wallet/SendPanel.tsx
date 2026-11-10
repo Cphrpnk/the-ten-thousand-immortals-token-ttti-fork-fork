@@ -46,6 +46,7 @@ import {
   decodeMemoText,
   encodeMemoText,
 } from "../../lib/tokenRegistry";
+import { isTttiToken, normalizeToken } from "../../lib/ttti-token";
 import { ExplorerLink } from "../ExplorerLink";
 import { FlatTokenIcon } from "../FlatTokenIcon";
 import { PercentBar } from "../exchange/WalletPercentBar";
@@ -65,7 +66,6 @@ import {
   type RecipientPick,
   RecipientSuggestions,
 } from "./RecipientSuggestions";
-import { isTttiToken, normalizeToken } from "./TokenBalanceCard";
 import { TokenFiat } from "./TokenFiat";
 import { fiatTokenOfDescriptor } from "./valuation";
 

@@ -9,26 +9,69 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { ThemeProvider } from "next-themes";
+import { Suspense, lazy } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Footer } from "./components/Footer";
 import { Header } from "./components/Header";
-import { WhitePaperRoute } from "./components/WhitePaperRoute";
+import {
+  WalletTermsBanner,
+  WalletTermsDialog,
+  WalletTermsProvider,
+} from "./components/acceptance";
+import { DepositAlerts } from "./components/btc/DepositAlerts";
+import { SetupFlowHost } from "./components/funnel/SetupFlowHost";
 import { Toaster } from "./components/ui/sonner";
+import { ActorProvider } from "./hooks/useActor";
 import { BuyFunnelProvider } from "./hooks/useBuyFunnel";
 import { ConnectedWalletProvider } from "./hooks/useConnectedWallet";
 import { PlugProvider } from "./hooks/usePlug";
 import { LanguageProvider } from "./i18n/core";
-import { AdminPage } from "./pages/AdminPage";
-import { AuctionPage } from "./pages/AuctionPage";
-import { BuyIcpPage } from "./pages/BuyIcpPage";
-import { ExchangePage } from "./pages/ExchangePage";
-import { GuaranteePage } from "./pages/GuaranteePage";
-import { HistoryPage } from "./pages/HistoryPage";
-import { LandingPage } from "./pages/LandingPage";
-import { PoolsPage } from "./pages/PoolsPage";
-import { TransferPage } from "./pages/TransferPage";
-import { WalletPage } from "./pages/WalletPage";
 
-const queryClient = new QueryClient();
+const AdminPage = lazy(() =>
+  import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })),
+);
+const AuctionPage = lazy(() =>
+  import("./pages/AuctionPage").then((m) => ({ default: m.AuctionPage })),
+);
+const BuyIcpPage = lazy(() =>
+  import("./pages/BuyIcpPage").then((m) => ({ default: m.BuyIcpPage })),
+);
+const ExchangePage = lazy(() =>
+  import("./pages/ExchangePage").then((m) => ({ default: m.ExchangePage })),
+);
+const GuaranteePage = lazy(() =>
+  import("./pages/GuaranteePage").then((m) => ({ default: m.GuaranteePage })),
+);
+const HistoryPage = lazy(() =>
+  import("./pages/HistoryPage").then((m) => ({ default: m.HistoryPage })),
+);
+const LandingPage = lazy(() =>
+  import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })),
+);
+const PoolsPage = lazy(() =>
+  import("./pages/PoolsPage").then((m) => ({ default: m.PoolsPage })),
+);
+const TransferPage = lazy(() =>
+  import("./pages/TransferPage").then((m) => ({ default: m.TransferPage })),
+);
+const WalletPage = lazy(() =>
+  import("./pages/WalletPage").then((m) => ({ default: m.WalletPage })),
+);
+const WhitePaperRoute = lazy(() =>
+  import("./components/WhitePaperRoute").then((m) => ({
+    default: m.WhitePaperRoute,
+  })),
+);
+
+/**
+ * Single QueryClient shared by main.tsx and App.tsx. Queries that set their own
+ * staleTime or refetchInterval keep it; the rest are fresh for 30 seconds.
+ */
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 30_000 },
+  },
+});
 
 function Layout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -36,19 +79,32 @@ function Layout() {
 
   return (
     <BuyFunnelProvider>
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-        <main
-          className={
-            isLanding
-              ? "w-full flex-1"
-              : "container mx-auto w-full flex-1 px-4 py-16 md:py-20"
-          }
-        >
-          <Outlet />
-        </main>
-        <Footer />
-      </div>
+      <WalletTermsProvider>
+        <div className="min-h-screen flex flex-col bg-background">
+          <Header />
+          <WalletTermsBanner />
+          <main
+            className={
+              isLanding
+                ? "w-full flex-1"
+                : "container mx-auto w-full flex-1 px-4 py-16 md:py-20"
+            }
+          >
+            <ErrorBoundary
+              key={pathname}
+              name={`page:${pathname === "/" ? "home" : pathname.replace(/^\//, "")}`}
+            >
+              <Suspense fallback={null}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
+          </main>
+          <Footer />
+        </div>
+        <WalletTermsDialog />
+        <DepositAlerts />
+        <SetupFlowHost />
+      </WalletTermsProvider>
     </BuyFunnelProvider>
   );
 }
@@ -97,6 +153,15 @@ const guaranteeRoute = createRoute({
   component: GuaranteePage,
 });
 
+/** Alias of the Rachat page; lands on /guarantee. */
+const redeemRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/redeem",
+  beforeLoad: () => {
+    throw redirect({ to: "/guarantee", replace: true });
+  },
+});
+
 const auctionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/auction",
@@ -140,6 +205,7 @@ const routeTree = rootRoute.addChildren([
   exchangeRoute,
   historyRoute,
   guaranteeRoute,
+  redeemRoute,
   auctionRoute,
   adminRoute,
   transferRoute,
@@ -152,17 +218,21 @@ const router = createRouter({ routeTree });
 
 export default function App() {
   return (
-    <LanguageProvider router={router}>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-        <QueryClientProvider client={queryClient}>
-          <PlugProvider>
-            <ConnectedWalletProvider>
-              <RouterProvider router={router} />
-              <Toaster />
-            </ConnectedWalletProvider>
-          </PlugProvider>
-        </QueryClientProvider>
-      </ThemeProvider>
-    </LanguageProvider>
+    <ErrorBoundary name="app">
+      <LanguageProvider router={router}>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          <QueryClientProvider client={queryClient}>
+            <ActorProvider>
+              <PlugProvider>
+                <ConnectedWalletProvider>
+                  <RouterProvider router={router} />
+                  <Toaster />
+                </ConnectedWalletProvider>
+              </PlugProvider>
+            </ActorProvider>
+          </QueryClientProvider>
+        </ThemeProvider>
+      </LanguageProvider>
+    </ErrorBoundary>
   );
 }

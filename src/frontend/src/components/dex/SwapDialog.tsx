@@ -1,6 +1,6 @@
 import type { Principal } from "@icp-sdk/core/principal";
 import { Loader2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import type { DexTokenInfo, PoolView, SwapError } from "../../backend";
 import { DexApprovalError, useDexBalances } from "../../hooks/useDex";
 import { useQuoteRoutedSwap, useRoutedSwap } from "../../hooks/useRouter";
@@ -10,6 +10,7 @@ import { ROUTER_TEXT } from "../../i18n/pages/dexRouter";
 import { SWAP_TEXT } from "../../i18n/pages/swap";
 import { nowNs } from "../../lib/approvals";
 import { parseUnits, unitsInputValue } from "../../lib/token";
+import { MINT_QUOTE_DEBOUNCE_MS } from "../exchange/liquidityMint";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -101,6 +102,10 @@ export function SwapDialog({
   const [slippageText, setSlippageText] = useState(defaultSlippageText);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [reading, setReading] = useState(false);
+  const [debounced, setDebounced] = useState<bigint | null>(null);
+  const [debouncedSlippage, setDebouncedSlippage] = useState<bigint | null>(
+    null,
+  );
 
   // Swaps are refused while a removal is announced, executing or done. Below
   // the depth threshold or without a rate the native pool is closed; the
@@ -111,17 +116,32 @@ export function SwapDialog({
   const tokenOut = inIsToken0 ? info1 : info0;
   const amountIn = parseUnits(amountText, tokenIn.decimals);
   const slippageBps = parsePercentBps(slippageText);
+  useEffect(() => {
+    const valid = open && amountIn !== null && amountIn > 0n;
+    const value = valid && slippageBps !== null ? amountIn : null;
+    const id = window.setTimeout(() => {
+      setDebounced(value);
+      setDebouncedSlippage(value !== null ? slippageBps : null);
+    }, MINT_QUOTE_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [open, amountIn, slippageBps]);
   const input =
-    open && amountIn !== null && amountIn > 0n && slippageBps !== null
+    open && debounced !== null && debouncedSlippage !== null
       ? {
           tokenIn: tokenIn.token,
           tokenOut: tokenOut.token,
-          amountIn,
-          slippageBps,
+          amountIn: debounced,
+          slippageBps: debouncedSlippage,
         }
       : null;
   const quote = useQuoteRoutedSwap(input);
-  const quoteOk = quote.data?.__kind__ === "ok" ? quote.data.ok : null;
+  const quoteFresh =
+    debounced !== null &&
+    debounced === amountIn &&
+    debouncedSlippage !== null &&
+    debouncedSlippage === slippageBps;
+  const quoteOk =
+    quoteFresh && quote.data?.__kind__ === "ok" ? quote.data.ok : null;
   const pending = swap.isPending || reading;
   const available =
     balances.data?.find((b) => b.token === tokenIn.token)?.available ?? 0n;
@@ -134,7 +154,7 @@ export function SwapDialog({
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!input || !quoteOk || pending || dexPaused) return;
+    if (!input || !quoteFresh || !quoteOk || pending || dexPaused) return;
     setFeedback(null);
     // The price is read again now, live, never from the quote already shown.
     setReading(true);
@@ -226,6 +246,7 @@ export function SwapDialog({
                       onClick={() => {
                         setInIsToken0(isZero);
                         setAmountText("");
+                        setDebounced(null);
                       }}
                       data-ocid={`pools.swap.token_${isZero ? "0" : "1"}.toggle`}
                     >
@@ -326,7 +347,9 @@ export function SwapDialog({
             <DexPausedHint paused={dexPaused}>
               <Button
                 type="submit"
-                disabled={!open || !quoteOk || pending || dexPaused}
+                disabled={
+                  !open || !quoteFresh || !quoteOk || pending || dexPaused
+                }
                 className="min-h-11"
                 data-ocid="pools.swap.confirm_button"
               >

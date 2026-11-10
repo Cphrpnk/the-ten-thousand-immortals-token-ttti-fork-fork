@@ -21,12 +21,13 @@ func newClosing() : Types.ClosingStore {
 let rates : [Types.ClosingRate] = [{ token = #icp; usdE8 = ?500_000_000 }];
 let reserve = AuctionLib.reserveFrom(null, null);
 
+let reserveUnit : Nat = 200_000_000_000; // PTM-11: 10 000 USD in ICP at 5 USD
 let aboveReserveLow : Nat = 250_000_000_000; // 2 500 ICP per TTTI-T
 let aboveReserveHigh : Nat = 400_000_000_000; // 4 000 ICP per TTTI-T
 let belowReserve : Nat = 100_000_000_000; // 1 000 ICP per TTTI-T
 
 func bidOf(id : Nat, auction : Types.Auction, who : Principal, quantity : Nat, priceB : Nat) : Types.Bid {
-  let required = AuctionLib.depositFormula(priceB, quantity);
+  let required = AuctionLib.depositFormula(priceB, reserveUnit, quantity);
   {
     id;
     auctionId = auction.id;
@@ -39,6 +40,7 @@ func bidOf(id : Nat, auction : Types.Auction, who : Principal, quantity : Nat, p
     createdAt = now + id;
     memo = Blob.fromArray([]);
     block = id;
+    choice = #pool;
   };
 };
 
@@ -206,23 +208,19 @@ do {
 do {
   let store = AuctionLib.newStore();
   let a = opened(store, 0, 5_000);
-  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, 4_000)) {
+  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, reserveUnit, 4_000)) {
     case (#err(#wholeLotRequired({ lotSizeE8s }))) { assert lotSizeE8s == 5_000 };
     case _ assert false;
   };
-  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, 6_000)) {
+  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, reserveUnit, 6_000)) {
     case (#err(#wholeLotRequired(_))) {};
     case _ assert false;
   };
-  switch (AuctionLib.quoteDepositIn(store, aboveReserveLow, 4_000)) {
-    case (#err(#wholeLotRequired(_))) {};
+  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, reserveUnit, 5_000)) {
+    case (#ok(required)) { assert required == AuctionLib.depositFormula(aboveReserveLow, reserveUnit, 5_000) };
     case _ assert false;
   };
-  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, 5_000)) {
-    case (#ok(required)) { assert required == AuctionLib.depositFormula(aboveReserveLow, 5_000) };
-    case _ assert false;
-  };
-  switch (AuctionLib.quoteDepositFor(a, 0, 5_000)) {
+  switch (AuctionLib.quoteDepositFor(a, 0, reserveUnit, 5_000)) {
     case (#err(#invalidPrice)) {};
     case _ assert false;
   };
@@ -233,11 +231,11 @@ do {
   let store = AuctionLib.newStore();
   let a = opened(store, 500_000, 0);
   assert not a.blockSale;
-  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, 200_000)) {
+  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, reserveUnit, 200_000)) {
     case (#ok(_)) {};
     case _ assert false;
   };
-  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, 50_000)) {
+  switch (AuctionLib.quoteDepositFor(a, aboveReserveLow, reserveUnit, 50_000)) {
     case (#err(#quantityBelowMinimum(_))) {};
     case _ assert false;
   };

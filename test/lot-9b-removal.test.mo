@@ -77,6 +77,7 @@ func storeOf(pools : [DexTypes.Pool]) : DexTypes.DexStore {
     var nextPositionId = 1;
     removals;
     icpswapSamples = Map.empty<Text, DexTypes.IcpSwapSample>();
+    referenceReadings = Map.empty<Text, DexTypes.ReferenceReading>();
     poolPositions = Map.empty<DexTypes.PoolId, Set.Set<DexTypes.PositionId>>();
     fees = {
       var dayStart = 0;

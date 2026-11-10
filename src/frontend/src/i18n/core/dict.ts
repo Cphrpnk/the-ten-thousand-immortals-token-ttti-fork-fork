@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useSyncExternalStore } from "react";
-import { type Lang, getLang, setLang, subscribeLang } from "./lang";
+import { LANGS, type Lang, getLang, setLang, subscribeLang } from "./lang";
+import { readSplit } from "./loader";
 
 /** A dictionary value: plain text, or a function for interpolated values / links. */
 export type DictEntry = string | ((...args: never[]) => ReactNode);
@@ -21,6 +22,26 @@ export function defineDict<T extends DictShape>(
     [L in Exclude<Lang, "en">]: NoInfer<{ [K in keyof T]: T[K] }>;
   },
 ): Dict<T> {
+  return dict;
+}
+
+/**
+ * Declare a dictionary split into one file per language under
+ * src/i18n/split/<name>/<lang>.ts(x) (default export = that language's
+ * strings). `T` is the shape of the English file: `typeof en`, imported with
+ * `import type en from "../split/<name>/en"`. Each language is downloaded on
+ * demand; LanguageProvider holds rendering until the active language and
+ * English are loaded, so reading `dict[lang]` is synchronous like defineDict.
+ * Do not read a split dictionary while a module is being evaluated.
+ */
+export function defineSplitDict<T extends DictShape>(name: string): Dict<T> {
+  const dict = {} as { [L in Lang]: T };
+  for (const lang of LANGS) {
+    Object.defineProperty(dict, lang, {
+      enumerable: true,
+      get: () => readSplit<T>(name, lang),
+    });
+  }
   return dict;
 }
 

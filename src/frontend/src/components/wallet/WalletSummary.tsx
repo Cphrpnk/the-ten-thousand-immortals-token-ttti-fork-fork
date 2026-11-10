@@ -7,21 +7,17 @@ import {
   Send,
 } from "lucide-react";
 import type { Account } from "../../backend";
+import { useConsolidatedTttiPrice } from "../../hooks/useDex";
 import { fiatUsdE8, useFiatRates } from "../../hooks/useFiatValue";
-import { useGuaranteeMasses } from "../../hooks/useGuarantee";
-import {
-  useIcpswapTttiPrice,
-  useRefreshIcpswapTttiPrice,
-} from "../../hooks/useIcpSwap";
 import { useWalletBalances } from "../../hooks/useWallet";
 import { useDict, useLanguage } from "../../i18n/core";
 import { WALLET_BUY_TEXT } from "../../i18n/pages/swap";
 import { WALLET_TEXT } from "../../i18n/pages/wallet";
 import type { TokenDescriptor } from "../../lib/tokenRegistry";
+import { isTttiToken } from "../../lib/ttti-token";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
-import { isTttiToken } from "./TokenBalanceCard";
 import { NO_VALUE, fiatTokenOfDescriptor, formatUsdValue } from "./valuation";
 
 const ACTION =
@@ -75,29 +71,16 @@ export function WalletSummary({
   });
   const loading = !!account && (tokens.length === 0 || pending);
 
-  const { isPending: priceLoading } = useIcpswapTttiPrice();
-  const refreshPrice = useRefreshIcpswapTttiPrice();
+  const {
+    isPending: priceLoading,
+    isFetching: priceFetching,
+    refetch: refetchPrice,
+  } = useConsolidatedTttiPrice();
   const tttiUnvalued =
     !priceLoading &&
     tokens.some(
       (token) => isTttiToken(token) && fiatRates.usdE8PerToken("ttti") === null,
     );
-
-  // Recoverable guarantee: shown beside the total, never added into it.
-  const { data: masses } = useGuaranteeMasses();
-  let guaranteeUsdE8 = 0n;
-  let guaranteeKnown = 0;
-  for (const mass of masses ?? []) {
-    if (mass.guaranteeValueUsdE8 !== undefined) {
-      guaranteeUsdE8 += mass.guaranteeValueUsdE8;
-      guaranteeKnown += 1;
-    }
-  }
-  const showGuarantee = !!account && masses !== undefined;
-  const guaranteeText =
-    masses !== undefined && masses.length > 0 && guaranteeKnown === 0
-      ? NO_VALUE
-      : formatUsdValue(guaranteeUsdE8, lang);
 
   return (
     <Card
@@ -115,14 +98,14 @@ export function WalletSummary({
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              onClick={() => refreshPrice.mutate()}
-              disabled={refreshPrice.isPending}
+              onClick={() => void refetchPrice()}
+              disabled={priceFetching}
               aria-label={t.refreshPrice}
               title={t.refreshPrice}
               data-ocid="wallet.summary.refresh_button"
             >
               <RefreshCw
-                className={`h-3.5 w-3.5 ${refreshPrice.isPending ? "animate-spin motion-reduce:animate-none" : ""}`}
+                className={`h-3.5 w-3.5 ${priceFetching ? "animate-spin motion-reduce:animate-none" : ""}`}
               />
             </Button>
           </div>
@@ -139,16 +122,14 @@ export function WalletSummary({
               {account && known > 0 ? formatUsdValue(total, lang) : NO_VALUE}
             </p>
           )}
-          {showGuarantee && (
-            <p
-              className="text-sm text-muted-foreground"
-              data-ocid="wallet.summary.guarantee"
+          {account && (
+            <Link
+              to="/guarantee"
+              className="text-sm text-muted-foreground underline underline-offset-4 transition-smooth hover:text-foreground"
+              data-ocid="wallet.summary.reserve_link"
             >
-              {t.guaranteeLabel}{" "}
-              <span className="font-semibold text-foreground tabular-nums">
-                {guaranteeText}
-              </span>
-            </p>
+              {t.reserveLink}
+            </Link>
           )}
         </div>
 

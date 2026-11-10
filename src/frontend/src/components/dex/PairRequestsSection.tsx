@@ -75,7 +75,7 @@ export function PairRequestsSection({
             </div>
           ) : config ? (
             <div className="max-w-xl">
-              <PairRequestForm config={config} />
+              <PairRequestForm config={config} caller={caller} />
             </div>
           ) : configError ? (
             <p

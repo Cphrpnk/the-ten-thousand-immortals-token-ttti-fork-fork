@@ -4,12 +4,15 @@ import type { RedeemQuote } from "../../backend";
 import { useDict, useLanguage } from "../../i18n/core";
 import { GUARANTEE_TEXT } from "../../i18n/pages/guarantee";
 import {
-  formatFeePercent,
+  formatTttiQuantity,
+  formatUsdValue,
   guaranteeFailureMessage,
-  previewLabel,
-  previewRows,
-  ruleLabel,
 } from "../../lib/guarantee";
+import {
+  PAY_TOKEN_ORDER,
+  formatPayAmount,
+  payTokenSymbol,
+} from "../../lib/token";
 import { cn } from "../../lib/utils";
 import { Skeleton } from "../ui/skeleton";
 
@@ -18,6 +21,33 @@ interface RedeemPreviewProps {
   /** True when a valid amount is entered, so a quote is expected. */
   hasAmount: boolean;
   ocid: string;
+}
+
+function Row({
+  label,
+  ocid,
+  strong = false,
+  children,
+}: {
+  label: string;
+  ocid: string;
+  strong?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 text-sm",
+        strong && "font-medium",
+      )}
+      data-ocid={ocid}
+    >
+      <dt className="min-w-0 text-muted-foreground">{label}</dt>
+      <dd className="flex flex-col items-end font-mono tabular-nums">
+        {children}
+      </dd>
+    </div>
+  );
 }
 
 /** Live preview of a redemption, from quoteGuaranteeRedeem. */
@@ -52,43 +82,43 @@ export function RedeemPreview({ query, hasAmount, ocid }: RedeemPreviewProps) {
     );
   } else {
     const quote = query.data;
+    const lines = [...quote.payouts].sort(
+      (a, b) =>
+        PAY_TOKEN_ORDER.indexOf(a.token) - PAY_TOKEN_ORDER.indexOf(b.token),
+    );
     body = (
       <>
         <dl className="flex flex-col divide-y divide-border">
-          {previewRows(quote, lang).map((row) => (
-            <div
-              key={row.key}
-              className={cn(
-                "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 text-sm",
-                row.key === "net" && "font-medium",
-              )}
-              data-ocid={`${ocid}.row.${row.key}`}
+          <Row label={t.previewCap} ocid={`${ocid}.row.parity`}>
+            <span>{formatUsdValue(quote.parityUsdE8, lang)}</span>
+          </Row>
+          <Row label={t.previewReserveShare} ocid={`${ocid}.row.proportional`}>
+            <span>{formatUsdValue(quote.proportionalUsdE8, lang)}</span>
+          </Row>
+          {lines.map((line) => (
+            <Row
+              key={line.token}
+              label={t.previewPaidIn(payTokenSymbol(line.token))}
+              ocid={`${ocid}.row.${line.token}`}
             >
-              <dt className="min-w-0 text-muted-foreground">
-                {previewLabel(row.key, t)}
-              </dt>
-              <dd className="flex flex-col items-end font-mono tabular-nums">
-                <span
-                  className={row.key === "net" ? "text-primary" : undefined}
-                >
-                  {row.amount}
-                </span>
-                {row.usd !== undefined && (
-                  <span className="text-xs text-muted-foreground">
-                    ≈ {row.usd}
-                  </span>
-                )}
-              </dd>
-            </div>
+              <span>{formatPayAmount(line.amount, line.token, lang)}</span>
+              <span className="text-xs text-muted-foreground">
+                ≈ {formatUsdValue(line.valueUsdE8, lang)}
+              </span>
+            </Row>
           ))}
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 py-2 text-sm">
-            <dt className="text-muted-foreground">{t.previewRule}</dt>
-            <dd data-ocid={`${ocid}.rule`}>{ruleLabel(quote.rule, t)}</dd>
-          </div>
+          <Row label={t.previewCirculation} ocid={`${ocid}.row.circulation`}>
+            <span>{formatTttiQuantity(quote.circulationOutside, lang)}</span>
+          </Row>
+          <Row label={t.previewNet} ocid={`${ocid}.row.net`} strong>
+            <span className="text-primary">
+              {formatUsdValue(quote.payoutUsdE8, lang)}
+            </span>
+          </Row>
         </dl>
         <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
-          <li>{t.previewFeeNote(formatFeePercent(lang))}</li>
-          {quote.rateUsdE8 !== undefined && <li>{t.previewUsdNote}</li>}
+          <li>{t.previewLedgerFeeNote}</li>
+          <li>{t.previewUsdNote}</li>
           <li>{t.returnedTttiNote}</li>
         </ul>
       </>

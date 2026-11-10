@@ -12,6 +12,7 @@ mixin (
   accessControlState : AccessControl.AccessControlState,
   transform : OutCall.Transform,
   tokenRates : OracleLib.TokenRateStore,
+  secondRates : Oracle.SecondRateStore,
 ) {
   // Returns the stored ICP/USD rate. Callable by anyone, including anonymous.
   // Never performs an outcall.
@@ -22,7 +23,7 @@ mixin (
   // Every pay token's stored USD rate (ICP, BTC, USDC, USDT). Public; never
   // performs an outcall.
   public query func getTokenPrices() : async [Oracle.TokenPrice] {
-    OracleLib.allPrices(oracle, tokenRates, Time.now());
+    OracleLib.allPrices(oracle, tokenRates, secondRates, Time.now());
   };
 
   // The stored hourly BTC/USD rate, null while none has been fetched. Public,
@@ -37,7 +38,7 @@ mixin (
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: only admins can refresh the ICP price");
     };
-    await OracleLib.adminRefresh(oracle, transform);
+    await OracleLib.adminRefresh(oracle, secondRates, transform);
   };
 
   // Admin-only refresh of one pay token's rate; same rule as refreshIcpPrice.
@@ -45,6 +46,6 @@ mixin (
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: only admins can refresh token prices");
     };
-    await OracleLib.adminRefreshToken(oracle, tokenRates, token, transform);
+    await OracleLib.adminRefreshToken(oracle, tokenRates, secondRates, token, transform);
   };
 };

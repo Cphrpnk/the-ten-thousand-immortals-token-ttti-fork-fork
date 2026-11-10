@@ -49,6 +49,7 @@ import {
 } from "../ui/table";
 import { AdminAccordion } from "./AdminUi";
 import { formatTimestamp } from "./ConversionsCard";
+import { DexBalanceBreakdown } from "./DexBalanceBreakdown";
 import { DexSweepCard } from "./DexSweepCard";
 import { GOLD_CARD, PRIMARY_GOLD, SECONDARY_GOLD } from "./styles";
 
@@ -452,11 +453,8 @@ export function DexReserveCheckCard() {
   const onRun = () => {
     setCheckFeedback(null);
     runCheck.mutate(undefined, {
-      onSuccess: (check) => {
-        const { accountsCompared, accountsToCompare, phase, alertDecided } =
-          check.progress;
-        const incomplete =
-          accountsCompared === 0n || accountsCompared < accountsToCompare;
+      onSuccess: ({ check, raisedAlert }) => {
+        const { accountsCompared, accountsToCompare, phase } = check.progress;
         const shortfalls = check.accounts.filter(
           (r) => r.status === ReserveStatus.shortfall,
         );
@@ -475,7 +473,7 @@ export function DexReserveCheckCard() {
           });
           return;
         }
-        if (alertDecided && incomplete) {
+        if (raisedAlert !== undefined) {
           setCheckFeedback({
             ok: false,
             text: `Reserve check finished on ${when} with an alert: ${counts}.`,
@@ -629,6 +627,13 @@ export function DexReserveCheckCard() {
                   Balances per account and token
                 </h3>
                 <AccountsTable accounts={data.accounts} tokens={tokens} />
+              </section>
+
+              <section className="space-y-2">
+                <h3 className="font-display text-sm font-medium">
+                  Balance breakdown per token
+                </h3>
+                <DexBalanceBreakdown tokens={tokens} />
               </section>
             </>
           )}
